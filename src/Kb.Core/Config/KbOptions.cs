@@ -1,0 +1,106 @@
+using Microsoft.Extensions.Options;
+
+namespace Kb.Core.Config;
+
+/// <summary>Root of all Kb configuration. Section name: "Kb". Schema: config/kb.schema.json.</summary>
+public sealed class KbOptions
+{
+    public const string Section = "Kb";
+    public BrandOptions Brand { get; set; } = new();
+    public DatabaseOptions Database { get; set; } = new();
+    public AuthOptions Auth { get; set; } = new();
+    public List<HostnameOptions> Hostnames { get; set; } = [];
+    public EmailOptions Email { get; set; } = new();
+    public RetentionOptions Retention { get; set; } = new();
+    public PluginOptions Plugins { get; set; } = new();
+}
+
+public sealed class BrandOptions
+{
+    public string ProductName { get; set; } = "Aerie";
+    public string LogoLightPath { get; set; } = "/brand/logo-light.svg";
+    public string LogoDarkPath { get; set; } = "/brand/logo-dark.svg";
+    public string PrimaryColor { get; set; } = "#14304f";
+}
+
+public enum DatabaseProvider { SqlServer, Sqlite }
+
+public sealed class DatabaseOptions
+{
+    public DatabaseProvider Provider { get; set; } = DatabaseProvider.SqlServer;
+    public string ConnectionString { get; set; } = "";
+}
+
+public sealed class AuthOptions
+{
+    public bool LocalEnabled { get; set; } = true;
+    public EntraOptions? Entra { get; set; }
+    public BreakGlassOptions BreakGlass { get; set; } = new();
+    public List<string> AllowedGroupIds { get; set; } = [];
+    public TimeSpan EmergencyAccessDuration { get; set; } = TimeSpan.FromHours(4);
+}
+
+public sealed class EntraOptions
+{
+    public string TenantId { get; set; } = "";
+    public string ClientId { get; set; } = "";
+    public bool AllowGuests { get; set; }
+}
+
+public sealed class BreakGlassOptions
+{
+    public string UserName { get; set; } = "breakglass";
+    /// <summary>Name of the secret (Key Vault / user-secrets / env) holding the break-glass password. Never the password itself.</summary>
+    public string PasswordSecretName { get; set; } = "Kb--BreakGlassPassword";
+}
+
+public enum HostRole { Full, PublicOnly }
+
+public sealed class HostnameOptions
+{
+    public string Host { get; set; } = "";
+    public HostRole Role { get; set; } = HostRole.Full;
+}
+
+public sealed class EmailOptions
+{
+    /// <summary>Plugin id of the active email sender, e.g. "kb.email.smtp". Empty = log-only (dev).</summary>
+    public string Provider { get; set; } = "";
+    public string From { get; set; } = "";
+}
+
+public sealed class RetentionOptions
+{
+    public int RecycleDays { get; set; } = 90;
+    public int AuditMinDays { get; set; } = 2555;
+}
+
+public sealed class PluginOptions
+{
+    /// <summary>Folder scanned for drop-in plugins (each in its own subfolder).</summary>
+    public string Folder { get; set; } = "plugins";
+    /// <summary>Allow-list for drop-in plugin assemblies: SHA-256 hashes (hex). Built-in plugins need no entry.</summary>
+    public List<string> AllowedHashes { get; set; } = [];
+    /// <summary>Plugin ids that are disabled even if present.</summary>
+    public List<string> Disabled { get; set; } = [];
+}
+
+public sealed class KbOptionsValidator : IValidateOptions<KbOptions>
+{
+    public ValidateOptionsResult Validate(string? name, KbOptions o)
+    {
+        ArgumentNullException.ThrowIfNull(o);
+        var errors = new List<string>();
+        if (string.IsNullOrWhiteSpace(o.Brand.ProductName)) errors.Add("Kb:Brand:ProductName is required.");
+        if (string.IsNullOrWhiteSpace(o.Database.ConnectionString)) errors.Add("Kb:Database:ConnectionString is required.");
+        if (string.IsNullOrWhiteSpace(o.Auth.BreakGlass.PasswordSecretName)) errors.Add("Kb:Auth:BreakGlass:PasswordSecretName is required.");
+        if (string.IsNullOrWhiteSpace(o.Auth.BreakGlass.UserName)) errors.Add("Kb:Auth:BreakGlass:UserName is required.");
+        if (o.Auth.EmergencyAccessDuration <= TimeSpan.Zero) errors.Add("Kb:Auth:EmergencyAccessDuration must be greater than zero.");
+        if (o.Auth.Entra is { } e && (string.IsNullOrWhiteSpace(e.TenantId) || string.IsNullOrWhiteSpace(e.ClientId)))
+            errors.Add("Kb:Auth:Entra requires TenantId and ClientId.");
+        var dupes = o.Hostnames.GroupBy(h => h.Host, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+        if (dupes.Count > 0) errors.Add($"Kb:Hostnames has duplicate Host values: {string.Join(", ", dupes)}.");
+        if (o.Retention.RecycleDays < 1) errors.Add("Kb:Retention:RecycleDays must be at least 1.");
+        return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);
+    }
+}

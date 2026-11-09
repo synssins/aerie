@@ -1,0 +1,11 @@
+{
+  "id": "kb.sample",
+  "version": "1.0.0",
+  "publisher": "Kb first-party",
+  "description": "Reference plugin used by the developer guide and tests.",
+  "minKbVersion": "0.1.0",
+  "extensionPoints": ["page-action"],
+  "outboundHosts": [],
+  "settings": [],
+  "schedules": []
+}

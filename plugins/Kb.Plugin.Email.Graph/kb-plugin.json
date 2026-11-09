@@ -1,0 +1,16 @@
+{
+  "id": "kb.email.graph",
+  "version": "1.0.0",
+  "publisher": "Kb first-party",
+  "description": "Send email through Microsoft Graph using an app registration with certificate authentication.",
+  "minKbVersion": "0.1.0",
+  "extensionPoints": ["email-sender"],
+  "outboundHosts": ["graph.microsoft.com", "login.microsoftonline.com"],
+  "settings": [
+    { "key": "TenantId", "label": "Entra tenant id", "required": true },
+    { "key": "ClientId", "label": "App registration client id", "required": true },
+    { "key": "CertificateThumbprint", "label": "Certificate thumbprint (CurrentUser\\My)", "required": true },
+    { "key": "SenderMailbox", "label": "Mailbox to send as", "required": true }
+  ],
+  "schedules": []
+}

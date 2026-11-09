@@ -1,0 +1,7 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Kb.Plugins.Abstractions\Kb.Plugins.Abstractions.csproj" />
+    <PackageReference Include="Azure.Identity" />
+    <EmbeddedResource Include="kb-plugin.json" />
+  </ItemGroup>
+</Project>

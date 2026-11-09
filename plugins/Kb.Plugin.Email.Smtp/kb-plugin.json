@@ -1,0 +1,18 @@
+{
+  "id": "kb.email.smtp",
+  "version": "1.0.0",
+  "publisher": "Kb first-party",
+  "description": "Send email through an internal SMTP relay or authenticated SMTP.",
+  "minKbVersion": "0.1.0",
+  "extensionPoints": ["email-sender"],
+  "outboundHosts": [],
+  "settings": [
+    { "key": "Host", "label": "SMTP host", "required": true },
+    { "key": "Port", "label": "Port (default 25)" },
+    { "key": "From", "label": "From address", "required": true },
+    { "key": "UserName", "label": "User name (blank for an unauthenticated relay)" },
+    { "key": "StartTls", "label": "Use STARTTLS when authenticating (default true)" },
+    { "key": "Password", "label": "Password", "secret": true }
+  ],
+  "schedules": []
+}

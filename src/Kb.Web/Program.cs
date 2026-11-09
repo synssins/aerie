@@ -1,0 +1,136 @@
+using System.Reflection;
+using Kb.Core.Access;
+using Kb.Core.Audit;
+using Kb.Core.Config;
+using Kb.Core.Identity;
+using Kb.Core.Notifications;
+using Kb.Core.Plugins;
+using Kb.Core.Spaces;
+using Kb.Data;
+using Kb.Plugins;
+using Kb.Web;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+
+var builder = WebApplication.CreateBuilder(args);
+var services = builder.Services;
+var config = builder.Configuration;
+
+// ---- configuration (fail fast) ----
+services.AddOptions<KbOptions>().Bind(config.GetSection(KbOptions.Section)).ValidateOnStart();
+services.AddSingleton<IValidateOptions<KbOptions>, KbOptionsValidator>();
+var kb = config.GetSection(KbOptions.Section).Get<KbOptions>() ?? new KbOptions();
+
+// ---- database ----
+services.AddDbContext<KbDbContext>(o => _ = kb.Database.Provider switch
+{
+    DatabaseProvider.Sqlite => o.UseSqlite(kb.Database.ConnectionString),
+    _ => o.UseSqlServer(kb.Database.ConnectionString, s => s.EnableRetryOnFailure()),
+});
+
+// ---- identity (local accounts; Entra wired in Task 6) ----
+services.AddIdentity<KbUser, KbRole>(o =>
+    {
+        // NIST SP 800-63B: length over composition rules.
+        o.Password.RequiredLength = 15;
+        o.Password.RequireDigit = o.Password.RequireLowercase = o.Password.RequireUppercase = o.Password.RequireNonAlphanumeric = false;
+        o.Lockout.MaxFailedAccessAttempts = 5;
+        o.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+        o.Lockout.AllowedForNewUsers = true;
+        o.User.RequireUniqueEmail = false;
+    })
+    .AddEntityFrameworkStores<KbDbContext>()
+    .AddDefaultTokenProviders();
+
+services.ConfigureApplicationCookie(o =>
+{
+    o.Cookie.Name = "__Host-kb";
+    o.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    o.Cookie.SameSite = SameSiteMode.Lax;
+    o.Cookie.HttpOnly = true;
+    o.SlidingExpiration = true;
+    o.ExpireTimeSpan = TimeSpan.FromHours(8);
+    // API callers get status codes, never login redirects.
+    o.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
+    o.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
+});
+
+// Shared keys so any instance can read any instance's cookie (A/B patching, load balancing).
+var dp = services.AddDataProtection().SetApplicationName("kb").PersistKeysToDbContext<KbDbContext>();
+_ = dp;
+
+services.AddAuthorizationBuilder()
+    .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+
+// ---- plugins (native: core features ship as first-party plugins) ----
+// Built-in plugins are the Kb.Plugin.*.dll files shipped in the app folder; drop-ins live under Kb:Plugins:Folder.
+var builtIns = Directory.GetFiles(AppContext.BaseDirectory, "Kb.Plugin.*.dll").Select(Assembly.LoadFrom);
+var registry = PluginLoader.Discover(builtIns, kb.Plugins, builder.Environment.ContentRootPath);
+services.AddKbPlugins(config, registry);
+services.AddSingleton(typeof(ProviderSelector<>));
+
+// ---- core services ----
+services.AddSingleton(TimeProvider.System);
+services.AddScoped<IAuditLog, SqlAuditLog>();
+services.AddScoped<ISpaceAccessData, SpaceAccessData>();
+services.AddScoped<ISpacePermissionService, SpacePermissionService>();
+services.AddScoped<IAccessData, AccessData>();
+services.AddScoped<INotificationStore, NotificationStore>();
+services.AddScoped<IUserDirectory, UserDirectory>();
+services.AddScoped<INotifier, Notifier>();
+services.AddScoped<AccessService>();
+services.AddScoped<BreakGlassService>();
+
+services.AddHealthChecks().AddCheck<ReadinessCheck>("ready", tags: ["ready"]);
+services.AddProblemDetails();
+services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
+
+var app = builder.Build();
+
+// ---- startup: migrate (dev/SQLite create), log plugin refusals, ensure break-glass ----
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<KbDbContext>();
+    if (db.Database.IsSqlite()) await db.Database.EnsureCreatedAsync();
+    else await db.Database.MigrateAsync();
+
+    var audit = scope.ServiceProvider.GetRequiredService<IAuditLog>();
+    foreach (var r in registry.Refused)
+        await audit.AppendAsync(new AuditEvent(AuditActions.PluginRefused, null, "plugin", r.Path, Data: new Dictionary<string, string> { ["reason"] = r.Reason }));
+
+    await scope.ServiceProvider.GetRequiredService<BreakGlassService>().EnsureAccountAsync(app.Environment);
+}
+
+app.UseExceptionHandler();
+app.UseStatusCodePages();
+if (!app.Environment.IsDevelopment()) app.UseHsts();
+app.UseHttpsRedirection();
+app.UseMiddleware<SecurityHeadersMiddleware>();
+app.UseDefaultFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    // Static UI shell is served before auth so the sign-in page can load; all data comes from authenticated /api.
+    OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "no-cache",
+});
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapHealthChecks("/health/live", new() { Predicate = _ => false }).AllowAnonymous();
+app.MapHealthChecks("/health/ready", new() { Predicate = c => c.Tags.Contains("ready") }).AllowAnonymous();
+
+var api = app.MapGroup("/api/v1");
+api.MapAuthEndpoints();
+api.MapSpaceEndpoints();
+api.MapAccessEndpoints();
+api.MapNotificationEndpoints();
+api.MapAdminEndpoints();
+// Unknown API routes: authenticated callers get 404, anonymous get 401 (fallback policy).
+api.MapFallback(() => Results.NotFound());
+
+app.MapFallbackToFile("index.html").AllowAnonymous();
+
+await app.RunAsync();
+
+public partial class Program;
