@@ -1,0 +1,14 @@
+.superpowers/
+bin/
+obj/
+node_modules/
+client/dist/
+*.user
+.vs/
+App_Data/
+*.db
+*.db-shm
+*.db-wal
+TestResults/
+playwright-report/
+test-results/
