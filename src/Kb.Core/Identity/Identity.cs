@@ -12,9 +12,13 @@ public sealed class KbUser : IdentityUser<Guid>
     public string? ExternalId { get; set; }
     public bool IsBreakGlass { get; set; }
     public bool IsAdmin { get; set; }
+    /// <summary>May post and remove home-page announcements. Independent of Admin and space roles.</summary>
+    public bool CanAnnounce { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     /// <summary>Set when the user leaves every allowed group or is removed. Attribution greys out but stays.</summary>
     public DateTimeOffset? DeactivatedAt { get; set; }
+    /// <summary>Per-user app settings (theme, layout, notifications) as JSON. See Kb.Web UserSettings.</summary>
+    public string SettingsJson { get; set; } = "{}";
 }
 
 public sealed class KbRole : IdentityRole<Guid>;

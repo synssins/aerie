@@ -9,10 +9,12 @@ public sealed class KbOptions
     public BrandOptions Brand { get; set; } = new();
     public DatabaseOptions Database { get; set; } = new();
     public AuthOptions Auth { get; set; } = new();
+    public SetupOptions Setup { get; set; } = new();
     public List<HostnameOptions> Hostnames { get; set; } = [];
     public EmailOptions Email { get; set; } = new();
     public RetentionOptions Retention { get; set; } = new();
     public PluginOptions Plugins { get; set; } = new();
+    public StorageOptions Storage { get; set; } = new();
 }
 
 public sealed class BrandOptions
@@ -54,6 +56,21 @@ public sealed class BreakGlassOptions
     public string PasswordSecretName { get; set; } = "Kb--BreakGlassPassword";
 }
 
+/// <summary>
+/// First-run setup. Until a regular (non-break-glass) admin exists, the site offers a setup page that creates one.
+/// Requests from the server itself need no code; other requests need the one-time code written to CodeFile.
+/// An installer can instead supply AdminUserName plus the secret named AdminPasswordSecretName; that admin is
+/// created at startup and the setup page never appears.
+/// </summary>
+public sealed class SetupOptions
+{
+    public string AdminUserName { get; set; } = "";
+    public string AdminDisplayName { get; set; } = "Administrator";
+    public string AdminPasswordSecretName { get; set; } = "Kb--SetupAdminPassword";
+    /// <summary>Relative paths resolve against the content root.</summary>
+    public string CodeFile { get; set; } = "App_Data/setup-code.txt";
+}
+
 public enum HostRole { Full, PublicOnly }
 
 public sealed class HostnameOptions
@@ -73,6 +90,12 @@ public sealed class RetentionOptions
 {
     public int RecycleDays { get; set; } = 90;
     public int AuditMinDays { get; set; } = 2555;
+}
+
+public sealed class StorageOptions
+{
+    /// <summary>Folder for uploaded files (images); relative paths are under the content root.</summary>
+    public string Folder { get; set; } = "App_Data/files";
 }
 
 public sealed class PluginOptions

@@ -1,40 +1,160 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
-  Bell, ChevronRight, FileText, Folder, History, Link as LinkIcon, Download, MoreHorizontal, Pencil, Plus, Search,
-  SlidersHorizontal, Lock, Moon, Sun, Maximize2, Minimize2, ShieldAlert, LogOut,
+  Bell, ChevronDown, ChevronRight, Ellipsis, House, FilePlus, FileText, Folder, FolderCog, FolderInput, FolderPlus, Link as LinkIcon, Plus, Search, Settings,
+  ShieldCheck, SlidersHorizontal, Lock, Moon, Sun, Maximize2, Minimize2, ShieldAlert, LogOut, Trash2, UserRound,
 } from "lucide-react";
-import { api, reloadIfPending, type Brand, type Me, type Notice, type Space } from "./api";
+import { AccountDialog } from "./AccountDialogs";
+import { BrandLogo } from "./Branding";
+import { api, BIN_ROLES, byTreeOrder, EDIT_ROLES, reloadIfPending, type Brand, type Me, type Notice, type Page, type Space, type TreeNode, type UserSettings } from "./api";
+import { MenuButton, MoveDialog, useDismiss } from "./ui";
+import { BinView, HistoryView, HomeView, SearchView, type RecentView } from "./Views";
+import { ADMIN_SECTIONS, AdminView, type AdminSection } from "./AdminView";
+import { SettingsView, type SettingsSection } from "./SettingsView";
+import { useDialogs } from "./Dialogs";
+import { NewItemDialog, type NewItem } from "./NewItemDialog";
+import { PageTree } from "./PageTree";
+import { PageView } from "./PageView";
 
-type Width = "boxed" | "full";
-type Theme = "light" | "dark";
+const DEFAULT_SETTINGS: UserSettings = { theme: "system", width: "boxed", startPage: "last", codeLanguage: "plaintext", notify: {} };
+type AdminAt = { section: AdminSection; spaceId: string | null };
 
-// Per-viewer conveniences only; server-side user settings arrive in plan 1c.
-function usePref<T extends string>(key: string, initial: T): [T, (v: T) => void] {
-  const [v, setV] = useState<T>(() => {
-    try { return (localStorage.getItem(key) as T) ?? initial; } catch { return initial; }
-  });
-  const set = (nv: T) => { setV(nv); try { localStorage.setItem(key, nv); } catch { /* storage blocked */ } };
-  return [v, set];
+/** URLs carry IDs only, never names, so renames never break links. */
+function route(): { space?: string; page?: string; admin?: AdminAt; settings?: SettingsSection; search?: string; history?: boolean; bin?: boolean } {
+  if (location.pathname === "/search") return { search: new URLSearchParams(location.search).get("q") ?? "" };
+  const h = /^\/p\/([0-9a-f-]{36})\/history$/i.exec(location.pathname);
+  if (h) return { page: h[1], history: true };
+  const b = /^\/s\/([0-9a-f-]{36})\/bin$/i.exec(location.pathname);
+  if (b) return { space: b[1], bin: true };
+  const a = /^\/admin(?:\/([a-z]+))?(?:\/([0-9a-f-]{36}))?$/i.exec(location.pathname);
+  if (a) return { admin: { section: ADMIN_SECTIONS.includes(a[1] as AdminSection) ? a[1] as AdminSection : "spaces", spaceId: a[2] ?? null } };
+  const st = /^\/settings(?:\/(preferences|notifications))?$/.exec(location.pathname);
+  if (st) return { settings: (st[1] as SettingsSection | undefined) ?? "preferences" };
+  const m = /^\/(s|p)\/([0-9a-f-]{36})$/i.exec(location.pathname);
+  return m ? (m[1] === "s" ? { space: m[2] } : { page: m[2] }) : {};
 }
 
-export function AppShell({ me, brand, onSignedOut }: { me: Me; brand: Brand; onSignedOut: () => void }) {
-  const [width, setWidth] = usePref<Width>("kb.width", "boxed");
-  const [theme, setTheme] = usePref<Theme>("kb.theme", "light");
+function store(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* storage blocked */ } }
+function stored(key: string) { try { return localStorage.getItem(key); } catch { return null; } }
+function storedViews(): RecentView[] { try { return JSON.parse(stored("kb.recent") ?? "[]") as RecentView[]; } catch { return []; } }
+
+export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; brand: Brand; onBrandChanged: () => Promise<void>; onSignedOut: () => void }) {
+  const [settings, setSettings] = useState<UserSettings | null>(null);
+  const prefs = settings ?? DEFAULT_SETTINGS;
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const theme = prefs.theme === "system" ? (systemDark ? "dark" : "light") : prefs.theme;
+  const width = prefs.width;
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [current, setCurrent] = useState<Space | null>(null);
   const [unread, setUnread] = useState(0);
   const [showBell, setShowBell] = useState(false);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [trees, setTrees] = useState<Record<string, TreeNode[]>>({});
+  const [page, setPage] = useState<Page | null>(null);
+  const [admin, setAdmin] = useState<AdminAt | null>(null);
+  const [settingsAt, setSettingsAt] = useState<SettingsSection | null>(null);
+  const [home, setHome] = useState(false);
+  const [searchQ, setSearchQ] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [historyOf, setHistoryOf] = useState(false);
+  const [binOf, setBinOf] = useState(false);
+  const [moving, setMoving] = useState<Page | null>(null);
+  const [viewed, setViewed] = useState<RecentView[]>(storedViews);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [showGear, setShowGear] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [newItem, setNewItem] = useState<NewItem | null>(null);
+  const [showUser, setShowUser] = useState(false);
+  const [justCreated, setJustCreated] = useState<string | null>(null);
+  const [returnTo, setReturnTo] = useState<string | null>(null);
+  const [panel, setPanel] = useState<"account" | null>(null);
+  const dialogs = useDialogs();
+  const dirty = useRef(false);
+  const onDirty = useCallback((d: boolean) => { dirty.current = d; }, []);
 
-  useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    store("kb.theme", theme); // the sign-in page follows the last theme used here
+  }, [theme]);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const h = () => setSystemDark(mq.matches);
+    mq.addEventListener("change", h);
+    return () => mq.removeEventListener("change", h);
+  }, []);
 
-  const loadSpaces = useCallback(() => api.get<Space[]>("/spaces").then((s) => {
-    setSpaces(s);
-    setCurrent((c) => c ?? s[0] ?? null);
-  }), []);
+  function saveSettings(next: UserSettings) {
+    setSettings(next);
+    void api.put<UserSettings>("/me/settings", next).catch(() => undefined);
+  }
 
-  useEffect(() => { void loadSpaces(); }, [loadSpaces]);
+  const loadTree = useCallback((spaceId: string) =>
+    api.get<TreeNode[]>(`/spaces/${spaceId}/tree`).then((t) => setTrees((all) => ({ ...all, [spaceId]: t }))), []);
+
+  /** Leaves whatever view is showing; the caller then sets the one it wants. */
+  const reset = useCallback(() => {
+    setHome(false);
+    setAdmin(null);
+    setSettingsAt(null);
+    setSearchQ(null);
+    setHistoryOf(false);
+    setBinOf(false);
+  }, []);
+
+  const showSpace = useCallback((s: Space) => {
+    reset();
+    setCurrent(s);
+    setPage(null);
+    setOpen((o) => ({ ...o, [s.id]: true }));
+    void loadTree(s.id);
+  }, [loadTree, reset]);
+
+  const showPage = useCallback(async (id: string, all: Space[]) => {
+    const p = await api.get<Page>(`/pages/${id}`);
+    reset();
+    setCurrent(all.find((x) => x.id === p.spaceId) ?? null);
+    setPage(p);
+    if (p.kind === "Page") {
+      setViewed((old) => {
+        const next = [{ id: p.id, title: p.title }, ...old.filter((v) => v.id !== p.id)].slice(0, 8);
+        store("kb.recent", JSON.stringify(next));
+        return next;
+      });
+    }
+    setOpen((o) => ({ ...o, [p.spaceId]: true, ...Object.fromEntries(p.path.map((c) => [c.id, true])) }));
+    void loadTree(p.spaceId);
+  }, [loadTree, reset]);
+
+  const applyRoute = useCallback(async (all: Space[], start: string) => {
+    const r = route();
+    const owns = all.some((x) => x.myRole === "Owner");
+    if (r.admin && (me.isAdmin || (owns && r.admin.section === "spaces"))) { reset(); setAdmin(r.admin); setPage(null); return; }
+    if (r.settings) { reset(); setSettingsAt(r.settings); setPage(null); return; }
+    if (r.search !== undefined) { reset(); setSearchQ(r.search); setQ(r.search); setPage(null); setCurrent(null); return; }
+    try {
+      if (r.page) { await showPage(r.page, all); if (r.history) setHistoryOf(true); return; }
+      if (!r.space) { reset(); setHome(true); setPage(null); setCurrent(null); return; }
+      const s = all.find((x) => x.id === r.space) ?? all[0];
+      if (s) { showSpace(s); if (r.bin && s.id === r.space) setBinOf(true); }
+    } catch {
+      if (all[0]) showSpace(all[0]);
+    }
+  }, [showPage, showSpace, reset, me.isAdmin]);
+
+  const loadSpaces = useCallback(() => api.get<Space[]>("/spaces").then((s) => { setSpaces(s); return s; }), []);
+
+  useEffect(() => {
+    void (async () => {
+      const st = await api.get<UserSettings>("/me/settings").catch(() => DEFAULT_SETTINGS);
+      setSettings(st);
+      await applyRoute(await loadSpaces(), st.startPage);
+    })();
+  }, [loadSpaces, applyRoute]);
+  useEffect(() => {
+    const onPop = () => void applyRoute(spaces, "");
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [applyRoute, spaces]);
 
   useEffect(() => {
     const poll = () => api.get<{ unread: number }>("/notifications/count").then((r) => setUnread(r.unread)).catch(() => undefined);
@@ -42,6 +162,21 @@ export function AppShell({ me, brand, onSignedOut }: { me: Me; brand: Brand; onS
     const t = window.setInterval(poll, 60_000);
     return () => window.clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); searchRef.current?.focus(); searchRef.current?.select(); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const bellRef = useRef<HTMLDivElement>(null);
+  const newRef = useRef<HTMLDivElement>(null);
+  useDismiss(bellRef, showBell, useCallback(() => setShowBell(false), []));
+  useDismiss(newRef, showNew, useCallback(() => setShowNew(false), []));
+  const userRef = useRef<HTMLDivElement>(null);
+  useDismiss(userRef, showUser, useCallback(() => setShowUser(false), []));
+  const gearRef = useRef<HTMLDivElement>(null);
+  useDismiss(gearRef, showGear, useCallback(() => setShowGear(false), []));
 
   async function toggleBell() {
     if (!showBell) setNotices(await api.get<Notice[]>("/notifications"));
@@ -54,49 +189,190 @@ export function AppShell({ me, brand, onSignedOut }: { me: Me; brand: Brand; onS
     setNotices((n) => n.map((x) => ({ ...x, readAt: x.readAt ?? new Date().toISOString() })));
   }
 
-  function navigate(s: Space) {
+  const discardOk = async () => {
+    if (!dirty.current) return true;
+    if (!await dialogs.confirm({ title: "Discard unsaved changes?", ok: "Discard", danger: true })) return false;
+    dirty.current = false; // the editor is gone after this; it won't report clean itself
+    return true;
+  };
+  const go = (path: string) => {
+    if (location.pathname + location.search !== path) history.pushState(null, "", path);
+    if (path.startsWith("/p/") || path.startsWith("/s/")) store("kb.last", path);
+  };
+
+  async function openSpace(s: Space) {
+    if (!await discardOk()) return;
     reloadIfPending();
-    setCurrent(s);
+    if (current?.id === s.id && !page && !admin && !settingsAt && !home && !binOf && searchQ === null) setOpen((o) => ({ ...o, [s.id]: !o[s.id] }));
+    else showSpace(s);
+    go(`/s/${s.id}`);
   }
 
-  async function newSpace() {
-    const name = window.prompt("Name of the new space");
-    if (!name) return;
-    const key = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32) || "space";
-    try {
-      const s = await api.post<Space>("/spaces", { key, name });
-      await loadSpaces();
-      setCurrent(s);
-    } catch {
-      window.alert("Only administrators can create spaces, and the key must be unique.");
-    }
+  async function openItem(id: string | null) {
+    if (!current || !await discardOk()) return;
+    reloadIfPending();
+    if (id === null) { showSpace(current); go(`/s/${current.id}`); return; }
+    void showPage(id, spaces);
+    go(`/p/${id}`);
+  }
+
+  async function openAdmin(section: AdminSection = "spaces", spaceId: string | null = null) {
+    setShowGear(false);
+    if (!await discardOk()) return;
+    reset();
+    setAdmin({ section, spaceId });
+    setPage(null);
+    go(`/admin/${section}${spaceId ? `/${spaceId}` : ""}`);
+  }
+
+  async function openSettings(section: SettingsSection) {
+    setShowGear(false);
+    if (!await discardOk()) return;
+    reset();
+    setSettingsAt(section);
+    setPage(null);
+    go(`/settings/${section}`);
+  }
+
+  async function goHome() {
+    setShowGear(false);
+    if (!await discardOk()) return;
+    reloadIfPending();
+    reset();
+    setHome(true);
+    setPage(null);
+    setCurrent(null);
+    go("/");
+  }
+  const onHome = () => void goHome();
+
+  async function openSearch(e: FormEvent) {
+    e.preventDefault();
+    const text = q.trim();
+    if (!text || !await discardOk()) return;
+    reset();
+    setSearchQ(text);
+    setPage(null);
+    setCurrent(null);
+    go(`/search?q=${encodeURIComponent(text)}`);
+  }
+
+  async function openPageById(id: string) {
+    if (!await discardOk()) return;
+    reloadIfPending();
+    void showPage(id, spaces);
+    go(`/p/${id}`);
+  }
+
+  async function openBin(s: Space) {
+    if (!await discardOk()) return;
+    showSpace(s);
+    setBinOf(true);
+    go(`/s/${s.id}/bin`);
+  }
+
+  function openHistory() {
+    if (!page) return;
+    setHistoryOf(true);
+    go(`/p/${page.id}/history`);
+  }
+
+  async function deleteItem(p: Page) {
+    if (!current || !await dialogs.confirm({ title: `Move “${p.title}” to the recycle bin?`, ok: "Delete", danger: true })) return;
+    try { await api.del(`/pages/${p.id}`); }
+    catch { await dialogs.confirm({ title: "Not deleted.", body: p.kind === "Folder" ? "The folder holds pages you can't delete." : undefined, ok: "OK" }); return; }
+    setViewed((old) => { const next = old.filter((v) => v.id !== p.id); store("kb.recent", JSON.stringify(next)); return next; });
+    if (p.parentId) { void showPage(p.parentId, spaces); go(`/p/${p.parentId}`); }
+    else { showSpace(current); go(`/s/${current.id}`); }
+  }
+
+  function moved(from: Page, to: Page) {
+    setMoving(null);
+    if (to.spaceId !== from.spaceId) void loadTree(from.spaceId);
+    void showPage(to.id, spaces);
+    go(`/p/${to.id}`);
+  }
+
+  function backToSpaces() {
+    if (current) { showSpace(current); go(`/s/${current.id}`); }
+    else { setAdmin(null); setSettingsAt(null); go("/"); }
+  }
+
+  // New items go where the user is: inside the open folder, or beside the open page.
+  const parentId = page?.kind === "Folder" ? page.id : page?.parentId ?? null;
+  const parentPath = page ? (page.kind === "Folder" ? [...page.path.map((c) => c.title), page.title] : page.path.map((c) => c.title)) : [];
+
+  async function startNew(kind: "Page" | "Folder") {
+    setShowNew(false);
+    if (!current || !await discardOk()) return;
+    if (kind === "Folder") { setNewItem({ kind, spaceName: current.name, path: parentPath }); return; }
+    // New page: straight into the editor. Nothing is stored until the first save.
+    const crumbs = page ? (page.kind === "Folder" ? [...page.path, { id: page.id, title: page.title }] : page.path) : [];
+    setReturnTo(page?.id ?? null);
+    setPage({
+      id: "", spaceId: current.id, parentId, kind: "Page", title: "", contentJson: '{"type":"doc","content":[]}', version: "",
+      updatedAt: "", updatedBy: "", path: crumbs, history: [], canEdit: true, tags: [], canDelete: false, draft: null, attachments: [],
+    });
+  }
+
+  async function create(title: string, tags: string[]) {
+    if (!current || !newItem) return;
+    const created = await api.post<Page>(`/spaces/${current.id}/pages`, { parentId, kind: newItem.kind, title, tags });
+    setNewItem(null);
+    setJustCreated(created.id);
+    await loadTree(current.id);
+    if (parentId) setOpen((o) => ({ ...o, [parentId]: true }));
+    setPage(created);
+    go(`/p/${created.id}`);
   }
 
   async function signOut() {
+    if (!await discardOk()) return;
     await api.post("/auth/signout");
+    history.replaceState(null, "", "/");
     onSignedOut();
   }
 
   const initials = useMemo(() => me.displayName.split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase(), [me]);
+  const canEdit = !!current?.myRole && EDIT_ROLES.includes(current.myRole) && !binOf && !historyOf;
+  const ownsSpaces = spaces.some((x) => x.myRole === "Owner");
+  const canManageCurrent = !!current && (me.isAdmin || current.myRole === "Owner");
+  const listed = current
+    ? (trees[current.id] ?? []).filter((n) => n.parentId === (page?.kind === "Folder" ? page.id : null)).sort(byTreeOrder)
+    : [];
 
   return (
     <div className={`stage ${width}`}>
       <div className="kb">
         <header className="grid bar">
           <div className="c1">
-            <div className="logo">COMPANY LOGO</div>
-            <span className="brand">{brand.productName}</span>
+            <button className="home-link" onClick={onHome} title="Home">
+              <BrandLogo brand={brand} background="dark" />
+              <span className="brand">{brand.productName}</span>
+            </button>
           </div>
           <div className="c2">
-            <label className="search">
+            <form className="search" role="search" onSubmit={(e) => void openSearch(e)}>
               <Search className="ic" aria-hidden />
-              <input placeholder="Search articles, apps, tags" aria-label="Search" />
+              <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search articles, apps, tags" aria-label="Search" maxLength={200} />
               <kbd>Ctrl K</kbd>
-            </label>
+            </form>
           </div>
           <div className="c3">
-            {me.isAdmin && <button className="ib" onClick={newSpace}><Plus className="ic" aria-hidden />New</button>}
-            <div className="bell-wrap">
+            {canEdit && !admin && !settingsAt && !home && searchQ === null && (
+              <div className="menu-wrap" ref={newRef}>
+                <button className="ib" onClick={() => setShowNew(!showNew)} aria-haspopup="menu" aria-expanded={showNew}>
+                  <Plus className="ic" aria-hidden />New<ChevronDown className="ic sm" aria-hidden />
+                </button>
+                {showNew && (
+                  <div className="menu" role="menu">
+                    <button role="menuitem" onClick={() => void startNew("Page")}><FilePlus className="ic" aria-hidden />Page</button>
+                    <button role="menuitem" onClick={() => void startNew("Folder")}><FolderPlus className="ic" aria-hidden />Folder</button>
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="bell-wrap" ref={bellRef}>
               <button className="ib" onClick={toggleBell} aria-label={`Notifications, ${unread} unread`} aria-expanded={showBell}>
                 <Bell className="ic" aria-hidden />
                 {unread > 0 && <span className="dot">{unread > 99 ? "99+" : unread}</span>}
@@ -104,7 +380,7 @@ export function AppShell({ me, brand, onSignedOut }: { me: Me; brand: Brand; onS
               {showBell && (
                 <div className="bell-panel" role="dialog" aria-label="Notifications">
                   <div className="bell-head"><b>Notifications</b>{notices.some((n) => !n.readAt) && <button className="link" onClick={markAllRead}>Mark all read</button>}</div>
-                  {notices.length === 0 && <p className="muted">Nothing new. Access requests and security alerts appear here.</p>}
+                  {notices.length === 0 && <p className="muted">No notifications.</p>}
                   {notices.map((n) => (
                     <div key={n.id} className={`notice ${n.readAt ? "" : "unread"}`}>
                       <div className="notice-title">{n.kind.startsWith("security") && <ShieldAlert className="ic warn" aria-hidden />}{n.title}</div>
@@ -114,92 +390,210 @@ export function AppShell({ me, brand, onSignedOut }: { me: Me; brand: Brand; onS
                 </div>
               )}
             </div>
-            <button className="ib" onClick={() => setTheme(theme === "light" ? "dark" : "light")} aria-label="Toggle dark mode">
+            <button className="ib" onClick={() => saveSettings({ ...prefs, theme: theme === "light" ? "dark" : "light" })} aria-label="Toggle dark mode">
               {theme === "light" ? <Moon className="ic" aria-hidden /> : <Sun className="ic" aria-hidden />}
             </button>
-            <button className="ib" onClick={() => setWidth(width === "boxed" ? "full" : "boxed")} aria-label={width === "boxed" ? "Full width" : "Boxed width"}>
+            <button className="ib" onClick={() => saveSettings({ ...prefs, width: width === "boxed" ? "full" : "boxed" })} aria-label={width === "boxed" ? "Full width" : "Boxed width"}>
               {width === "boxed" ? <Maximize2 className="ic" aria-hidden /> : <Minimize2 className="ic" aria-hidden />}
             </button>
-            <button className="ib" aria-label="Settings"><SlidersHorizontal className="ic" aria-hidden /></button>
-            <button className="av" onClick={signOut} title={`Signed in as ${me.displayName}. Click to sign out.`} aria-label="Sign out">{initials}</button>
+            <div className="menu-wrap" ref={gearRef}>
+              <button className={`ib ${admin || settingsAt ? "on" : ""}`} onClick={() => setShowGear(!showGear)} aria-label="Settings" title="Settings" aria-haspopup="menu" aria-expanded={showGear}>
+                <Settings className="ic" aria-hidden />
+              </button>
+              {showGear && (
+                <div className="menu right" role="menu">
+                  <div className="menu-grp">Settings</div>
+                  <button role="menuitem" onClick={() => void openSettings("preferences")}><SlidersHorizontal className="ic" aria-hidden />Preferences</button>
+                  <button role="menuitem" onClick={() => void openSettings("notifications")}><Bell className="ic" aria-hidden />Notifications</button>
+                  {(canManageCurrent || me.isAdmin) && <div className="menu-sep" />}
+                  {canManageCurrent && (
+                    <button role="menuitem" onClick={() => void openAdmin("spaces", current!.id)}>
+                      <FolderCog className="ic" aria-hidden /><span className="menu-two">Manage space<small>{current!.name}</small></span>
+                    </button>
+                  )}
+                  {me.isAdmin && <button role="menuitem" onClick={() => void openAdmin("spaces")}><ShieldCheck className="ic" aria-hidden />Administration</button>}
+                </div>
+              )}
+            </div>
+            <div className="menu-wrap" ref={userRef}>
+              <button className="av" onClick={() => setShowUser(!showUser)} title={me.displayName} aria-label="Account menu" aria-haspopup="menu" aria-expanded={showUser}>{initials}</button>
+              {showUser && (
+                <div className="menu right" role="menu">
+                  <div className="menu-head"><b>{me.displayName}</b><span className="muted small">{me.userName}</span></div>
+                  <button role="menuitem" onClick={() => { setShowUser(false); setPanel("account"); }}><UserRound className="ic" aria-hidden />Account</button>
+                  <div className="menu-sep" />
+                  <button role="menuitem" onClick={() => { setShowUser(false); void signOut(); }}><LogOut className="ic" aria-hidden />Sign out</button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
         {me.isBreakGlass && (
-          <div className="breakglass" role="status"><ShieldAlert className="ic" aria-hidden />Signed in with the break-glass account. Every action is audited and all administrators were alerted.</div>
+          <div className="breakglass" role="status"><ShieldAlert className="ic" aria-hidden />Break-glass account</div>
         )}
 
         <div className="grid main">
-          <nav className="tree" aria-label="Spaces and pages">
-            <div className="tree-head">Spaces</div>
-            {spaces.length === 0 && <p className="muted small pad">No spaces yet.{me.isAdmin ? " Use New to create one." : ""}</p>}
-            {spaces.map((s) => (
-              <div key={s.id}>
-                <button
-                  className={`node ${current?.id === s.id ? "cur" : ""} ${open[s.id] ? "open" : ""}`}
-                  onClick={() => { navigate(s); setOpen({ ...open, [s.id]: !open[s.id] }); }}
-                  aria-expanded={!!open[s.id]}
-                >
-                  <ChevronRight className="ic tw" aria-hidden />
-                  <Folder className="ic ft" aria-hidden />
-                  <span className="grow">{s.name}</span>
-                  {s.isSensitive && <Lock className="ic muted" aria-label="Sensitive space" />}
-                </button>
-                {open[s.id] && (
-                  <div className="kids">
-                    <div className="node empty"><span className="ic tw" /><FileText className="ic pg" aria-hidden /><span className="muted">Pages arrive in plan 1b</span></div>
+          {admin ? (
+            <AdminView
+              isAdmin={me.isAdmin}
+              section={admin.section}
+              spaceId={admin.spaceId}
+              mySpaces={spaces}
+              onNavigate={(sec, id) => void openAdmin(sec, id ?? null)}
+              onExit={backToSpaces}
+              onSpacesChanged={loadSpaces}
+              onHome={onHome}
+              brand={brand}
+              onBrandChanged={onBrandChanged}
+            />
+          ) : settingsAt ? (
+            <SettingsView
+              section={settingsAt}
+              settings={prefs}
+              isAdmin={me.isAdmin}
+              ownsSpaces={ownsSpaces}
+              onSection={(x) => void openSettings(x)}
+              onChange={saveSettings}
+              onExit={backToSpaces}
+              onHome={onHome}
+            />
+          ) : (
+            <>
+              <nav className="tree" aria-label="Spaces and pages">
+                <div className="tree-head">Spaces</div>
+                {spaces.length === 0 && <p className="muted small pad">No spaces.</p>}
+                {spaces.map((s) => (
+                  <div key={s.id}>
+                    <button
+                      className={`node ${current?.id === s.id && !page && !binOf && !home && searchQ === null ? "cur" : ""} ${open[s.id] ? "open" : ""}`}
+                      onClick={() => void openSpace(s)}
+                      aria-expanded={!!open[s.id]}
+                    >
+                      <ChevronRight className="ic tw" aria-hidden />
+                      <Folder className="ic ft" aria-hidden />
+                      <span className="grow">{s.name}</span>
+                      {s.isSensitive && <Lock className="ic muted" aria-label="Sensitive space" />}
+                    </button>
+                    {open[s.id] && trees[s.id] && (
+                      <div className="kids">
+                        <PageTree
+                          nodes={trees[s.id]} parentId={null} selectedId={page?.id ?? null} open={open}
+                          onToggle={(id) => setOpen((o) => ({ ...o, [id]: !o[id] }))}
+                          onSelect={async (n) => {
+                            if (!await discardOk()) return;
+                            void showPage(n.id, spaces);
+                            go(`/p/${n.id}`);
+                          }}
+                        />
+                        {s.myRole && BIN_ROLES.includes(s.myRole) && (
+                          <button className={`node ${binOf && current?.id === s.id ? "cur" : ""}`} onClick={() => void openBin(s)}>
+                            <span className="ic tw" /><Trash2 className="ic pg" aria-hidden /><span className="grow">Recycle bin</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            ))}
-          </nav>
+                ))}
+              </nav>
 
-          <main className="doc">
-            <div className="col">
-              {current ? (
-                <>
-                  <div className="crumb"><span>Spaces</span><ChevronRight className="ic sm" aria-hidden /><b>{current.name}</b></div>
-                  <div className="titlebar">
-                    <h1>{current.name}</h1>
-                    <div className="ptools">
-                      <button className="tb" disabled title="Editing arrives in plan 1b"><Pencil className="ic" aria-hidden />Edit</button>
-                      <button className="tb icon" disabled aria-label="History"><History className="ic" aria-hidden /></button>
-                      <button className="tb icon" aria-label="Copy link" onClick={() => navigator.clipboard?.writeText(`${location.origin}/spaces/${current.key}`)}><LinkIcon className="ic" aria-hidden /></button>
-                      <button className="tb icon" disabled aria-label="Export"><Download className="ic" aria-hidden /></button>
-                      <button className="tb icon" aria-label="More"><MoreHorizontal className="ic" aria-hidden /></button>
-                    </div>
-                  </div>
-                  <div className="meta">Your role: {current.myRole ?? "none"}{current.isSensitive ? " · Sensitive space" : ""}{current.isPublic ? " · Public help space" : ""}</div>
-                  <p>{current.description ?? "This space has no description yet."}</p>
-                  <h2 className="s" id="next">What comes next</h2>
-                  <p>The folder tree, the editor, version history and exports are built in the next plan. This shell shows the layout, sign-in, spaces, roles and notifications working against the real API.</p>
-                </>
+              {searchQ !== null ? (
+                <SearchView query={searchQ} onHome={onHome} onOpen={(id) => void openPageById(id)} />
+              ) : home || !current ? (
+                <HomeView me={me} spaces={spaces} viewed={viewed} onOpenSpace={(s) => void openSpace(s)} onOpenPage={(id) => void openPageById(id)} />
+              ) : binOf ? (
+                <BinView space={current} onHome={onHome} onOpenSpace={() => void openSpace(current)} onRestored={(id) => void loadTree(id)} />
+              ) : historyOf && page?.kind === "Page" ? (
+                <HistoryView
+                  page={page}
+                  spaceName={current.name}
+                  onHome={onHome}
+                  onOpenSpace={() => void openItem(null)}
+                  onBack={() => void openItem(page.id)}
+                  onRestored={(p) => { setPage(p); setHistoryOf(false); go(`/p/${p.id}`); }}
+                />
+              ) : page?.kind === "Page" ? (
+                <PageView
+                  key={page.id}
+                  page={page}
+                  spaceName={current.name}
+                  role={current.myRole}
+                  codeLanguage={prefs.codeLanguage}
+                  onHome={onHome}
+                  onHistory={openHistory}
+                  onMove={() => setMoving(page)}
+                  onDelete={() => void deleteItem(page)}
+                  onSaved={(p) => {
+                    const wasNew = !page.id;
+                    setPage(p);
+                    void loadTree(p.spaceId);
+                    if (wasNew) { if (p.parentId) setOpen((o) => ({ ...o, [p.parentId!]: true })); go(`/p/${p.id}`); }
+                  }}
+                  onCancelNew={() => { if (returnTo) void showPage(returnTo, spaces); else showSpace(current); }}
+                  onOpen={(id) => void openItem(id)}
+                  onDirty={onDirty}
+                  autoEdit={!page.id || page.id === justCreated}
+                />
               ) : (
                 <>
-                  <h1>Welcome, {me.displayName}</h1>
-                  <p>You have no spaces yet. {me.isAdmin ? "Create one with New in the top bar." : "Ask a space Owner for access."}</p>
+                  <main className="doc wide">
+                    <div className="col">
+                          <nav className="crumb" aria-label="Breadcrumb">
+                            <button className="crumb-home" onClick={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></button><ChevronRight className="ic sm" aria-hidden />
+                            {page ? <button className="crumb-link" onClick={() => void openItem(null)}>{current.name}</button> : <b>{current.name}</b>}
+                            {page?.path.map((c) => (
+                              <span key={c.id} className="crumb-part"><ChevronRight className="ic sm" aria-hidden /><button className="crumb-link" onClick={() => void openItem(c.id)}>{c.title}</button></span>
+                            ))}
+                            {page && <><ChevronRight className="ic sm" aria-hidden /><b>{page.title}</b></>}
+                          </nav>
+                          <div className="titlebar">
+                            <h1>{page?.title ?? current.name}</h1>
+                            <div className="ptools">
+                              <button className="tb icon" aria-label="Copy link" title="Copy link"
+                                onClick={() => navigator.clipboard?.writeText(`${location.origin}${page ? `/p/${page.id}` : `/s/${current.id}`}`)}><LinkIcon className="ic" aria-hidden /></button>
+                              {page?.canDelete && (
+                                <MenuButton label="More" iconOnly icon={<Ellipsis className="ic" aria-hidden />} items={[
+                                  { label: "Move", icon: <FolderInput className="ic" aria-hidden />, onClick: () => setMoving(page) },
+                                  { label: "Delete", icon: <Trash2 className="ic" aria-hidden />, onClick: () => void deleteItem(page), danger: true },
+                                ]} />
+                              )}
+                            </div>
+                          </div>
+                          {!page && current.description && <p>{current.description}</p>}
+                          <div className="listing">
+                            {listed.map((n) => (
+                              <button key={n.id} className="node" onClick={() => void openItem(n.id)}>
+                                {n.kind === "Folder" ? <Folder className="ic ft" aria-hidden /> : <FileText className="ic pg" aria-hidden />}
+                                <span className="grow">{n.title}</span>
+                              </button>
+                            ))}
+                            {listed.length === 0 && <p className="muted">Empty.</p>}
+                          </div>
+                    </div>
+                  </main>
+                  <aside className="side" aria-label="Details">
+                    {(
+                      <>
+                        <h3>Space</h3>
+                        <div>{current.name}</div>
+                        {current.description && <div className="muted small">{current.description}</div>}
+                        {page && <><h3>Folder</h3><div>{page.title}</div></>}
+                        <h3>Contents</h3>
+                        <div>{listed.filter((n) => n.kind === "Folder").length} folders · {listed.filter((n) => n.kind === "Page").length} pages</div>
+                        <h3>Your access</h3>
+                        <div>{current.myRole ?? "None"}</div>
+                        {current.isSensitive && <div className="muted small">Sensitive space</div>}
+                      </>
+                    )}
+                  </aside>
                 </>
               )}
-            </div>
-            {current && (
-              <aside className="toc" aria-label="On this page">
-                <b>On this page</b>
-                <a href="#next">What comes next</a>
-              </aside>
-            )}
-          </main>
+            </>
+          )}
 
-          <aside className="side" aria-label="Details">
-            <h3>Space</h3>
-            <div>{current?.name ?? "None selected"}</div>
-            <div className="muted">{current?.key}</div>
-            <h3>Access</h3>
-            <div>{current?.myRole ?? "No role"}</div>
-            {current?.isSensitive && <div className="muted small">Administrators need Owner approval to open this space.</div>}
-            <h3>Signed in</h3>
-            <div>{me.displayName}</div>
-            <button className="link small" onClick={signOut}><LogOut className="ic sm" aria-hidden />Sign out</button>
-          </aside>
+          {newItem && <NewItemDialog item={newItem} onCreate={create} onClose={() => setNewItem(null)} />}
+          {moving && <MoveDialog item={moving} spaces={spaces} onMoved={(p) => moved(moving, p)} onClose={() => setMoving(null)} />}
+          {panel === "account" && <AccountDialog me={me} onClose={() => setPanel(null)} />}
         </div>
       </div>
     </div>

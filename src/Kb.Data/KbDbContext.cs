@@ -1,4 +1,5 @@
 using Kb.Core.Access;
+using Kb.Core.Content;
 using Kb.Core.Identity;
 using Kb.Core.Notifications;
 using Kb.Core.Spaces;
@@ -23,6 +24,36 @@ public sealed class AuditEntry
     public required string Hash { get; set; }
 }
 
+/// <summary>Uploaded branding image (company logo, light or dark).</summary>
+public sealed class BrandAsset
+{
+    public required string Variant { get; set; }
+    public required string ContentType { get; set; }
+    public required byte[] Data { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>An image pasted or uploaded into a page in a space. The bytes live in the file store under <see cref="Id"/>.</summary>
+public sealed class SpaceImage
+{
+    public Guid Id { get; set; }
+    public Guid SpaceId { get; set; }
+    public required string FileName { get; set; }
+    public required string ContentType { get; set; }
+    public long Size { get; set; }
+    public Guid CreatedBy { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    /// <summary>True until a saved page or draft uses the image. Uploads that stay pending are cleaned up.</summary>
+    public bool Pending { get; set; }
+}
+
+/// <summary>Lets a second space show an image, after a page that uses it moved there.</summary>
+public sealed class SpaceImageGrant
+{
+    public Guid ImageId { get; set; }
+    public Guid SpaceId { get; set; }
+}
+
 public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     : IdentityDbContext<KbUser, KbRole, Guid>(options), IDataProtectionKeyContext
 {
@@ -36,6 +67,16 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<RuntimeSetting> RuntimeSettings => Set<RuntimeSetting>();
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
+    public DbSet<Page> Pages => Set<Page>();
+    public DbSet<PageVersion> PageVersions => Set<PageVersion>();
+    public DbSet<PageTag> PageTags => Set<PageTag>();
+    public DbSet<BrandAsset> BrandAssets => Set<BrandAsset>();
+    public DbSet<SpaceImage> SpaceImages => Set<SpaceImage>();
+    public DbSet<SpaceImageGrant> SpaceImageGrants => Set<SpaceImageGrant>();
+    public DbSet<PageDraft> PageDrafts => Set<PageDraft>();
+    public DbSet<SearchTerm> SearchTerms => Set<SearchTerm>();
+    public DbSet<Attachment> Attachments => Set<Attachment>();
+    public DbSet<Announcement> Announcements => Set<Announcement>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -53,6 +94,33 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
         builder.Entity<AuditEntry>().HasKey(a => a.Sequence);
         builder.Entity<AuditEntry>().Property(a => a.Sequence).ValueGeneratedNever();
         builder.Entity<RuntimeSetting>().HasKey(s => s.Key);
+        builder.Entity<Page>().Ignore(p => p.Version);
+        builder.Entity<Page>().Property(p => p.Title).HasMaxLength(200);
+        builder.Entity<Page>().HasIndex(p => new { p.SpaceId, p.ParentId });
+        builder.Entity<PageVersion>().Property(v => v.Title).HasMaxLength(200);
+        builder.Entity<PageVersion>().HasIndex(v => new { v.PageId, v.Major, v.Minor }).IsUnique();
+        builder.Entity<PageTag>().HasKey(t => new { t.PageId, t.Tag });
+        builder.Entity<BrandAsset>().HasKey(a => a.Variant);
+        builder.Entity<BrandAsset>().Property(a => a.Variant).HasMaxLength(16);
+        builder.Entity<PageTag>().Property(t => t.Tag).HasMaxLength(50);
+        builder.Entity<PageTag>().HasIndex(t => t.Tag);
+        builder.Entity<SpaceImage>().Property(i => i.FileName).HasMaxLength(255);
+        builder.Entity<SpaceImage>().Property(i => i.ContentType).HasMaxLength(64);
+        builder.Entity<SpaceImage>().HasIndex(i => i.SpaceId);
+        builder.Entity<SpaceImageGrant>().HasKey(g => new { g.ImageId, g.SpaceId });
+        // Recycle bin: deleted items drop out of every query unless it asks for them (IgnoreQueryFilters).
+        builder.Entity<Page>().HasQueryFilter(p => p.DeletedAt == null);
+        builder.Entity<Page>().HasIndex(p => p.DeletedAt);
+        builder.Entity<PageDraft>().HasKey(d => d.PageId);
+        builder.Entity<PageDraft>().Property(d => d.Title).HasMaxLength(200);
+        builder.Entity<PageDraft>().Property(d => d.BaseVersion).HasMaxLength(24);
+        builder.Entity<SearchTerm>().HasKey(t => new { t.PageId, t.Term });
+        builder.Entity<SearchTerm>().Property(t => t.Term).HasMaxLength(40);
+        builder.Entity<SearchTerm>().HasIndex(t => t.Term);
+        builder.Entity<Attachment>().Property(a => a.FileName).HasMaxLength(255);
+        builder.Entity<Attachment>().HasIndex(a => a.PageId);
+        builder.Entity<Announcement>().Property(a => a.Title).HasMaxLength(120);
+        builder.Entity<Announcement>().Property(a => a.Body).HasMaxLength(2000);
     }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)

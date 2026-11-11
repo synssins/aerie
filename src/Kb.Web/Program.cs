@@ -73,6 +73,11 @@ services.AddSingleton(typeof(ProviderSelector<>));
 
 // ---- core services ----
 services.AddSingleton(TimeProvider.System);
+services.AddSingleton<IFileStore, LocalFileStore>();
+services.AddScoped<Kb.Core.Search.ISearchProvider, SqlSearchProvider>();
+services.AddHttpClient(NetGuard.ClientName, c => { c.Timeout = TimeSpan.FromSeconds(15); c.MaxResponseContentBufferSize = ImageEndpoints.MaxImageBytes; })
+    .ConfigurePrimaryHttpMessageHandler(NetGuard.Handler);
+services.AddHostedService<ImageCleanupService>();
 services.AddScoped<IAuditLog, SqlAuditLog>();
 services.AddScoped<ISpaceAccessData, SpaceAccessData>();
 services.AddScoped<ISpacePermissionService, SpacePermissionService>();
@@ -82,6 +87,7 @@ services.AddScoped<IUserDirectory, UserDirectory>();
 services.AddScoped<INotifier, Notifier>();
 services.AddScoped<AccessService>();
 services.AddScoped<BreakGlassService>();
+services.AddScoped<SetupService>();
 
 services.AddHealthChecks().AddCheck<ReadinessCheck>("ready", tags: ["ready"]);
 services.AddProblemDetails();
@@ -100,7 +106,9 @@ await using (var scope = app.Services.CreateAsyncScope())
     foreach (var r in registry.Refused)
         await audit.AppendAsync(new AuditEvent(AuditActions.PluginRefused, null, "plugin", r.Path, Data: new Dictionary<string, string> { ["reason"] = r.Reason }));
 
-    await scope.ServiceProvider.GetRequiredService<BreakGlassService>().EnsureAccountAsync(app.Environment);
+    await scope.ServiceProvider.GetRequiredService<BreakGlassService>().EnsureAccountAsync();
+    await scope.ServiceProvider.GetRequiredService<SetupService>().OnStartupAsync();
+    await SearchIndex.BackfillAsync(db); // pages saved before the search index existed
 }
 
 app.UseExceptionHandler();
@@ -122,10 +130,19 @@ app.MapHealthChecks("/health/ready", new() { Predicate = c => c.Tags.Contains("r
 
 var api = app.MapGroup("/api/v1");
 api.MapAuthEndpoints();
+api.MapSetupEndpoints();
+api.MapPageEndpoints();
+api.MapUserSettingsEndpoints();
 api.MapSpaceEndpoints();
 api.MapAccessEndpoints();
 api.MapNotificationEndpoints();
 api.MapAdminEndpoints();
+api.MapBrandingEndpoints();
+api.MapImageEndpoints();
+api.MapAttachmentEndpoints();
+api.MapSearchEndpoints();
+api.MapHomeEndpoints();
+api.MapExportEndpoints();
 // Unknown API routes: authenticated callers get 404, anonymous get 401 (fallback policy).
 api.MapFallback(() => Results.NotFound());
 

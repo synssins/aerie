@@ -34,6 +34,7 @@ export const api = {
   post: <T>(p: string, b?: unknown) => call<T>("POST", p, b ?? {}),
   put: <T>(p: string, b?: unknown) => call<T>("PUT", p, b ?? {}),
   patch: <T>(p: string, b?: unknown) => call<T>("PATCH", p, b ?? {}),
+  del: <T>(p: string) => call<T>("DELETE", p),
 };
 
 export function reloadIfPending(): void {
@@ -42,7 +43,49 @@ export function reloadIfPending(): void {
 
 void bundleVersion;
 
-export type Me = { id: string; userName: string; displayName: string; isAdmin: boolean; isBreakGlass: boolean };
-export type Brand = { productName: string; logoLightPath: string; logoDarkPath: string; primaryColor: string };
-export type Space = { id: string; key: string; name: string; description: string | null; isSensitive: boolean; isPublic: boolean; myRole: string | null };
+export type Me = { id: string; userName: string; displayName: string; isAdmin: boolean; isBreakGlass: boolean; canAnnounce: boolean };
+export type Brand = { productName: string; logoLightUrl: string | null; logoDarkUrl: string | null; primaryColor: string };
+export type Space = {
+  id: string; key: string; name: string; description: string | null; isSensitive: boolean; isPublic: boolean; myRole: string | null;
+  commentsEnabled: boolean; agingDays: number; agingAudience: "Everyone" | "Supervisors"; recycleDays: number | null; createdAt: string;
+};
+export type NotifyPref = { inApp: boolean; email: boolean };
+export type UserSettings = { theme: "light" | "dark" | "system"; width: "boxed" | "full"; startPage: string; codeLanguage: string; notify: Record<string, NotifyPref> };
 export type Notice = { id: string; kind: string; title: string; body: string | null; link: string | null; createdAt: string; readAt: string | null };
+export type TreeNode = { id: string; parentId: string | null; kind: "Folder" | "Page"; title: string; sort: number };
+export type PageVersion = { version: string; at: string; author: string; note: string | null };
+export type Page = {
+  id: string; spaceId: string; parentId: string | null; kind: "Folder" | "Page"; title: string; contentJson: string; version: string;
+  updatedAt: string; updatedBy: string; path: { id: string; title: string }[]; history: PageVersion[]; canEdit: boolean; tags: string[];
+  canDelete: boolean; draft: { mine: boolean; by: string; updatedAt: string } | null; attachments: Attachment[];
+};
+export type Attachment = { id: string; name: string; size: number; url: string; at: string };
+export type Draft = { title: string; contentJson: string; tags: string[]; baseVersion: string; updatedAt: string };
+export type BinItem = { id: string; spaceId: string; spaceName: string; kind: "Folder" | "Page"; title: string; location: string; items: number; deletedAt: string; deletedBy: string; hidden: boolean };
+export type SearchHit = {
+  id: string; spaceId: string; spaceName: string; kind: "Folder" | "Page"; title: string; path: string[]; url: string; version: string;
+  updatedAt: string; tags: string[]; snippet: string; score: number; matched: string[];
+};
+export type SearchResponse = { query: string; total: number; limit: number; offset: number; hits: SearchHit[] };
+export type DiffLine = { op: "Same" | "Add" | "Del"; text: string };
+export type Announcement = { id: string; title: string; body: string; by: string; createdAt: string; expiresAt: string | null };
+export type Home = { announcements: Announcement[]; recent: { id: string; title: string; spaceId: string; spaceName: string; updatedAt: string; updatedBy: string }[] };
+
+export const EDIT_ROLES = ["Contributor", "Supervisor", "Owner"];
+export const BIN_ROLES = ["Supervisor", "Owner"];
+export const fmtDateTime = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+export const fmtSize = (n: number) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+
+/** Sends a file as the raw request body, the way the upload endpoints take it. */
+export async function upload<T>(path: string, file: File): Promise<T> {
+  const r = await fetch(`/api/v1${path}`, {
+    method: "POST", body: file, credentials: "same-origin",
+    headers: { "Content-Type": "application/octet-stream", "X-File-Name": encodeURIComponent(file.name) },
+  });
+  if (!r.ok) throw new ApiError(r.status, r.statusText);
+  return await r.json() as T;
+}
+
+/** Tree order: folders first, then pages, each alphabetical (natural number order). */
+export const byTreeOrder = (a: TreeNode, b: TreeNode) =>
+  a.kind === b.kind ? a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" }) : a.kind === "Folder" ? -1 : 1;

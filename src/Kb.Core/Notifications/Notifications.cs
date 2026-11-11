@@ -25,6 +25,9 @@ public static class NotificationKinds
     public const string SecurityAlert = "security.alert";
 }
 
+/// <summary>A user's choice for one notification kind.</summary>
+public sealed record NotifyPref(bool InApp, bool Email);
+
 public interface INotificationStore
 {
     Task AddAsync(IEnumerable<Notification> items, CancellationToken ct);
@@ -40,6 +43,8 @@ public interface IUserDirectory
 {
     Task<IReadOnlyList<string>> GetEmailsAsync(IReadOnlyCollection<Guid> userIds, CancellationToken ct);
     Task<IReadOnlyList<Guid>> GetAdminIdsAsync(CancellationToken ct);
+    /// <summary>Saved preferences for <paramref name="kind"/>; users without a saved choice are absent.</summary>
+    Task<IReadOnlyDictionary<Guid, NotifyPref>> GetNotifyPrefsAsync(IReadOnlyCollection<Guid> userIds, string kind, CancellationToken ct);
 }
 
 public sealed class Notifier(
@@ -55,11 +60,19 @@ public sealed class Notifier(
         ArgumentNullException.ThrowIfNull(userIds);
         if (userIds.Count == 0) return;
         var now = time.GetUtcNow();
-        await store.AddAsync(userIds.Select(u => new Notification { UserId = u, Kind = kind, Title = title, Body = body, Link = link, CreatedAt = now }), ct);
-        if (!alsoEmail) return;
+        // Security alerts always go out in-app and by email; everything else follows each user's preferences.
+        var prefs = kind == NotificationKinds.SecurityAlert
+            ? new Dictionary<Guid, NotifyPref>()
+            : await users.GetNotifyPrefsAsync(userIds, kind, ct) ?? new Dictionary<Guid, NotifyPref>();
+        var inApp = userIds.Where(u => !prefs.TryGetValue(u, out var p) || p.InApp).ToList();
+        var byEmail = userIds.Where(u => prefs.TryGetValue(u, out var p) ? p.Email : alsoEmail).ToList();
+
+        if (inApp.Count > 0)
+            await store.AddAsync(inApp.Select(u => new Notification { UserId = u, Kind = kind, Title = title, Body = body, Link = link, CreatedAt = now }), ct);
+        if (byEmail.Count == 0) return;
 
         var sender = senders.Get(options.Value.Email.Provider);
-        var to = await users.GetEmailsAsync(userIds, ct);
+        var to = await users.GetEmailsAsync(byEmail, ct);
         if (sender is null)
         {
             // Dev / unconfigured: never silently drop a security email.

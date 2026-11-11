@@ -151,4 +151,21 @@ public sealed class UserDirectory(KbDbContext db) : IUserDirectory
 
     public async Task<IReadOnlyList<Guid>> GetAdminIdsAsync(CancellationToken ct) =>
         await db.Users.AsNoTracking().Where(u => u.IsAdmin && u.DeactivatedAt == null).Select(u => u.Id).ToListAsync(ct);
+
+    public async Task<IReadOnlyDictionary<Guid, NotifyPref>> GetNotifyPrefsAsync(IReadOnlyCollection<Guid> userIds, string kind, CancellationToken ct)
+    {
+        var rows = await db.Users.AsNoTracking().Where(u => userIds.Contains(u.Id)).Select(u => new { u.Id, u.SettingsJson }).ToListAsync(ct);
+        var result = new Dictionary<Guid, NotifyPref>();
+        foreach (var r in rows)
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(r.SettingsJson);
+                if (doc.RootElement.TryGetProperty("notify", out var n) && n.TryGetProperty(kind, out var p))
+                    result[r.Id] = new NotifyPref(p.TryGetProperty("inApp", out var i) && i.GetBoolean(), p.TryGetProperty("email", out var e) && e.GetBoolean());
+            }
+            catch (System.Text.Json.JsonException) { /* unreadable settings: fall back to defaults */ }
+        }
+        return result;
+    }
 }

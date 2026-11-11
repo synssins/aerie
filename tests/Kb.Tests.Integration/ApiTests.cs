@@ -4,6 +4,7 @@ using Kb.Core.Audit;
 using Kb.Core.Spaces;
 using Kb.Data;
 using Kb.Web;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -12,10 +13,12 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Kb.Tests.Integration;
 
 /// <summary>App on a throwaway SQLite file. Two factories given the same path behave like two load-balanced instances.</summary>
-public sealed class KbAppFactory(string dbPath) : WebApplicationFactory<Program>
+public sealed class KbAppFactory(string dbPath, bool breakGlass = true, bool loopback = false, IDictionary<string, string>? settings = null)
+    : WebApplicationFactory<Program>
 {
     public const string BreakGlassPassword = "test-breakglass-password-0123456789";
     public string DbPath { get; } = dbPath;
+    public string SetupCodeFile { get; } = dbPath + ".setup-code.txt";
 
     public static string NewDbPath() => Path.Combine(Path.GetTempPath(), $"kb-test-{Guid.NewGuid():N}.db");
 
@@ -24,7 +27,20 @@ public sealed class KbAppFactory(string dbPath) : WebApplicationFactory<Program>
         builder.UseEnvironment("Testing");
         builder.UseSetting("Kb:Database:Provider", "Sqlite");
         builder.UseSetting("Kb:Database:ConnectionString", $"Data Source={DbPath}");
-        builder.UseSetting("Kb--BreakGlassPassword", BreakGlassPassword);
+        builder.UseSetting("Kb:Setup:CodeFile", SetupCodeFile);
+        if (breakGlass) builder.UseSetting("Kb--BreakGlassPassword", BreakGlassPassword);
+        foreach (var (k, v) in settings ?? new Dictionary<string, string>()) builder.UseSetting(k, v);
+        // TestServer has no remote address; loopback=true makes requests look like they come from the server itself.
+        if (loopback) builder.ConfigureServices(s => s.AddSingleton<IStartupFilter, LoopbackFilter>());
+    }
+
+    private sealed class LoopbackFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use((ctx, n) => { ctx.Connection.RemoteIpAddress = IPAddress.Loopback; return n(ctx); });
+            next(app);
+        };
     }
 
     public HttpClient NewClient() => CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), HandleCookies = true });

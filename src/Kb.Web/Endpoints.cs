@@ -13,10 +13,14 @@ using Microsoft.Extensions.Options;
 namespace Kb.Web;
 
 public sealed record SignInRequest(string UserName, string Password);
-public sealed record MeResponse(Guid Id, string UserName, string DisplayName, bool IsAdmin, bool IsBreakGlass);
-public sealed record SpaceDto(Guid Id, string Key, string Name, string? Description, bool IsSensitive, bool IsPublic, string? MyRole);
-public sealed record CreateSpaceRequest(string Key, string Name, string? Description, bool IsSensitive = false, bool IsPublic = false);
-public sealed record UpdateSpaceRequest(string? Name, string? Description, bool? IsSensitive, bool? IsPublic);
+public sealed record MeResponse(Guid Id, string UserName, string DisplayName, bool IsAdmin, bool IsBreakGlass, bool CanAnnounce = false);
+public sealed record AdminUserDto(Guid Id, string UserName, string DisplayName, string Source, bool IsAdmin, bool IsBreakGlass, DateTimeOffset CreatedAt, DateTimeOffset? DeactivatedAt, bool CanAnnounce);
+public sealed record AuditEntryDto(long Sequence, DateTimeOffset At, string Action, string? Actor, string? TargetType, string? TargetId);
+public sealed record SpaceDto(Guid Id, string Key, string Name, string? Description, bool IsSensitive, bool IsPublic, string? MyRole,
+    bool CommentsEnabled, int AgingDays, string AgingAudience, int? RecycleDays, DateTimeOffset CreatedAt);
+public sealed record CreateSpaceRequest(string Name, string? Key, string? Description, bool IsSensitive = false, bool IsPublic = false);
+public sealed record UpdateSpaceRequest(string? Name, string? Description, bool? IsSensitive, bool? IsPublic,
+    bool? CommentsEnabled = null, int? AgingDays = null, AgingAudience? AgingAudience = null, int? RecycleDays = null);
 public sealed record RoleAssignmentDto(Guid Id, PrincipalType PrincipalType, string PrincipalId, SpaceRole Role);
 public sealed record GrantRoleRequest(PrincipalType PrincipalType, string PrincipalId, SpaceRole Role);
 public sealed record AccessRequestBody(SpaceRole Role, string? Reason);
@@ -29,6 +33,9 @@ public static partial class EndpointMappings
 {
     [GeneratedRegex("^[a-z0-9][a-z0-9-]{1,31}$")]
     private static partial Regex SpaceKeyPattern();
+
+    [GeneratedRegex("[^a-z0-9]+")]
+    private static partial Regex NonKeyChars();
 
     public static void MapAuthEndpoints(this RouteGroupBuilder api)
     {
@@ -49,7 +56,7 @@ public static partial class EndpointMappings
             }
             await audit.AppendAsync(new AuditEvent(AuditActions.SignIn, user.Id, "user", user.Id.ToString(), Data: new Dictionary<string, string> { ["method"] = "local" }));
             if (user.IsBreakGlass) await breakGlass.OnSignInAsync(user, http.Connection.RemoteIpAddress?.ToString());
-            return Results.Ok(new MeResponse(user.Id, user.UserName!, user.DisplayName, user.IsAdmin, user.IsBreakGlass));
+            return Results.Ok(new MeResponse(user.Id, user.UserName!, user.DisplayName, user.IsAdmin, user.IsBreakGlass, user.IsAdmin || user.CanAnnounce));
         }).AllowAnonymous();
 
         api.MapPost("/auth/signout", async (SignInManager<KbUser> signIn) => { await signIn.SignOutAsync(); return Results.NoContent(); });
@@ -57,10 +64,9 @@ public static partial class EndpointMappings
         api.MapGet("/me", async (HttpContext http, UserManager<KbUser> users) =>
         {
             var u = await users.FindByIdAsync(http.User.UserId().ToString());
-            return u is null ? Results.Unauthorized() : Results.Ok(new MeResponse(u.Id, u.UserName!, u.DisplayName, u.IsAdmin, u.IsBreakGlass));
+            return u is null ? Results.Unauthorized() : Results.Ok(new MeResponse(u.Id, u.UserName!, u.DisplayName, u.IsAdmin, u.IsBreakGlass, u.IsAdmin || u.CanAnnounce));
         });
 
-        api.MapGet("/brand", (IOptions<KbOptions> o) => Results.Ok(o.Value.Brand)).AllowAnonymous();
     }
 
     public static void MapSpaceEndpoints(this RouteGroupBuilder api)
@@ -87,10 +93,19 @@ public static partial class EndpointMappings
         api.MapPost("/spaces", async (CreateSpaceRequest req, HttpContext http, KbDbContext db, IAuditLog audit, TimeProvider time) =>
         {
             if (!await IsAdminAsync(http, db)) return Results.StatusCode(403);
-            if (!SpaceKeyPattern().IsMatch(req.Key)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["key"] = ["2-32 chars: lowercase letters, digits, hyphen."] });
             if (string.IsNullOrWhiteSpace(req.Name)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["name"] = ["Required."] });
-            if (await db.Spaces.AnyAsync(s => s.Key == req.Key)) return Results.Conflict();
-            var s = new Space { Key = req.Key, Name = req.Name.Trim(), Description = req.Description, IsSensitive = req.IsSensitive, IsPublic = req.IsPublic, CreatedAt = time.GetUtcNow() };
+            var key = req.Key;
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                // Key is internal (URLs use IDs). Derive from the name and make it unique.
+                var stem = NonKeyChars().Replace(req.Name.Trim().ToLowerInvariant(), "-").Trim('-');
+                stem = stem.Length < 2 ? "space" : stem[..Math.Min(stem.Length, 28)].TrimEnd('-');
+                key = stem;
+                for (var n = 2; await db.Spaces.AnyAsync(x => x.Key == key); n++) key = $"{stem}-{n}";
+            }
+            else if (!SpaceKeyPattern().IsMatch(key)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["key"] = ["2-32 chars: lowercase letters, digits, hyphen."] });
+            else if (await db.Spaces.AnyAsync(x => x.Key == key)) return Results.Conflict();
+            var s = new Space { Key = key, Name = req.Name.Trim(), Description = req.Description, IsSensitive = req.IsSensitive, IsPublic = req.IsPublic, CreatedAt = time.GetUtcNow() };
             db.Spaces.Add(s);
             await db.SaveChangesAsync();
             await audit.AppendAsync(new AuditEvent(AuditActions.SpaceCreate, http.User.UserId(), "space", s.Id.ToString(), s.Id));
@@ -103,15 +118,7 @@ public static partial class EndpointMappings
             if (await perms.GetRoleAsync(me, id) is null) return Results.NotFound();
             if (!await perms.CanAsync(me, id, SpaceAction.ManageRolesSettingsSensitive)) return Results.StatusCode(403);
             var s = await db.Spaces.FirstAsync(x => x.Id == id);
-            if (req.Name is { } n && !string.IsNullOrWhiteSpace(n)) s.Name = n.Trim();
-            if (req.Description is { } d) s.Description = d;
-            if (req.IsPublic is { } p) s.IsPublic = p;
-            var sensitiveChanged = req.IsSensitive is { } sens && sens != s.IsSensitive;
-            if (req.IsSensitive is { } v) s.IsSensitive = v;
-            await db.SaveChangesAsync();
-            await audit.AppendAsync(new AuditEvent(sensitiveChanged ? AuditActions.SpaceSensitiveSet : AuditActions.SpaceUpdate, me, "space", id.ToString(), id,
-                new Dictionary<string, string> { ["isSensitive"] = s.IsSensitive.ToString(), ["isPublic"] = s.IsPublic.ToString() }));
-            return Results.Ok(ToDto(s, await perms.GetRoleAsync(me, id)));
+            return await UpdateSpaceAsync(s, req, await IsAdminAsync(http, db), me, db, audit) ?? Results.Ok(ToDto(s, await perms.GetRoleAsync(me, id)));
         });
 
         api.MapGet("/spaces/{id:guid}/roles", async (Guid id, HttpContext http, ISpacePermissionService perms, KbDbContext db) =>
@@ -225,6 +232,32 @@ public static partial class EndpointMappings
 
         admin.MapGet("/audit/verify", async (IAuditLog audit) => Results.Ok(await audit.VerifyAsync()));
 
+        admin.MapGet("/audit", async (KbDbContext db, int? take) =>
+        {
+            var n = Math.Clamp(take ?? 100, 1, 500);
+            var rows = await (from a in db.AuditEntries.AsNoTracking()
+                              orderby a.Sequence descending
+                              join u in db.Users on a.ActorId equals u.Id into au
+                              from u in au.DefaultIfEmpty()
+                              select new AuditEntryDto(a.Sequence, a.At, a.Action, u == null ? null : u.DisplayName, a.TargetType, a.TargetId))
+                             .Take(n).ToListAsync();
+            return Results.Ok(rows);
+        });
+
+        admin.MapGet("/spaces", async (KbDbContext db) =>
+            Results.Ok((await db.Spaces.AsNoTracking().OrderBy(x => x.Name).ToListAsync()).Select(x => ToDto(x, null))));
+
+        admin.MapPatch("/spaces/{id:guid}", async (Guid id, UpdateSpaceRequest req, HttpContext http, KbDbContext db, IAuditLog audit) =>
+        {
+            var s = await db.Spaces.FirstOrDefaultAsync(x => x.Id == id);
+            if (s is null) return Results.NotFound();
+            return await UpdateSpaceAsync(s, req, isAdmin: true, http.User.UserId(), db, audit) ?? Results.Ok(ToDto(s, null));
+        });
+
+        admin.MapGet("/users", async (KbDbContext db) => Results.Ok(await db.Users.AsNoTracking().OrderBy(u => u.DisplayName)
+            .Select(u => new AdminUserDto(u.Id, u.UserName!, u.DisplayName, u.Source.ToString(), u.IsAdmin, u.IsBreakGlass, u.CreatedAt, u.DeactivatedAt, u.CanAnnounce))
+            .ToListAsync()));
+
         admin.MapPost("/users/invite", async (InviteRequest req, HttpContext http, UserManager<KbUser> users, IAuditLog audit, TimeProvider time) =>
         {
             if (string.IsNullOrWhiteSpace(req.UserName)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["userName"] = ["Required."] });
@@ -254,11 +287,39 @@ public static partial class EndpointMappings
         });
     }
 
+    /// <summary>
+    /// Applies a space update. Owners change the description and space settings; only admins change the name,
+    /// the sensitive flag and the public flag. Returns an error result, or null on success.
+    /// </summary>
+    private static async Task<IResult?> UpdateSpaceAsync(Space s, UpdateSpaceRequest req, bool isAdmin, Guid me, KbDbContext db, IAuditLog audit)
+    {
+        var nameChange = req.Name is { } n && !string.IsNullOrWhiteSpace(n) && n.Trim() != s.Name;
+        var adminOnly = nameChange || (req.IsSensitive is { } a && a != s.IsSensitive) || (req.IsPublic is { } b && b != s.IsPublic);
+        if (adminOnly && !isAdmin) return Results.StatusCode(403);
+        if (req.AgingDays is < 1 or > 3650 || req.RecycleDays is < 1 or > 3650)
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["days"] = ["1-3650."] });
+
+        if (nameChange) s.Name = req.Name!.Trim();
+        if (req.Description is { } d) s.Description = string.IsNullOrWhiteSpace(d) ? null : d.Trim();
+        if (req.CommentsEnabled is { } c) s.CommentsEnabled = c;
+        if (req.AgingDays is { } ad) s.AgingDays = ad;
+        if (req.AgingAudience is { } aa) s.AgingAudience = aa;
+        if (req.RecycleDays is { } rd) s.RecycleDays = rd;
+        if (req.IsPublic is { } p) s.IsPublic = p;
+        var sensitiveChanged = req.IsSensitive is { } sens && sens != s.IsSensitive;
+        if (req.IsSensitive is { } v) s.IsSensitive = v;
+        await db.SaveChangesAsync();
+        await audit.AppendAsync(new AuditEvent(sensitiveChanged ? AuditActions.SpaceSensitiveSet : AuditActions.SpaceUpdate, me, "space", s.Id.ToString(), s.Id,
+            new Dictionary<string, string> { ["isSensitive"] = s.IsSensitive.ToString(), ["isPublic"] = s.IsPublic.ToString() }));
+        return null;
+    }
+
     private static async Task<bool> IsAdminAsync(HttpContext http, KbDbContext db)
     {
         var id = http.User.UserId();
         return await db.Users.AsNoTracking().AnyAsync(u => u.Id == id && u.IsAdmin && u.DeactivatedAt == null);
     }
 
-    private static SpaceDto ToDto(Space s, SpaceRole? role) => new(s.Id, s.Key, s.Name, s.Description, s.IsSensitive, s.IsPublic, role?.ToString());
+    private static SpaceDto ToDto(Space s, SpaceRole? role) => new(s.Id, s.Key, s.Name, s.Description, s.IsSensitive, s.IsPublic, role?.ToString(),
+        s.CommentsEnabled, s.AgingDays, s.AgingAudience.ToString(), s.RecycleDays, s.CreatedAt);
 }

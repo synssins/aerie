@@ -8,6 +8,8 @@
     <ProjectReference Include="..\..\plugins\Kb.Plugin.Email.Smtp\Kb.Plugin.Email.Smtp.csproj" />
     <ProjectReference Include="..\..\plugins\Kb.Plugin.Email.Graph\Kb.Plugin.Email.Graph.csproj" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <PackageReference Include="DocumentFormat.OpenXml" />
+    <PackageReference Include="PDFsharp-MigraDoc" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Kb.Tests.Integration" />

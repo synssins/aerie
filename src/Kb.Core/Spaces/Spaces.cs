@@ -44,7 +44,14 @@ public sealed class Space
     public bool IsSensitive { get; set; }
     public bool IsPublic { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public bool CommentsEnabled { get; set; } = true;
+    public int AgingDays { get; set; } = 180;
+    public AgingAudience AgingAudience { get; set; } = AgingAudience.Everyone;
+    /// <summary>Recycle-bin retention override; null uses Kb:Retention:RecycleDays.</summary>
+    public int? RecycleDays { get; set; }
 }
+
+public enum AgingAudience { Everyone, Supervisors }
 
 public enum PrincipalType { User, Group }
 

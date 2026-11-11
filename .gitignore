@@ -13,3 +13,7 @@ TestResults/
 playwright-report/
 test-results/
 src/Kb.Web/wwwroot/
+artifacts/
+tools/*.log
+dev-credentials.txt
+*.tsbuildinfo

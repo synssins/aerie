@@ -9,6 +9,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@tiptap/extension-code-block-lowlight": "3.33.0",
+    "@tiptap/extension-image": "3.33.0",
+    "@tiptap/extension-list": "3.33.0",
+    "@tiptap/extension-table": "3.33.0",
+    "@tiptap/pm": "3.33.0",
+    "@tiptap/react": "3.33.0",
+    "@tiptap/starter-kit": "3.33.0",
+    "highlight.js": "11.11.2",
+    "lowlight": "3.3.0",
     "lucide-react": "1.70.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"

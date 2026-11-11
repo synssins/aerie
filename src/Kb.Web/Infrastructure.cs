@@ -34,7 +34,8 @@ public sealed class SecurityHeadersMiddleware(RequestDelegate next)
         h["X-Content-Type-Options"] = "nosniff";
         h["X-Frame-Options"] = "DENY";
         h["Referrer-Policy"] = "same-origin";
-        h["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+        // style-src-attr: the editor sets element style attributes (table column widths). Scripts and stylesheets stay 'self'.
+        h["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
         h["X-Kb-Version"] = Version;
         return next(ctx);
     }
@@ -47,9 +48,8 @@ public static class UserExtensions
 }
 
 /// <summary>
-/// The break-glass account always exists and can always sign in locally. Its password comes from the secret named in
-/// Kb:Auth:BreakGlass:PasswordSecretName. In Development only, if that secret is missing, a random password is generated
-/// once and written to App_Data/breakglass-initial-password.txt (gitignored). Production refuses to start without it.
+/// Optional emergency account. Created only when the secret named in Kb:Auth:BreakGlass:PasswordSecretName is configured;
+/// it is never the normal way in (first-run setup creates the first admin). Its sign-ins are audited and alert admins.
 /// </summary>
 public sealed class BreakGlassService(
     UserManager<KbUser> users,
@@ -61,9 +61,8 @@ public sealed class BreakGlassService(
     TimeProvider time,
     ILogger<BreakGlassService> log)
 {
-    public async Task EnsureAccountAsync(IHostEnvironment env)
+    public async Task EnsureAccountAsync()
     {
-        ArgumentNullException.ThrowIfNull(env);
         var o = options.Value.Auth.BreakGlass;
         var user = await users.FindByNameAsync(o.UserName);
         if (user is not null) return;
@@ -71,14 +70,8 @@ public sealed class BreakGlassService(
         var password = config[o.PasswordSecretName];
         if (string.IsNullOrEmpty(password))
         {
-            if (!env.IsDevelopment())
-                throw new InvalidOperationException($"Break-glass secret '{o.PasswordSecretName}' is not configured.");
-            password = Convert.ToBase64String(RandomNumberGenerator.GetBytes(24));
-            var dir = Path.Combine(env.ContentRootPath, "App_Data");
-            Directory.CreateDirectory(dir);
-            var file = Path.Combine(dir, "breakglass-initial-password.txt");
-            await File.WriteAllTextAsync(file, $"user: {o.UserName}\npassword: {password}\nDelete this file after first sign-in.\n");
-            log.LogWarning("Development: break-glass password written to {File}. Delete it after first sign-in.", file);
+            log.LogInformation("No break-glass secret configured; break-glass account not created.");
+            return;
         }
 
         user = new KbUser { UserName = o.UserName, DisplayName = "Break-glass administrator", Source = UserSource.Local, IsBreakGlass = true, IsAdmin = true, CreatedAt = time.GetUtcNow(), LockoutEnabled = true };
