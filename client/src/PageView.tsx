@@ -36,7 +36,6 @@ const makeExtensions = (codeLanguage: string) => [
 ];
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
-const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const NEW_DRAFT_KEY = "kb.draft.new";
 const EMPTY_DOC = '{"type":"doc","content":[]}';
 
@@ -258,9 +257,9 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
   async function attach(list: FileList | null) {
     setError(null);
     for (const f of Array.from(list ?? [])) {
-      if (f.size > MAX_ATTACHMENT_BYTES) { setError(`${f.name}: over 25 MB.`); continue; }
+      if (f.size > page.maxAttachmentBytes) { setError(`${f.name}: over ${fmtSize(page.maxAttachmentBytes)}.`); continue; }
       try { const a = await upload<Attachment>(`/pages/${page.id}/attachments`, f); setFiles((all) => [...all, a].sort((x, y) => x.name.localeCompare(y.name))); }
-      catch { setError(`${f.name}: not attached.`); }
+      catch (e) { setError(e instanceof ApiError && e.status === 413 ? `${f.name}: larger than the web server allows.` : `${f.name}: not attached.`); }
     }
   }
 

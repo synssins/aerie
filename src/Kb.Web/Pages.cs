@@ -17,7 +17,7 @@ public sealed record DraftInfoDto(bool Mine, string By, DateTimeOffset UpdatedAt
 public sealed record AttachmentDto(Guid Id, string Name, long Size, string Url, DateTimeOffset At);
 public sealed record PageDto(Guid Id, Guid SpaceId, Guid? ParentId, string Kind, string Title, string ContentJson, string Version,
     DateTimeOffset UpdatedAt, string UpdatedBy, IReadOnlyList<CrumbDto> Path, IReadOnlyList<VersionDto> History, bool CanEdit, IReadOnlyList<string> Tags,
-    bool CanDelete, DraftInfoDto? Draft, IReadOnlyList<AttachmentDto> Attachments);
+    bool CanDelete, DraftInfoDto? Draft, IReadOnlyList<AttachmentDto> Attachments, long MaxAttachmentBytes);
 public sealed record MoveRequest(Guid? SpaceId, Guid? ParentId);
 public sealed record BinItemDto(Guid Id, Guid SpaceId, string SpaceName, string Kind, string Title, string Location, int Items, DateTimeOffset DeletedAt, string DeletedBy, bool Hidden);
 public sealed record DraftDto(string Title, string ContentJson, IReadOnlyList<string> Tags, string BaseVersion, DateTimeOffset UpdatedAt);
@@ -433,6 +433,6 @@ public static class PageEndpoints
 
         return new PageDto(page.Id, page.SpaceId, page.ParentId, page.Kind.ToString(), page.Title, page.ContentJson, page.Version,
             page.UpdatedAt, updatedBy, path, await HistoryAsync(db, page.Id, 10), canEdit, tags, canDelete,
-            draft is null ? null : new DraftInfoDto(draft.UserId == me, draft.DisplayName, draft.UpdatedAt), files);
+            draft is null ? null : new DraftInfoDto(draft.UserId == me, draft.DisplayName, draft.UpdatedAt), files, await UploadLimits.AttachmentBytesAsync(db));
     }
 }

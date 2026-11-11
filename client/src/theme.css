@@ -414,3 +414,6 @@ label.inline { display: inline-flex; align-items: center; gap: 8px; font-size: 1
 .node.two small { display: block; color: var(--ink2); font-size: 12px; font-weight: 400; }
 .node.two .ic { margin-top: 3px; }
 .announce .grow { white-space: normal; }
+.form .unit { display: flex; align-items: center; gap: 8px; color: var(--ink2); }
+.form .unit input { width: 110px; }
+.form .form-error.wide { grid-column: 2; }

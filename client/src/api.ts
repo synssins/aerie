@@ -57,7 +57,7 @@ export type PageVersion = { version: string; at: string; author: string; note: s
 export type Page = {
   id: string; spaceId: string; parentId: string | null; kind: "Folder" | "Page"; title: string; contentJson: string; version: string;
   updatedAt: string; updatedBy: string; path: { id: string; title: string }[]; history: PageVersion[]; canEdit: boolean; tags: string[];
-  canDelete: boolean; draft: { mine: boolean; by: string; updatedAt: string } | null; attachments: Attachment[];
+  canDelete: boolean; draft: { mine: boolean; by: string; updatedAt: string } | null; attachments: Attachment[]; maxAttachmentBytes: number;
 };
 export type Attachment = { id: string; name: string; size: number; url: string; at: string };
 export type Draft = { title: string; contentJson: string; tags: string[]; baseVersion: string; updatedAt: string };

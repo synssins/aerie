@@ -347,6 +347,45 @@ public sealed class ContentTests : IAsyncLifetime
         Assert.Empty((await admin.GetFromJsonAsync<PageDto>($"/api/v1/pages/{page.Id}", Ct))!.Attachments);
     }
 
+    [Fact]
+    public async Task AttachmentLimit_IsSetInTheApp_AndEnforced()
+    {
+        var (admin, s) = await SpaceAsync();
+        var page = await CreateAsync(admin, s, "Limits");
+        Assert.Equal(25 * 1_048_576L, page.MaxAttachmentBytes);
+        Task<HttpResponseMessage> Upload(int bytes)
+        {
+            var body = new ByteArrayContent(new byte[bytes]);
+            body.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+            return admin.PostAsync($"/api/v1/pages/{page.Id}/attachments", body, Ct);
+        }
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.PutAsJsonAsync("/api/v1/admin/uploads", new { attachmentMb = 0 }, Ct)).StatusCode);
+        var set = await (await admin.PutAsJsonAsync("/api/v1/admin/uploads", new { attachmentMb = 1 }, Ct)).Content.ReadFromJsonAsync<UploadSettingsDto>(Ct);
+        Assert.Equal(1, set!.AttachmentMb);
+        Assert.Null(set.ServerLimitBytes); // the test host is not IIS
+
+        Assert.Equal(HttpStatusCode.Created, (await Upload(1_048_576)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Upload(1_048_577)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Upload(0)).StatusCode);
+        Assert.Equal(1_048_576L, (await admin.GetFromJsonAsync<PageDto>($"/api/v1/pages/{page.Id}", Ct))!.MaxAttachmentBytes);
+
+        var user = await UserAsync("uma", s, SpaceRole.Owner);
+        Assert.Equal(HttpStatusCode.Forbidden, (await user.PutAsJsonAsync("/api/v1/admin/uploads", new { attachmentMb = 500 }, Ct)).StatusCode);
+    }
+
+    [Fact]
+    public void ServerLimit_ReadsWebConfig_OrFallsBackToTheIisDefault()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"kb-webconfig-{Guid.NewGuid():N}.config");
+        Assert.Equal(30_000_000, UploadLimits.ServerLimitFrom(path));
+        File.WriteAllText(path, """<configuration><location path="."><system.webServer><security><requestFiltering><requestLimits maxAllowedContentLength="536870912" /></requestFiltering></security></system.webServer></location></configuration>""");
+        Assert.Equal(536_870_912, UploadLimits.ServerLimitFrom(path));
+        File.WriteAllText(path, "<configuration><system.webServer /></configuration>");
+        Assert.Equal(30_000_000, UploadLimits.ServerLimitFrom(path));
+        File.Delete(path);
+    }
+
     // ---- exports ----
 
     [Fact]

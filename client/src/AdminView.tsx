@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { ArrowLeft, ChevronRight, FolderTree, House, Lock, Palette, Plug, Plus, ScrollText, Search, Trash2, Users } from "lucide-react";
+import { ArrowLeft, ChevronRight, FolderTree, House, Lock, Palette, Paperclip, Plug, Plus, ScrollText, Search, Trash2, Users } from "lucide-react";
 import { BinTable } from "./Views";
 import { BrandingPanel } from "./Branding";
-import { api, ApiError, type Brand, type Space, type TreeNode } from "./api";
+import { api, ApiError, fmtSize, type Brand, type Space, type TreeNode } from "./api";
 
-export type AdminSection = "spaces" | "users" | "branding" | "search" | "bin" | "plugins" | "audit";
-export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "branding", "search", "bin", "plugins", "audit"];
+export type AdminSection = "spaces" | "users" | "branding" | "search" | "uploads" | "bin" | "plugins" | "audit";
+export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "branding", "search", "uploads", "bin", "plugins", "audit"];
+type UploadSettings = { attachmentMb: number; serverLimitBytes: number | null };
 
 type AdminUser = { id: string; userName: string; displayName: string; source: string; isAdmin: boolean; isBreakGlass: boolean; createdAt: string; deactivatedAt: string | null; canAnnounce: boolean };
 type Plugin = { id: string; version: string; publisher: string; origin: string; enabled: boolean; extensionPoints: string[]; outboundHosts: string[] };
@@ -40,6 +41,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
   const [verify, setVerify] = useState<string | null>(null);
   const [picked, setPicked] = useState<Picked>(null);
   const [newSpace, setNewSpace] = useState(false);
+  const [uploads, setUploads] = useState<UploadSettings | null>(null);
 
   const loadSpaces = useCallback(async () => { if (isAdmin) setAllSpaces(await api.get<Space[]>("/admin/spaces")); }, [isAdmin]);
   useEffect(() => { void loadSpaces(); }, [loadSpaces]);
@@ -51,6 +53,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
     setPicked(null);
     if (!isAdmin) return;
     if (section === "users") void api.get<AdminUser[]>("/admin/users").then(setUsers);
+    if (section === "uploads") void api.get<UploadSettings>("/admin/uploads").then(setUploads);
     if (section === "plugins") void api.get<{ loaded: Plugin[]; refused: Refused[] }>("/admin/plugins").then(setPlugins);
     if (section === "audit") { setVerify(null); void api.get<AuditRow[]>("/admin/audit?take=200").then(setAudit); }
   }, [section, isAdmin]);
@@ -62,7 +65,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
     setVerify(r.valid ? "Chain intact." : `Chain broken at entry ${r.firstBrokenSequence}.`);
   }
 
-  const title = space?.name ?? ({ spaces: "Spaces", users: "Users", branding: "Branding", search: "Search", bin: "Recycle bin", plugins: "Plugins", audit: "Audit log" } as const)[section];
+  const title = space?.name ?? ({ spaces: "Spaces", users: "Users", branding: "Branding", search: "Search", uploads: "Uploads", bin: "Recycle bin", plugins: "Plugins", audit: "Audit log" } as const)[section];
 
   async function setAnnouncer(u: AdminUser, enabled: boolean) {
     await api.put(`/admin/users/${u.id}/announcer`, { enabled });
@@ -108,6 +111,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
               )}
             </div>
             <button className={`node ${section === "search" ? "cur" : ""}`} onClick={() => onNavigate("search")}><Search className="ic" aria-hidden /><span className="grow">Search</span></button>
+            <button className={`node ${section === "uploads" ? "cur" : ""}`} onClick={() => onNavigate("uploads")}><Paperclip className="ic" aria-hidden /><span className="grow">Uploads</span></button>
             <button className={`node ${section === "bin" ? "cur" : ""}`} onClick={() => onNavigate("bin")}><Trash2 className="ic" aria-hidden /><span className="grow">Recycle bin</span></button>
             <button className={`node ${section === "plugins" ? "cur" : ""}`} onClick={() => onNavigate("plugins")}><Plug className="ic" aria-hidden /><span className="grow">Plugins</span></button>
             <button className={`node ${section === "audit" ? "cur" : ""}`} onClick={() => onNavigate("audit")}><ScrollText className="ic" aria-hidden /><span className="grow">Audit log</span></button>
@@ -149,6 +153,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
 
               {section === "branding" && isAdmin && <BrandingPanel brand={brand} onChanged={onBrandChanged} />}
               {section === "search" && isAdmin && <SearchPanel />}
+              {section === "uploads" && isAdmin && uploads && <UploadsPanel key={uploads.attachmentMb} settings={uploads} onSaved={setUploads} />}
               {section === "bin" && isAdmin && <BinTable spaceId={null} canEmpty={false} onRestored={() => void onSpacesChanged()} />}
 
               {section === "users" && isAdmin && (
@@ -219,6 +224,14 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
                 {picked.item.deactivatedAt && <><h3>Deactivated</h3><div>{fmt(picked.item.deactivatedAt)}</div></>}
               </>
             )}
+            {section === "uploads" && uploads && (
+              <>
+                <h3>Web server limit</h3>
+                <div>{uploads.serverLimitBytes === null ? "None" : fmtSize(uploads.serverLimitBytes)}</div>
+                <h3>Image limit</h3>
+                <div>20 MB</div>
+              </>
+            )}
             {picked?.kind === "plugin" && (
               <>
                 <h3>Plugin</h3><div className="mono">{picked.item.id}</div>
@@ -233,6 +246,35 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
 
       {newSpace && <NewSpaceDialog onClose={() => setNewSpace(false)} onCreated={async (s) => { setNewSpace(false); await changed(); onNavigate("spaces", s.id); }} />}
     </>
+  );
+}
+
+/** Administration › Uploads: the app's own attachment size limit. The web server's limit, when lower, still wins. */
+function UploadsPanel({ settings, onSaved }: { settings: UploadSettings; onSaved: (s: UploadSettings) => void }) {
+  const [mb, setMb] = useState(String(settings.attachmentMb));
+  const [status, setStatus] = useState<string | null>(null);
+  const n = Number(mb);
+  const valid = Number.isInteger(n) && n >= 1 && n <= 4096;
+  const over = valid && settings.serverLimitBytes !== null && n * 1048576 > settings.serverLimitBytes;
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    try { onSaved(await api.put<UploadSettings>("/admin/uploads", { attachmentMb: n })); setStatus("Saved."); } catch { setStatus("Not saved."); }
+  }
+
+  return (
+    <form className="form" onSubmit={save}>
+      <label className="lbl" htmlFor="att-mb">Attachment size limit</label>
+      <div className="unit">
+        <input id="att-mb" type="number" min={1} max={4096} step={1} value={mb} onChange={(e) => { setMb(e.target.value); setStatus(null); }} />
+        <span>MB</span>
+      </div>
+      {over && <p className="form-error wide" role="alert">Above the web server limit of {fmtSize(settings.serverLimitBytes!)}.</p>}
+      <div className="actions">
+        <button type="submit" className="tb primary" disabled={!valid || n === settings.attachmentMb}>Save</button>
+        {status && <span className="muted" role="status">{status}</span>}
+      </div>
+    </form>
   );
 }
 

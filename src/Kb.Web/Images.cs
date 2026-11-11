@@ -18,6 +18,8 @@ public sealed record ImportImageRequest(string Url);
 public interface IFileStore
 {
     Task SaveAsync(string key, byte[] data, CancellationToken ct);
+    /// <summary>Streams to storage without holding the file in memory. Returns the bytes stored, or -1 (and stores nothing) when the source is over maxBytes.</summary>
+    Task<long> SaveAsync(string key, Stream source, long maxBytes, CancellationToken ct);
     Task<Stream?> OpenAsync(string key, CancellationToken ct);
     Task DeleteAsync(string key, CancellationToken ct);
 }
@@ -34,6 +36,30 @@ public sealed class LocalFileStore(IOptions<KbOptions> o, IWebHostEnvironment en
         var p = PathOf(key);
         Directory.CreateDirectory(Path.GetDirectoryName(p)!);
         await File.WriteAllBytesAsync(p, data, ct);
+    }
+
+    public async Task<long> SaveAsync(string key, Stream source, long maxBytes, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        var p = PathOf(key);
+        Directory.CreateDirectory(Path.GetDirectoryName(p)!);
+        long total = 0;
+        try
+        {
+            await using var file = File.Create(p);
+            var buffer = new byte[81920];
+            int n;
+            while ((n = await source.ReadAsync(buffer, ct)) > 0)
+            {
+                total += n;
+                if (total > maxBytes) break;
+                await file.WriteAsync(buffer.AsMemory(0, n), ct);
+            }
+        }
+        catch { File.Delete(p); throw; }
+        if (total <= maxBytes) return total;
+        File.Delete(p);
+        return -1;
     }
 
     public Task<Stream?> OpenAsync(string key, CancellationToken ct) =>
@@ -231,10 +257,48 @@ public sealed class ImageCleanupService(IServiceScopeFactory scopes, TimeProvide
     }
 }
 
+public sealed record UploadSettingsDto(int AttachmentMb, long? ServerLimitBytes);
+public sealed record UploadSettingsRequest(int AttachmentMb);
+
+/// <summary>
+/// The attachment size limit is the app's own setting, changed in Administration. The web server has a separate limit in front of it
+/// (IIS request filtering, 30,000,000 bytes unless web.config says otherwise); whichever is smaller wins.
+/// </summary>
+public static class UploadLimits
+{
+    public const string AttachmentKey = "Uploads.MaxAttachmentMb";
+    public const int DefaultAttachmentMb = 25;
+    public const int MaxMb = 4096;
+    private const long IisDefault = 30_000_000;
+
+    public static async Task<int> AttachmentMbAsync(KbDbContext db, CancellationToken ct = default) =>
+        int.TryParse(await db.GetAsync(AttachmentKey, ct), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var mb) && mb is >= 1 and <= MaxMb ? mb : DefaultAttachmentMb;
+
+    public static async Task<long> AttachmentBytesAsync(KbDbContext db, CancellationToken ct = default) => await AttachmentMbAsync(db, ct) * 1_048_576L;
+
+    /// <summary>The web server's request size limit for this site, or null when the app is not behind IIS (nothing to read).</summary>
+    public static long? ServerLimit(IWebHostEnvironment env)
+    {
+        ArgumentNullException.ThrowIfNull(env);
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("APP_POOL_ID"))) return null;
+        return ServerLimitFrom(Path.Combine(env.ContentRootPath, "web.config"));
+    }
+
+    /// <summary>maxAllowedContentLength from a web.config, or the IIS default when the file doesn't set one.</summary>
+    public static long ServerLimitFrom(string webConfigPath)
+    {
+        try
+        {
+            if (!File.Exists(webConfigPath)) return IisDefault;
+            var value = System.Xml.Linq.XDocument.Load(webConfigPath).Descendants("requestLimits").Select(e => (string?)e.Attribute("maxAllowedContentLength")).FirstOrDefault(v => v is not null);
+            return long.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : IisDefault;
+        }
+        catch (Exception e) when (e is IOException or System.Xml.XmlException or UnauthorizedAccessException) { return IisDefault; }
+    }
+}
+
 public static class AttachmentEndpoints
 {
-    // shortcut: 25 MB keeps uploads under IIS's default 28.6 MB request limit; raise both together (web.config requestLimits) for bigger files.
-    public const int MaxBytes = 25 * 1_048_576;
 
     public static void MapAttachmentEndpoints(this RouteGroupBuilder api)
     {
@@ -244,14 +308,20 @@ public static class AttachmentEndpoints
             var page = await db.Pages.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id && p.Kind == PageKind.Page, ct);
             if (page is null || await perms.GetRoleAsync(me, page.SpaceId, ct) is null) return Results.NotFound();
             if (!await perms.CanAsync(me, page.SpaceId, SpaceAction.CreateEdit, ct)) return Results.StatusCode(StatusCodes.Status403Forbidden);
-            if (http.Request.ContentLength is > MaxBytes) return TooLarge();
-            using var ms = new MemoryStream();
-            await http.Request.Body.CopyToAsync(ms, ct);
-            if (ms.Length > MaxBytes) return TooLarge();
-            if (ms.Length == 0) return Results.ValidationProblem(new Dictionary<string, string[]> { ["file"] = ["Empty file."] });
+            var max = await UploadLimits.AttachmentBytesAsync(db, ct);
+            if (http.Request.ContentLength > max) return TooLarge(max);
+            // ASP.NET Core has its own 30 MB cap per request; the app's setting replaces it here.
+            if (http.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } cap) cap.MaxRequestBodySize = max;
             var name = Path.GetFileName(Uri.UnescapeDataString(http.Request.Headers["X-File-Name"].ToString()));
-            var a = new Attachment { PageId = id, FileName = string.IsNullOrWhiteSpace(name) ? "file" : name[..Math.Min(name.Length, 255)], Size = ms.Length, CreatedBy = me, CreatedAt = time.GetUtcNow() };
-            await store.SaveAsync(a.Id.ToString("N"), ms.ToArray(), ct);
+            var a = new Attachment { PageId = id, FileName = string.IsNullOrWhiteSpace(name) ? "file" : name[..Math.Min(name.Length, 255)], CreatedBy = me, CreatedAt = time.GetUtcNow() };
+            var key = a.Id.ToString("N");
+            a.Size = await store.SaveAsync(key, http.Request.Body, max, ct);
+            if (a.Size < 0) return TooLarge(max);
+            if (a.Size == 0)
+            {
+                await store.DeleteAsync(key, ct);
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["file"] = ["Empty file."] });
+            }
             db.Attachments.Add(a);
             await db.SaveChangesAsync(ct);
             await audit.AppendAsync(new AuditEvent(AuditActions.AttachmentAdd, me, "attachment", a.Id.ToString(), page.SpaceId, new Dictionary<string, string> { ["name"] = a.FileName, ["page"] = id.ToString() }), ct);
@@ -283,7 +353,22 @@ public static class AttachmentEndpoints
             await audit.AppendAsync(new AuditEvent(AuditActions.AttachmentRemove, me, "attachment", id.ToString(), page.SpaceId, new Dictionary<string, string> { ["name"] = a.FileName }), ct);
             return Results.NoContent();
         });
+
+        var admin = api.AdminGroup();
+        admin.MapGet("/uploads", async (KbDbContext db, IWebHostEnvironment env, CancellationToken ct) =>
+            Results.Ok(new UploadSettingsDto(await UploadLimits.AttachmentMbAsync(db, ct), UploadLimits.ServerLimit(env))));
+
+        // Saved even when it is above the web server's limit: the screen warns, and the smaller limit applies until the server's is raised.
+        admin.MapPut("/uploads", async (UploadSettingsRequest req, HttpContext http, KbDbContext db, IWebHostEnvironment env, IAuditLog audit, TimeProvider time, CancellationToken ct) =>
+        {
+            if (req.AttachmentMb is < 1 or > UploadLimits.MaxMb)
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["attachmentMb"] = [$"1 to {UploadLimits.MaxMb}."] });
+            var mb = req.AttachmentMb.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            await db.SetAsync(UploadLimits.AttachmentKey, mb, http.User.UserId(), time.GetUtcNow(), ct);
+            await audit.AppendAsync(new AuditEvent(AuditActions.SettingsChange, http.User.UserId(), "setting", UploadLimits.AttachmentKey, Data: new Dictionary<string, string> { ["value"] = mb }), ct);
+            return Results.Ok(new UploadSettingsDto(req.AttachmentMb, UploadLimits.ServerLimit(env)));
+        });
     }
 
-    private static IResult TooLarge() => Results.ValidationProblem(new Dictionary<string, string[]> { ["file"] = ["25 MB maximum."] });
+    private static IResult TooLarge(long max) => Results.ValidationProblem(new Dictionary<string, string[]> { ["file"] = [$"{max / 1_048_576} MB maximum."] });
 }

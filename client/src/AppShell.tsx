@@ -311,7 +311,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
     setReturnTo(page?.id ?? null);
     setPage({
       id: "", spaceId: current.id, parentId, kind: "Page", title: "", contentJson: '{"type":"doc","content":[]}', version: "",
-      updatedAt: "", updatedBy: "", path: crumbs, history: [], canEdit: true, tags: [], canDelete: false, draft: null, attachments: [],
+      updatedAt: "", updatedBy: "", path: crumbs, history: [], canEdit: true, tags: [], canDelete: false, draft: null, attachments: [], maxAttachmentBytes: 0,
     });
   }
 
