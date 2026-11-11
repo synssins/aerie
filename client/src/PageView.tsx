@@ -168,7 +168,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
         const hasText = !!html && (new DOMParser().parseFromString(html, "text/html").body.textContent ?? "").replace(/ /g, "").trim().length > 0;
         if (!files.length || hasText) {
           // Let the paste land, then copy in any pictures it linked from another site.
-          if (/<img/i.test(html)) window.setTimeout(() => void importRemoteImages(view, page.spaceId).then((n) => { if (n) setError(n === 1 ? "1 image could not be copied." : `${n} images could not be copied.`); }), 0);
+          if (html) window.setTimeout(() => void importRemoteImages(view, page.spaceId).then((n) => { if (n) setError(n === 1 ? "1 image could not be copied." : `${n} images could not be copied.`); }), 0);
           return false;
         }
         void insertImages(view, page.spaceId, files).then(setError);
