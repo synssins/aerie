@@ -115,8 +115,9 @@ public sealed class ActionBus(ActionCatalog catalog, IServiceProvider services, 
         try { outcome = await StepsAsync<TAction, TResult>(ctx, described.Read); }
         finally { _depth--; }
         // Step 8. A handler or a plugin cannot leave these out; when the action failed, only the entries marked evenIfRefused are written.
+        // They are written whatever happens to the request: the work is done, and closing the connection must not keep it out of the audit log.
         foreach (var note in ctx.AuditNotes(outcome.Ok))
-            await audit.AppendAsync(new AuditEvent(note.Action, ctx.Actor.UserId, note.TargetType, note.TargetId, note.SpaceId, note.Data), ct);
+            await audit.AppendAsync(new AuditEvent(note.Action, ctx.Actor.UserId, note.TargetType, note.TargetId, note.SpaceId, note.Data), CancellationToken.None);
         if (!outcome.Ok) return outcome;
 
         // Step 9. After handlers get the action as it was done and its result. They run later, from the queue, as their plugin.
