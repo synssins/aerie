@@ -7,6 +7,7 @@ Related: [developer guide](developer-guide.md), [manifest reference](manifest-re
 ## Before you install one
 
 A plugin runs inside the app with the app's rights. Install a plugin only from a publisher you trust as much as the app itself.
+A plugin can also ship a script that runs in the browser of every person who signs in, with that person's session.
 The app loads any package an Admin uploads. It records each install in the audit log with the package's SHA-256.
 
 ## Install and update

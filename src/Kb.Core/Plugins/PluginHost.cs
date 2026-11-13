@@ -32,9 +32,11 @@ public static class PluginGuards
 }
 
 /// <summary>Every plugin known at start, loaded or not. A singleton; a change restarts the app, so it never changes while the app runs.</summary>
-public sealed class PluginRegistry(IReadOnlyList<PluginInfo> all, bool safeMode, long generation, IReadOnlyDictionary<string, Assembly>? assemblies = null)
+public sealed class PluginRegistry(IReadOnlyList<PluginInfo> all, bool safeMode, long generation, IReadOnlyDictionary<string, Assembly>? assemblies = null,
+    IReadOnlyDictionary<string, string>? folders = null)
 {
     private readonly IReadOnlyDictionary<string, Assembly> _assemblies = assemblies ?? new Dictionary<string, Assembly>();
+    private readonly IReadOnlyDictionary<string, string> _folders = folders ?? new Dictionary<string, string>();
 
     public IReadOnlyList<PluginInfo> All { get; } = all;
     public IEnumerable<PluginInfo> Loaded => All.Where(p => p.Loaded);
@@ -47,6 +49,9 @@ public sealed class PluginRegistry(IReadOnlyList<PluginInfo> all, bool safeMode,
 
     /// <summary>The main assembly of a loaded plugin.</summary>
     public Assembly? AssemblyOf(string id) => _assemblies.GetValueOrDefault(id);
+
+    /// <summary>Where a loaded, uploaded plugin's package is unpacked on this server. Null for a built-in plugin and for one that is not loaded.</summary>
+    public string? FolderOf(string id) => _folders.GetValueOrDefault(id);
 }
 
 /// <summary>

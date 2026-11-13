@@ -131,6 +131,7 @@ services.AddScoped<IActorAccessor>(sp => sp.GetRequiredService<ActorAccessor>())
 services.AddScoped<IActionBus, ActionBus>();
 services.AddSingleton<ActionQueueWorker>();
 services.AddHostedService(sp => sp.GetRequiredService<ActionQueueWorker>());
+services.AddSingleton<UiErrorLimit>();
 services.AddSingleton<JobRunner>();
 services.AddHostedService(sp => sp.GetRequiredService<JobRunner>());
 services.AddScoped<IAccessData, AccessData>();
@@ -203,6 +204,8 @@ api.MapPluginAdminEndpoints();
 api.MapSearchEndpoints();
 api.MapHomeEndpoints();
 api.MapExportEndpoints();
+api.MapUiEndpoints();
+app.MapPluginFiles();
 // Each loaded plugin's own routes, under /api/v1/plugins/<id>/. They need sign-in unless a route says AllowAnonymous, and are closed to API tokens.
 // A server that runs an old set of plugins answers 503 there until it has restarted.
 foreach (var routes in boot.Registrations.All<RouteMap>())

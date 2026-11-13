@@ -112,3 +112,5 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | GET | `/api/v1/tokens` | `token.list` | No | Needed | No |
 | POST | `/api/v1/tokens` | `token.create` | Yes | Needed | No |
 | DELETE | `/api/v1/tokens/{id:guid}` | `token.revoke` | Yes | Needed | No |
+| POST | `/api/v1/ui/errors` | `ui.error.report` | Yes | Needed | No |
+| GET | `/api/v1/ui/plugins` | `ui.plugins` | No | Needed | No |

@@ -105,6 +105,7 @@ public static class PluginBootstrap
         var events = new List<AuditEvent>();
         var loaded = new Dictionary<string, Assembly>(StringComparer.Ordinal);
         var contexts = new Dictionary<string, AssemblyLoadContext>(StringComparer.Ordinal);
+        var folders = new Dictionary<string, string>(StringComparer.Ordinal);
         var registrations = new PluginRegistrations();
         var pluginServices = new List<ServiceDescriptor>();
         var handledActions = new HashSet<Type>();
@@ -146,6 +147,7 @@ public static class PluginBootstrap
                         .GroupBy(e => e.Name, StringComparer.OrdinalIgnoreCase).ToDictionary(e => e.Key, e => e.First().Owner, StringComparer.OrdinalIgnoreCase);
                     assembly = PluginRuntime.LoadUploaded(c.Manifest, folder, exports, out var context);
                     contexts[id] = context;
+                    folders[id] = folder;
                 }
                 var configured = PluginRuntime.Configure(assembly, c.Manifest, settings);
                 // Only the actions of the contract assembly, and of plugins, are open to plugins. The core's own (API tokens, plugin and
@@ -236,7 +238,7 @@ public static class PluginBootstrap
         var registry = new PluginRegistry(
             [.. candidates.Select(c => new PluginInfo(c.Manifest, c.Origin, c.Status?.State ?? PluginState.Enabled, c.Status?.Reason, c.Status?.LockedAt is not null, loaded.ContainsKey(c.Manifest.Id), c.Source)
                 { Guards = PluginGuards.Read(c.Status?.GuardsJson) })],
-            safeMode, generation, loaded);
+            safeMode, generation, loaded, folders.Where(f => loaded.ContainsKey(f.Key)).ToDictionary(f => f.Key, f => f.Value, StringComparer.Ordinal));
         services.AddSingleton(registry);
         services.AddSingleton<IRegistrations>(registrations);
         services.AddSingleton(settings);

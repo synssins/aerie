@@ -13,6 +13,7 @@ import {
   Paperclip, Pencil, Quote, Redo2, SquareCode, Strikethrough, Table, Trash2, Underline, Undo2, X,
 } from "lucide-react";
 import { api, ApiError, fmtSize, upload, type Attachment, type Draft, type Page } from "./api";
+import { SlotSections, SlotTools } from "./kit/SlotViews";
 import { useDialogs } from "./Dialogs";
 import { TagInput } from "./TagInput";
 import { MenuButton, type MenuItem } from "./ui";
@@ -351,6 +352,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
                 {page.canEdit && <button className="tb" onClick={startEdit}><Pencil className="ic" aria-hidden />Edit</button>}
                 <button className="tb icon" aria-label="History" title="History" onClick={onHistory}><History className="ic" aria-hidden /></button>
                 <button className="tb icon" aria-label="Copy link" title="Copy link" onClick={() => navigator.clipboard?.writeText(`${location.origin}/p/${page.id}`)}><LinkIcon className="ic" aria-hidden /></button>
+                <SlotTools slot="page.tools" ctx={{ page }} />
                 <MenuButton label="Export" icon={<Download className="ic" aria-hidden />} items={exportItems} />
                 {page.canDelete && (
                   <MenuButton label="More" iconOnly icon={<Ellipsis className="ic" aria-hidden />} items={[
@@ -432,6 +434,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
       <div>{[spaceName, ...page.path.map((c) => c.title)].join(" / ")}</div>
       <h3>Your access</h3>
       <div>{role ?? "None"}</div>
+      {!isNew && <SlotSections slot="page.panel" ctx={{ page }} />}
     </aside>
     </>
   );

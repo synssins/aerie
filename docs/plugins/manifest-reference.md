@@ -16,7 +16,7 @@ Related: [developer guide](developer-guide.md), [admin guide](admin-guide.md).
 | `assembly` | text | `<id>.dll` | The file name of the main assembly, at the top of the package. |
 | `minKbVersion` | text | `0.1.0` | The lowest app version it runs on. |
 | `abstractionsVersion` | text | `0.1.0` | The version of `Kb.Plugins.Abstractions` it was built against. |
-| `uiApiVersion` | text | none | The version of the plugin UI kit its script was built against. Leave it out: plugin scripts are not built yet. |
+| `uiApiVersion` | text | none | The version of the script API its script was written for: `1.0.0`. Needed when the plugin has a script. |
 | `enforcing` | true or false | false | True when the plugin enforces a rule. If the core disables it, the actions it guarded stay locked until an Admin releases the lock. |
 | `requires` | list | empty | The plugins it needs. See below. |
 | `exports` | list of text | empty | The assemblies it shares with the plugins that require it, by assembly name without `.dll` (`My.Lib`). |
@@ -25,7 +25,7 @@ Related: [developer guide](developer-guide.md), [admin guide](admin-guide.md).
 | `settings` | list | empty | The settings an Admin sets in the app. See below. |
 | `permissions` | list | empty | The permissions it declares. See below. |
 | `schedules` | list | empty | The jobs it runs. See below. |
-| `ui` | object | none | Read and kept; not used yet. See below. |
+| `ui` | object | none | Its script for the browser. See below. |
 
 ## requires
 
@@ -66,12 +66,10 @@ The plugin asks whether its caller holds one with `IAccess.CanAsync(actor, "<plu
 
 ## ui
 
-Not used yet.
-
 | Property | Type | Meaning |
 |---|---|---|
-| `script` | text | The script of the plugin's screens. |
-| `replaces` | list of text | The core components the script may wrap or replace. |
+| `script` | text | The plugin's script for the browser: an ES module inside the package's `ui/` folder, for example `ui/index.js`. |
+| `replaces` | list of text | Not used yet. |
 
 ## What refuses an install
 

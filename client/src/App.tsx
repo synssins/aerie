@@ -3,6 +3,7 @@ import { api, type Brand, type Me } from "./api";
 import { AppShell } from "./AppShell";
 import { SignIn } from "./SignIn";
 import { Setup, type SetupStatus } from "./Setup";
+import { loadPluginsOnce } from "./kit/loader";
 
 export function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
@@ -15,6 +16,9 @@ export function App() {
     api.get<SetupStatus>("/setup/status").then(setSetup).catch(() => setSetup({ required: false, codeRequired: false }));
     api.get<Me>("/me").then(setMe).catch(() => setMe(null));
   }, []);
+
+  // Once someone is signed in, the scripts of the plugins are loaded. What they add appears as it is registered.
+  useEffect(() => { if (me) void loadPluginsOnce(me); }, [me]);
 
   if (me === undefined || !brand || !setup) return null;
   if (me === null && setup.required)

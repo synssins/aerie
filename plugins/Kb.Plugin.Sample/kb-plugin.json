@@ -1,7 +1,7 @@
 {
   "id": "kb.sample",
   "name": "Sample: acknowledgements",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "publisher": "Kb first-party",
   "description": "Readers acknowledge a page. The reference plugin of the developer guide.",
   "assembly": "Kb.Plugin.Sample.dll",
@@ -39,5 +39,9 @@
       "scope": "space",
       "defaultRole": "Supervisor"
     }
-  ]
+  ],
+  "uiApiVersion": "1.0.0",
+  "ui": {
+    "script": "ui/index.js"
+  }
 }

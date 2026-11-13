@@ -797,6 +797,20 @@ Read. `ReadTree`, answers `IReadOnlyList<TreeNodeDto>`.
 |---|---|---|
 | SpaceId | `Guid` | required |
 
+## ui.error.report
+
+Write. `ReportUiError`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Plugin | `string` | required |
+| Where | `string?` |  |
+| Message | `string?` |  |
+
+## ui.plugins
+
+Read. `ListUiPlugins`, answers `UiPluginsDto`. Core only.
+
 ## user.announcer.set
 
 Write. `SetAnnouncer`, answers `Unit`.

@@ -14,13 +14,19 @@ import { useDialogs } from "./Dialogs";
 import { NewItemDialog, type NewItem } from "./NewItemDialog";
 import { PageTree } from "./PageTree";
 import { PageView } from "./PageView";
+import { current as currentView } from "./kit/current";
+import { PluginScreen } from "./kit/PluginScreen";
 
 const DEFAULT_SETTINGS: UserSettings = { theme: "system", width: "boxed", startPage: "last", codeLanguage: "plaintext", notify: {} };
 type AdminAt = { section: AdminSection; spaceId: string | null };
+type PluginAt = { id: string; rest: string };
 
 /** URLs carry IDs only, never names, so renames never break links. */
-function route(): { space?: string; page?: string; admin?: AdminAt; settings?: SettingsSection; search?: string; history?: boolean; bin?: boolean } {
+function route(): { space?: string; page?: string; admin?: AdminAt; settings?: SettingsSection; search?: string; history?: boolean; bin?: boolean; plugin?: PluginAt } {
   if (location.pathname === "/search") return { search: new URLSearchParams(location.search).get("q") ?? "" };
+  // A plugin's own screen: /x/<plugin id>/<whatever the plugin defines>.
+  const x = /^\/x\/([a-z0-9]+(?:[.-][a-z0-9]+)*)(?:\/(.*))?$/.exec(location.pathname);
+  if (x) return { plugin: { id: x[1], rest: x[2] ?? "" } };
   const h = /^\/p\/([0-9a-f-]{36})\/history$/i.exec(location.pathname);
   if (h) return { page: h[1], history: true };
   const b = /^\/s\/([0-9a-f-]{36})\/bin$/i.exec(location.pathname);
@@ -58,6 +64,9 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
   const [q, setQ] = useState("");
   const [historyOf, setHistoryOf] = useState(false);
   const [binOf, setBinOf] = useState(false);
+  const [pluginAt, setPluginAt] = useState<PluginAt | null>(null);
+  // What the person is looking at, for the scripts of plugins.
+  useEffect(() => { currentView.set({ page: page?.id ? page : null, space: current }); }, [page, current]);
   const [moving, setMoving] = useState<Page | null>(null);
   const [viewed, setViewed] = useState<RecentView[]>(storedViews);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -99,6 +108,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
     setSearchQ(null);
     setHistoryOf(false);
     setBinOf(false);
+    setPluginAt(null);
   }, []);
 
   const showSpace = useCallback((s: Space) => {
@@ -130,6 +140,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
     const owns = all.some((x) => x.myRole === "Owner");
     if (r.admin && (me.isAdmin || (owns && r.admin.section === "spaces"))) { reset(); setAdmin(r.admin); setPage(null); return; }
     if (r.settings) { reset(); setSettingsAt(r.settings); setPage(null); return; }
+    if (r.plugin) { reset(); setPluginAt(r.plugin); setPage(null); return; }
     if (r.search !== undefined) { reset(); setSearchQ(r.search); setQ(r.search); setPage(null); setCurrent(null); return; }
     try {
       if (r.page) { await showPage(r.page, all); if (r.history) setHistoryOf(true); return; }
@@ -499,7 +510,9 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
                 ))}
               </nav>
 
-              {searchQ !== null ? (
+              {pluginAt ? (
+                <PluginScreen at={pluginAt} onHome={onHome} />
+              ) : searchQ !== null ? (
                 <SearchView query={searchQ} onHome={onHome} onOpen={(id) => void openPageById(id)} />
               ) : home || !current ? (
                 <HomeView me={me} spaces={spaces} viewed={viewed} onOpenSpace={(s) => void openSpace(s)} onOpenPage={(id) => void openPageById(id)} />

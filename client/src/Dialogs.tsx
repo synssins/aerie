@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { dialogBridge } from "./kit/host";
 
 /** In-app replacements for window.prompt/confirm/alert. Every dialog renders inside the page. */
 type AskOptions = { title: string; label: string; initial?: string; ok?: string; validate?: (v: string) => string | null };
@@ -24,6 +25,8 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<Pending | null>(null);
   const ask = useCallback((o: AskOptions) => new Promise<string | null>((resolve) => setPending({ kind: "ask", o, resolve })), []);
   const confirm = useCallback((o: ConfirmOptions) => new Promise<boolean>((resolve) => setPending({ kind: "confirm", o, resolve })), []);
+  // A plugin's script asks through the same dialogs.
+  useEffect(() => { dialogBridge.ask = ask; dialogBridge.confirm = confirm; }, [ask, confirm]);
   return (
     <Ctx.Provider value={{ ask, confirm }}>
       {children}

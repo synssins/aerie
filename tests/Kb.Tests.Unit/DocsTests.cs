@@ -19,7 +19,7 @@ public sealed partial class DocsTests
 
     private static string Read(string relative) => File.ReadAllText(Path.Combine(Root, relative)).ReplaceLineEndings("\n");
 
-    [GeneratedRegex(@"<!-- sample:(\w+) -->\n```csharp\n(.*?)\n```", RegexOptions.Singleline)]
+    [GeneratedRegex(@"<!-- sample:(\w+) -->\n```(?:csharp|js)\n(.*?)\n```", RegexOptions.Singleline)]
     private static partial Regex SampleBlock();
 
     [GeneratedRegex(@"^[ \t]*// #region guide:(\w+)\n(.*?)^[ \t]*// #endregion", RegexOptions.Singleline | RegexOptions.Multiline)]
@@ -39,7 +39,8 @@ public sealed partial class DocsTests
     [Fact]
     public void Docs_SampleBlocks_MatchTheSample()
     {
-        var regions = Directory.GetFiles(Path.Combine(Root, "plugins", "Kb.Plugin.Sample"), "*.cs")
+        var sample = Path.Combine(Root, "plugins", "Kb.Plugin.Sample");
+        var regions = Directory.GetFiles(sample, "*.cs").Concat(Directory.GetFiles(Path.Combine(sample, "ui"), "*.js"))
             .SelectMany(f => Region().Matches(File.ReadAllText(f).ReplaceLineEndings("\n")))
             .ToDictionary(m => m.Groups[1].Value, m => Dedent(m.Groups[2].Value));
         var blocks = SampleBlock().Matches(Read(Guides[0]));

@@ -82,6 +82,18 @@ public sealed class SamplePluginTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Sample_HasAScriptForTheBrowser()
+    {
+        var listed = (await _admin.GetFromJsonAsync<JsonElement>("/api/v1/ui/plugins", Ct)).GetProperty("plugins").EnumerateArray().Single(p => p.GetProperty("id").GetString() == "kb.sample");
+        var script = await _admin.GetAsync(listed.GetProperty("script").GetString(), Ct);
+
+        Assert.Equal(HttpStatusCode.OK, script.StatusCode);
+        var text = await script.Content.ReadAsStringAsync(Ct);
+        Assert.Contains("\"/shared/v1/react.js\"", text); // the app's React, not one of its own
+        Assert.Contains("page.panel", text);
+    }
+
+    [Fact]
     public async Task Ack_NeedsReadOfThePage()
     {
         Assert.Equal(HttpStatusCode.NotFound, (await AckAsync(await UserAsync("dan", null))).StatusCode); // no role in the space: the page does not exist for them

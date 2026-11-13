@@ -388,6 +388,64 @@ public sealed class TableCheck(SampleData db) : IHealthCheck
 A health check is registered with `app.HealthCheck<TCheck>(name)`. It is not part of the app's own readiness check.
 It runs when an Admin opens the Plugins screen, as the plugin, with a limit of five seconds. One that throws or takes longer is shown as Unhealthy; that is not counted as a failure of the plugin.
 
+## Screens
+
+A plugin can ship a script for the browser. The manifest names it: `"uiApiVersion": "1.0.0"` and `"ui": { "script": "ui/index.js" }`.
+The script is an ES module in the package's `ui/` folder. Its default export is called once, after sign-in, with a host object.
+
+<!-- sample:ui -->
+```js
+import { createElement as h, useEffect, useState } from "/shared/v1/react.js";
+
+// The Acknowledge button tells the panel part to read again.
+const listeners = new Set();
+const changed = () => listeners.forEach((l) => l());
+
+/** A part of the page's right panel: how many people acknowledged the page, and who, for those who may see that. */
+function Acknowledged({ kb, page }) {
+  const [count, setCount] = useState(null);
+  const [people, setPeople] = useState(null);
+  useEffect(() => {
+    const load = () => {
+      kb.api.get(`/pages/${page.id}/ack`).then(setCount).catch(() => setCount(null));
+      // The plugin's route answers 403 to someone without the permission: they see the count and no names.
+      kb.api.get(`/pages/${page.id}/acks`).then((r) => setPeople(r.people)).catch(() => setPeople(null));
+    };
+    load();
+    listeners.add(load);
+    return () => { listeners.delete(load); };
+  }, [kb, page.id, page.version]);
+
+  if (!count) return null;
+  return h("div", null,
+    h("div", null, count.count === 1 ? "1 person" : `${count.count} people`),
+    (people ?? []).map((p) => h("div", { key: p.name, className: "muted small" }, `${p.name}, version ${p.version}`)));
+}
+
+/** Called once, after sign-in, with the host: everything the script may use of the app. */
+export default function (kb) {
+  kb.slots.add("page.panel", { id: "acknowledged", title: "Acknowledged", render: (c) => h(Acknowledged, { kb, page: c.page }) });
+  kb.slots.add("page.tools", {
+    id: "acknowledge",
+    label: "Acknowledge",
+    onClick: (c) => kb.api.post(`/pages/${c.page.id}/ack`).then(changed).catch(() => undefined),
+  });
+}
+```
+
+- Take React from `/shared/v1/react.js` (also `/shared/v1/react-jsx-runtime.js` and `/shared/v1/react-dom.js`). They hand back the app's own copy. A script that brings its own React breaks hooks.
+- The app serves only the `ui/` folder of a loaded plugin, to people who are signed in, and only these file types: js, css, json, map, svg, png, jpg, webp, woff2.
+- `kb.slots.add(slot, item)` adds to a named place of a screen. Today's slots: `page.tools` (buttons in the page's tool row: `id`, `label`, `onClick(ctx)`) and `page.panel` (parts of the page's right panel: `id`, `title`, `render(ctx)`). The context is `{ page }`. `order` places an item; `when(ctx)` shows it only when it answers true.
+- `kb.api` calls the plugin's own routes (`/api/v1/plugins/<id>/...`); `kb.core` calls the app's API. The server answers what the signed-in person may see.
+- `kb.me()` is the signed-in person. `kb.current.page()` and `kb.current.space()` are what they are looking at; `kb.current.subscribe(fn)` tells when that changes.
+- `kb.navigate(path)` goes to an address inside the app.
+- `kb.screens.add({ path, title, render(rest), panel })` adds a screen of the plugin's own at `/x/<plugin id>/<path>`, inside the app's three panels. `panel` names a slot that fills the right panel.
+- `kb.dialogs.confirm(...)` and `kb.dialogs.ask(...)` are the app's own dialogs. Never use a browser popup (`alert`, `confirm`, `prompt`).
+- What a plugin draws sits inside an error boundary. A part that throws is left out and written to the server's log; the screen stays. Script errors are never counted as failures of the plugin.
+- A script runs in every signed-in person's browser with that person's session. It can do in the browser whatever that person can.
+
+The rules of the app's screens hold for a plugin's parts: no help text and no placeholder text; the right panel holds facts about the thing, not controls for it beyond what the app puts there; use the app's class names (`tb` for a button, `muted`, `small`).
+
 ## Calling other systems
 
 List every host the plugin calls in `outboundHosts`. Take the plugin's client from `IHttpClientFactory` with the name `PluginHttp.ClientName("<id>")`.
@@ -430,7 +488,8 @@ The contract is at 0.2.0 and can still change.
 
 ## Planned, not built
 
-- Screens: plugin scripts, slots in core screens, editor blocks, plugin screens.
+- More slots in the app's screens (today: `page.tools`, `page.panel`), the screen kit (tables, forms), wrapping or replacing parts of the app's screens, editor blocks.
+- A build preset for scripts written in TypeScript or JSX; scripts on the sign-in screen; calling other hosts from the browser.
 - Data attached to core rows (a count that comes with the page).
 - Sign-in schemes, page kinds, export formats.
 - After handlers that survive a crash (a queue in the database).
