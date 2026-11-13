@@ -81,7 +81,8 @@ public sealed class ActionCatalog
 /// 8 the audit entries; 9 after handlers. There is no transaction around an action: the handler saves as it goes,
 /// and an action sent from inside another runs on its own.
 /// </summary>
-public sealed class ActionBus(ActionCatalog catalog, IServiceProvider services, IActorAccessor actors, IAuditLog audit, IPluginFailures failures, PluginRegistry registry) : IActionBus
+public sealed class ActionBus(ActionCatalog catalog, IServiceProvider services, IActorAccessor actors, IAuditLog audit, IPluginFailures failures, PluginRegistry registry,
+    ActionQueueWorker queue, TimeProvider time) : IActionBus
 {
     private static readonly ConcurrentDictionary<Type, MethodInfo> Runners = new();
     private static readonly MethodInfo Runner = typeof(ActionBus).GetMethod(nameof(RunAsync), BindingFlags.NonPublic | BindingFlags.Instance)!;
@@ -101,6 +102,17 @@ public sealed class ActionBus(ActionCatalog catalog, IServiceProvider services, 
         // Step 8. A handler or a plugin cannot leave these out; when the action failed, only the entries marked evenIfRefused are written.
         foreach (var note in ctx.AuditNotes(outcome.Ok))
             await audit.AppendAsync(new AuditEvent(note.Action, ctx.Actor.UserId, note.TargetType, note.TargetId, note.SpaceId, note.Data), ct);
+        if (!outcome.Ok) return outcome;
+
+        // Step 9. After handlers get the action as it was done and its result. They run later, from the queue, as their plugin.
+        var (done, result) = (ctx.Action, outcome.Value!);
+        foreach (var after in catalog.After(typeof(TAction)))
+        {
+            var e = new ActionEvent(queue.NextId(), ctx.Name, ctx.Actor.Kind, ctx.Actor.UserId, ctx.Actor.PluginId, time.GetUtcNow());
+            var handler = after.Value.Handler;
+            queue.Enqueue(after.PluginId, $"{ctx.Name} after handler",
+                (scope, stop) => ((IAfterAction<TAction, TResult>)ActivatorUtilities.CreateInstance(scope, handler)).AfterAsync(done, result, e, stop));
+        }
         return outcome;
     }
 

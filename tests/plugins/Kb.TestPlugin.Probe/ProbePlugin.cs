@@ -36,6 +36,8 @@ public sealed class ProbePlugin : IKbPlugin
             .Handle<ProbePeek, ProbePeekResult, PeekHandler>()
             .Before<ProbeEcho, EchoHook>(optional)
             .Filter<ProbePeek, ProbePeekResult, PeekFilter>(optional)
+            .After<ProbeEcho, ProbeEchoResult, EchoAfter>()
+            .After<ProbePeek, ProbePeekResult, PeekAfter>()
             .Routes(ProbeRoutes.Map);
     }
 }

@@ -128,6 +128,8 @@ services.AddSingleton<ActionCatalog>();
 services.AddScoped<ActorAccessor>();
 services.AddScoped<IActorAccessor>(sp => sp.GetRequiredService<ActorAccessor>());
 services.AddScoped<IActionBus, ActionBus>();
+services.AddSingleton<ActionQueueWorker>();
+services.AddHostedService(sp => sp.GetRequiredService<ActionQueueWorker>());
 services.AddScoped<IAccessData, AccessData>();
 services.AddScoped<INotificationStore, NotificationStore>();
 services.AddScoped<IUserDirectory, UserDirectory>();

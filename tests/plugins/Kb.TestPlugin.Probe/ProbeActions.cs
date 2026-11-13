@@ -31,7 +31,7 @@ public sealed record EchoBody(string Target, string Text);
 /// <summary>What the probe counted and stored. One per app, so a test reads what happened in the app it drove.</summary>
 public sealed class ProbeState(IPluginContext context)
 {
-    private int _hooks, _handled, _filters, _after;
+    private int _hooks, _handled, _filters, _after, _afterReads;
 
     public IPluginContext Context { get; } = context;
     public ConcurrentDictionary<string, string> Written { get; } = new();
@@ -40,11 +40,14 @@ public sealed class ProbeState(IPluginContext context)
     public int Handled => _handled;
     public int Filters => _filters;
     public int After => _after;
+    public int AfterReads => _afterReads;
+    public string? LastAfter { get; set; }
 
     public void CountHook() => Interlocked.Increment(ref _hooks);
     public void CountHandled() => Interlocked.Increment(ref _handled);
     public void CountFilter() => Interlocked.Increment(ref _filters);
     public void CountAfter() => Interlocked.Increment(ref _after);
+    public void CountAfterRead() => Interlocked.Increment(ref _afterReads);
     public string? Setting(string key) => Context.GetSetting(key);
 }
 
@@ -109,6 +112,29 @@ public sealed class PeekFilter(ProbeState state) : IResultFilter<ProbePeek, Prob
     }
 }
 
+/// <summary>Runs after an echo succeeded: counts it, notes who it ran as, and can wait, write a line to a file, or throw.</summary>
+public sealed class EchoAfter(ProbeState state, IActorAccessor actors) : IAfterAction<ProbeEcho, ProbeEchoResult>
+{
+    public async Task AfterAsync(ProbeEcho action, ProbeEchoResult result, ActionEvent e, CancellationToken ct)
+    {
+        if (int.TryParse(state.Setting("AfterDelay"), out var delay)) await Task.Delay(delay, ct);
+        if (state.Setting("FailOn") == "after") throw new InvalidOperationException("Probe after handler failed.");
+        if (state.Setting("AfterFile") is { Length: > 0 } file) await File.AppendAllLinesAsync(file, [result.Text], ct);
+        var me = actors.Current;
+        state.LastAfter = $"{e.Action}|{action.Target}|{result.Text}|{e.ActorKind}|{me.Kind}:{me.PluginId}:{me.Source}";
+        state.CountAfter();
+    }
+}
+
+public sealed class PeekAfter(ProbeState state) : IAfterAction<ProbePeek, ProbePeekResult>
+{
+    public Task AfterAsync(ProbePeek action, ProbePeekResult result, ActionEvent e, CancellationToken ct)
+    {
+        state.CountAfterRead();
+        return Task.CompletedTask;
+    }
+}
+
 public static class ProbeRoutes
 {
     /// <summary>Mapped under /api/v1/plugins/&lt;id&gt;/.</summary>
@@ -116,7 +142,7 @@ public static class ProbeRoutes
     {
         group.MapPost("/echo", (EchoBody body, IActionBus bus, CancellationToken ct) => bus.SendAsync(new ProbeEcho { Target = body.Target, Text = body.Text }, ct).ToHttp());
         group.MapGet("/peek/{target}", (string target, IActionBus bus, CancellationToken ct) => bus.SendAsync(new ProbePeek { Target = target }, ct).ToHttp());
-        group.MapGet("/counters", (ProbeState state) => Results.Ok(new { hooks = state.Hooks, handled = state.Handled, filters = state.Filters, after = state.After, lastActor = state.LastActor, written = state.Written }));
+        group.MapGet("/counters", (ProbeState state) => Results.Ok(new { hooks = state.Hooks, handled = state.Handled, filters = state.Filters, after = state.After, afterReads = state.AfterReads, lastAfter = state.LastAfter, lastActor = state.LastActor, written = state.Written }));
         group.MapGet("/hello", () => Results.Ok(new { hello = "anonymous" })).AllowAnonymous();
     }
 }
