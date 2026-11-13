@@ -51,13 +51,14 @@ public sealed class ProbePlugin : IKbPlugin
         if (context.GetSetting("Register") == "baddata") app.AddData<ProbeBrokenData>();
         // An editor node of the probe's own. What it gives is unlike the placeholder, so a test can tell who rendered the node.
         if (context.GetSetting("Register") == "nodes")
-            app.EditorNode(new NodeRenderer
-            {
-                Type = "probeBox",
-                Plain = n => "probeword" + Label(context, n),
-                MarkdownLines = n => ["> [box] " + Label(context, n)],
-                Blocks = n => [new DocParagraph([new DocRun("BOX " + Label(context, n))])],
-            });
+            foreach (var type in new[] { "probeBox", "probeNote" })
+                app.EditorNode(new NodeRenderer
+                {
+                    Type = type,
+                    Plain = n => "probeword" + Label(context, n),
+                    MarkdownLines = n => ["> [box] " + Label(context, n)],
+                    Blocks = n => Label(context, n) == "table" ? [new DocTable([["Probe's own"]], false)] : [new DocParagraph([new DocRun("BOX " + Label(context, n))])],
+                });
         if (context.GetSetting("Register") == "corenode") app.EditorNode(new NodeRenderer { Type = "paragraph", Plain = _ => "taken over" }); // a node the editor has by itself
     }
 

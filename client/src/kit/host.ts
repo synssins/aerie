@@ -2,6 +2,7 @@ import type { AnyExtension } from "@tiptap/react";
 import { api, type Me, type Page, type Space } from "../api";
 import { editorExtensions } from "../editor/extensions";
 import { current } from "./current";
+import { reportUiError } from "./errors";
 import { screens, type ScreenDef } from "./screens";
 import { slots } from "./slots";
 
@@ -18,6 +19,20 @@ export const dialogBridge: { confirm: (o: ConfirmOptions) => Promise<boolean>; a
   ask: async () => null,
 };
 
+/** Who is signed in now. The app sets it at every sign-in and sign-out; scripts are loaded once per page load and outlive both. */
+export const session: { me: Me | null } = { me: null };
+
+/**
+ * How a plugin's script moves inside the app. The shell replaces this with its own, which asks before leaving an edit, as a click
+ * on a link does. Until the shell is there, the address changes and the shell reads it when it starts.
+ */
+export const navigation: { go: (path: string) => void } = {
+  go(path) {
+    history.pushState(null, "", path);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  },
+};
+
 /** The object a plugin's script receives: everything it may use of the app. */
 export type KbHost = {
   uiApiVersion: string;
@@ -30,7 +45,7 @@ export type KbHost = {
   core: Api;
   me(): Me;
   current: { space(): Space | null; page(): Page | null; subscribe(fn: () => void): () => void };
-  /** Goes to an address inside the app, as a click on a link would. */
+  /** Goes to an address inside the app, as a click on a link would: someone in the middle of an edit is asked first. */
   navigate(path: string): void;
   /** Screens of the plugin's own, at /x/<plugin id>/<path>. */
   screens: { add(def: ScreenDef): void };
@@ -50,13 +65,13 @@ export function makeHost(plugin: { id: string; version: string }, me: Me): KbHos
     slots: { add: (slot, item) => slots.add(slot, item, plugin.id), hide: slots.hide, move: slots.move, names: slots.names },
     api: rooted(`/plugins/${plugin.id}`),
     core: rooted(""),
-    me: () => me,
-    current: { space: current.space, page: current.page, subscribe: current.subscribe },
-    navigate(path) {
-      // The shell reads the address when the history changes, as it does for the browser's Back.
-      history.pushState(null, "", path);
-      window.dispatchEvent(new PopStateEvent("popstate"));
+    me: () => session.me ?? me,
+    current: {
+      space: current.space,
+      page: current.page,
+      subscribe: (fn) => current.subscribe(() => { try { fn(); } catch (e) { reportUiError(plugin.id, "current", e); } }),
     },
+    navigate: (path) => navigation.go(path),
     screens: { add: (def) => screens.add(plugin.id, def) },
     dialogs: { confirm: (o) => dialogBridge.confirm(o), ask: (o) => dialogBridge.ask(o) },
     editor: { extend: (...extensions) => editorExtensions.add(plugin.id, ...extensions) },

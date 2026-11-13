@@ -66,6 +66,22 @@ public static class PluginVersions
         if (!Fits(m.AbstractionsVersion, KbHost.AbstractionsVersion)) return $"Built for a newer plugin API ({m.AbstractionsVersion}).";
         if (!Version.TryParse(m.MinKbVersion, out var min) || min > Version.Parse(KbHost.Version)) return $"Needs version {m.MinKbVersion} or later.";
         if (m.UiApiVersion is not null && !Fits(m.UiApiVersion, KbHost.UiApiVersion)) return $"Built for a newer plugin UI ({m.UiApiVersion}).";
+        if (m.Ui?.Script is not null && m.UiApiVersion is null) return "A plugin with a script needs uiApiVersion.";
+        return PermissionProblem(m);
+    }
+
+    /// <summary>A permission that could never be held, or that would not fit its column, is refused before the plugin is installed.</summary>
+    private static string? PermissionProblem(PluginManifest m)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var p in m.Permissions)
+        {
+            if (p.Key.Length is 0 or > 100 || p.Key.Contains(':', StringComparison.Ordinal)) return "A permission key is 1 to 100 characters, with no colon.";
+            if (!seen.Add(p.Key)) return $"Permission {p.Key} is listed twice.";
+            if (p.Scope is not ("space" or "global")) return $"Permission {p.Key}: scope is space or global.";
+            if (p.Scope == "space" && !(Enum.TryParse<Kb.Plugins.SpaceRole>(p.DefaultRole, out var role) && Enum.IsDefined(role) && role.ToString() == p.DefaultRole))
+                return $"Permission {p.Key}: defaultRole is Reader, Contributor, Supervisor or Owner.";
+        }
         return null;
     }
 

@@ -1,9 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
+import { pluginsReady } from "./loader";
 import { PluginScreen } from "./PluginScreen";
 import { screens } from "./screens";
 import { slots } from "./slots";
 
+beforeEach(() => pluginsReady.set(true));
 afterEach(() => { cleanup(); screens.clear(); slots.clear(); });
 
 describe("PluginScreen", () => {
@@ -25,6 +27,16 @@ describe("PluginScreen", () => {
     act(() => screens.add("kb.sample", { path: "", title: "Sample", render: (rest) => <p>All of {rest}</p> }));
 
     expect(screen.getByText("All of reports")).toBeTruthy();
+  });
+
+  it("while the scripts are still loading, an address of a plugin screen shows nothing rather than Not found", () => {
+    pluginsReady.set(false);
+    render(<PluginScreen at={{ id: "kb.sample", rest: "reports" }} onHome={() => {}} />);
+    expect(screen.queryByText("Not found.")).toBeNull();
+
+    act(() => pluginsReady.set(true));
+
+    expect(screen.getByText("Not found.")).toBeTruthy();
   });
 
   it("the longest matching path wins, and another plugin's screens are not this one's", () => {

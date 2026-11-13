@@ -133,6 +133,7 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
         await ForgetPackagesAsync(id, ct);
         db.PluginSettingValues.RemoveRange(await db.PluginSettingValues.Where(v => v.PluginId == id).ToListAsync(ct));
         db.JobRuns.RemoveRange(await db.JobRuns.Where(r => r.PluginId == id).ToListAsync(ct));
+        if (deleteData) await PluginPermissions.ForgetAsync(db, id, ct); // without the box they are kept, like its tables
         // While it has tables the status stays, marked removed, also when they are about to be dropped: if the drop fails,
         // the plugin is still listed and its data can be deleted later.
         if (hasData) (plugin.Status.Removed, plugin.Status.Reason, plugin.Status.LockedAt, plugin.Status.UpdatedAt) = (true, null, null, time.GetUtcNow());
@@ -168,6 +169,7 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
         await PluginDataHost.DropAsync(db, id, CancellationToken.None);
         db.PluginStatuses.Remove(status);
         db.JobRuns.RemoveRange(await db.JobRuns.Where(r => r.PluginId == id).ToListAsync(ct));
+        await PluginPermissions.ForgetAsync(db, id, ct);
         await db.SaveChangesAsync(CancellationToken.None);
         await ChangedAsync(AuditActions.PluginDataDelete, id, by, "", "", status.ActiveVersion ?? "", null, ct);
         return default(Unit);

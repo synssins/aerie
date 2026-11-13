@@ -16,8 +16,10 @@ export type SectionItem<C = any> = Base<C> & { title?: string; render: (c: C) =>
 export type SlotItem = ActionItem | SectionItem;
 export type SlotEntry<I = Base<any>> = { item: I; source: Source };
 
-type Stored = { item: Base<any>; source: Source; seq: number; hidden: boolean };
+type Stored = { item: Base<any>; source: Source; seq: number };
 const registry = new Map<string, Stored[]>();
+const hidden = new Map<string, Set<string>>(); // by slot: ids taken out, whether the item is there yet or comes later
+const reported = new WeakSet<object>();        // items whose condition threw: said once, not at every drawing
 const listeners = new Set<() => void>();
 let version = 0;
 let seq = 0;
@@ -26,26 +28,30 @@ const changed = () => { version++; listeners.forEach((l) => l()); };
 function visible(slot: string, ctx: unknown): Stored[] {
   return (registry.get(slot) ?? [])
     .filter((e) => {
-      if (e.hidden) return false;
+      if (hidden.get(slot)?.has(e.item.id)) return false;
       // A plugin's condition that throws leaves its item out; it does not break the screen.
-      try { return e.item.when ? e.item.when(ctx) : true; } catch (err) { reportUiError(e.source, slot, err); return false; }
+      try { return e.item.when ? e.item.when(ctx) : true; }
+      catch (err) {
+        if (!reported.has(e.item)) { reported.add(e.item); reportUiError(e.source, slot, err); }
+        return false;
+      }
     })
     // Items render in their order; one without an order comes after those that have one. Ties keep the order they were added in.
     .sort((a, b) => (a.item.order ?? Infinity) - (b.item.order ?? Infinity) || a.seq - b.seq);
 }
 
 export const slots = {
-  /** Adds an item. Adding again under the same id, from the same source, replaces it. The core registers at 100, 200, 300, so a plugin can land between. */
+  /** Adds an item. Adding again under the same id, from the same source, replaces it. Items with an order come first, lowest first. */
   add(slot: string, item: SlotItem, source: Source = "core"): void {
     const list = registry.get(slot) ?? [];
     const at = list.findIndex((e) => e.source === source && e.item.id === item.id);
-    if (at >= 0) list[at] = { ...list[at], item }; else list.push({ item, source, seq: seq++, hidden: false });
+    if (at >= 0) list[at] = { ...list[at], item }; else list.push({ item, source, seq: seq++ });
     registry.set(slot, list);
     changed();
   },
-  /** Takes an item out of a slot, a core one too. */
+  /** Takes the items with this id out of a slot, whoever added them and whether they are there yet or come later. */
   hide(slot: string, id: string): void {
-    for (const e of registry.get(slot) ?? []) if (e.item.id === id) e.hidden = true;
+    hidden.set(slot, (hidden.get(slot) ?? new Set()).add(id));
     changed();
   },
   move(slot: string, id: string, order: number): void {
@@ -58,7 +64,7 @@ export const slots = {
   entries<I = Base<any>>(slot: string, ctx: unknown): SlotEntry<I>[] { return visible(slot, ctx).map((e) => ({ item: e.item as I, source: e.source })); },
   names(): string[] { return [...registry.keys()].sort(); },
   /** For tests. */
-  clear(): void { registry.clear(); changed(); },
+  clear(): void { registry.clear(); hidden.clear(); changed(); },
 };
 
 /** The entries of a slot; the component re-renders when the registry changes. */

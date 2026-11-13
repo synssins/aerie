@@ -82,13 +82,16 @@ internal sealed class SetUserPermissionHandler(KbDbContext db, IAccess access, K
     public async Task<Outcome<Unit>> HandleAsync(ActionContext<SetUserPermission> ctx)
     {
         var (user, permission, granted) = (ctx.Action.UserId, ctx.Action.Permission, ctx.Action.Granted);
-        if (!PluginPermissions.Global(plugins).Contains(permission)) return Problem.Invalid("permission", "Not a global permission of a loaded plugin.");
+        // Only a permission that exists now can be given. Taking one back works for any stored grant: its plugin may be off or gone.
+        if (granted && !PluginPermissions.Global(plugins).Contains(permission)) return Problem.Invalid("permission", "Not a global permission of a loaded plugin.");
         if (!await db.Users.AnyAsync(u => u.Id == user, ctx.Cancel)) return Problem.NotFound;
 
         var row = await db.UserPermissions.FirstOrDefaultAsync(p => p.UserId == user && p.Permission == permission, ctx.Cancel);
+        if (!granted && row is null && !PluginPermissions.Global(plugins).Contains(permission)) return Problem.Invalid("permission", "Not a global permission of a loaded plugin.");
         if (granted && row is null) db.UserPermissions.Add(new Kb.Core.Plugins.UserPermission { UserId = user, Permission = permission });
         if (!granted && row is not null) db.UserPermissions.Remove(row);
-        await db.SaveChangesAsync();
+        try { await db.SaveChangesAsync(); }
+        catch (DbUpdateException) when (granted) { db.ChangeTracker.Clear(); } // given by another request at the same moment: twice is once
         ctx.Audit(AuditActions.UserPermissionsSet, "user", user.ToString(), data: new Dictionary<string, string> { ["permission"] = permission, ["granted"] = granted.ToString() });
         return new Unit();
     }

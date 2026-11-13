@@ -38,6 +38,24 @@ describe("slots", () => {
     expect(ids("s", { canEdit: true })).toEqual(["always", "editors"]);
   });
 
+  it("a when that throws is reported once, however often the slot is drawn", async () => {
+    const calls: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => { calls.push(JSON.parse(String(init?.body))); return new Response(null, { status: 204 }); }));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    slots.add("s", { id: "broken", label: "Broken", when: () => { throw new Error("no"); } }, "kb.sample");
+
+    for (let i = 0; i < 20; i++) expect(ids("s")).toEqual([]);
+
+    expect(calls).toEqual([{ plugin: "kb.sample", where: "s", message: "no" }]);
+  });
+
+  it("hide holds for an item that is added later", () => {
+    slots.hide("s", "late");
+    slots.add("s", { id: "late", label: "Late" }, "kb.other");
+    slots.add("s", { id: "kept", label: "Kept" }, "kb.other");
+    expect(ids("s")).toEqual(["kept"]);
+  });
+
   it("adding an item again under the same id replaces it", () => {
     slots.add("s", { id: "a", label: "First" }, "kb.sample");
     slots.add("s", { id: "a", label: "Second" }, "kb.sample");

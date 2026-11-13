@@ -37,7 +37,7 @@ A plugin that supplies the storage kind of a storage place in use, or the kind o
 Remove deletes the package and the settings. The dialog has a "Delete data" box, off by default.
 
 - Box off: the plugin's tables are kept. The plugin stays in the list as "Removed, data kept". Installing it again finds its data.
-- Box on: the plugin's tables are dropped. This cannot be undone.
+- Box on: the plugin's tables are dropped, and with them what was set for its permissions: the minimum roles, and who was given its global permissions. This cannot be undone.
 
 For a plugin listed as "Removed, data kept", select it and select Delete data.
 
@@ -45,7 +45,7 @@ For a plugin listed as "Removed, data kept", select it and select Delete data.
 
 A plugin can add its own blocks to pages. When such a plugin is disabled or removed, its blocks stay in the pages.
 A page shows a box with the block's type name in their place. The box can be moved or deleted, not edited. Saving the page keeps the block.
-Search still finds the page by the text inside the block. History and exports show `[type]` and that text.
+History and exports show `[type]` and the text inside the block. Search keeps the words it had when the page was last saved; select Rebuild index (Administration > Search) after a plugin that adds blocks was disabled or removed, and search finds the pages by the text inside the blocks.
 Enable or install the plugin again and the blocks are back.
 After installing or updating a plugin that adds blocks, select Rebuild index (Administration > Search) so search reads older pages the plugin's way.
 
@@ -62,7 +62,9 @@ A plugin can declare permissions of its own.
 - A space permission is held by everyone whose role in a space is at least a minimum role. Select the plugin and choose that role under Permissions. The plugin's own default is shown first.
 - A global permission is given to people one by one. Administration > Users has one column for each; tick the box for a person. Admins hold every permission.
 
-A permission counts only while its plugin is loaded. What was set or given is kept when the plugin is disabled or removed.
+A permission counts only while its plugin is loaded. What was set or given is kept when the plugin is disabled or removed, and counts again when it is back. Removing the plugin with "Delete data" removes it for good.
+A minimum role that equals the plugin's own default is not stored: when a later version of the plugin changes its default, the new default holds unless you chose another role.
+While a plugin is not loaded, the Users screen has no column for its permissions. A permission can still be taken from a person through the API (`PUT /api/v1/admin/users/<id>/permissions` with `"granted": false`).
 
 ## Disabled by core
 

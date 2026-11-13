@@ -83,6 +83,25 @@ public sealed class PluginUiTests : IAsyncLifetime
         foreach (var path in refused) Assert.Equal((path, HttpStatusCode.NotFound), (path, (await gail.GetAsync(path, Ct)).StatusCode));
     }
 
+    /// <summary>
+    /// Only an address that carries the package's hash may be kept for good. A file a script fetches by a relative address
+    /// (a stylesheet, an imported module) has no hash in its address: the browser must ask again, or it would keep the old file
+    /// after the same version is installed again with other content.
+    /// </summary>
+    [Fact]
+    public async Task PluginFiles_AreKeptForGood_OnlyUnderAnAddressWithThePackagesHash()
+    {
+        var script = await ScriptAsync(_admin);
+
+        Assert.Contains("immutable", (await _admin.GetAsync(script, Ct)).Headers.CacheControl?.ToString());
+        foreach (var address in new[] { script.Split('?')[0], script.Split('?')[0] + "?v=000000000000" })
+        {
+            var answer = await _admin.GetAsync(address, Ct);
+            Assert.Equal(HttpStatusCode.OK, answer.StatusCode);
+            Assert.Equal("no-cache, private", answer.Headers.CacheControl?.ToString());
+        }
+    }
+
     [Fact]
     public async Task PluginFiles_NeedSignIn_TheRightVersion_AndALoadedPlugin()
     {

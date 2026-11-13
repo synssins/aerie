@@ -137,6 +137,124 @@ public sealed class PermissionTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GlobalPermission_OfADeactivatedPerson_IsNotHeld()
+    {
+        await GrantAsync(_gail, Run, true);
+        Assert.True(await CanAsync(_gail, Run));
+
+        await _f.WithDbAsync(async db =>
+        {
+            (await db.Users.SingleAsync(u => u.Id == _gail, Ct)).DeactivatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(Ct);
+        });
+
+        Assert.False(await CanAsync(_gail, Run)); // as for a role in a space: a deactivated account holds nothing
+    }
+
+    [Fact]
+    public async Task Grant_CanBeTakenBack_WhileItsPluginIsNotLoaded()
+    {
+        await GrantAsync(_gail, Run, true);
+        Assert.Equal(HttpStatusCode.NoContent, (await _admin.PutAsJsonAsync($"{Url}/kb.test.probe/state", new { enabled = false }, Ct)).StatusCode);
+        await RestartAsync();
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await GrantAsync(_gail, Run, true)).StatusCode); // nothing new is given for a plugin that is off
+        Assert.Equal(HttpStatusCode.NoContent, (await GrantAsync(_gail, Run, false)).StatusCode);
+        await _f.WithDbAsync(async db => Assert.False(await db.UserPermissions.AnyAsync(p => p.UserId == _gail, Ct)));
+
+        Assert.Equal(HttpStatusCode.NoContent, (await _admin.PutAsJsonAsync($"{Url}/kb.test.probe/state", new { enabled = true }, Ct)).StatusCode);
+        await RestartAsync();
+        Assert.False(await CanAsync(_gail, Run)); // it did not come back with the plugin
+    }
+
+    [Fact]
+    public async Task Remove_KeepsGrantsAndRoles_DeleteDataRemovesThem()
+    {
+        await GrantAsync(_gail, Run, true);
+        await RolesAsync(new { see = "Reader" });
+        // A grant of another plugin whose id starts the same way must stay.
+        await _f.WithDbAsync(async db =>
+        {
+            db.UserPermissions.Add(new Kb.Core.Plugins.UserPermission { UserId = _gail, Permission = "kb.test.probe2:run" });
+            await db.SaveChangesAsync(Ct);
+        });
+
+        Assert.Equal(HttpStatusCode.NoContent, (await _admin.DeleteAsync($"{Url}/kb.test.probe?deleteData=false", Ct)).StatusCode);
+        await RestartAsync();
+        await _f.WithDbAsync(async db =>
+        {
+            Assert.True(await db.UserPermissions.AnyAsync(p => p.Permission == Run, Ct)); // kept: the admin guide says so
+            Assert.True(await db.PluginPermissionRoles.AnyAsync(p => p.Permission == See, Ct));
+        });
+
+        await TestPlugins.InstallAsync(_admin, TestPlugins.Package(TestPlugins.Probe, m => m with { Permissions = [new PluginPermission("see", "See notes", "space", "Supervisor"), new PluginPermission("run", "Run reports", "global")] }));
+        await RestartAsync();
+        Assert.True(await CanAsync(_gail, Run));
+        Assert.Equal(HttpStatusCode.NoContent, (await _admin.DeleteAsync($"{Url}/kb.test.probe?deleteData=true", Ct)).StatusCode);
+        await RestartAsync();
+
+        await _f.WithDbAsync(async db =>
+        {
+            Assert.Equal(["kb.test.probe2:run"], await db.UserPermissions.Select(p => p.Permission).ToListAsync(Ct));
+            Assert.Empty(await db.PluginPermissionRoles.ToListAsync(Ct));
+        });
+    }
+
+    [Fact]
+    public async Task SavingRoles_StoresOnlyWhatDiffersFromTheManifest()
+    {
+        Assert.Equal(HttpStatusCode.NoContent, (await RolesAsync(new { see = "Supervisor" })).StatusCode); // the manifest's own default: nothing to store
+        await _f.WithDbAsync(async db =>
+        {
+            Assert.Empty(await db.PluginPermissionRoles.ToListAsync(Ct));
+            Assert.Empty(await db.AuditEntries.Where(a => a.Action == "plugin.permissions.change").ToListAsync(Ct));
+        });
+
+        await RolesAsync(new { see = "Reader" });
+        Assert.True(await CanAsync(_reader, See, _space));
+        await RolesAsync(new { see = "Supervisor" }); // back to the default: the row goes, so a later version's default counts again
+        await _f.WithDbAsync(async db =>
+        {
+            Assert.Empty(await db.PluginPermissionRoles.ToListAsync(Ct));
+            Assert.Equal(2, await db.AuditEntries.CountAsync(a => a.Action == "plugin.permissions.change", Ct));
+        });
+        Assert.False(await CanAsync(_reader, See, _space));
+    }
+
+    [Fact]
+    public async Task SignIn_AnswersTheGlobalPermissionsHeld()
+    {
+        await GrantAsync(_gail, Run, true);
+
+        var answer = await _f.NewClient().PostAsJsonAsync("/api/v1/auth/local/signin", new { userName = "gail", password = "user-password-0123456789" }, Ct);
+
+        // A plugin's script gets the person from this answer, without a reload in between.
+        Assert.Equal([Run], (await answer.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("permissions").EnumerateArray().Select(p => p.GetString()));
+    }
+
+    /// <summary>
+    /// A request made with an API token holds no global permission, whoever owns the token: not a person an Admin gave it to, not an Admin.
+    /// (A space permission follows the role the caller has in the space. How a token narrows that role is the permission service's
+    /// matter and is tested with the tokens.)
+    /// </summary>
+    [Fact]
+    public async Task GlobalPermission_AskedWithAnApiToken_IsNotHeld()
+    {
+        await GrantAsync(_gail, Run, true);
+        var token = Guid.NewGuid();
+
+        async Task<bool> WithTokenAsync(Guid user)
+        {
+            await using var scope = _f.Services.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IAccess>().CanAsync(Actor.User(user, tokenId: token), Run, null, Ct);
+        }
+
+        Assert.True(await CanAsync(_gail, Run));
+        Assert.False(await WithTokenAsync(_gail));
+        Assert.False(await WithTokenAsync(_adminId));
+    }
+
+    [Fact]
     public async Task Me_AndTheUsersList_ShowHeldGlobalPermissions()
     {
         var gail = _f.NewClient();

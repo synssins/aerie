@@ -1,4 +1,4 @@
-import { flattenExtensions, getSchema, type AnyExtension, type Editor, type JSONContent } from "@tiptap/react";
+import { Editor, flattenExtensions, getSchema, type AnyExtension, type JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { TableKit } from "@tiptap/extension-table";
@@ -28,7 +28,7 @@ const core = (codeLanguage: string): AnyExtension[] => [
   ...unknownExtensions,
 ];
 
-type Added = { source: string; extension: AnyExtension };
+type Added = { source: string; extensions: AnyExtension[] }; // as passed in one call: a set may name each other in any order
 const added: Added[] = [];
 const listeners = new Set<() => void>();
 let version = 0;
@@ -36,7 +36,7 @@ let version = 0;
 /** What plugins add to the editor: nodes, marks, paste and drop handlers. Every editor made afterwards has them. */
 export const editorExtensions = {
   add(source: string, ...extensions: AnyExtension[]): void {
-    for (const extension of extensions) added.push({ source, extension });
+    added.push({ source, extensions });
     version++;
     listeners.forEach((l) => l());
   },
@@ -50,24 +50,32 @@ export const editorExtensions = {
 let checked: { version: number; ok: AnyExtension[] } | null = null;
 
 /**
- * The plugin extensions the editor can be made with. One that takes a name of the editor's own, or with which no schema can be
- * built, is left out and reported: a plugin's mistake must not take the editor away.
+ * The plugin extensions the editor can be made with. One that takes a name of the editor's own, or with which no editor can be
+ * made, is left out and reported: a plugin's mistake must not take the editor away. The check makes an editor and throws it
+ * away, because an extension can have a sound schema and still fail when the editor starts.
  */
 function pluginExtensions(): AnyExtension[] {
   if (checked?.version === version) return checked.ok;
   const base = core("plaintext");
   const taken = new Set(flattenExtensions(base).map((e) => e.name));
   const ok: AnyExtension[] = [];
-  for (const { source, extension } of added) {
-    try {
-      const names = flattenExtensions([extension]).map((e) => e.name);
-      const clash = names.find((n) => taken.has(n));
-      if (clash) throw new Error(`${clash} is a part of the editor.`);
-      getSchema([...base, ...ok, extension]);
-      ok.push(extension);
-      names.forEach((n) => taken.add(n));
-    } catch (e) {
-      reportUiError(source, "editor", e);
+  const fits = (set: AnyExtension[]): void => {
+    const names = flattenExtensions(set).map((e) => e.name);
+    const clash = names.find((n, i) => taken.has(n) || names.indexOf(n) !== i);
+    if (clash) throw new Error(`${clash} is a part of the editor.`);
+    getSchema([...base, ...ok, ...set]);
+    new Editor({ extensions: [...base, ...ok, ...set], content: "" }).destroy();
+    ok.push(...set);
+    names.forEach((n) => taken.add(n));
+  };
+  for (const { source, extensions } of added) {
+    try { fits(extensions); }
+    catch (whole) {
+      // Not as a set: then one by one, so the sound ones of a call are kept. A single extension's error is the set's error.
+      if (extensions.length === 1) { reportUiError(source, "editor", whole); continue; }
+      for (const extension of extensions) {
+        try { fits([extension]); } catch (e) { reportUiError(source, "editor", e); }
+      }
     }
   }
   checked = { version, ok };
@@ -83,7 +91,7 @@ export function schemaOf(extensions: AnyExtension[]): Schema {
   return schema;
 }
 
-/** A stored document, as an editor made with these extensions can hold it. */
+/** A stored document, as an editor made with these extensions can hold it. Whatever shape it has, this does not throw: a page must open. */
 export const toEditor = (json: string, extensions: AnyExtension[]): JSONContent => wrapUnknown(JSON.parse(json) as JSONContent, schemaOf(extensions));
 
 /** The editor's document, as it is stored. */

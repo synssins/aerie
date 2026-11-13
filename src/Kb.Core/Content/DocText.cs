@@ -10,13 +10,18 @@ public sealed record DocCodeBlock(string Language, string Text, string? Heading)
 /// <summary>The renderers plugins registered for editor node types of their own. One per node type.</summary>
 public sealed class DocRenderers
 {
+    private static readonly long Quiet = (long)TimeSpan.FromMinutes(1).TotalMilliseconds;
     private readonly Dictionary<string, Registered<NodeRenderer>> _byType = new(StringComparer.Ordinal);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(string Type, string Part), long> _reported = new();
     private readonly Action<string, Exception>? _failed;
 
     public static DocRenderers None { get; } = new([]);
 
     /// <param name="renderers">In load order; the first for a type is used.</param>
-    /// <param name="failed">Told the plugin id and the error when a renderer throws.</param>
+    /// <param name="failed">
+    /// Told the plugin id and the error when a renderer fails: at most once a minute for each part of each node type,
+    /// because how many such nodes a page holds, and how often it is read, is its writer's and its readers' choice.
+    /// </param>
     public DocRenderers(IEnumerable<Registered<NodeRenderer>> renderers, Action<string, Exception>? failed = null)
     {
         ArgumentNullException.ThrowIfNull(renderers);
@@ -24,17 +29,45 @@ public sealed class DocRenderers
         _failed = failed;
     }
 
-    public string? Plain(JsonElement node) => Run(node, r => r.Plain);
-    public IReadOnlyList<string>? MarkdownLines(JsonElement node) => Run(node, r => r.MarkdownLines)?.ToList();
-    public IReadOnlyList<DocBlock>? Blocks(JsonElement node) => Run(node, r => r.Blocks);
+    public string? Plain(JsonElement node) => Run(node, "plain", r => r.Plain, text => text);
 
-    /// <summary>What the plugin's renderer gives for this node; null when there is none, it gives nothing, or it throws (then the caller uses the placeholder).</summary>
-    private T? Run<T>(JsonElement node, Func<NodeRenderer, Func<JsonElement, T>?> part) where T : class
+    // The lines are read here, inside the same guard: a renderer may answer a sequence that fails while it is read.
+    public IReadOnlyList<string>? MarkdownLines(JsonElement node) => Run(node, "markdown", r => r.MarkdownLines, lines =>
+    {
+        var list = lines.ToList();
+        return list.Contains(null!) ? throw new InvalidOperationException("The renderer answered a line that is null.") : (IReadOnlyList<string>)list;
+    });
+
+    public IReadOnlyList<DocBlock>? Blocks(JsonElement node) => Run(node, "blocks", r => r.Blocks, blocks =>
+        blocks.All(Whole) ? blocks : throw new InvalidOperationException("The renderer answered a block with a null in it."));
+
+    /// <summary>The writers of Word, PDF and CSV files take a block as it is, so one with a hole in it is not passed on.</summary>
+    private static bool Whole(DocBlock? block) => block switch
+    {
+        DocParagraph p => p.Runs is not null && p.Runs.All(r => r?.Text is not null),
+        DocCode c => c.Language is not null && c.Text is not null,
+        DocTable t => t.Rows is not null && t.Rows.All(row => row is not null && row.All(cell => cell is not null)),
+        DocImage i => i.Alt is not null,
+        DocRule => true,
+        _ => false,
+    };
+
+    /// <summary>What the plugin's renderer gives for this node; null when there is none, it gives nothing, or it fails (then the caller uses the placeholder).</summary>
+    private TOut? Run<TRaw, TOut>(JsonElement node, string part, Func<NodeRenderer, Func<JsonElement, TRaw>?> pick, Func<TRaw, TOut> read) where TRaw : class where TOut : class
     {
         if (_byType.Count == 0 || node.ValueKind != JsonValueKind.Object || !node.TryGetProperty("type", out var t) || t.ValueKind != JsonValueKind.String) return null;
-        if (!_byType.TryGetValue(t.GetString()!, out var renderer) || part(renderer.Value) is not { } render) return null;
-        try { return render(node); }
-        catch (Exception e) { _failed?.Invoke(renderer.PluginId, e); return null; } // a plugin's renderer may throw anything; the page is still read
+        if (!_byType.TryGetValue(t.GetString()!, out var renderer) || pick(renderer.Value) is not { } render) return null;
+        try { return render(node) is { } raw ? read(raw) : null; }
+        catch (Exception e) // a plugin's renderer may throw anything; the page is still read
+        {
+            var (now, key) = (Environment.TickCount64, (renderer.Value.Type, part));
+            if (!_reported.TryGetValue(key, out var last) || now - last >= Quiet)
+            {
+                _reported[key] = now;
+                _failed?.Invoke(renderer.PluginId, e);
+            }
+            return null;
+        }
     }
 }
 

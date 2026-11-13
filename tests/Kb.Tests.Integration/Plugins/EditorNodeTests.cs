@@ -6,6 +6,7 @@ using Kb.Core.Plugins;
 using Kb.Plugins;
 using Kb.Web;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Kb.Tests.Integration.Plugins;
 
@@ -107,14 +108,34 @@ public sealed class EditorNodeTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task EditorNode_RendererThatThrows_ThePageIsStillSavedAndRead()
+    public async Task EditorNode_RendererThatThrows_ThePageIsStillSavedAndRead_AndThePluginStaysOn()
     {
         await InstallAsync("nodes", failOn: "node");
 
-        var page = await PageAsync(Doc("Alpha"));
+        // Two node types of the probe, each read three ways (search, Markdown, export): six failing renderers.
+        var page = await PageAsync(Doc("Alpha").Replace(" ],\"type\":\"doc\"}", ",{\"type\":\"probeNote\",\"attrs\":{\"label\":\"N\"}} ],\"type\":\"doc\"}", StringComparison.Ordinal));
 
         Assert.Equal(1, await FoundAsync("insidetheword")); // the placeholder's words
-        Assert.Equal("Before\n\n[probeBox] insidetheword", await MarkdownAsync(page.Id));
+        // What is in a page is its writer's choice. Reading it, however often, must not count against the plugin and switch it off.
+        for (var i = 0; i < 3; i++) Assert.Equal("Before\n\n[probeBox] insidetheword\n\n[probeNote]", await MarkdownAsync(page.Id));
+        Assert.Equal(HttpStatusCode.OK, (await _admin.GetAsync($"/api/v1/pages/{page.Id}/export?format=docx", Ct)).StatusCode);
+        await _f.Services.GetRequiredService<Kb.Web.Plugins.PluginFailures>().Pending;
+        Assert.Equal((PluginState.Enabled, null), await StatusAsync("kb.test.probe"));
+    }
+
+    [Fact]
+    public async Task TableExport_NumbersThePagesOwnTables_NotAPluginsBlocks()
+    {
+        await InstallAsync("nodes");
+        // The probe renders a box labelled "table" as a table of its own. The page's own table comes after it.
+        var doc = Doc("table").Replace(" ],\"type\":\"doc\"}", ",{\"type\":\"table\",\"content\":[{\"type\":\"tableRow\",\"content\":[{\"type\":\"tableHeader\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Server\"}]}]}]}]} ],\"type\":\"doc\"}", StringComparison.Ordinal);
+        Assert.Contains("tableHeader", doc);
+        var page = await PageAsync(doc);
+
+        var csv = await (await _admin.GetAsync($"/api/v1/pages/{page.Id}/export/table/1?format=csv", Ct)).Content.ReadAsStringAsync(Ct);
+
+        Assert.Equal("Server\r\n", csv.TrimStart('\uFEFF')); // the menu in the browser counts the page's own tables, so the server does too
+        Assert.Equal(HttpStatusCode.NotFound, (await _admin.GetAsync($"/api/v1/pages/{page.Id}/export/table/2?format=csv", Ct)).StatusCode);
     }
 
     [Fact]

@@ -100,9 +100,11 @@ services.AddScoped<PluginInstaller>();
 services.AddSingleton<PluginSettingsStore>();
 services.AddSingleton<PluginFailures>();
 services.AddSingleton<IPluginFailures>(sp => sp.GetRequiredService<PluginFailures>());
-// How search, history and exports read the editor nodes plugins add. A renderer that throws counts against its plugin.
+// How search, history and exports read the editor nodes plugins add. A renderer that fails is written to the log and the node is
+// read as a placeholder. It is not counted as a failure of the plugin: what a page holds is its writer's choice, and a page
+// must not be able to switch a plugin off.
 services.AddSingleton(sp => new DocRenderers(sp.GetRequiredService<IRegistrations>().All<NodeRenderer>(),
-    (plugin, e) => sp.GetRequiredService<IPluginFailures>().Report(plugin, "editor node", e)));
+    (plugin, e) => sp.GetRequiredService<ILoggerFactory>().CreateLogger("Kb.Plugins.EditorNodes").LogWarning(e, "Plugin {Plugin}: a renderer of an editor node failed. The node is read as a placeholder.", plugin)));
 services.AddSingleton<PluginWatcher>();
 services.AddHostedService(sp => sp.GetRequiredService<PluginWatcher>());
 services.AddHttpContextAccessor();

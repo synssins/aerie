@@ -1,14 +1,16 @@
 import { ChevronRight, House } from "lucide-react";
+import { usePluginsReady } from "./loader";
 import { useScreen } from "./screens";
 import { PluginBoundary, SlotSections } from "./SlotViews";
 
 /** A plugin's own screen, inside the app's three panels: the left one stays the app's, the right one is the slot the screen names. */
 export function PluginScreen({ at, onHome }: { at: { id: string; rest: string }; onHome: () => void }) {
   const found = useScreen(at.id, at.rest);
+  const ready = usePluginsReady();
   if (!found) {
     return (
       <>
-        <main className="doc"><div className="col"><p className="muted">Not found.</p></div></main>
+        <main className="doc"><div className="col">{ready && <p className="muted">Not found.</p>}</div></main>
         <aside className="side" aria-label="Details" />
       </>
     );

@@ -16,7 +16,7 @@ Related: [developer guide](developer-guide.md), [admin guide](admin-guide.md).
 | `assembly` | text | `<id>.dll` | The file name of the main assembly, at the top of the package. |
 | `minKbVersion` | text | `0.1.0` | The lowest app version it runs on. |
 | `abstractionsVersion` | text | `0.1.0` | The version of `Kb.Plugins.Abstractions` it was built against. |
-| `uiApiVersion` | text | none | The version of the script API its script was written for: `1.0.0`. Needed when the plugin has a script. |
+| `uiApiVersion` | text | none | The version of the script API its script was written for: `1.0.0`. Needed when the plugin has a script: without it the install is refused. |
 | `enforcing` | true or false | false | True when the plugin enforces a rule. If the core disables it, the actions it guarded stay locked until an Admin releases the lock. |
 | `requires` | list | empty | The plugins it needs. See below. |
 | `exports` | list of text | empty | The assemblies it shares with the plugins that require it, by assembly name without `.dll` (`My.Lib`). |
@@ -86,6 +86,11 @@ The upload answers with one of these, and nothing is stored.
 | Built-in plugins cannot be replaced. | The id is that of a plugin shipped with the app. |
 | Version <version> is already installed. | Raise the version. |
 | A newer version is installed. | An update must be higher. To go back, remove the plugin and upload the older package. |
+| A plugin with a script needs uiApiVersion. | `ui.script` is set and `uiApiVersion` is not. |
+| Permission <key>: scope is space or global. | The names are lower case. |
+| Permission <key>: defaultRole is Reader, Contributor, Supervisor or Owner. | A space permission with another default role. The names are case-sensitive. |
+| Permission <key> is listed twice. | |
+| A permission key is 1 to 100 characters, with no colon. | |
 | Built for a newer plugin API (<version>). | `abstractionsVersion` is newer than the app's. |
 | Needs version <version> or later. | `minKbVersion` is newer than the app. |
 | Requires <plugin> <version> or later. | A required plugin is not installed, or is too old. |

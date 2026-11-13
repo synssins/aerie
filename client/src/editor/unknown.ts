@@ -14,6 +14,8 @@ const typeOf = (original: string): string => {
 };
 
 const original = { default: "", parseHTML: (el: HTMLElement) => el.getAttribute("data-original") ?? "", renderHTML: (a: { original: string }) => ({ "data-original": a.original }) };
+// Set on the one carrier that holds a whole document whose body could not be read at all.
+const top = { default: false, rendered: false };
 
 /** A box with the type's name. It can be moved or deleted, not edited. */
 const box = (name: string, inline: boolean) => Node.create({
@@ -23,7 +25,7 @@ const box = (name: string, inline: boolean) => Node.create({
   atom: true,
   selectable: true,
   draggable: true,
-  addAttributes: () => ({ original }),
+  addAttributes: () => (inline ? { original } : { original, top }),
   parseHTML: () => [{ tag: `${inline ? "span" : "div"}[data-kb-unknown]` }],
   renderHTML: ({ node, HTMLAttributes }) => [inline ? "span" : "div", { ...HTMLAttributes, "data-kb-unknown": "", class: "kb-unknown", contenteditable: "false" }, typeOf(String(node.attrs.original))],
 });
@@ -40,7 +42,9 @@ export const UnknownMark = Mark.create({
 });
 export const unknownExtensions = [UnknownBlock, UnknownInline, UnknownMark];
 
-const carry = (node: JSONContent, inline: boolean): JSONContent => ({ type: inline ? INLINE : BLOCK, attrs: { original: JSON.stringify(node) } });
+// What is carried may be anything a page can hold where a node should be: a node of a plugin, or a null, a number, a text.
+const carry = (node: unknown, inline: boolean): JSONContent => ({ type: inline ? INLINE : BLOCK, attrs: { original: JSON.stringify(node) ?? "null" } });
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** Whether these children, in this order, are content the node type takes. */
 function takes(type: NodeType, kids: JSONContent[], schema: Schema): boolean {
@@ -52,21 +56,33 @@ function takes(type: NodeType, kids: JSONContent[], schema: Schema): boolean {
   return match.validEnd;
 }
 
-/** The node as the editor can hold it. `changed` tells that it, or something under it, was swapped for a carrier. */
-function wrapNode(node: JSONContent, parent: NodeType, schema: Schema): { node: JSONContent; changed: boolean } {
+/**
+ * The node as the editor can hold it. `changed` tells that it, or something under it, was swapped for a carrier.
+ * The server stores a page as its writer sent it, so a node here can be of any shape: whatever is not a node the editor's
+ * schema can make is carried whole.
+ */
+function wrapNode(node: unknown, parent: NodeType, schema: Schema): { node: JSONContent; changed: boolean } {
   const whole = () => ({ node: carry(node, parent.inlineContent), changed: true });
-  const type = schema.nodes[node.type ?? ""];
+  if (!isObject(node) || typeof node.type !== "string") return whole();
+  const type = schema.nodes[node.type];
   if (!type) return whole();
+  if (type.isText && (typeof node.text !== "string" || node.text.length === 0)) return whole();
+  if (node.attrs !== undefined && !isObject(node.attrs)) return whole();
 
   let changed = false;
-  let next = node;
-  if (node.marks?.some((m) => !schema.marks[m.type])) {
-    // A place that takes no marks (a code block) cannot hold the carrier mark. The carrier that comes back does not fit there either, so that place is carried whole.
-    if (!parent.allowsMarkType(schema.marks[MARK])) return whole();
-    changed = true;
-    next = { ...next, marks: node.marks.map((m) => (schema.marks[m.type] ? m : { type: MARK, attrs: { original: JSON.stringify(m) } })) };
+  let next = node as JSONContent;
+  if (node.marks !== undefined) {
+    if (!Array.isArray(node.marks) || node.marks.some((m) => !isObject(m) || typeof m.type !== "string" || (m.attrs !== undefined && !isObject(m.attrs)))) return whole();
+    const marks = node.marks as { type: string; attrs?: Record<string, unknown> }[];
+    if (marks.some((m) => !schema.marks[m.type])) {
+      // A place that takes no marks (a code block) cannot hold the carrier mark. The carrier that comes back does not fit there either, so that place is carried whole.
+      if (!parent.allowsMarkType(schema.marks[MARK])) return whole();
+      changed = true;
+      next = { ...next, marks: marks.map((m) => (schema.marks[m.type] ? m : { type: MARK, attrs: { original: JSON.stringify(m) } })) };
+    }
   }
-  if (node.content) {
+  if (node.content !== undefined) {
+    if (!Array.isArray(node.content)) return whole();
     const kids = node.content.map((k) => wrapNode(k, type, schema));
     if (kids.some((k) => k.changed)) {
       changed = true;
@@ -80,27 +96,48 @@ function wrapNode(node: JSONContent, parent: NodeType, schema: Schema): { node: 
 
 /** The document as the editor can hold it. */
 export function wrapUnknown(doc: JSONContent, schema: Schema): JSONContent {
-  return doc.content ? { ...doc, content: doc.content.map((n) => wrapNode(n, schema.topNodeType, schema).node) } : doc;
+  const all = (): JSONContent => ({ type: schema.topNodeType.name, content: [{ type: BLOCK, attrs: { original: JSON.stringify(doc) ?? "null", top: true } }] });
+  if (!isObject(doc) || doc.type !== schema.topNodeType.name) return all();
+  if (doc.content === undefined) return doc;
+  if (!Array.isArray(doc.content)) return all();
+  try { return { ...doc, content: doc.content.map((n) => wrapNode(n, schema.topNodeType, schema).node) }; }
+  catch { return all(); } // whatever else is wrong with it: the page opens, as one box, and is saved as it was
 }
 
-const held = <T>(original: unknown): T | null => {
-  try { const v = JSON.parse(String(original)) as T | null; return v && typeof v === "object" ? v : null; } catch { return null; }
+type Held = { value: unknown } | null;
+/** What a carrier holds; null for one that holds nothing readable (one pasted in from elsewhere). */
+const held = (text: unknown): Held => {
+  if (typeof text !== "string" || text.length === 0) return null;
+  try { return { value: JSON.parse(text) as unknown }; } catch { return null; }
 };
 
-/** The node as it is stored; null for a carrier that holds nothing (one pasted in from elsewhere). */
-function unwrapNode(node: JSONContent): JSONContent | null {
-  if (node.type === BLOCK || node.type === INLINE) return held<JSONContent>(node.attrs?.original);
+/** The node as it is stored; `drop` for a carrier that holds nothing. */
+function unwrapNode(node: JSONContent): { drop: true } | { drop: false; value: unknown } {
+  if (node.type === BLOCK || node.type === INLINE) {
+    const h = held(node.attrs?.original);
+    return h ? { drop: false, value: h.value } : { drop: true };
+  }
   let next = node;
   if (node.marks?.some((m) => m.type === MARK)) {
-    const marks = node.marks.map((m) => (m.type === MARK ? held<{ type: string }>(m.attrs?.original) : m)).filter((m) => m !== null);
+    const marks = node.marks.flatMap((m) => {
+      if (m.type !== MARK) return [m];
+      const h = held(m.attrs?.original);
+      return h ? [h.value as { type: string }] : [];
+    });
     next = { ...next, marks };
     if (marks.length === 0) delete next.marks;
   }
-  if (node.content) next = { ...next, content: node.content.map(unwrapNode).filter((n) => n !== null) };
-  return next;
+  if (node.content) next = { ...next, content: node.content.flatMap((n) => { const u = unwrapNode(n); return u.drop ? [] : [u.value as JSONContent]; }) };
+  return { drop: false, value: next };
 }
 
 /** The document as it is stored: every carrier swapped back for what it holds. */
 export function unwrapUnknown(doc: JSONContent): JSONContent {
-  return unwrapNode(doc) ?? doc;
+  // A document that was carried as one box, and is still just that box, is itself again.
+  if (doc.content?.length === 1 && doc.content[0].type === BLOCK && doc.content[0].attrs?.top === true) {
+    const all = held(doc.content[0].attrs.original);
+    if (all) return all.value as JSONContent;
+  }
+  const u = unwrapNode(doc);
+  return u.drop ? doc : u.value as JSONContent;
 }

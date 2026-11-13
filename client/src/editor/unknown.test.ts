@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Editor, Node, type JSONContent } from "@tiptap/react";
-import { editorExtensions, makeExtensions, schemaOf } from "./extensions";
+import { Editor, Extension, Node, type JSONContent } from "@tiptap/react";
+import { editorExtensions, makeExtensions, schemaOf, toEditor } from "./extensions";
 import { unwrapUnknown, wrapUnknown } from "./unknown";
 
 // A plugin's block, a plugin's inline node, a plugin's mark, and a plugin's block inside a list.
@@ -92,6 +92,54 @@ describe("unknown editor content", () => {
       { type: "paragraph", content: [{ type: "text", text: "Kept" }] },
       { type: "paragraph", content: [{ type: "text", text: "Tail " }, { type: "text", text: "marked" }] },
     ]);
+  });
+
+  it.each([
+    ["content that is not a list", '{"type":"doc","content":{}}'],
+    ["a null among the nodes", '{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Kept"}]},null]}'],
+    ["a node that is a number", '{"type":"doc","content":[7]}'],
+    ["a node without a type", '{"type":"doc","content":[{"content":[{"type":"text","text":"x"}]}]}'],
+    ["a type that is not text", '{"type":"doc","content":[{"type":5}]}'],
+    ["marks that are not a list", '{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"x","marks":"bold"}]}]}'],
+    ["a null among the marks", '{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"x","marks":[null]}]}]}'],
+    ["a mark without a type", '{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"x","marks":[{"attrs":{}}]}]}]}'],
+    ["children that are not a list", '{"type":"doc","content":[{"type":"paragraph","content":"text"}]}'],
+    ["a text without its text", '{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text"}]}]}'],
+  ])("a stored page of an odd shape still opens and is saved as it was: %s", (_name, stored) => {
+    // The server stores what a writer sent, if it is JSON with a doc at the top. Whatever that is, opening it must not throw.
+    const extensions = makeExtensions("plaintext");
+    const editor = new Editor({ extensions, content: toEditor(stored, extensions) });
+    editors.push(editor);
+
+    expect(out(editor)).toEqual(JSON.parse(stored));
+  });
+
+  it("extensions passed in one call are checked together, so one may name another that comes after it", () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204 })));
+    editorExtensions.add("kb.callout",
+      Node.create({ name: "callout", group: "block", content: "calloutTitle block+", renderHTML: () => ["div", 0] }),
+      Node.create({ name: "calloutTitle", content: "inline*", renderHTML: () => ["h4", 0] }));
+
+    const names = makeExtensions("plaintext").map((e) => e.name);
+
+    expect(names).toContain("callout");
+    expect(names).toContain("calloutTitle");
+  });
+
+  it("an extension with which no editor can be made is left out, although its schema is fine", () => {
+    const calls: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => { calls.push(JSON.parse(String(init?.body))); return new Response(null, { status: 204 }); }));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    editorExtensions.add("kb.bad", Extension.create({ name: "badPlugin", addProseMirrorPlugins() { throw new Error("Broken at start."); } }));
+    editorExtensions.add("kb.good", Node.create({ name: "goodBox", group: "block", content: "block*", renderHTML: () => ["div", 0] }));
+
+    const extensions = makeExtensions("plaintext");
+
+    expect(extensions.map((e) => e.name)).toContain("goodBox");
+    expect(extensions.map((e) => e.name)).not.toContain("badPlugin");
+    expect(calls).toEqual([{ plugin: "kb.bad", where: "editor", message: "Broken at start." }]);
+    expect(() => editors.push(new Editor({ extensions, content: toEditor(JSON.stringify(DOC), extensions) }))).not.toThrow();
   });
 
   it("a plugin node is editable when its extension is loaded", () => {

@@ -291,13 +291,21 @@ internal sealed class SavePluginPermissionsHandler(KbDbContext db, IAccess acces
         }
         var names = roles.Keys.Select(k => $"{id}:{k}").ToList();
         var rows = await db.PluginPermissionRoles.Where(p => names.Contains(p.Permission)).ToListAsync(ctx.Cancel);
+        var changed = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var (key, role) in roles)
         {
-            if (rows.FirstOrDefault(r => r.Permission == $"{id}:{key}") is { } row) row.MinRole = role;
+            // A role equal to the manifest's default is not stored: the default of a later version of the plugin then counts.
+            var standard = PluginPermissionScopes.DefaultRole(_plugin.Manifest.Permissions.First(p => p.Key == key));
+            var row = rows.FirstOrDefault(r => r.Permission == $"{id}:{key}");
+            if ((row?.MinRole ?? standard) == role && (row is null || role != standard)) continue;
+            if (role == standard) db.PluginPermissionRoles.Remove(row!);
+            else if (row is not null) row.MinRole = role;
             else db.PluginPermissionRoles.Add(new PluginPermissionRole { Permission = $"{id}:{key}", MinRole = role });
+            changed[key] = role.ToString();
         }
+        if (changed.Count == 0) return new Unit();
         await db.SaveChangesAsync();
-        ctx.Audit(AuditActions.PluginPermissionsChange, "plugin", id, data: roles.ToDictionary(r => r.Key, r => r.Value.ToString()));
+        ctx.Audit(AuditActions.PluginPermissionsChange, "plugin", id, data: changed);
         return new Unit();
     }
 }

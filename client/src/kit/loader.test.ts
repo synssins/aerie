@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Me } from "../api";
-import { loadPlugins } from "./loader";
-import type { KbHost } from "./host";
+import { loadPlugins, pluginsReady } from "./loader";
+import { navigation, session, type KbHost } from "./host";
+import { current } from "./current";
 import { slots } from "./slots";
 
 const me: Me = { id: "u1", userName: "gail", displayName: "Gail", isAdmin: false, isBreakGlass: false, canAnnounce: false, permissions: [] };
@@ -17,7 +18,7 @@ function server(plugins: { id: string; version: string; script: string }[]): Cal
   return calls;
 }
 
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); slots.clear(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); slots.clear(); session.me = null; });
 
 describe("loadPlugins", () => {
   it("calls each plugin with a host bound to its id", async () => {
@@ -60,6 +61,78 @@ describe("loadPlugins", () => {
     expect(loaded).toEqual(["kb.good"]);
     const reports = calls.filter((c) => c.url === "/api/v1/ui/errors").map((c) => c.body);
     expect(reports).toEqual([{ plugin: "kb.bad", where: "load", message: "Broken on load." }, { plugin: "kb.none", where: "load", message: "The script has no default export." }]);
+  });
+
+  it("a plugin whose start never ends does not hold up the next one, and a start that fails later is reported", async () => {
+    const calls = server([{ id: "kb.slow", version: "1.0.0", script: "/slow.js" }, { id: "kb.late", version: "1.0.0", script: "/late.js" }, { id: "kb.good", version: "1.0.0", script: "/good.js" }]);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const loaded: string[] = [];
+
+    await loadPlugins(me, async (url) => {
+      if (url === "/slow.js") return { default: () => new Promise<void>(() => {}) };
+      if (url === "/late.js") return { default: async () => { await Promise.resolve(); throw new Error("Failed after it started."); } };
+      return { default: (kb: KbHost) => { loaded.push(kb.plugin.id); } };
+    });
+
+    expect(loaded).toEqual(["kb.good"]);
+    await vi.waitFor(() => expect(calls.filter((c) => c.url === "/api/v1/ui/errors").map((c) => c.body)).toEqual([{ plugin: "kb.late", where: "load", message: "Failed after it started." }]));
+  });
+
+  it("kb.me() is the person signed in now, not the one the scripts were loaded for", async () => {
+    server([{ id: "kb.a", version: "1.0.0", script: "/s.js" }]);
+    let host!: KbHost;
+    await loadPlugins(me, async () => ({ default: (kb: KbHost) => { host = kb; } }));
+    expect(host.me().userName).toBe("gail");
+
+    // Gail signs out and Olga signs in, in the same tab: the scripts are not loaded again.
+    session.me = { ...me, id: "u2", userName: "olga", permissions: ["kb.a:run"] };
+
+    expect(host.me().userName).toBe("olga");
+    expect(host.me().permissions).toEqual(["kb.a:run"]);
+  });
+
+  it("kb.navigate asks the app's shell, which may refuse to leave an edit", async () => {
+    server([{ id: "kb.a", version: "1.0.0", script: "/s.js" }]);
+    let host!: KbHost;
+    await loadPlugins(me, async () => ({ default: (kb: KbHost) => { host = kb; } }));
+    const before = navigation.go;
+    const asked: string[] = [];
+    navigation.go = (path) => { asked.push(path); };
+    try {
+      host.navigate("/x/kb.a/reports");
+      expect(asked).toEqual(["/x/kb.a/reports"]);
+      expect(location.pathname).not.toBe("/x/kb.a/reports"); // the shell decides, not the plugin
+    } finally { navigation.go = before; }
+  });
+
+  it("a listener of kb.current that throws is reported, and the others still hear", async () => {
+    const calls = server([{ id: "kb.a", version: "1.0.0", script: "/a.js" }, { id: "kb.b", version: "1.0.0", script: "/b.js" }]);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const hosts: KbHost[] = [];
+    await loadPlugins(me, async () => ({ default: (kb: KbHost) => { hosts.push(kb); } }));
+    let heard = 0;
+    hosts[0].current.subscribe(() => { throw new Error("No page."); });
+    hosts[1].current.subscribe(() => { heard++; });
+
+    expect(() => current.set({ page: null, space: { id: "s1" } as never })).not.toThrow();
+
+    expect(heard).toBe(1);
+    await vi.waitFor(() => expect(calls.filter((c) => c.url === "/api/v1/ui/errors").map((c) => c.body)).toEqual([{ plugin: "kb.a", where: "current", message: "No page." }]));
+    current.set({ page: null, space: null });
+  });
+
+  it("tells when the scripts have been loaded, also when the list cannot be read", async () => {
+    pluginsReady.set(false);
+    server([{ id: "kb.a", version: "1.0.0", script: "/s.js" }]);
+    const loading = loadPlugins(me, async () => ({ default: () => {} }));
+    expect(pluginsReady.done()).toBe(false);
+    await loading;
+    expect(pluginsReady.done()).toBe(true);
+
+    pluginsReady.set(false);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 500 })));
+    await loadPlugins(me, vi.fn());
+    expect(pluginsReady.done()).toBe(true);
   });
 
   it("does nothing when the list cannot be read", async () => {

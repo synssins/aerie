@@ -26,8 +26,11 @@ public static class UiRoutes
         app.MapGet("/plugins/{id}/{version}/{**path}", (string id, string version, string? path, PluginRegistry registry, HttpContext http) =>
         {
             if (PluginStatic.Find(registry, id, version, path) is not { } found) return Results.NotFound();
-            // The address names the version and the package's hash, so the file behind it never changes.
-            http.Response.Headers.CacheControl = "private, max-age=31536000, immutable";
+            // Only an address with the loaded package's hash names a file that never changes. A script's own address has it.
+            // What the script fetches beside itself (a stylesheet, an imported module) has not, so the browser asks again each time:
+            // the same version can be installed again with other content.
+            var hash = PluginStatic.HashOf(registry, id);
+            http.Response.Headers.CacheControl = hash.Length > 0 && http.Request.Query["v"] == hash ? "private, max-age=31536000, immutable" : "private, no-cache";
             return Results.File(found.File, found.ContentType);
         });
     }

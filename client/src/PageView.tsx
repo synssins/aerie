@@ -427,6 +427,16 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
   );
 }
 
+/** A plugin's toolbar entry. Its label may be a function of the plugin's, so it is worked out here, inside the entry's own error boundary. */
+function ToolbarEntry({ item, source, ctx }: { item: ActionItem<{ editor: Editor }>; source: string; ctx: { editor: Editor } }) {
+  return (
+    <button type="button" className="etb text" onMouseDown={(ev) => ev.preventDefault()}
+      onClick={() => { try { item.onClick?.(ctx); } catch (err) { reportUiError(source, "editor.toolbar", err); } }}>
+      {typeof item.label === "function" ? item.label(ctx) : item.label}
+    </button>
+  );
+}
+
 function Toolbar({ editor, onImages }: { editor: Editor; onImages: (files: File[]) => void }) {
   const dialogs = useDialogs();
   const picker = useRef<HTMLInputElement>(null);
@@ -505,12 +515,7 @@ function Toolbar({ editor, onImages }: { editor: Editor; onImages: (files: File[
       <input ref={picker} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden
         onChange={(e) => { const f = imagesIn(e.target.files); e.target.value = ""; if (f.length) onImages(f); }} />
       {extra.map((e) => (
-        <PluginBoundary key={`${e.source}:${e.item.id}`} source={e.source} where="editor.toolbar">
-          <button type="button" className="etb text" onMouseDown={(ev) => ev.preventDefault()}
-            onClick={() => { try { e.item.onClick?.(ctx); } catch (err) { reportUiError(e.source, "editor.toolbar", err); } }}>
-            {typeof e.item.label === "function" ? e.item.label(ctx) : e.item.label}
-          </button>
-        </PluginBoundary>
+        <PluginBoundary key={`${e.source}:${e.item.id}`} source={e.source} where="editor.toolbar"><ToolbarEntry item={e.item} source={e.source} ctx={ctx} /></PluginBoundary>
       ))}
       <span className="sep" />
       <B label="Undo" run={() => c().undo().run()}><Undo2 className="ic" /></B>

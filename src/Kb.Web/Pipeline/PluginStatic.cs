@@ -36,9 +36,16 @@ internal static class PluginStatic
     {
         var (id, version) = (plugin.Manifest.Id, plugin.Manifest.Version);
         if (plugin.Manifest.Ui?.Script is not { Length: > 0 } script || !script.EndsWith(".js", StringComparison.OrdinalIgnoreCase) || Find(registry, id, version, script) is null) return null;
-        var marker = Path.Combine(registry.FolderOf(id)!, ".sha256");
-        var hash = File.Exists(marker) ? File.ReadAllText(marker) : "";
-        return $"/plugins/{id}/{version}/{script}?v={hash[..Math.Min(hash.Length, 12)]}";
+        return $"/plugins/{id}/{version}/{script}?v={HashOf(registry, id)}";
+    }
+
+    /// <summary>The first 12 characters of the hash of the plugin's loaded package; empty when it is not known.</summary>
+    public static string HashOf(PluginRegistry registry, string id)
+    {
+        if (registry.FolderOf(id) is not { } folder) return "";
+        var marker = Path.Combine(folder, ".sha256");
+        var hash = File.Exists(marker) ? File.ReadAllText(marker).Trim() : "";
+        return hash[..Math.Min(hash.Length, 12)];
     }
 }
 

@@ -50,6 +50,27 @@ public class PluginRulesTests
     }
 
     [Fact]
+    public void Refusal_AScriptNeedsItsUiApiVersion()
+    {
+        Assert.Equal("A plugin with a script needs uiApiVersion.", PluginVersions.Refusal(M("kb.ui") with { Ui = new PluginUi { Script = "ui/index.js" } }));
+        Assert.Null(PluginVersions.Refusal(M("kb.ui") with { Ui = new PluginUi { Script = "ui/index.js" }, UiApiVersion = KbHost.UiApiVersion }));
+    }
+
+    [Fact]
+    public void Refusal_PermissionsThatCannotWork()
+    {
+        static string? Of(params PluginPermission[] permissions) => PluginVersions.Refusal(M("kb.p") with { Permissions = permissions });
+
+        Assert.Null(Of(new PluginPermission("see", "See", "space", "Supervisor"), new PluginPermission("run", "Run", "global")));
+        Assert.Equal("Permission see: scope is space or global.", Of(new PluginPermission("see", "See", "Global")));
+        Assert.Equal("Permission see: defaultRole is Reader, Contributor, Supervisor or Owner.", Of(new PluginPermission("see", "See", "space", "supervisor")));
+        Assert.Equal("Permission see is listed twice.", Of(new PluginPermission("see", "See", "space"), new PluginPermission("see", "See all", "global")));
+        Assert.Equal("A permission key is 1 to 100 characters, with no colon.", Of(new PluginPermission("", "See", "space")));
+        Assert.Equal("A permission key is 1 to 100 characters, with no colon.", Of(new PluginPermission("a:b", "See", "space")));
+        Assert.Equal("A permission key is 1 to 100 characters, with no colon.", Of(new PluginPermission(new string('k', 101), "See", "space")));
+    }
+
+    [Fact]
     public void Order_PutsRequirementsFirst()
     {
         var plan = PluginGraph.Order([M("kb.test.dependent", requires: new PluginRequirement("kb.test.lib", "1.0.0")), M("kb.test.lib"), M("kb.alone")]);

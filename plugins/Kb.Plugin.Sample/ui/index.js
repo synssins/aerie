@@ -47,7 +47,8 @@ const Notice = Node.create({
   name: "sampleNotice",
   group: "block",
   content: "inline*",
-  parseHTML: () => [{ tag: "p[data-sample-notice]" }],
+  // Before the editor's own rule for <p>, or a copied notice would be pasted as a plain paragraph.
+  parseHTML: () => [{ tag: "p[data-sample-notice]", priority: 60 }],
   renderHTML: ({ HTMLAttributes }) => ["p", { ...HTMLAttributes, "data-sample-notice": "", class: "sample-notice" }, 0],
 });
 

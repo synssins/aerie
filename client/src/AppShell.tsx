@@ -15,6 +15,7 @@ import { NewItemDialog, type NewItem } from "./NewItemDialog";
 import { PageTree } from "./PageTree";
 import { PageView } from "./PageView";
 import { current as currentView } from "./kit/current";
+import { navigation } from "./kit/host";
 import { PluginScreen } from "./kit/PluginScreen";
 
 const DEFAULT_SETTINGS: UserSettings = { theme: "system", width: "boxed", startPage: "last", codeLanguage: "plaintext", notify: {} };
@@ -210,11 +211,21 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
     if (location.pathname + location.search !== path) history.pushState(null, "", path);
     if (path.startsWith("/p/") || path.startsWith("/s/")) store("kb.last", path);
   };
+  // A plugin's kb.navigate comes through here: someone in the middle of an edit is asked first, as for a click on a link.
+  useEffect(() => {
+    const before = navigation.go;
+    navigation.go = (path) => void (async () => {
+      if (!await discardOk()) return;
+      go(path);
+      await applyRoute(spaces, "");
+    })();
+    return () => { navigation.go = before; };
+  });
 
   async function openSpace(s: Space) {
     if (!await discardOk()) return;
     reloadIfPending();
-    if (current?.id === s.id && !page && !admin && !settingsAt && !home && !binOf && searchQ === null) setOpen((o) => ({ ...o, [s.id]: !o[s.id] }));
+    if (current?.id === s.id && !page && !admin && !settingsAt && !home && !binOf && !pluginAt && searchQ === null) setOpen((o) => ({ ...o, [s.id]: !o[s.id] }));
     else showSpace(s);
     go(`/s/${s.id}`);
   }
@@ -370,7 +381,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
             </form>
           </div>
           <div className="c3">
-            {canEdit && !admin && !settingsAt && !home && searchQ === null && (
+            {canEdit && !admin && !settingsAt && !home && !pluginAt && searchQ === null && (
               <div className="menu-wrap" ref={newRef}>
                 <button className="ib" onClick={() => setShowNew(!showNew)} aria-haspopup="menu" aria-expanded={showNew}>
                   <Plus className="ic" aria-hidden />New<ChevronDown className="ic sm" aria-hidden />
@@ -479,7 +490,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
                 {spaces.map((s) => (
                   <div key={s.id}>
                     <button
-                      className={`node ${current?.id === s.id && !page && !binOf && !home && searchQ === null ? "cur" : ""} ${open[s.id] ? "open" : ""}`}
+                      className={`node ${current?.id === s.id && !page && !binOf && !home && !pluginAt && searchQ === null ? "cur" : ""} ${open[s.id] ? "open" : ""}`}
                       onClick={() => void openSpace(s)}
                       aria-expanded={!!open[s.id]}
                     >

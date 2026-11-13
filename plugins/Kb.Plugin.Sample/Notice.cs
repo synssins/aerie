@@ -19,7 +19,10 @@ public static class Notice
     };
 
     // The node is the stored JSON of the block: { "type": "sampleNotice", "content": [ { "type": "text", "text": "..." } ] }.
+    // A page is stored as its writer sent it, so read with care: a renderer must not throw on a node of an odd shape.
     private static string Text(JsonElement node) =>
-        node.TryGetProperty("content", out var kids) ? string.Concat(kids.EnumerateArray().Select(k => k.TryGetProperty("text", out var t) ? t.GetString() : "")) : "";
+        node.TryGetProperty("content", out var kids) && kids.ValueKind == JsonValueKind.Array
+            ? string.Concat(kids.EnumerateArray().Select(k => k.ValueKind == JsonValueKind.Object && k.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : ""))
+            : "";
     // #endregion
 }

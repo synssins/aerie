@@ -240,6 +240,9 @@ A plugin declares its permissions in the manifest and asks for one by name: `"<p
 - A `space` permission is held, in a space, by everyone whose role there is at least its minimum role. The manifest gives the default (`defaultRole`); an Admin can change it on the Plugins screen. Ask with the space id.
 - A `global` permission is held by the people an Admin gave it to (Administration > Users) and by every Admin. Ask without a space. `me.read` lists the global permissions its caller holds.
 - A permission of a plugin that is not loaded is not held, whatever was set or granted.
+- A request made with an API token holds no global permission. For a space permission the role the token has in the space counts.
+- A deactivated account holds nothing.
+- A manifest is refused at install when a permission could not work: a scope other than `space` or `global`, a `defaultRole` that is not a role's name (they are case-sensitive), a key listed twice, a key that is empty, longer than 100 characters or holds a colon.
 
 `IAccess` answers for an actor: a person (narrowed by an API token when the request came with one), a plugin doing background work, or nobody.
 It also answers the core's own questions: `RoleAsync`, `CanAsync(actor, spaceId, SpaceAction)`, `IsAdminAsync`.
@@ -391,7 +394,8 @@ It runs when an Admin opens the Plugins screen, as the plugin, with a limit of f
 
 ## Screens
 
-A plugin can ship a script for the browser. The manifest names it: `"uiApiVersion": "1.0.0"` and `"ui": { "script": "ui/index.js" }`.
+A plugin can ship a script for the browser. The manifest names it: `"uiApiVersion": "1.0.0"` and `"ui": { "script": "ui/index.js" }`. Both are needed: a script without `uiApiVersion` is refused at install.
+Only an uploaded plugin's script is served. A plugin built into the app (shipped in its folder) cannot have one yet.
 The script is an ES module in the package's `ui/` folder. Its default export is called once, after sign-in, with a host object.
 
 <!-- sample:ui -->
@@ -437,10 +441,13 @@ export default function (kb) {
 
 - Take React from `/shared/v1/react.js` (also `/shared/v1/react-jsx-runtime.js` and `/shared/v1/react-dom.js`), and the editor from `/shared/v1/tiptap-react.js`. They hand back the app's own copies. A script that brings its own React breaks hooks; a node made with another copy of the editor is not a node of this one.
 - The app serves only the `ui/` folder of a loaded plugin, to people who are signed in, and only these file types: js, css, json, map, svg, png, jpg, webp, woff2.
+- The browser keeps the script itself for good: its address carries the package's hash. Every other file of the folder (a stylesheet, a module the script imports) is asked for again each time, so a new package is seen at once.
+- The default export may return a promise. The app does not wait for it before it starts the next plugin's script; if it fails later, that is written to the server's log.
 - `kb.slots.add(slot, item)` adds to a named place of a screen. Today's slots: `page.tools` (buttons in the page's tool row: `id`, `label`, `onClick(ctx)`), `page.panel` (parts of the page's right panel: `id`, `title`, `render(ctx)`), both with the context `{ page }`, and `editor.toolbar` (buttons of the editor's toolbar, with the context `{ editor }`). `order` places an item; `when(ctx)` shows it only when it answers true.
 - `kb.api` calls the plugin's own routes (`/api/v1/plugins/<id>/...`); `kb.core` calls the app's API. The server answers what the signed-in person may see.
-- `kb.me()` is the signed-in person. `kb.current.page()` and `kb.current.space()` are what they are looking at; `kb.current.subscribe(fn)` tells when that changes.
-- `kb.navigate(path)` goes to an address inside the app.
+- `kb.me()` is the person signed in now. The script is started once per page load, so call `kb.me()` when you need it and do not keep its answer: another person may sign in without a reload.
+- `kb.current.page()` and `kb.current.space()` are what the person is looking at; `kb.current.subscribe(fn)` tells when that changes. Either can be null.
+- `kb.navigate(path)` goes to an address inside the app. Someone in the middle of an edit is asked first, as for a click on a link, and may stay.
 - `kb.screens.add({ path, title, render(rest), panel })` adds a screen of the plugin's own at `/x/<plugin id>/<path>`, inside the app's three panels. `panel` names a slot that fills the right panel.
 - `kb.dialogs.confirm(...)` and `kb.dialogs.ask(...)` are the app's own dialogs. Never use a browser popup (`alert`, `confirm`, `prompt`).
 - What a plugin draws sits inside an error boundary. A part that throws is left out and written to the server's log; the screen stays. Script errors are never counted as failures of the plugin.
@@ -464,7 +471,8 @@ const Notice = Node.create({
   name: "sampleNotice",
   group: "block",
   content: "inline*",
-  parseHTML: () => [{ tag: "p[data-sample-notice]" }],
+  // Before the editor's own rule for <p>, or a copied notice would be pasted as a plain paragraph.
+  parseHTML: () => [{ tag: "p[data-sample-notice]", priority: 60 }],
   renderHTML: ({ HTMLAttributes }) => ["p", { ...HTMLAttributes, "data-sample-notice": "", class: "sample-notice" }, 0],
 });
 
@@ -484,6 +492,8 @@ function addNotice(kb) {
 - The node's `name` is its type in the stored page. Choose one no other plugin will use.
 - A script can load a stylesheet from its own `ui/` folder, as above. Use the app's colour variables (`--ink`, `--line`, `--warn-bg`, ...) so the block follows the theme.
 - Every editor made after the call has the extensions. A page that is open and not being edited is drawn again with them.
+- Extensions passed in one call are checked together, so one may name another (a block and the title node it holds). Pass such a set in one call.
+- A node that is drawn as a `<p>` needs `priority: 60` (or more) in its `parseHTML` rule, as above. Without it the editor's own rule for `<p>` wins and a copied block is pasted as a plain paragraph.
 - An extension that takes a name of the editor's own (`paragraph`, `bold`, ...), or with which the editor cannot be built, is left out and written to the server's log. The editor stays.
 
 **On the server.** Search, history, the Markdown an agent reads, and the Word and PDF exports read a page's content on the server. `app.EditorNode(Notice.Renderer)` in `Configure` tells them how to read the node:
@@ -502,17 +512,25 @@ public static NodeRenderer Renderer { get; } = new()
 };
 
 // The node is the stored JSON of the block: { "type": "sampleNotice", "content": [ { "type": "text", "text": "..." } ] }.
+// A page is stored as its writer sent it, so read with care: a renderer must not throw on a node of an odd shape.
 private static string Text(JsonElement node) =>
-    node.TryGetProperty("content", out var kids) ? string.Concat(kids.EnumerateArray().Select(k => k.TryGetProperty("text", out var t) ? t.GetString() : "")) : "";
+    node.TryGetProperty("content", out var kids) && kids.ValueKind == JsonValueKind.Array
+        ? string.Concat(kids.EnumerateArray().Select(k => k.ValueKind == JsonValueKind.Object && k.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : ""))
+        : "";
 ```
 
-- Each part (`Plain`, `MarkdownLines`, `Blocks`) is optional. A part that is missing, answers null or throws gives the placeholder: the text inside the node, with `[sampleNotice]` before it in Markdown and exports. A renderer that throws counts against the plugin like a failing hook.
+- Each part (`Plain`, `MarkdownLines`, `Blocks`) is optional. A part that is missing, answers null, answers something with a null in it, or throws gives the placeholder: the text inside the node, with `[sampleNotice]` before it in Markdown and exports. A renderer that fails is written to the server's log, at most once a minute for each part. It is not counted as a failure of the plugin: what a page holds is its writer's choice, and a page must not be able to switch a plugin off.
+- The node is what a writer stored, not only what your editor part writes. Read it with care, as the sample does: `content` may be missing or of another shape.
 - A renderer runs on every save, diff and export of a page that holds the node. It must be quick and must not call other systems.
 - `Plain` given, the text inside the node is no longer indexed by itself: return it from `Plain` if search should find it.
 - One renderer per node type. A plugin that registers one for a node of the editor itself, or for a type another plugin renders, is not loaded.
+- Inside a table cell a plugin's node is read as its text only (`Plain`, or the text inside it): a cell is one line of text in Markdown and in exports.
+- A `DocTable` a renderer answers is part of the Word and PDF export, but it is not one of the page's tables in the Export menu (CSV, Excel). A `DocImage` is drawn only for an image the page itself shows in an image of the editor.
 - Pages saved before the plugin was installed keep their old search words until they are saved again or an Admin selects Rebuild index (Administration > Search).
 
-**Content is never lost.** The server stores a page as the editor sent it and never rewrites it. An editor that does not know a node or a mark (the plugin is disabled, removed, or its script failed) shows a box with the type's name. The box can be moved or deleted, not edited, and a save sends the content back as it was. When the plugin is back, so is the block.
+**Content is never lost.** The server stores a page as the editor sent it and never rewrites it. An editor that does not know a node (the plugin is disabled, removed, or its script failed) shows a box with the type's name. The box can be moved or deleted, not edited, and a save sends the content back as it was. When the plugin is back, so is the block.
+Text with a mark the editor does not know shows as plain text and can be edited; the mark stays on it and is saved with it. Among several marks on one text its place may change, which changes nothing a reader sees.
+The same holds for a page whose stored content is not what any editor would write (a null where a block should be): what cannot be shown is a box, or the whole page is one box, and a save keeps it.
 Where a box cannot stand (first in a list item, inside a table row, a mark inside a code block), the nearest part that can be carried is carried whole: the list, the table or the code block becomes the box.
 
 Limit: an attribute a plugin adds to one of the editor's own nodes (an alignment on `paragraph`) is not carried. Without the plugin's extension the editor drops it on the next save. Use a node or a mark of your own.

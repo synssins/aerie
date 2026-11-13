@@ -71,9 +71,30 @@ describe("PageView and content of a plugin that is not loaded", () => {
     await waitFor(() => expect(document.querySelector("[data-probe-box]")?.textContent).toBe("inside the box"));
     expect(document.querySelector("[data-kb-unknown]")).toBeNull();
   });
+
+  it("a stored page of an odd shape opens instead of taking the app down", async () => {
+    server();
+    show(page({ contentJson: '{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Before"}]},null,{"type":"paragraph","content":"oops"}]}' }));
+
+    expect(await screen.findByText("Before")).toBeTruthy();
+    expect(document.querySelectorAll(".prose [data-kb-unknown]")).toHaveLength(2);
+  });
 });
 
 describe("the editor's toolbar", () => {
+  it("an entry whose label throws is left out and reported; the page and the other entries stay", async () => {
+    const calls = server();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    slots.add("editor.toolbar", { id: "bad", label: () => { throw new Error("No label."); } } satisfies ActionItem, "kb.bad");
+    slots.add("editor.toolbar", { id: "good", label: "Good" } satisfies ActionItem, "kb.good");
+    show(page(), true);
+
+    expect(await screen.findByText("Before")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Good" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Bold" })).toBeTruthy();
+    await waitFor(() => expect(calls.some((c) => c.key === "POST /ui/errors")).toBe(true));
+  });
+
   it("draws the entries of the editor.toolbar slot and hands them the editor", async () => {
     server();
     let got: Editor | null = null;

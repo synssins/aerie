@@ -45,7 +45,9 @@ public sealed class SpaceAccess(ISpacePermissionService permissions, ISpaceAcces
         if (declared.Scope == PluginPermissionScopes.Global)
         {
             // A person an Admin gave it to, or an Admin. Never a request made with an API token, a plugin's background work, or nobody.
-            return actor is { Kind: ActorKind.User, UserId: { } user, TokenId: null } && (await IsAdminAsync(actor, ct) || await pluginPermissions.IsGrantedAsync(user, permission, ct));
+            // The principal is read first, as for a role in a space: a deactivated account holds nothing.
+            return actor is { Kind: ActorKind.User, UserId: { } user, TokenId: null } && await data.GetPrincipalAsync(user, ct) is { } principal
+                && (principal.IsAdmin || await pluginPermissions.IsGrantedAsync(user, permission, ct));
         }
         if (declared.Scope != PluginPermissionScopes.Space || spaceId is not { } space) return false;
         var minimum = await pluginPermissions.GetMinRoleAsync(permission, ct) ?? PluginPermissionScopes.DefaultRole(declared);

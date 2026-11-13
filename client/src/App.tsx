@@ -3,6 +3,7 @@ import { api, type Brand, type Me } from "./api";
 import { AppShell } from "./AppShell";
 import { SignIn } from "./SignIn";
 import { Setup, type SetupStatus } from "./Setup";
+import { session } from "./kit/host";
 import { loadPluginsOnce } from "./kit/loader";
 
 export function App() {
@@ -18,7 +19,8 @@ export function App() {
   }, []);
 
   // Once someone is signed in, the scripts of the plugins are loaded. What they add appears as it is registered.
-  useEffect(() => { if (me) void loadPluginsOnce(me); }, [me]);
+  // The scripts stay for the life of the page, so they are told who is signed in now, at every sign-in and sign-out.
+  useEffect(() => { session.me = me ?? null; if (me) void loadPluginsOnce(me); }, [me]);
 
   if (me === undefined || !brand || !setup) return null;
   if (me === null && setup.required)

@@ -109,6 +109,82 @@ public sealed class DocTextTests
     }
 
     [Fact]
+    public void Renderer_ThatFailsWhileItsLinesAreRead_GivesThePlaceholder()
+    {
+        static IEnumerable<string> Broken()
+        {
+            yield return "first line";
+            throw new InvalidOperationException("Failed on the second line.");
+        }
+        var failed = new List<string>();
+        var renderers = With(new NodeRenderer { Type = "probeBox", MarkdownLines = _ => Broken() }, failed);
+        const string doc = """{"type":"doc","content":[{"type":"probeBox","content":[{"type":"paragraph","content":[{"type":"text","text":"kept"}]}]}]}""";
+
+        Assert.Equal(["[probeBox] kept"], DocText.MarkdownLines(doc, renderers)); // not half of the plugin's answer
+        Assert.Equal(["kb.test.probe: Failed on the second line."], failed);
+    }
+
+    [Theory]
+    [InlineData("null entry")]
+    [InlineData("null runs")]
+    [InlineData("null run")]
+    [InlineData("null text")]
+    [InlineData("null code")]
+    [InlineData("null rows")]
+    [InlineData("null row")]
+    [InlineData("null cell")]
+    [InlineData("null line")]
+    public void Renderer_AnswerWithAHole_GivesThePlaceholder(string hole)
+    {
+        // The writers of Word, PDF and CSV files take a block as it is. A plugin's block with a null in it is refused here, where it can be blamed.
+        IReadOnlyList<DocBlock> blocks = hole switch
+        {
+            "null entry" => [null!],
+            "null runs" => [new DocParagraph(null!)],
+            "null run" => [new DocParagraph([null!])],
+            "null text" => [new DocParagraph([new DocRun(null!)])],
+            "null code" => [new DocCode("text", null!)],
+            "null rows" => [new DocTable(null!, false)],
+            "null row" => [new DocTable([null!], false)],
+            "null cell" => [new DocTable([[null!]], false)],
+            _ => [new DocParagraph([new DocRun("fine")])],
+        };
+        var failed = new List<string>();
+        var renderers = With(new NodeRenderer { Type = "probeBox", Blocks = _ => blocks, MarkdownLines = _ => hole == "null line" ? ["fine", null!] : ["fine"] }, failed);
+        const string doc = """{"type":"doc","content":[{"type":"probeBox","content":[{"type":"paragraph","content":[{"type":"text","text":"kept"}]}]}]}""";
+
+        if (hole == "null line") Assert.Equal(["[probeBox] kept"], DocText.MarkdownLines(doc, renderers));
+        else Assert.Equal(["[probeBox] kept"], DocText.Blocks(doc, renderers).Select(Text));
+        Assert.Single(failed);
+    }
+
+    [Fact]
+    public void Renderer_ThatThrowsOnEveryNode_IsReportedOnce()
+    {
+        // What a page holds is its writer's to choose. A page full of nodes a renderer cannot read must not flood the log.
+        var failed = new List<string>();
+        var renderers = With(new NodeRenderer { Type = "probeBox", Plain = _ => throw new InvalidOperationException("No label.") }, failed);
+        var doc = """{"type":"doc","content":[""" + string.Join(',', Enumerable.Repeat("""{"type":"probeBox","content":[{"type":"paragraph","content":[{"type":"text","text":"kept"}]}]}""", 50)) + "]}";
+
+        Assert.Equal(string.Join('\n', Enumerable.Repeat("kept", 50)), DocText.Plain(doc, renderers));
+        Assert.Equal(string.Join('\n', Enumerable.Repeat("kept", 50)), DocText.Plain(doc, renderers));
+        Assert.Single(failed);
+    }
+
+    [Fact]
+    public void DeeplyNestedDocument_IsReadWithoutTakingTheProcessDown()
+    {
+        // 5,000 levels of blockquote. The JSON reader refuses anything deeper than 64 levels, so such a document is not read at all
+        // (and cannot be saved: the same reader checks a save). This pins that the walkers, which are recursive, never meet one.
+        var doc = """{"type":"doc","content":[""" + string.Concat(Enumerable.Repeat("""{"type":"blockquote","content":[""", 5000))
+            + """{"type":"paragraph","content":[{"type":"text","text":"deep"}]}""" + string.Concat(Enumerable.Repeat("]}", 5000)) + "]}";
+
+        Assert.Equal("", DocText.Plain(doc));
+        Assert.Empty(DocText.MarkdownLines(doc));
+        Assert.Empty(DocText.Blocks(doc));
+    }
+
+    [Fact]
     public void CoreNodes_AreTheEditorsOwn()
     {
         // A plugin cannot take over one of these; see PluginBootstrap.

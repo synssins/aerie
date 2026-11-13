@@ -21,6 +21,18 @@ internal static class PluginPermissions
     }
 
     /// <summary>An Admin holds every one; anyone else those an Admin gave them.</summary>
-    public static async Task<IReadOnlyList<string>> HeldAsync(KbDbContext db, PluginRegistry registry, Guid userId, bool isAdmin, CancellationToken ct) =>
-        isAdmin ? Global(registry) : [.. (await GrantsAsync(db, registry, ct))[userId].Order(StringComparer.Ordinal)];
+    public static async Task<IReadOnlyList<string>> HeldAsync(KbDbContext db, PluginRegistry registry, Guid userId, bool isAdmin, CancellationToken ct)
+    {
+        var declared = Global(registry);
+        if (isAdmin || declared.Count == 0) return declared;
+        return [.. (await db.UserPermissions.AsNoTracking().Where(p => p.UserId == userId && declared.Contains(p.Permission)).Select(p => p.Permission).ToListAsync(ct)).Order(StringComparer.Ordinal)];
+    }
+
+    /// <summary>The stored grants and minimum roles of one plugin go with its data.</summary>
+    public static async Task ForgetAsync(KbDbContext db, string pluginId, CancellationToken ct)
+    {
+        var prefix = pluginId + ":"; // the colon ends the id, so "kb.x" does not take "kb.x2:..." with it
+        db.UserPermissions.RemoveRange(await db.UserPermissions.Where(p => p.Permission.StartsWith(prefix)).ToListAsync(ct));
+        db.PluginPermissionRoles.RemoveRange(await db.PluginPermissionRoles.Where(p => p.Permission.StartsWith(prefix)).ToListAsync(ct));
+    }
 }

@@ -6,7 +6,7 @@ using System.Text.Json;
 
 namespace Kb.Web.Actions;
 
-internal sealed class SignInHandler(SignInManager<KbUser> signIn, UserManager<KbUser> users, KbDbContext db, IAuditLog audit, BreakGlassService breakGlass)
+internal sealed class SignInHandler(SignInManager<KbUser> signIn, UserManager<KbUser> users, KbDbContext db, IAuditLog audit, BreakGlassService breakGlass, Kb.Core.Plugins.PluginRegistry plugins)
     : IActionHandler<SignIn, MeResponse>
 {
     // Nobody is signed in yet, so there is nothing to permit: the name and the password are checked as the work.
@@ -38,7 +38,9 @@ internal sealed class SignInHandler(SignInManager<KbUser> signIn, UserManager<Kb
         }
         await audit.AppendAsync(new AuditEvent(AuditActions.SignIn, user.Id, "user", user.Id.ToString(), Data: new Dictionary<string, string> { ["method"] = "local", ["ip"] = ip }));
         if (user.IsBreakGlass) await breakGlass.OnSignInAsync(user, ctx.Actor.RemoteIp);
-        return new MeResponse(user.Id, user.UserName!, user.DisplayName, user.IsAdmin, user.IsBreakGlass, user.IsAdmin || user.CanAnnounce);
+        // The same answer as me.read: a plugin's script is handed this person without another request in between.
+        return new MeResponse(user.Id, user.UserName!, user.DisplayName, user.IsAdmin, user.IsBreakGlass, user.IsAdmin || user.CanAnnounce,
+            await PluginPermissions.HeldAsync(db, plugins, user.Id, user.IsAdmin, ctx.Cancel));
     }
 }
 

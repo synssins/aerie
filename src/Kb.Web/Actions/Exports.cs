@@ -41,7 +41,7 @@ internal sealed class ExportPageHandler(KbDbContext db, IAccess access, IFileSto
     }
 }
 
-internal sealed class ExportPageTableHandler(KbDbContext db, IAccess access, DocRenderers renderers) : IActionHandler<ExportPageTable, FileOut>
+internal sealed class ExportPageTableHandler(KbDbContext db, IAccess access) : IActionHandler<ExportPageTable, FileOut>
 {
     private Page? _page;
 
@@ -51,7 +51,8 @@ internal sealed class ExportPageTableHandler(KbDbContext db, IAccess access, Doc
     public Task<Outcome<FileOut>> HandleAsync(ActionContext<ExportPageTable> ctx)
     {
         var (page, n) = (_page!, ctx.Action.Number);
-        var tables = DocText.Blocks(page.ContentJson, renderers).OfType<DocTable>().ToList();
+        // The page's own tables only, numbered as the Export menu counts them. A table a plugin's block is rendered as is not one of them.
+        var tables = DocText.Blocks(page.ContentJson).OfType<DocTable>().ToList();
         if (n < 1 || n > tables.Count) return Task.FromResult<Outcome<FileOut>>(Problem.NotFound);
         var fmt = (ctx.Action.Format ?? "csv").ToLowerInvariant();
         if (fmt is not ("csv" or "xlsx")) return Task.FromResult<Outcome<FileOut>>(Problem.Invalid("format", "csv or xlsx."));

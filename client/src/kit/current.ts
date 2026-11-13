@@ -13,6 +13,7 @@ export const current = {
   set(next: { page: Page | null; space: Space | null }): void {
     if (next.page === page && next.space === space) return;
     ({ page, space } = next);
-    listeners.forEach((l) => l());
+    // Called from the shell's own effect: a listener that throws must not take the shell with it, nor keep the others from hearing.
+    listeners.forEach((l) => { try { l(); } catch (e) { console.error("A listener of the current view failed:", e); } });
   },
 };
