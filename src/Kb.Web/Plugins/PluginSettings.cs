@@ -118,7 +118,23 @@ public sealed class PluginSettingsStore
     }
 
     private async Task ReloadAsync(KbDbContext db, CancellationToken ct) =>
-        _snapshot.Replace((await db.PluginSettingValues.AsNoTracking().Where(v => !v.Secret).ToListAsync(ct)).Select(v => (v.PluginId, v.Key, v.Value)));
+        _snapshot.Replace((await db.PluginSettingValues.AsNoTracking().Where(v => !v.Secret).ToListAsync(ct)).Where(v => !DeclaredSecret(v.PluginId, v.Key)).Select(v => (v.PluginId, v.Key, v.Value)));
+
+    private bool DeclaredSecret(string pluginId, string key) => _registry.Find(pluginId)?.Manifest.Settings.Any(d => d.Key == key && IsSecret(d)) == true;
+
+    /// <summary>
+    /// A value saved while its setting was not a secret stays in clear when an update of the plugin makes the setting one.
+    /// Called when the app starts: such a value is protected like any secret, and the plain values are read again without it.
+    /// </summary>
+    public async Task ProtectStraysAsync(CancellationToken ct)
+    {
+        await using var scope = _scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<KbDbContext>();
+        var strays = (await db.PluginSettingValues.Where(v => !v.Secret && v.Value != null).ToListAsync(ct)).Where(v => DeclaredSecret(v.PluginId, v.Key)).ToList();
+        foreach (var row in strays) (row.Value, row.Secret) = (Protector(row.PluginId).Protect(row.Value!), true);
+        if (strays.Count > 0) await db.SaveChangesAsync(ct);
+        await ReloadAsync(db, ct);
+    }
 
     private static string? Refusal(PluginSetting d, string value) => d.Type switch
     {

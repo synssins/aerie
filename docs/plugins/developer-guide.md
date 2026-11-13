@@ -538,7 +538,7 @@ Limit: an attribute a plugin adds to one of the editor's own nodes (an alignment
 ## Calling other systems
 
 List every host the plugin calls in `outboundHosts`. Take the plugin's client from `IHttpClientFactory` with the name `PluginHttp.ClientName("<id>")`.
-That client refuses a host that is not listed.
+That client refuses a host that is not listed, and it follows no redirect: the plugin gets the 3xx answer and may ask again with the new address, which is checked like any other. List the host a redirect leads to as well.
 
 ## Library plugins
 

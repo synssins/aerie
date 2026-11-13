@@ -195,4 +195,29 @@ public sealed class PluginSettingsTests : IAsyncLifetime
         });
         Assert.Equal(Secret, await Store().GetSecretAsync("kb.test.probe", "Token", Ct));
     }
+
+    // Such a value does not wait for an Admin to save it again: the app protects it when it starts.
+    [Fact]
+    public async Task ValueStoredInClear_ForASettingThatIsNowSecret_IsProtectedAtTheNextStart()
+    {
+        await _f.WithDbAsync(async db =>
+        {
+            db.PluginSettingValues.Add(new PluginSettingValue { PluginId = "kb.test.probe", Key = "Token", Value = Secret, Secret = false, UpdatedAt = DateTimeOffset.UtcNow });
+            db.PluginSettingValues.Add(new PluginSettingValue { PluginId = "kb.test.probe", Key = "Greeting", Value = "Hello", Secret = false, UpdatedAt = DateTimeOffset.UtcNow });
+            await db.SaveChangesAsync(Ct);
+        });
+
+        _f = await _f.RestartAsync();
+        _admin = await _f.SignedInBreakGlassAsync();
+
+        await _f.WithDbAsync(async db =>
+        {
+            var row = await db.PluginSettingValues.SingleAsync(v => v.Key == "Token", Ct);
+            Assert.True(row.Secret);
+            Assert.DoesNotContain(Secret, row.Value);
+            Assert.Equal(("Hello", false), ((await db.PluginSettingValues.SingleAsync(v => v.Key == "Greeting", Ct)) is var g ? (g.Value, g.Secret) : default)); // a plain setting stays plain
+        });
+        Assert.Equal(Secret, await Store().GetSecretAsync("kb.test.probe", "Token", Ct));
+        Assert.Null(Store().Get("kb.test.probe", "Token")); // not among the plain values a plugin reads without asking for a secret
+    }
 }

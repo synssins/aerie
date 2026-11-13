@@ -238,9 +238,13 @@ public static class PluginBootstrap
         // ---- what the app gets
         foreach (var id in loaded.Keys)
         {
-            // Each loaded plugin has a named HTTP client that refuses any host its manifest does not declare.
+            // Each loaded plugin has a named HTTP client that refuses any host its manifest does not declare. The guard sees each
+            // request the plugin makes; a redirect would be followed below it, to any host, so redirects are not followed.
+            // The plugin gets the 3xx answer and may ask again: that request is checked like any other.
             var hosts = byId[id].Manifest.OutboundHosts.ToArray();
-            services.AddHttpClient(PluginHttp.ClientName(id)).AddHttpMessageHandler(() => new OutboundHostGuard(hosts));
+            services.AddHttpClient(PluginHttp.ClientName(id))
+                .ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.SocketsHttpHandler { AllowAutoRedirect = false })
+                .AddHttpMessageHandler(() => new OutboundHostGuard(hosts));
         }
         var registry = new PluginRegistry(
             [.. candidates.Select(c => new PluginInfo(c.Manifest, c.Origin, c.Status?.State ?? PluginState.Enabled, c.Status?.Reason, c.Status?.LockedAt is not null, loaded.ContainsKey(c.Manifest.Id), c.Source)

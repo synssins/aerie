@@ -161,11 +161,13 @@ await using (var scope = app.Services.CreateAsyncScope())
     var db = scope.ServiceProvider.GetRequiredService<KbDbContext>();
     var audit = scope.ServiceProvider.GetRequiredService<IAuditLog>();
     foreach (var e in boot.Events) await audit.AppendAsync(e);
-    _ = app.Services.GetRequiredService<PluginSettingsStore>(); // from here a plugin can read its secrets
+    await app.Services.GetRequiredService<PluginSettingsStore>().ProtectStraysAsync(CancellationToken.None); // from here a plugin can read its secrets
 
     await scope.ServiceProvider.GetRequiredService<BreakGlassService>().EnsureAccountAsync();
     await scope.ServiceProvider.GetRequiredService<SetupService>().OnStartupAsync();
     await SearchIndex.BackfillAsync(db, app.Services.GetRequiredService<DocRenderers>()); // pages saved before the search index existed
+    // Image grants no page needs any more (a page moved in and out again, or a grant written before moves checked what they pass on).
+    foreach (var space in await db.SpaceImageGrants.Select(g => g.SpaceId).Distinct().ToListAsync()) await ImageEndpoints.PruneGrantsAsync(db, space);
     await LogShipperService.EnsureFirstTargetAsync(db, kb.Logs.Folder, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow());
     await ActiveFileStore.EnsureFirstPlaceAsync(db, kb.Storage.Folder, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow());
 }

@@ -15,11 +15,35 @@ public static partial class ImageEndpoints
     public const int MaxImageBytes = 20 * 1_048_576;
     private static readonly TimeSpan PendingLife = TimeSpan.FromDays(7);
 
-    /// <summary>Marks the images a saved page or draft uses, so cleanup leaves them alone.</summary>
-    public static async Task KeepAsync(KbDbContext db, string? contentJson, CancellationToken ct = default)
+    /// <summary>
+    /// Marks the images a saved page or draft uses, so cleanup leaves them alone. Only images the page's space may show: its own,
+    /// and those a move granted it. An upload of another space that a page merely names is not kept alive by that.
+    /// </summary>
+    public static async Task KeepAsync(KbDbContext db, string? contentJson, Guid spaceId, CancellationToken ct = default)
     {
         var ids = DocText.ImageIds(contentJson);
-        if (ids.Count > 0) await db.SpaceImages.Where(i => ids.Contains(i.Id) && i.Pending).ExecuteUpdateAsync(s => s.SetProperty(i => i.Pending, false), ct);
+        if (ids.Count > 0)
+            await db.SpaceImages.Where(i => ids.Contains(i.Id) && i.Pending && (i.SpaceId == spaceId || db.SpaceImageGrants.Any(g => g.ImageId == i.Id && g.SpaceId == spaceId)))
+                .ExecuteUpdateAsync(s => s.SetProperty(i => i.Pending, false), ct);
+    }
+
+    /// <summary>
+    /// A space may show an image of another space while one of its pages uses it (a page moved in). This takes back the grants for
+    /// images that no page of the space, live or in its bin, no version and no draft names any more. Returns how many.
+    /// </summary>
+    public static async Task<int> PruneGrantsAsync(KbDbContext db, Guid spaceId, CancellationToken ct = default)
+    {
+        var grants = await db.SpaceImageGrants.Where(g => g.SpaceId == spaceId).ToListAsync(ct);
+        if (grants.Count == 0) return 0;
+        var pages = await db.Pages.IgnoreQueryFilters().Where(p => p.SpaceId == spaceId).Select(p => new { p.Id, p.ContentJson }).ToListAsync(ct); // system: pages in the bin can come back, so they count
+        var ids = pages.Select(p => p.Id).ToList();
+        var used = new HashSet<Guid>(pages.SelectMany(p => DocText.ImageIds(p.ContentJson)));
+        foreach (var json in await db.PageVersions.Where(v => ids.Contains(v.PageId)).Select(v => v.ContentJson).ToListAsync(ct)) used.UnionWith(DocText.ImageIds(json));
+        foreach (var json in await db.PageDrafts.Where(d => ids.Contains(d.PageId)).Select(d => d.ContentJson).ToListAsync(ct)) used.UnionWith(DocText.ImageIds(json));
+        var stale = grants.Where(g => !used.Contains(g.ImageId)).ToList();
+        db.SpaceImageGrants.RemoveRange(stale);
+        if (stale.Count > 0) await db.SaveChangesAsync(ct);
+        return stale.Count;
     }
 
     /// <summary>Deletes uploads that no saved page or draft ever used. Returns how many.</summary>

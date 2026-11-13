@@ -53,6 +53,8 @@ internal sealed class MovePageHandler(KbDbContext db, IAccess access) : IActionH
             foreach (var p in subtree) p.SpaceId = target;
         }
         await db.SaveChangesAsync();
+        // What the pages took with them, the space they left no longer needs to show.
+        if (target != from) await ImageEndpoints.PruneGrantsAsync(db, from);
         ctx.Audit(AuditActions.PageMove, "page", page.Id.ToString(), target,
             new Dictionary<string, string> { ["fromSpace"] = from.ToString(), ["parent"] = req.ParentId?.ToString() ?? "" });
         return await ToDtoAsync(db, access, ctx.Actor, page);
@@ -119,15 +121,13 @@ internal sealed class RestorePageHandler(KbDbContext db, IAccess access, DocRend
     {
         var id = ctx.Action.PageId;
         _root = await db.Pages.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == id && p.DeletedAt != null && p.DeleteRootId == p.Id, ctx.Cancel); // system: a bin item is a deleted page; the caller's right to its space is checked next
-        // No role in the item's space: it does not exist for this caller. That holds for an Admin in a sensitive space too
-        // ("no silent access"); with emergency access the Admin has a role there.
+        // No role in the item's space: it does not exist for this caller. That holds for an Admin in a sensitive space too ("no silent access").
         if (_root is null || await access.RoleAsync(ctx.Actor, _root.SpaceId, ctx.Cancel) is null) return Problem.NotFound;
         // An Admin restores from the admin bin, also what a space's bin no longer shows. For everyone else an emptied item is gone.
-        if (!await access.IsAdminAsync(ctx.Actor, ctx.Cancel))
-        {
-            if (_root.BinHidden) return Problem.NotFound;
-            if (!await access.CanAsync(ctx.Actor, _root.SpaceId, SpaceAction.ManageBinAgingComments, ctx.Cancel)) return Problem.Forbidden;
-        }
+        if (_root.BinHidden && !await access.IsAdminAsync(ctx.Actor, ctx.Cancel)) return Problem.NotFound;
+        // Everyone needs the bin right of the space. An Admin has it in every space that is not sensitive (Owner there); in a sensitive
+        // one only from a role an Owner gave. Emergency access is a Reader's: it reads, it does not restore.
+        if (!await access.CanAsync(ctx.Actor, _root.SpaceId, SpaceAction.ManageBinAgingComments, ctx.Cancel)) return Problem.Forbidden;
         return ctx.Actor.UserId is null ? Problem.Unauthorized : null; // the audit entry names who restored it
     }
 
@@ -167,10 +167,15 @@ internal sealed class ListAllBinsHandler(KbDbContext db, IAccess access) : IActi
     public async Task<Problem?> AuthorizeAsync(ActionContext<ListAllBins> ctx) =>
         await access.IsAdminAsync(ctx.Actor, ctx.Cancel) ? null : Problem.Forbidden;
 
-    // Every space the Admin has a role in: all that are not sensitive, and a sensitive one only with a role or emergency access.
-    // A deleted page's title and place are content of its space.
-    public async Task<Outcome<IReadOnlyList<BinItemDto>>> HandleAsync(ActionContext<ListAllBins> ctx) =>
-        Outcome.List(await BinAsync(db, null, includeHidden: true, within: await access.VisibleSpacesAsync(ctx.Actor, ctx.Cancel)));
+    // Every space whose bin the Admin may manage: all that are not sensitive (an Admin is Owner there), and a sensitive one only
+    // with a role that has the bin right. A deleted page's title and place are content of its space.
+    public async Task<Outcome<IReadOnlyList<BinItemDto>>> HandleAsync(ActionContext<ListAllBins> ctx)
+    {
+        var mine = new List<Guid>();
+        foreach (var space in await access.VisibleSpacesAsync(ctx.Actor, ctx.Cancel))
+            if (await access.CanAsync(ctx.Actor, space, SpaceAction.ManageBinAgingComments, ctx.Cancel)) mine.Add(space);
+        return Outcome.List(await BinAsync(db, null, includeHidden: true, within: mine));
+    }
 }
 
 internal static class BinChecks

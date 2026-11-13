@@ -22,7 +22,7 @@ public sealed class FindingTests : IAsyncLifetime
 {
     private const string Password = "user-password-0123456789";
     private static readonly byte[] Png = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");
-    private readonly KbAppFactory _f = new(KbAppFactory.NewDbPath());
+    private KbAppFactory _f = new(KbAppFactory.NewDbPath());
     private HttpClient _admin = null!;
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -142,9 +142,102 @@ public sealed class FindingTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, (await adam.PostAsync($"/api/v1/pages/{secret.Id}/restore", null, Ct)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await adam.PostAsync($"/api/v1/pages/{plain.Id}/restore", null, Ct)).StatusCode); // a normal space: as before
 
-        Assert.True((await adam.PostAsJsonAsync($"/api/v1/spaces/{vault}/emergency-access", new { reason = "Restore a page that was deleted by mistake." }, Ct)).IsSuccessStatusCode);
+        // Emergency access lets an Admin read a sensitive space. It is a Reader's access: the bin of that space stays out of reach.
+        Assert.True((await adam.PostAsJsonAsync($"/api/v1/spaces/{vault}/emergency-access", new { reason = "Look at a page." }, Ct)).IsSuccessStatusCode);
+        Assert.Empty(await BinAsync());
+        Assert.Equal(HttpStatusCode.Forbidden, (await adam.PostAsync($"/api/v1/pages/{secret.Id}/restore", null, Ct)).StatusCode);
+
+        // Only a role with the bin right in that space opens it, and an Owner of the space gives that role.
+        var adamId = (await adam.GetFromJsonAsync<JsonElement>("/api/v1/me", Ct)).GetProperty("id").GetGuid();
+        (await olga.PutAsJsonAsync($"/api/v1/spaces/{vault}/roles", new { principalType = "User", principalId = adamId.ToString(), role = "Supervisor" }, Ct)).EnsureSuccessStatusCode();
         Assert.Equal([secret.Id], await BinAsync());
         Assert.Equal(HttpStatusCode.OK, (await adam.PostAsync($"/api/v1/pages/{secret.Id}/restore", null, Ct)).StatusCode);
+    }
+
+    /// <summary>
+    /// Finding 10. Clearing a space's sensitive flag makes every Admin its Owner. An Admin may do that only with access to the space
+    /// (a role, or emergency access, which tells the Owners), and the Owners are told when it happens.
+    /// </summary>
+    [Fact]
+    public async Task ClearingTheSensitiveFlag_NeedsAccessToTheSpace_AndTellsItsOwners()
+    {
+        var vault = await SpaceAsync("vault");
+        var (olga, _) = await UserAsync("olga", roles: (vault, "Owner"));
+        var (adam, _) = await UserAsync("adam", admin: true);
+        (await _admin.PatchAsJsonAsync($"/api/v1/admin/spaces/{vault}", new { isSensitive = true }, Ct)).EnsureSuccessStatusCode();
+        async Task<List<string>> AlertsAsync() => [.. (await olga.GetFromJsonAsync<JsonElement>("/api/v1/notifications", Ct)).EnumerateArray()
+            .Where(n => n.GetProperty("kind").GetString() == "security.alert").Select(n => n.GetProperty("title").GetString()!)];
+        var before = (await AlertsAsync()).Count;
+
+        foreach (var change in new object[] { new { isSensitive = false }, new { isPublic = true } })
+        {
+            var refused = await adam.PatchAsJsonAsync($"/api/v1/admin/spaces/{vault}", change, Ct);
+            Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+            Assert.Equal("No access to this space. Use emergency access first.", (await refused.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("detail").GetString());
+        }
+        await _f.WithDbAsync(async db => Assert.True((await db.Spaces.SingleAsync(s => s.Id == vault, Ct)) is { IsSensitive: true, IsPublic: false }));
+        // What does not lower the space's protection needs no access: a new name, and the flag itself on a space that has none.
+        Assert.Equal(HttpStatusCode.OK, (await adam.PatchAsJsonAsync($"/api/v1/admin/spaces/{vault}", new { name = "Vault" }, Ct)).StatusCode);
+        Assert.Equal(before, (await AlertsAsync()).Count);
+
+        Assert.True((await adam.PostAsJsonAsync($"/api/v1/spaces/{vault}/emergency-access", new { reason = "It is not sensitive any more." }, Ct)).IsSuccessStatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await adam.PatchAsJsonAsync($"/api/v1/admin/spaces/{vault}", new { isSensitive = false }, Ct)).StatusCode);
+
+        Assert.Contains("Vault is no longer a sensitive space", await AlertsAsync());
+    }
+
+    /// <summary>Finding 12. A space may show an image of another space while a page that uses it is there. When the last such page leaves, so does that right.</summary>
+    [Fact]
+    public async Task MoveAway_TakesBackTheImagesTheSpaceNoLongerUses()
+    {
+        var (home, guest) = (await SpaceAsync("home"), await SpaceAsync("guest"));
+        var (tara, _) = await UserAsync("tara", roles: (guest, "Reader"));
+        var (one, two) = (await ImageAsync(_admin, home), await ImageAsync(_admin, home));
+        var first = await PageAsync(_admin, home, DocWith(one, two));
+        var second = await PageAsync(_admin, home, DocWith(two));
+        foreach (var p in new[] { first, second })
+            Assert.Equal(HttpStatusCode.OK, (await _admin.PostAsJsonAsync($"/api/v1/pages/{p.Id}/move", new { spaceId = guest, parentId = (Guid?)null }, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await tara.GetAsync($"/api/v1/images/{one}", Ct)).StatusCode);
+
+        Assert.Equal(HttpStatusCode.OK, (await _admin.PostAsJsonAsync($"/api/v1/pages/{first.Id}/move", new { spaceId = home, parentId = (Guid?)null }, Ct)).StatusCode);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await tara.GetAsync($"/api/v1/images/{one}", Ct)).StatusCode); // no page of "guest" uses it any more
+        Assert.Equal(HttpStatusCode.OK, (await tara.GetAsync($"/api/v1/images/{two}", Ct)).StatusCode);       // the second page still does
+    }
+
+    /// <summary>Finding 13. Saving a page keeps the uploads it uses from being cleaned up: its own space's, not an upload of another space it merely names.</summary>
+    [Fact]
+    public async Task Saving_KeepsOnlyUploadsThePagesSpaceMayShow()
+    {
+        var (here, elsewhere) = (await SpaceAsync("here"), await SpaceAsync("elsewhere"));
+        var (cara, _) = await UserAsync("cara", roles: (here, "Contributor"));
+        var (theirs, mine) = (await ImageAsync(_admin, elsewhere), await ImageAsync(cara, here));
+
+        var page = await PageAsync(cara, here, DocWith(mine, theirs));
+        (await cara.PutAsJsonAsync($"/api/v1/pages/{page.Id}/draft", new { title = "Draft", contentJson = DocWith(mine, theirs), baseVersion = "1.0" }, Ct)).EnsureSuccessStatusCode();
+
+        await _f.WithDbAsync(async db =>
+        {
+            Assert.False((await db.SpaceImages.SingleAsync(i => i.Id == mine, Ct)).Pending);
+            Assert.True((await db.SpaceImages.SingleAsync(i => i.Id == theirs, Ct)).Pending);
+        });
+    }
+
+    /// <summary>
+    /// Finding 14. The HTTP client the app gives a plugin checks the host of each request against the manifest. A redirect would
+    /// be followed below that check, so it is not followed: the plugin gets the redirect and asks again, and that request is checked.
+    /// </summary>
+    [Fact]
+    public async Task PluginHttpClient_DoesNotFollowRedirects()
+    {
+        await TestPlugins.InstallAsync(_admin, TestPlugins.Package(TestPlugins.Probe));
+        _f = await _f.RestartAsync();
+        _admin = await _f.SignedInBreakGlassAsync();
+
+        HttpMessageHandler handler = _f.Services.GetRequiredService<IHttpMessageHandlerFactory>().CreateHandler(PluginHttp.ClientName("kb.test.probe"));
+        while (handler is DelegatingHandler { InnerHandler: { } inner }) handler = inner;
+
+        Assert.False(Assert.IsType<SocketsHttpHandler>(handler).AllowAutoRedirect);
     }
 
     /// <summary>A draft is its author's, and it holds text of the page. Once the author has no role in the space, the draft is out of reach too.</summary>

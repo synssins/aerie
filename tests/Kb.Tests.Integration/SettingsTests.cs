@@ -77,13 +77,18 @@ public sealed class SettingsTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Admin_ListsAndConfiguresSensitiveSpace_WithoutARole()
+    public async Task Admin_ListsAndConfiguresSensitiveSpace_AndClearsItsFlagOnlyWithAccess()
     {
         var (admin, s) = await SpaceAsync(sensitive: true);
         var all = await admin.GetFromJsonAsync<List<SpaceDto>>("/api/v1/admin/spaces", Ct);
         Assert.Contains(all!, x => x.Id == s.Id && x.IsSensitive);
 
-        var r = await admin.PatchAsJsonAsync($"/api/v1/admin/spaces/{s.Id}", new { name = "HR", isSensitive = false }, Ct);
+        // The name and the settings need no role. Clearing the flag would make every Admin the space's Owner, so that needs access
+        // to the space: emergency access, which tells the Owners (FindingTests has the whole of it).
+        Assert.Equal(HttpStatusCode.OK, (await admin.PatchAsJsonAsync($"/api/v1/admin/spaces/{s.Id}", new { name = "HR" }, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await admin.PatchAsJsonAsync($"/api/v1/admin/spaces/{s.Id}", new { isSensitive = false }, Ct)).StatusCode);
+        Assert.True((await admin.PostAsJsonAsync($"/api/v1/spaces/{s.Id}/emergency-access", new { reason = "It is not sensitive any more." }, Ct)).IsSuccessStatusCode);
+        var r = await admin.PatchAsJsonAsync($"/api/v1/admin/spaces/{s.Id}", new { isSensitive = false }, Ct);
         Assert.Equal(HttpStatusCode.OK, r.StatusCode);
         Assert.False((await r.Content.ReadFromJsonAsync<SpaceDto>(Ct))!.IsSensitive);
         await _f.WithDbAsync(async db => Assert.True(await db.AuditEntries.AnyAsync(a => a.Action == AuditActions.SpaceSensitiveSet, Ct)));

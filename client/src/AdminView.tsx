@@ -314,7 +314,8 @@ function SpaceEditor({ space, isAdmin, area, onBack, onSaved, onHome }: { space:
       await onSaved();
       setStatus("Saved.");
     } catch (err) {
-      setStatus(err instanceof ApiError && err.status === 400 ? "Days must be 1-3650." : "Not saved.");
+      // A refusal that says why (an Admin without access to a sensitive space) is shown as the server worded it.
+      setStatus(err instanceof ApiError && err.status === 400 ? "Days must be 1-3650." : err instanceof ApiError && err.status === 403 && err.body?.detail ? err.body.detail : "Not saved.");
     } finally {
       setBusy(false);
     }

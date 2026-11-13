@@ -47,7 +47,7 @@ internal static class PageSupport
             foreach (var entry in db.ChangeTracker.Entries().Where(e => OfPage(e.Entity, page.Id)).ToList()) entry.State = EntityState.Detached;
             return new Problem(409);
         }
-        await ImageEndpoints.KeepAsync(db, page.ContentJson);
+        await ImageEndpoints.KeepAsync(db, page.ContentJson, page.SpaceId);
         return await ToDtoAsync(db, access, actor, page);
     }
 

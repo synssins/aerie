@@ -96,8 +96,8 @@ Products like Confluence cover this scope, but their sprawl makes them slow for 
 
 - A plugin runs inside the app, with the app's rights. Install only a plugin from a publisher you trust as much as the app itself.
 - A plugin is either shipped in the app's folder (built-in) or installed by an Admin, who uploads its package. The package's SHA-256 is written to the audit log with the install. There is no allow-list of hashes: a package an Admin uploads is loaded.
-- The HTTP client the app gives a plugin refuses a request to a host the plugin's manifest does not declare. A redirect from a declared host is followed.
-- A value saved for a secret setting is stored in the database encrypted with ASP.NET Core Data Protection. The API never returns it and it is not written to logs.
+- The HTTP client the app gives a plugin refuses a request to a host the plugin's manifest does not declare, and follows no redirect.
+- A plugin's secret settings are stored in the database encrypted with ASP.NET Core Data Protection. The API never returns them and they are not written to logs.
 - Plugin install, update, enable, disable, removal and data deletion are audited.
 - A plugin that keeps failing is switched off by the app. Safe Mode starts the app without uploaded plugins.
 

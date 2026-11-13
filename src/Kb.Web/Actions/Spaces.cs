@@ -86,7 +86,8 @@ internal sealed class UpdateSpaceHandler(KbDbContext db, IAccess access) : IActi
     }
 }
 
-internal sealed class UpdateSpaceAdminHandler(KbDbContext db, IAccess access) : IActionHandler<UpdateSpaceAdmin, SpaceDto>
+internal sealed class UpdateSpaceAdminHandler(KbDbContext db, IAccess access, Kb.Core.Access.IAccessData owners, Kb.Core.Notifications.INotifier notifier)
+    : IActionHandler<UpdateSpaceAdmin, SpaceDto>
 {
     private Space? _space;
 
@@ -94,16 +95,29 @@ internal sealed class UpdateSpaceAdminHandler(KbDbContext db, IAccess access) : 
     {
         if (!await access.IsAdminAsync(ctx.Actor, ctx.Cancel)) return Problem.Forbidden;
         var id = ctx.Action.SpaceId;
-        return (_space = await db.Spaces.FirstOrDefaultAsync(x => x.Id == id, ctx.Cancel)) is null ? Problem.NotFound : null;
+        if ((_space = await db.Spaces.FirstOrDefaultAsync(x => x.Id == id, ctx.Cancel)) is null) return Problem.NotFound;
+        // "Admins have no silent access to a sensitive space." Clearing its flag makes every Admin its Owner, and making it public
+        // opens it to everyone: an Admin does either only with access to the space (a role, or emergency access, which tells the Owners).
+        return Lowers(_space, ctx.Action) && await access.RoleAsync(ctx.Actor, id, ctx.Cancel) is null
+            ? new Problem(403, "No access to this space. Use emergency access first.") : null;
     }
+
+    /// <summary>True when the update takes protection from a sensitive space: the flag is cleared, or the space is made public.</summary>
+    private static bool Lowers(Space s, UpdateSpaceAdmin req) => s.IsSensitive && (req.IsSensitive == false || (req.IsPublic == true && !s.IsPublic));
 
     public async Task<Outcome<SpaceDto>> HandleAsync(ActionContext<UpdateSpaceAdmin> ctx)
     {
         var (req, s) = (ctx.Action, _space!);
-        // The same update as an Owner's; an Admin needs no role in the space, so none is checked and none is answered.
+        var (cleared, opened) = (s.IsSensitive && req.IsSensitive == false, s.IsSensitive && req.IsPublic == true && !s.IsPublic);
+        // The same update as an Owner's. An Admin needs no role in the space for it, except to lower a sensitive space's protection (above).
         var update = new UpdateSpace { SpaceId = req.SpaceId, Name = req.Name, Description = req.Description, IsSensitive = req.IsSensitive, IsPublic = req.IsPublic,
             CommentsEnabled = req.CommentsEnabled, AgingDays = req.AgingDays, AgingAudience = req.AgingAudience, RecycleDays = req.RecycleDays };
         if (await UpdateSpaceAsync(s, update, db, ctx) is { } problem) return problem;
+        // The Owners hear of it whoever did it, as they do of emergency access.
+        if (cleared || opened)
+            await notifier.NotifyAsync(await owners.GetOwnerUserIdsAsync(s.Id, CancellationToken.None), Kb.Core.Notifications.NotificationKinds.SecurityAlert,
+                cleared ? $"{s.Name} is no longer a sensitive space" : $"{s.Name}, a sensitive space, was made public",
+                "An administrator changed it.", $"/spaces/{s.Id}", alsoEmail: true, CancellationToken.None);
         return ToDto(s, null);
     }
 }

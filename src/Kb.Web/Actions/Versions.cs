@@ -139,7 +139,7 @@ internal sealed class SaveDraftHandler(KbDbContext db, IAccess access, TimeProvi
         if (d is null) db.PageDrafts.Add(d = new PageDraft { PageId = req.PageId, Title = title, ContentJson = req.ContentJson, BaseVersion = req.BaseVersion });
         d.UserId = me; d.Title = title; d.ContentJson = req.ContentJson; d.BaseVersion = req.BaseVersion; d.Tags = string.Join(',', tags); d.UpdatedAt = now;
         try { await db.SaveChangesAsync(); } catch (DbUpdateException) { return new Problem(409); }
-        await ImageEndpoints.KeepAsync(db, req.ContentJson);
+        await ImageEndpoints.KeepAsync(db, req.ContentJson, _space);
         return new DraftSavedDto(now);
     }
 }

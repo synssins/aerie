@@ -52,7 +52,7 @@ internal sealed class CreatePageHandler(KbDbContext db, IAccess access, TimeProv
             db.PageVersions.Add(new PageVersion { PageId = page.Id, Major = 1, Minor = 0, Title = page.Title, ContentJson = page.ContentJson, AuthorId = me, At = now });
         await SearchIndex.StageAsync(db, page, tags, renderers);
         await db.SaveChangesAsync();
-        await ImageEndpoints.KeepAsync(db, page.ContentJson);
+        await ImageEndpoints.KeepAsync(db, page.ContentJson, page.SpaceId);
         return await ToDtoAsync(db, access, ctx.Actor, page);
     }
 }
