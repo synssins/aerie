@@ -171,4 +171,28 @@ public sealed class PluginSettingsTests : IAsyncLifetime
         Assert.Equal(("Password", "secret"), smtp["Password"]);
         Assert.All(plugins.SelectMany(p => p.GetProperty("settings").EnumerateArray()), s => Assert.DoesNotContain("(", s.GetProperty("label").GetString()));
     }
+
+    // Finding 8: a value stored in clear for a setting an update made secret is treated as the secret it now is.
+    [Fact]
+    public async Task ValueStoredInClear_ForASettingThatIsNowSecret_IsNotReturned_AndIsProtectedOnSave()
+    {
+        await _f.WithDbAsync(async db =>
+        {
+            db.PluginSettingValues.Add(new PluginSettingValue { PluginId = "kb.test.probe", Key = "Token", Value = Secret, Secret = false, UpdatedAt = DateTimeOffset.UtcNow });
+            await db.SaveChangesAsync(Ct);
+        });
+        var get = await _admin.GetStringAsync(Url, Ct);
+        Assert.DoesNotContain(Secret, get);
+        Assert.Equal("Token", JsonDocument.Parse(get).RootElement.GetProperty("secretsSet").EnumerateArray().Single().GetString());
+        Assert.Equal(Secret, await Store().GetSecretAsync("kb.test.probe", "Token", Ct));
+
+        await SaveAsync(new { Must = "yes", Token = Secret }); // the same value again: it is stored protected now
+        await _f.WithDbAsync(async db =>
+        {
+            var row = await db.PluginSettingValues.SingleAsync(v => v.Key == "Token", Ct);
+            Assert.True(row.Secret);
+            Assert.DoesNotContain(Secret, row.Value);
+        });
+        Assert.Equal(Secret, await Store().GetSecretAsync("kb.test.probe", "Token", Ct));
+    }
 }

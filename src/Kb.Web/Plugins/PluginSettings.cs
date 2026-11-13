@@ -45,8 +45,9 @@ public sealed class PluginSettingsStore
     public async Task<string?> GetSecretAsync(string pluginId, string key, CancellationToken ct)
     {
         await using var scope = _scopes.CreateAsyncScope();
-        var row = await scope.ServiceProvider.GetRequiredService<KbDbContext>().PluginSettingValues.AsNoTracking().FirstOrDefaultAsync(v => v.PluginId == pluginId && v.Key == key && v.Secret, ct);
-        return row?.Value is null ? null : Protector(pluginId).Unprotect(row.Value);
+        var row = await scope.ServiceProvider.GetRequiredService<KbDbContext>().PluginSettingValues.AsNoTracking().FirstOrDefaultAsync(v => v.PluginId == pluginId && v.Key == key, ct);
+        // A value stored in clear before an update made the setting a secret is still the plugin's secret.
+        return row?.Value is null ? null : row.Secret ? Protector(pluginId).Unprotect(row.Value) : row.Value;
     }
 
     /// <summary>
@@ -75,7 +76,8 @@ public sealed class PluginSettingsStore
             if (given is null) continue;
 
             var before = row?.Value is null ? null : row.Secret ? Protector(pluginId).Unprotect(row.Value) : row.Value;
-            if ((before ?? "") == given) continue;
+            // The same value again is still a change when it is stored in clear and the setting is a secret now.
+            if ((before ?? "") == given && (row is null || row.Secret == IsSecret(d))) continue;
             if (given.Length == 0) db.PluginSettingValues.Remove(row!);
             else
             {
@@ -87,18 +89,23 @@ public sealed class PluginSettingsStore
         }
         if (changed.Count == 0) return false;
 
-        await db.SaveChangesAsync(ct);
-        var stamp = Guid.NewGuid().ToString("N");
-        await db.SetAsync(RuntimeSettingKeys.PluginSettingsStamp, stamp, by, now, ct);
-        _watcher.SawStamp(stamp);
-        await ReloadAsync(db, ct);
-        // The keys that changed, never a value.
-        await scope.ServiceProvider.GetRequiredService<IAuditLog>().AppendAsync(new AuditEvent(AuditActions.PluginSettingsChange, by, "plugin", pluginId,
-            Data: new Dictionary<string, string> { ["keys"] = string.Join(", ", changed.Order(StringComparer.Ordinal)) }), ct);
-        if (restart)
+        // From the first write on, a request that goes away no longer stops the change, and a later step that fails does not skip the restart.
+        var none = CancellationToken.None;
+        await db.SaveChangesAsync(none);
+        try
         {
-            _watcher.Saw(await PluginGeneration.RaiseAsync(db, by, now, ct));
-            _restarter.Restart($"A setting of {pluginId} changed.");
+            var stamp = Guid.NewGuid().ToString("N");
+            await db.SetAsync(RuntimeSettingKeys.PluginSettingsStamp, stamp, by, now, none);
+            _watcher.SawStamp(stamp);
+            await ReloadAsync(db, none);
+            if (restart) _watcher.Saw(await PluginGeneration.RaiseAsync(db, by, now, none));
+            // The keys that changed, never a value.
+            await scope.ServiceProvider.GetRequiredService<IAuditLog>().AppendAsync(new AuditEvent(AuditActions.PluginSettingsChange, by, "plugin", pluginId,
+                Data: new Dictionary<string, string> { ["keys"] = string.Join(", ", changed.Order(StringComparer.Ordinal)) }), none);
+        }
+        finally
+        {
+            if (restart) _restarter.Restart($"A setting of {pluginId} changed.");
         }
         return restart;
     }

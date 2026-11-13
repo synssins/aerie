@@ -166,4 +166,20 @@ public sealed class FailureTests : IAsyncLifetime
         await _f.WithDbAsync(async db => Assert.Equal(5, await db.AuditEntries.CountAsync(a => a.Action == AuditActions.SpaceCreate, Ct))); // every entry was still written
         Assert.Equal(HttpStatusCode.OK, (await _admin.GetAsync("/health/ready", Ct)).StatusCode);
     }
+
+    // Finding 4: a sink that times out is a failing sink, not a cancelled request.
+    [Fact]
+    public async Task AuditSinkThatTimesOut_IsReported_AuditEntryStillWritten()
+    {
+        await InstallAsync(TestPlugins.Probe, settings: [("FailOn", "sink"), ("FailWith", "timeout")]);
+        await RestartAsync();
+        for (var i = 0; i < 5; i++) Assert.Equal(HttpStatusCode.Created, (await _admin.PostAsJsonAsync("/api/v1/spaces", new { name = $"Space {i}" }, Ct)).StatusCode);
+        var status = await StatusAsync("kb.test.probe");
+        for (var waited = 0; status.State == PluginState.Enabled && waited < 5000; waited += 100)
+        {
+            await Task.Delay(100, Ct);
+            status = await StatusAsync("kb.test.probe");
+        }
+        Assert.Equal((PluginState.DisabledByCore, "audit sink: Probe sink timed out."), (status.State, status.Reason));
+    }
 }

@@ -97,4 +97,47 @@ public class PluginPackageReaderTests
         Assert.Throws<InvalidDataException>(() => PluginPackageReader.Unpack(Package(more: ("../evil.dll", [1])), folder + "-b"));
         Assert.False(File.Exists(Path.Combine(Path.GetTempPath(), "evil.dll")));
     }
+
+    // Finding 1: JSON null in a manifest list reached code that assumed a list, and stopped the app at every start.
+    [Theory]
+    [InlineData("\"outboundHosts\":null")]
+    [InlineData("\"settings\":null")]
+    [InlineData("\"requires\":null")]
+    [InlineData("\"exports\":null")]
+    [InlineData("\"extensionPoints\":null")]
+    [InlineData("\"permissions\":null")]
+    [InlineData("\"schedules\":null")]
+    [InlineData("\"settings\":[null]")]
+    [InlineData("\"settings\":[{\"key\":null,\"label\":\"x\"}]")]
+    [InlineData("\"settings\":[{\"key\":\"k\",\"label\":null}]")]
+    [InlineData("\"requires\":[{\"id\":null,\"minVersion\":\"1.0.0\"}]")]
+    [InlineData("\"exports\":[null]")]
+    [InlineData("\"outboundHosts\":[null]")]
+    [InlineData("\"publisher\":null")]
+    public void Read_ManifestWithANullListOrItem_Refused(string member)
+    {
+        var manifest = member.StartsWith("\"publisher\"", StringComparison.Ordinal)
+            ? Manifest.Replace("\"publisher\":\"t\"", member, StringComparison.Ordinal)
+            : Manifest.Replace("\"publisher\"", member + ",\"publisher\"", StringComparison.Ordinal);
+        Assert.Equal((400, "Not a plugin package."), Refusal(Package(manifest)));
+    }
+
+    // Finding 10: "$" matches before a final line feed.
+    [Fact]
+    public void Read_IdOrVersionEndingInALineFeed_Refused()
+    {
+        Assert.Equal((400, "Version is not valid."), Refusal(Package(Manifest.Replace("\"1.0.0\"", "\"1.0.0\\n\"", StringComparison.Ordinal))));
+        Assert.Equal((400, "Plugin id is not valid."), Refusal(Package(Manifest.Replace("\"kb.test.probe\"", "\"kb.test.probe\\n\"", StringComparison.Ordinal))));
+        Assert.False(PluginId.IsValid("kb.evil\n"));
+    }
+
+    // Finding 13: the count while writing is the guard against a zip that lies about its sizes.
+    [Fact]
+    public void Unpack_StopsWhenTheBytesWrittenPassTheLimit()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "kb-unpack-" + Guid.NewGuid().ToString("N"));
+        var e = Assert.Throws<InvalidDataException>(() => PluginPackageReader.Unpack(Package(more: ("big.bin", new byte[5000])), folder, maxBytes: 4000));
+        Assert.Equal("Package too large.", e.Message);
+        PluginPackageReader.Unpack(Package(more: ("big.bin", new byte[5000])), folder + "-ok", maxBytes: 6000);
+    }
 }

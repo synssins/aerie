@@ -15,7 +15,7 @@ public static class KbHost
 
 public static partial class PluginId
 {
-    [GeneratedRegex("^[a-z0-9]+([.-][a-z0-9]+)*$")]
+    [GeneratedRegex(@"^[a-z0-9]+([.-][a-z0-9]+)*\z")]
     private static partial Regex Pattern();
 
     /// <summary>Lowercase letters and digits joined by single dots or hyphens, 3 to 64 characters.</summary>

@@ -58,9 +58,11 @@ public static class PluginAdminRoutes
         // A secret's value is never returned: only which secrets are set.
         admin.MapGet("/plugins/{id}/settings", async (string id, PluginRegistry registry, KbDbContext db, CancellationToken ct) =>
         {
-            if (registry.Find(id) is null) return Results.NotFound();
+            if (registry.Find(id) is not { } plugin) return Results.NotFound();
             var rows = await db.PluginSettingValues.AsNoTracking().Where(v => v.PluginId == id).ToListAsync(ct);
-            return Results.Ok(new PluginSettingsDto(rows.Where(r => !r.Secret).ToDictionary(r => r.Key, r => r.Value), [.. rows.Where(r => r.Secret).Select(r => r.Key)]));
+            // What the manifest calls a secret is one, also when its row was stored in clear by an older version of the plugin.
+            bool Secret(PluginSettingValue row) => row.Secret || plugin.Manifest.Settings.Any(d => d.Key == row.Key && PluginSettingsStore.IsSecret(d));
+            return Results.Ok(new PluginSettingsDto(rows.Where(r => !Secret(r)).ToDictionary(r => r.Key, r => r.Value), [.. rows.Where(Secret).Select(r => r.Key)]));
         });
 
         admin.MapPut("/plugins/{id}/settings", (string id, PluginSettingsRequest req, HttpContext http, PluginSettingsStore store, CancellationToken ct) =>

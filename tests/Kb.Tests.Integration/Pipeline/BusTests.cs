@@ -202,4 +202,15 @@ public sealed class BusTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.ServiceUnavailable, (await _admin.GetAsync($"{Probe}/counters", Ct)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await _admin.GetAsync("/api/v1/me", Ct)).StatusCode); // the core's own routes go on
     }
+
+    // Phase 1 review, finding 4, in the bus: a hook whose HTTP call times out refuses the action; it does not look like the request being cancelled.
+    [Fact]
+    public async Task Hook_TimesOut_RefusesTheAction()
+    {
+        await SetAsync("FailWith", "timeout");
+        await SetAsync("FailOn", "before");
+        var r = await EchoAsync("a", "hello");
+        Assert.Equal((HttpStatusCode)422, r.StatusCode);
+        Assert.Equal("Test probe failed.", await DetailAsync(r));
+    }
 }

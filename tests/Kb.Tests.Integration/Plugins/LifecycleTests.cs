@@ -310,4 +310,59 @@ public sealed class LifecycleTests : IAsyncLifetime
         });
         Assert.Equal(5, _f.Restarter.Reasons.Count);
     }
+
+    // Finding 12: an update of a plugin that is enabled runs the new version.
+    [Fact]
+    public async Task Update_OfAnEnabledPlugin_LoadsTheNewVersion()
+    {
+        var admin = await _f.SignedInBreakGlassAsync();
+        await TestPlugins.InstallAsync(admin, TestPlugins.Package(TestPlugins.Probe));
+        admin = await RestartAsync();
+        await TestPlugins.InstallAsync(admin, TestPlugins.Package(TestPlugins.Probe, m => m with { Version = "2.0.0" }));
+        admin = await RestartAsync();
+
+        var p = await PluginAsync(admin, "kb.test.probe");
+        Assert.Equal(("2.0.0", "Enabled", true), (p.GetProperty("version").GetString(), p.GetProperty("state").GetString(), p.GetProperty("loaded").GetBoolean()));
+        Assert.True(SinkOf("kb.test.probe"));
+        Assert.True(Directory.Exists(Path.Combine(_f.WorkFolder, "kb.test.probe", "2.0.0")));
+        Assert.False(Directory.Exists(Path.Combine(_f.WorkFolder, "kb.test.probe", "1.0.0")));
+    }
+
+    // Finding 2: a plugin whose package row is gone must still be listed, removable, and installable again.
+    [Fact]
+    public async Task StatusWithoutPackage_IsListed_CanBeInstalledAgain_AndRemoved()
+    {
+        var admin = await _f.SignedInBreakGlassAsync();
+        await TestPlugins.InstallAsync(admin, TestPlugins.Package(TestPlugins.Probe));
+        await _f.WithDbAsync(async db => { db.PluginPackages.RemoveRange(db.PluginPackages); await db.SaveChangesAsync(Ct); });
+
+        var p = await PluginAsync(admin, "kb.test.probe");
+        Assert.Equal(("kb.test.probe", "1.0.0"), (p.GetProperty("name").GetString(), p.GetProperty("version").GetString()));
+        await TestPlugins.InstallAsync(admin, TestPlugins.Package(TestPlugins.Probe)); // the same version: its package was lost
+        await _f.WithDbAsync(async db => { db.PluginPackages.RemoveRange(db.PluginPackages); await db.SaveChangesAsync(Ct); });
+        Assert.Equal(HttpStatusCode.NoContent, (await admin.DeleteAsync($"{Url}/kb.test.probe", Ct)).StatusCode);
+        Assert.DoesNotContain("kb.test.probe", await admin.GetStringAsync(Url, Ct));
+    }
+
+    // Finding 3: when a step after the rows are written fails, this server must still restart, or it runs the old set for good.
+    [Fact]
+    public async Task Install_WhenTheAuditWriteFails_StillAsksForRestart()
+    {
+        await using var f = new KbAppFactory(KbAppFactory.NewDbPath(), services: s =>
+        {
+            s.AddScoped<Kb.Data.SqlAuditLog>();
+            s.AddScoped<IAuditLog>(sp => new FailingAudit(sp.GetRequiredService<Kb.Data.SqlAuditLog>(), AuditActions.PluginInstall));
+        });
+        var admin = await f.SignedInBreakGlassAsync();
+        var r = await UploadAsync(admin, TestPlugins.Package(TestPlugins.Probe));
+        Assert.Equal(HttpStatusCode.InternalServerError, r.StatusCode);
+        Assert.Single(f.Restarter.Reasons);
+        await f.WithDbAsync(async db => Assert.Equal("1.0.0", (await db.PluginStatuses.SingleAsync(x => x.PluginId == "kb.test.probe", Ct)).ActiveVersion));
+    }
+
+    private sealed class FailingAudit(IAuditLog inner, string failOn) : IAuditLog
+    {
+        public Task AppendAsync(AuditEvent e, CancellationToken ct = default) => e.Action == failOn ? throw new TimeoutException("The audit log did not answer.") : inner.AppendAsync(e, ct);
+        public Task<AuditVerifyResult> VerifyAsync(CancellationToken ct = default) => inner.VerifyAsync(ct);
+    }
 }

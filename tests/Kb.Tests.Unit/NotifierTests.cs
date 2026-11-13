@@ -45,4 +45,28 @@ public sealed class NotifierTests
         await store.Received(1).AddAsync(Arg.Is<IEnumerable<Notification>>(x => x.Single().UserId == A), Arg.Any<CancellationToken>());
         await mail.Received(1).SendAsync(Arg.Any<EmailMessage>(), Arg.Any<CancellationToken>());
     }
+
+    // Findings 4 and 13: a sender that fails, also by timing out, is reported and the notification stands.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EmailSendThrows_IsReported_NotificationStillStored(bool timeout)
+    {
+        var store = Substitute.For<INotificationStore>();
+        var dir = Substitute.For<IUserDirectory>();
+        dir.GetNotifyPrefsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new Dictionary<Guid, NotifyPref>());
+        dir.GetEmailsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>()).Returns(["a@x"]);
+        var mail = Substitute.For<IEmailSender>();
+        mail.ProviderId.Returns("smtp");
+        mail.SendAsync(Arg.Any<EmailMessage>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw (timeout ? new TaskCanceledException("The request timed out.") : new InvalidOperationException("Relay refused.")));
+        var failures = Substitute.For<IPluginFailures>();
+        var n = new Notifier(store, dir, new ProviderSelector<IEmailSender>([mail]), Options.Create(new KbOptions { Email = new EmailOptions { Provider = "smtp" } }),
+            new FakeTimeProvider(), failures, NullLogger<Notifier>.Instance);
+
+        await n.NotifyAsync([A], NotificationKinds.SecurityAlert, "t", null, null, alsoEmail: true, TestContext.Current.CancellationToken);
+
+        await store.Received(1).AddAsync(Arg.Any<IEnumerable<Notification>>(), Arg.Any<CancellationToken>());
+        failures.Received(1).Report("smtp", "email send", Arg.Any<Exception>());
+    }
 }

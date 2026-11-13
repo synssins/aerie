@@ -74,6 +74,10 @@
     {
       "key": "AfterFile",
       "label": "AfterFile"
+    },
+    {
+      "key": "FailWith",
+      "label": "FailWith"
     }
   ]
 }

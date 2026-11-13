@@ -46,7 +46,7 @@ public sealed class ActionQueueWorker(IServiceScopeFactory scopes, IPluginFailur
             scope.ServiceProvider.GetRequiredService<ActorAccessor>().Use(Actor.Plugin(work.PluginId, "queue"));
             await work.Run(scope.ServiceProvider, ct);
         }
-        catch (Exception e) when (e is not OperationCanceledException)
+        catch (Exception e) when (!(e is OperationCanceledException && ct.IsCancellationRequested))
         {
             log.LogError(e, "{Where} of {Plugin} failed.", work.Where, work.PluginId);
             failures.Report(work.PluginId, work.Where, e);

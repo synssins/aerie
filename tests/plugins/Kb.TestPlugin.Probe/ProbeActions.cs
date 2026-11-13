@@ -93,7 +93,7 @@ public sealed class EchoHook(ProbeState state) : IBeforeAction<ProbeEcho>
     public Task<Problem?> BeforeAsync(ActionContext<ProbeEcho> ctx)
     {
         state.CountHook();
-        if (state.Setting("FailOn") == "before") throw new InvalidOperationException("Probe hook failed.");
+        if (state.Setting("FailOn") == "before") throw state.Setting("FailWith") == "timeout" ? new TaskCanceledException("Probe hook timed out.") : new InvalidOperationException("Probe hook failed.");
         if (state.Setting("Refuse") == ctx.Name) return Task.FromResult<Problem?>(Problem.Refused("Probe refused."));
         if (state.Setting("Rewrite") is { } rewrite && rewrite.StartsWith(ctx.Name + ":Text=", StringComparison.Ordinal))
             ctx.Action = ctx.Action with { Text = rewrite[(ctx.Name.Length + 6)..] };

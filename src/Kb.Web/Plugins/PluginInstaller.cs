@@ -38,6 +38,9 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
             }
             else if (packages.FirstOrDefault(p => p.PluginId == status.PluginId && p.Version == status.ActiveVersion) is { } package && PluginManifests.Parse(package.ManifestJson) is { } manifest)
                 known.Add(new(manifest, status, PluginOrigin.Uploaded, package.Source, package.Sha256));
+            else
+                // Its package is missing or unreadable. It is still listed, under its id, so an Admin can remove it or install it again.
+                known.Add(new(new PluginManifest { Id = status.PluginId, Version = status.ActiveVersion, Publisher = "" }, status, PluginOrigin.Uploaded, "upload", ""));
         }
         return known;
     }
@@ -53,7 +56,8 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
 
         var known = await KnownAsync(ct);
         var status = await db.PluginStatuses.FirstOrDefaultAsync(s => s.PluginId == manifest.Id, ct);
-        var update = status is { ActiveVersion: not null, Removed: false };
+        // A status whose package was lost is not an update: the same version can be installed again.
+        var update = status is { ActiveVersion: not null, Removed: false } && await db.PluginPackages.AnyAsync(p => p.PluginId == manifest.Id, ct);
         if (update && status!.ActiveVersion == manifest.Version) return Problem.Conflict($"Version {manifest.Version} is already installed.");
         if (update && !PluginVersions.AtLeast(manifest.Version, status!.ActiveVersion!)) return Problem.Conflict("A newer version is installed.");
         var others = known.Where(k => k.Manifest.Id != manifest.Id).Select(k => k.Manifest).ToList();
@@ -63,7 +67,8 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
 
         var now = time.GetUtcNow();
         // An update deletes the older package. To go back, remove the plugin and upload the older package.
-        await db.PluginPackages.Where(p => p.PluginId == manifest.Id).ExecuteDeleteAsync(ct);
+        // The delete and the new rows are one save: either all of it is in the database or none of it.
+        await ForgetPackagesAsync(manifest.Id, ct);
         db.PluginPackages.Add(new PluginPackage
         {
             PluginId = manifest.Id, Version = manifest.Version, Bytes = package, Sha256 = read.Value.Sha256, ManifestJson = PluginManifests.Write(manifest),
@@ -76,7 +81,7 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
             if (status.Removed) (status.Removed, status.State, status.Reason, status.LockedAt) = (false, PluginState.Enabled, null, null);
             (status.ActiveVersion, status.UpdatedAt) = (manifest.Version, now);
         }
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(CancellationToken.None); // from the first write on, a request that goes away no longer stops the change
         await ChangedAsync(update ? AuditActions.PluginUpdate : AuditActions.PluginInstall, manifest.Id, by, read.Value.Sha256, source.Url ?? source.Kind, manifest.Version, null, ct);
         return new InstalledDto(manifest.Id, manifest.Version, Restart: true);
     }
@@ -99,7 +104,7 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
 
         // A plugin an Admin turns off or on carries no reason and no lock.
         (plugin.Status.State, plugin.Status.Reason, plugin.Status.LockedAt, plugin.Status.UpdatedAt) = (enabled ? PluginState.Enabled : PluginState.Disabled, null, null, time.GetUtcNow());
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(CancellationToken.None);
         await ChangedAsync(enabled ? AuditActions.PluginEnable : AuditActions.PluginDisable, id, by, plugin.Sha256, plugin.Source, plugin.Manifest.Version, null, ct);
         return default(Unit);
     }
@@ -113,10 +118,10 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
         if (plugin.Origin == PluginOrigin.BuiltIn) return Problem.Conflict("Built-in plugins cannot be removed.");
         if (await HeldAsync(plugin, known, ct) is { } held) return held;
 
-        await db.PluginPackages.Where(p => p.PluginId == id).ExecuteDeleteAsync(ct);
-        await db.PluginSettingValues.Where(v => v.PluginId == id).ExecuteDeleteAsync(ct);
+        await ForgetPackagesAsync(id, ct);
+        db.PluginSettingValues.RemoveRange(await db.PluginSettingValues.Where(v => v.PluginId == id).ToListAsync(ct));
         db.PluginStatuses.Remove(plugin.Status);
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(CancellationToken.None); // packages, settings and status go in one save
         await ChangedAsync(AuditActions.PluginRemove, id, by, plugin.Sha256, plugin.Source, plugin.Manifest.Version, null, ct);
         return default(Unit);
     }
@@ -128,7 +133,7 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
         if (status is null) return Problem.NotFound;
         if (!status.Removed) return Problem.Conflict("Remove the plugin first.");
         db.PluginStatuses.Remove(status);
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(CancellationToken.None);
         await ChangedAsync(AuditActions.PluginDataDelete, id, by, "", "", status.ActiveVersion ?? "", null, ct);
         return default(Unit);
     }
@@ -138,7 +143,7 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
         var known = await KnownAsync(ct);
         if (known.FirstOrDefault(k => k.Manifest.Id == id) is not { } plugin) return Problem.NotFound;
         (plugin.Status.LockedAt, plugin.Status.UpdatedAt) = (null, time.GetUtcNow());
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(CancellationToken.None);
         await ChangedAsync(AuditActions.PluginLockRelease, id, by, plugin.Sha256, plugin.Source, plugin.Manifest.Version, null, ct);
         return default(Unit);
     }
@@ -160,7 +165,7 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
         (plugin.Status.State, plugin.Status.Reason, plugin.Status.UpdatedAt) = (PluginState.DisabledByCore, reason, now);
         if (plugin.Manifest.Enforcing) plugin.Status.LockedAt = now;
         foreach (var d in dependents) (d.Status.State, d.Status.Reason, d.Status.UpdatedAt) = (PluginState.DisabledByCore, $"Requires {PluginManifests.NameOf(plugin.Manifest)}.", now);
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(CancellationToken.None);
         foreach (var d in dependents)
             await audit.AppendAsync(new AuditEvent(AuditActions.PluginDisabledByCore, null, "plugin", d.Manifest.Id, Data: Data(d.Sha256, d.Source, d.Manifest.Version, d.Status.Reason)), ct);
         await ChangedAsync(AuditActions.PluginDisabledByCore, id, null, plugin.Sha256, plugin.Source, plugin.Manifest.Version, reason, ct);
@@ -191,10 +196,25 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
         return data;
     }
 
+    /// <summary>
+    /// The rows are written. Whatever happens next (a timeout of the audit log, a request that went away), this server asks for its restart:
+    /// once the generation is raised its watcher no longer would, and it would run the old set of plugins for good.
+    /// </summary>
     private async Task ChangedAsync(string action, string id, Guid? by, string sha256, string source, string version, string? reason, CancellationToken ct)
     {
-        watcher.Saw(await PluginGeneration.RaiseAsync(db, by, time.GetUtcNow(), ct));
-        await audit.AppendAsync(new AuditEvent(action, by, "plugin", id, Data: Data(sha256, source, version, reason)), ct);
-        restarter.Restart($"{action} {id}");
+        _ = ct;
+        try
+        {
+            watcher.Saw(await PluginGeneration.RaiseAsync(db, by, time.GetUtcNow(), CancellationToken.None));
+            await audit.AppendAsync(new AuditEvent(action, by, "plugin", id, Data: Data(sha256, source, version, reason)), CancellationToken.None);
+        }
+        finally { restarter.Restart($"{action} {id}"); }
+    }
+
+    /// <summary>Marks every package of a plugin for deletion in the next save, without loading their bytes.</summary>
+    private async Task ForgetPackagesAsync(string pluginId, CancellationToken ct)
+    {
+        foreach (var version in await db.PluginPackages.Where(p => p.PluginId == pluginId).Select(p => p.Version).ToListAsync(ct))
+            db.Entry(new PluginPackage { PluginId = pluginId, Version = version, Bytes = [], Sha256 = "", ManifestJson = "", Source = "" }).State = EntityState.Deleted;
     }
 }

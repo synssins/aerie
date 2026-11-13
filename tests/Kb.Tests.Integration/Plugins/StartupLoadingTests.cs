@@ -90,7 +90,17 @@ public sealed class StartupLoadingTests : IAsyncLifetime
             var entry = await db.AuditEntries.SingleAsync(a => a.Action == AuditActions.PluginDisabledByCore, Ct);
             Assert.Equal("kb.test.probe", entry.TargetId);
             Assert.Contains("Probe failed in Configure.", entry.DataJson);
+            // Finding 9: the entry says which package it was.
+            var data = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(entry.DataJson)!;
+            var stored = await db.PluginPackages.Where(p => p.PluginId == "kb.test.probe").Select(p => p.Sha256).SingleAsync(Ct);
+            Assert.Equal((stored, "upload"), (data["sha256"], data["source"]));
+            // Finding 6: the other server must learn of it, so the generation is raised, and this server already runs the new set.
+            var generation = long.Parse((await db.RuntimeSettings.SingleAsync(s => s.Key == "Plugins.Generation", Ct)).Value!, System.Globalization.CultureInfo.InvariantCulture);
+            Assert.Equal(1, generation);
+            Assert.Equal(generation, _f.Services.GetRequiredService<PluginRegistry>().Generation);
         });
+        await _f.Services.GetRequiredService<Kb.Web.Plugins.PluginWatcher>().CheckAsync(Ct);
+        Assert.Empty(_f.Restarter.Reasons);
 
         // It stays disabled: the next start does not try it again.
         await RestartAsync();
@@ -230,5 +240,33 @@ public sealed class StartupLoadingTests : IAsyncLifetime
         });
         await RestartAsync();
         Assert.Equal((PluginState.DisabledByCore, "Not a plugin package."), ((await StatusAsync("kb.test.probe")).State, (await StatusAsync("kb.test.probe")).Reason));
+    }
+
+    // Finding 4: a plugin whose HTTP call times out throws a cancellation; that is a failure of the plugin, not the app stopping.
+    [Fact]
+    public async Task PluginThatTimesOut_WhileConfigured_IsDisabledByCore_AppStarts()
+    {
+        await SeedAsync(TestPlugins.Probe, settings: [("FailOn", "configure"), ("FailWith", "timeout")]);
+        await RestartAsync();
+        Assert.Equal(HttpStatusCode.OK, (await _f.NewClient().GetAsync("/health/ready", Ct)).StatusCode);
+        Assert.Equal((PluginState.DisabledByCore, "Probe timed out in Configure."), ((await StatusAsync("kb.test.probe")).State, (await StatusAsync("kb.test.probe")).Reason));
+    }
+
+    // Finding 11: a plugin that is not loaded keeps no files on this server.
+    [Fact]
+    public async Task PluginNoLongerLoaded_WorkFolderIsDeleted_AtTheNextStart()
+    {
+        await SeedAsync(TestPlugins.Probe);
+        await RestartAsync();
+        var folder = Path.Combine(_f.WorkFolder, "kb.test.probe");
+        Assert.True(Directory.Exists(folder));
+        await _f.WithDbAsync(async db =>
+        {
+            db.PluginPackages.RemoveRange(db.PluginPackages);
+            db.PluginStatuses.RemoveRange(db.PluginStatuses.Where(s => s.PluginId == "kb.test.probe"));
+            await db.SaveChangesAsync(Ct);
+        });
+        await RestartAsync();
+        Assert.False(Directory.Exists(folder));
     }
 }

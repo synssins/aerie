@@ -44,8 +44,10 @@ public static class PluginBootstrap
 
         var safeMode = options.Plugins.SafeMode;
         var now = DateTimeOffset.UtcNow;
-        var statuses = (await db.PluginStatuses.ToListAsync(ct)).ToDictionary(s => s.PluginId, StringComparer.Ordinal);
+        // The generation is read before the rows it guards. If another server changes them in between, this server holds an old number
+        // with new rows and restarts once more; read the other way round it would hold a new number with old rows and never restart.
         var generation = long.TryParse((await db.RuntimeSettings.AsNoTracking().FirstOrDefaultAsync(s => s.Key == RuntimeSettingKeys.PluginGeneration, ct))?.Value, out var g) ? g : 0;
+        var statuses = (await db.PluginStatuses.ToListAsync(ct)).ToDictionary(s => s.PluginId, StringComparer.Ordinal);
         var settings = new PluginSettingsSnapshot();
         settings.Replace((await db.PluginSettingValues.AsNoTracking().Where(v => !v.Secret).ToListAsync(ct)).Select(v => (v.PluginId, v.Key, v.Value)));
 
@@ -63,12 +65,27 @@ public static class PluginBootstrap
             }
             candidates.Add(new Candidate(manifest, PluginOrigin.BuiltIn, status, "built-in", assembly, null));
         }
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException)
+        {
+            // Another server, starting at the same moment, added the same rows first. Its rows are the ones to use.
+            foreach (var entry in db.ChangeTracker.Entries<PluginStatus>().Where(e => e.State == EntityState.Added).ToList()) entry.State = EntityState.Detached;
+            statuses = (await db.PluginStatuses.ToListAsync(ct)).ToDictionary(s => s.PluginId, StringComparer.Ordinal);
+            candidates = [.. candidates.Select(c => c with { Status = statuses.GetValueOrDefault(c.Manifest.Id) })];
+        }
         foreach (var status in statuses.Values.Where(s => s.ActiveVersion is not null && !s.Removed).OrderBy(s => s.PluginId, StringComparer.Ordinal).ToList())
         {
             if (candidates.Any(c => c.Manifest.Id == status.PluginId)) continue; // a built-in plugin keeps its id
             var load = status.State == PluginState.Enabled && !safeMode;
             var package = await db.PluginPackages.AsNoTracking().Where(p => p.PluginId == status.PluginId && p.Version == status.ActiveVersion)
                 .Select(p => new { p.ManifestJson, p.Source, p.Sha256, Bytes = load ? p.Bytes : null }).FirstOrDefaultAsync(ct);
+            if (package is null && load)
+            {
+                // No package for the version the status names. If another server is updating or removing this plugin right now, the row has changed
+                // or is gone: leave it alone, the generation it raises restarts this server. Only a row that still names the missing package is broken.
+                var fresh = await db.PluginStatuses.AsNoTracking().FirstOrDefaultAsync(s => s.PluginId == status.PluginId, ct);
+                if (fresh is null || fresh.ActiveVersion != status.ActiveVersion) continue;
+            }
             var manifest = (package is null ? null : PluginManifests.Parse(package.ManifestJson)) ?? new PluginManifest { Id = status.PluginId, Version = status.ActiveVersion!, Publisher = "" };
             if (load)
             {
@@ -102,7 +119,7 @@ public static class PluginBootstrap
             c.Status.UpdatedAt = now;
             if (c.Manifest.Enforcing) c.Status.LockedAt = now;
             events.Add(new AuditEvent(AuditActions.PluginDisabledByCore, null, "plugin", c.Manifest.Id,
-                Data: new Dictionary<string, string> { ["reason"] = reason, ["version"] = c.Manifest.Version }));
+                Data: new Dictionary<string, string> { ["reason"] = reason, ["version"] = c.Manifest.Version, ["sha256"] = c.Sha256 ?? "", ["source"] = c.Source }));
         }
 
         foreach (var c in enabled.Where(c => failed.ContainsKey(c.Manifest.Id)).ToList()) Fail(c, failed[c.Manifest.Id]);
@@ -131,12 +148,36 @@ public static class PluginBootstrap
                 foreach (var registration in configured.Registrations) registrations.Add(id, registration);
                 loaded[id] = assembly;
             }
-            catch (Exception e) when (e is not OperationCanceledException)
+            catch (Exception e) when (!(e is OperationCanceledException && ct.IsCancellationRequested)) // a plugin whose HTTP call times out throws a cancellation too
             {
                 Fail(c, (e is TargetInvocationException { InnerException: { } inner } ? inner : e).Message);
             }
         }
-        await db.SaveChangesAsync(ct);
+        if (events.Count > 0)
+        {
+            // The core turned something off here. Another server may still run it, so the generation is raised: that server restarts.
+            // This one already runs the new set, so it keeps the raised number and does not restart itself.
+            generation++;
+            var text = generation.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (await db.RuntimeSettings.FirstOrDefaultAsync(s => s.Key == RuntimeSettingKeys.PluginGeneration, ct) is { } row) (row.Value, row.UpdatedAt) = (text, now);
+            else db.RuntimeSettings.Add(new RuntimeSetting { Key = RuntimeSettingKeys.PluginGeneration, Value = text, UpdatedAt = now });
+        }
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException gone)
+        {
+            // A row this start wanted to change was removed by another server meanwhile. Its change stands; the rest is saved.
+            foreach (var entry in gone.Entries) entry.State = EntityState.Detached;
+            await db.SaveChangesAsync(ct);
+        }
+        if (!safeMode)
+        {
+            // A plugin this server did not load keeps no files here. Best effort: a folder in use is tried again at the next start.
+            foreach (var folder in Directory.GetDirectories(work).Where(d => !loaded.ContainsKey(Path.GetFileName(d))))
+            {
+                try { Directory.Delete(folder, recursive: true); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+            }
+        }
 
         // ---- what the app gets
         foreach (var id in loaded.Keys)

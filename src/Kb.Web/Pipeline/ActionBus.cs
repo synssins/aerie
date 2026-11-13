@@ -132,7 +132,7 @@ public sealed class ActionBus(ActionCatalog catalog, IServiceProvider services, 
                 var before = (IBeforeAction<TAction>)ActivatorUtilities.CreateInstance(services, hook.Value.Hook);
                 if (await before.BeforeAsync(ctx) is { } refused) return refused;
             }
-            catch (Exception e) when (e is not OperationCanceledException)
+            catch (Exception e) when (!(e is OperationCanceledException && ctx.Cancel.IsCancellationRequested)) // a timeout inside a hook is the hook failing
             {
                 if (Failed(hook.PluginId, $"{ctx.Name} hook", e, hook.Value.Optional) is { } failed) return failed;
             }
@@ -151,7 +151,7 @@ public sealed class ActionBus(ActionCatalog catalog, IServiceProvider services, 
         foreach (var filter in catalog.Filters(typeof(TAction)))
         {
             try { value = await ((IResultFilter<TAction, TResult>)ActivatorUtilities.CreateInstance(services, filter.Value.Filter)).FilterAsync(ctx, value); }
-            catch (Exception e) when (e is not OperationCanceledException)
+            catch (Exception e) when (!(e is OperationCanceledException && ctx.Cancel.IsCancellationRequested))
             {
                 if (Failed(filter.PluginId, $"{ctx.Name} filter", e, filter.Value.Optional) is { } failed) return failed;
             }

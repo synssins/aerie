@@ -82,9 +82,9 @@ public sealed class Notifier(
         {
             await sender.SendAsync(new EmailMessage(to, title, body ?? title), ct);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (!(ex is OperationCanceledException && ct.IsCancellationRequested))
         {
-            // In-app notification already stored; email failure must not undo the action that triggered it.
+            // In-app notification already stored; email failure, a timeout included, must not undo the action that triggered it.
             log.LogError(ex, "Email send failed via {Provider}", sender.ProviderId);
             failures.Report(sender.ProviderId, "email send", ex);
         }

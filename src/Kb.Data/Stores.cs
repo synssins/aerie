@@ -54,9 +54,9 @@ public sealed class SqlAuditLog(KbDbContext db, TimeProvider time, IEnumerable<I
         foreach (var sink in sinks)
         {
             try { await sink.ForwardAsync(record, ct); }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!(ex is OperationCanceledException && ct.IsCancellationRequested))
             {
-                // The entry is already written; a sink cannot undo or silence it.
+                // The entry is already written; a sink cannot undo or silence it. A sink that times out throws a cancellation too: that is its failure.
                 log.LogError(ex, "Audit sink {Sink} failed", sink.ProviderId);
                 failures.Report(sink.ProviderId, "audit sink", ex);
             }

@@ -16,7 +16,7 @@ public static partial class PluginPackageReader
     public const long MaxUnpackedBytes = 200 * 1_048_576;
     public const int MaxEntries = 2000;
 
-    [GeneratedRegex(@"^\d+\.\d+\.\d+$")]
+    [GeneratedRegex(@"^\d+\.\d+\.\d+\z")]
     private static partial Regex VersionPattern();
 
     private static Problem NotAPackage => new(400, "Not a plugin package.");
@@ -50,7 +50,7 @@ public static partial class PluginPackageReader
             if (manifestEntry is null) return NotAPackage;
             using var reader = new StreamReader(manifestEntry.Open());
             var manifest = PluginManifests.Parse(reader.ReadToEnd());
-            if (manifest is null || manifest.Id is null || manifest.Version is null) return NotAPackage;
+            if (manifest is null || !IsWhole(manifest)) return NotAPackage;
             if (!PluginId.IsValid(manifest.Id)) return new Problem(400, "Plugin id is not valid.");
             // The version becomes a folder name; the assembly and the exports become file names.
             if (!VersionPattern().IsMatch(manifest.Version)) return new Problem(400, "Version is not valid.");
@@ -66,7 +66,9 @@ public static partial class PluginPackageReader
     /// Unpacks a package into a folder. Call only after <see cref="Read"/> succeeded.
     /// The sizes a zip states can lie, so the bytes are counted again while they are written.
     /// </summary>
-    public static void Unpack(byte[] package, string folder)
+    public static void Unpack(byte[] package, string folder) => Unpack(package, folder, MaxUnpackedBytes);
+
+    internal static void Unpack(byte[] package, string folder, long maxBytes)
     {
         ArgumentNullException.ThrowIfNull(package);
         var root = Path.GetFullPath(folder);
@@ -87,11 +89,26 @@ public static partial class PluginPackageReader
             while ((n = source.Read(buffer)) > 0)
             {
                 total += n;
-                if (total > MaxUnpackedBytes) throw new InvalidDataException("Package too large.");
+                if (total > maxBytes) throw new InvalidDataException("Package too large.");
                 file.Write(buffer, 0, n);
             }
         }
     }
+
+    /// <summary>
+    /// JSON null in place of a list, a name or an item becomes a null where the rest of the app expects a value.
+    /// A manifest that has one is refused here, so nothing later has to check.
+    /// </summary>
+    private static bool IsWhole(PluginManifest m) =>
+        m.Id is not null && m.Version is not null && m.Publisher is not null && m.MinKbVersion is not null && m.AbstractionsVersion is not null
+        && m.Requires is not null && m.Requires.All(r => r is { Id: not null, MinVersion: not null })
+        && m.Exports is not null && m.Exports.All(e => e is not null)
+        && m.ExtensionPoints is not null && m.ExtensionPoints.All(e => e is not null)
+        && m.OutboundHosts is not null && m.OutboundHosts.All(h => h is not null)
+        && m.Settings is not null && m.Settings.All(s => s is { Key: not null, Label: not null, Type: not null } && (s.Options is null || s.Options.All(o => o is not null)))
+        && m.Permissions is not null && m.Permissions.All(p => p is { Key: not null, Label: not null, Scope: not null, DefaultRole: not null })
+        && m.Schedules is not null && m.Schedules.All(s => s is { Name: not null })
+        && (m.Ui is null || (m.Ui.Replaces is not null && m.Ui.Replaces.All(r => r is not null)));
 
     /// <summary>A relative path that stays inside the folder: no "..", no root, no drive letter.</summary>
     private static bool IsSafe(string name)

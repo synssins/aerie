@@ -29,7 +29,8 @@ public sealed class ProbePlugin : IKbPlugin
 
     public void Configure(IPluginApp app, IPluginContext context)
     {
-        if (context.GetSetting("FailOn") == "configure") throw new InvalidOperationException("Probe failed in Configure.\nSecond line of the error.");
+        if (context.GetSetting("FailOn") == "configure")
+            throw context.GetSetting("FailWith") == "timeout" ? new TaskCanceledException("Probe timed out in Configure.") : new InvalidOperationException("Probe failed in Configure.\nSecond line of the error.");
         // How a hook is registered is fixed here; what it does is read from the settings each time it runs.
         var optional = context.GetSetting("Optional") == "true";
         app.Handle<ProbeEcho, ProbeEchoResult, EchoHandler>()
@@ -47,7 +48,8 @@ public sealed class ProbeSink(IPluginContext context) : IAuditSink
     public string ProviderId => context.Manifest.Id;
 
     public Task ForwardAsync(AuditRecord record, CancellationToken ct) =>
-        context.GetSetting("FailOn") == "sink" ? throw new InvalidOperationException("Probe sink failed.") : Task.CompletedTask;
+        context.GetSetting("FailOn") != "sink" ? Task.CompletedTask
+        : throw (context.GetSetting("FailWith") == "timeout" ? new TaskCanceledException("Probe sink timed out.") : new InvalidOperationException("Probe sink failed."));
 }
 
 public sealed class ProbeFileStore : IFileStore
