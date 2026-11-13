@@ -212,6 +212,50 @@ Read. `ReadImage`, answers `FileOut`.
 |---|---|---|
 | ImageId | `Guid` | required |
 
+## log.read
+
+Read. `ReadLogs`, answers `LogsDto`. Core only.
+
+## log.target.add
+
+Write. `AddLogTarget`, answers `LogTargetDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Name | `string?` |  |
+| Kind | `string?` |  |
+| Settings | `IReadOnlyDictionary<string, string>?` |  |
+| Secrets | `IReadOnlyDictionary<string, string>?` | never logged |
+| Enabled | `bool` |  |
+
+## log.target.remove
+
+Write. `RemoveLogTarget`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `Guid` | required |
+
+## log.target.save
+
+Write. `SaveLogTarget`, answers `LogTargetDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `Guid` | required |
+| Name | `string?` |  |
+| Settings | `IReadOnlyDictionary<string, string>?` |  |
+| Secrets | `IReadOnlyDictionary<string, string>?` | never logged |
+| Enabled | `bool` |  |
+
+## log.target.test
+
+Write. `TestLogTarget`, answers `StorageTestDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `Guid` | required |
+
 ## me.read
 
 Read. `ReadMe`, answers `MeResponse`.
@@ -389,6 +433,69 @@ Write. `RestoreVersion`, answers `PageDto`.
 | PageId | `Guid` | required |
 | Version | `string` | required |
 
+## plugin.data.delete
+
+Write. `DeletePluginData`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+
+## plugin.install
+
+Write. `InstallPlugin`, answers `InstalledDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Package | `UploadContent` | required, never logged |
+
+## plugin.list
+
+Read. `ListPlugins`, answers `PluginListDto`. Core only.
+
+## plugin.lock.release
+
+Write. `ReleasePluginLock`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+
+## plugin.remove
+
+Write. `RemovePlugin`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| DeleteData | `bool` |  |
+
+## plugin.settings.read
+
+Read. `ReadPluginSettings`, answers `PluginSettingsDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+
+## plugin.settings.save
+
+Write. `SavePluginSettings`, answers `PluginSettingsSaved`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| Values | `IReadOnlyDictionary<string, string>` | required, never logged |
+
+## plugin.state.set
+
+Write. `SetPluginState`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| Enabled | `bool` | required |
+
 ## search.query
 
 Read. `SearchPages`, answers `SearchResponse`.
@@ -550,6 +657,116 @@ Write. `UpdateSpaceAdmin`, answers `SpaceDto`.
 | AgingDays | `int?` |  |
 | AgingAudience | `AgingAudience?` |  |
 | RecycleDays | `int?` |  |
+
+## storage.move.cancel
+
+Write. `CancelStorageMove`, answers `Unit`. Core only.
+
+## storage.move.copy-again
+
+Write. `CopyStorageMoveAgain`, answers `Unit`. Core only.
+
+## storage.move.preview
+
+Write. `PreviewStorageMove`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| On | `bool` | required |
+
+## storage.move.start
+
+Write. `StartStorageMove`, answers `StorageMoveDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| ToId | `Guid` | required |
+
+## storage.move.switch
+
+Write. `SwitchStorageMove`, answers `Unit`. Core only.
+
+## storage.place.add
+
+Write. `AddStoragePlace`, answers `StoragePlaceDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Name | `string?` |  |
+| Kind | `string?` |  |
+| Settings | `IReadOnlyDictionary<string, string>?` |  |
+| Secrets | `IReadOnlyDictionary<string, string>?` | never logged |
+
+## storage.place.remove
+
+Write. `RemoveStoragePlace`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `Guid` | required |
+
+## storage.place.save
+
+Write. `SaveStoragePlace`, answers `StoragePlaceDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `Guid` | required |
+| Name | `string?` |  |
+| Settings | `IReadOnlyDictionary<string, string>?` |  |
+| Secrets | `IReadOnlyDictionary<string, string>?` | never logged |
+
+## storage.place.test
+
+Write. `TestStoragePlace`, answers `StorageTestDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `Guid` | required |
+
+## storage.read
+
+Read. `ReadStorage`, answers `StorageDto`. Core only.
+
+## token.create
+
+Write. `CreateToken`, answers `ApiTokenCreatedDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Name | `string?` |  |
+| Kind | `TokenKind` | required |
+| Scopes | `IReadOnlyList<TokenScope>?` |  |
+| Days | `int?` |  |
+| AccountId | `Guid?` |  |
+
+## token.list
+
+Read. `ListMyTokens`, answers `IReadOnlyList<ApiTokenDto>`. Core only.
+
+## token.list.all
+
+Read. `ListAllTokens`, answers `IReadOnlyList<ApiTokenDto>`. Core only.
+
+## token.revoke
+
+Write. `RevokeToken`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| TokenId | `Guid` | required |
+
+## token.settings.read
+
+Read. `ReadTokenSettings`, answers `TokenSettingsDto`. Core only.
+
+## token.settings.save
+
+Write. `SaveTokenSettings`, answers `TokenSettingsDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| MaxDays | `int` | required |
 
 ## tree.read
 
