@@ -27,8 +27,7 @@ public static partial class PluginId
     /// </summary>
     public static string TablePrefix(string id)
     {
-        ArgumentNullException.ThrowIfNull(id);
-        return "plg_" + id.Replace('.', '_').Replace('-', '_') + "__";
+        return PluginTables.Prefix(id);
     }
 }
 

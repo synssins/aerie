@@ -32,6 +32,19 @@ public interface IPluginContext
 }
 
 /// <summary>The one registration mechanism. Hooks, routes, jobs and the rest are extension methods that call <see cref="Add{T}"/>.</summary>
+/// <summary>How a plugin's tables are named.</summary>
+public static class PluginTables
+{
+    /// <summary>
+    /// The prefix of every table of a plugin: <c>plg_&lt;id with dots and hyphens as underscores&gt;__</c>.
+    /// </summary>
+    public static string Prefix(string pluginId)
+    {
+        ArgumentNullException.ThrowIfNull(pluginId);
+        return "plg_" + pluginId.Replace('.', '_').Replace('-', '_') + "__";
+    }
+}
+
 public interface IPluginApp
 {
     IPluginApp Add<T>(T registration) where T : class;

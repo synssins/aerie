@@ -35,6 +35,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kb.TestPlugin.Lib", "tests\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kb.TestPlugin.Dependent", "tests\plugins\Kb.TestPlugin.Dependent\Kb.TestPlugin.Dependent.csproj", "{1F701C33-3635-4B65-A9ED-2F563528CF80}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kb.Plugins.Data", "src\Kb.Plugins.Data\Kb.Plugins.Data.csproj", "{F63FAE70-91B0-421F-9A63-51D3BA95031A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -189,6 +191,18 @@ Global
 		{1F701C33-3635-4B65-A9ED-2F563528CF80}.Release|x64.Build.0 = Release|Any CPU
 		{1F701C33-3635-4B65-A9ED-2F563528CF80}.Release|x86.ActiveCfg = Release|Any CPU
 		{1F701C33-3635-4B65-A9ED-2F563528CF80}.Release|x86.Build.0 = Release|Any CPU
+		{F63FAE70-91B0-421F-9A63-51D3BA95031A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F63FAE70-91B0-421F-9A63-51D3BA95031A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F63FAE70-91B0-421F-9A63-51D3BA95031A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F63FAE70-91B0-421F-9A63-51D3BA95031A}.Debug|x64.Build.0 = Debug|Any CPU
+		{F63FAE70-91B0-421F-9A63-51D3BA95031A}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F63FAE70-91B0-421F-9A63-51D3BA95031A}.Debug|x86.Build.0 = Debug|Any CPU
+		{F63FAE70-91B0-421F-9A63-51D3BA95031A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F63FAE70-91B0-421F-9A63-51D3BA95031A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F63FAE70-91B0-421F-9A63-51D3BA95031A}.Release|x64.ActiveCfg = Release|Any CPU
+		{F63FAE70-91B0-421F-9A63-51D3BA95031A}.Release|x64.Build.0 = Release|Any CPU
+		{F63FAE70-91B0-421F-9A63-51D3BA95031A}.Release|x86.ActiveCfg = Release|Any CPU
+		{F63FAE70-91B0-421F-9A63-51D3BA95031A}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -207,5 +221,6 @@ Global
 		{C503CE8A-B59E-4EBD-A22C-6A99ACBDBEE4} = {251FA40C-AC2F-1119-6E2C-255695F88EFF}
 		{51DC25DA-762E-49BF-AA8A-EC7C2CD53022} = {251FA40C-AC2F-1119-6E2C-255695F88EFF}
 		{1F701C33-3635-4B65-A9ED-2F563528CF80} = {251FA40C-AC2F-1119-6E2C-255695F88EFF}
+		{F63FAE70-91B0-421F-9A63-51D3BA95031A} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

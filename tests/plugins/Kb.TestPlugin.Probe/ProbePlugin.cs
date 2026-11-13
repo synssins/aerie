@@ -1,5 +1,6 @@
 using Kb.Plugins;
 using Kb.Plugins.Actions;
+using Kb.Plugins.Data;
 using Microsoft.Extensions.DependencyInjection;
 
 [assembly: KbPlugin(typeof(Kb.TestPlugin.Probe.ProbePlugin))]
@@ -41,6 +42,8 @@ public sealed class ProbePlugin : IKbPlugin
             .After<ProbePeek, ProbePeekResult, PeekAfter>()
             .Routes(ProbeRoutes.Map);
         AnyAction.Register(app);
+        if (context.GetSetting("Register") == "data") app.AddData<ProbeData>().Routes(ProbeDataRoutes.Map);
+        if (context.GetSetting("Register") == "baddata") app.AddData<ProbeBrokenData>();
     }
 }
 

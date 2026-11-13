@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Kb.Plugins.Abstractions\Kb.Plugins.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\src\Kb.Plugins.Data\Kb.Plugins.Data.csproj" />
     <None Include="kb-plugin.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -28,7 +28,10 @@ public static class PluginAdminRoutes
                 k.Manifest.Id, PluginManifests.NameOf(k.Manifest), k.Manifest.Version, k.Manifest.Publisher, k.Manifest.Description, k.Origin, k.Status.State, k.Status.Reason,
                 k.Status.LockedAt is not null, registry.Find(k.Manifest.Id) is { Loaded: true } loaded && loaded.Manifest.Version == k.Manifest.Version, k.Source,
                 [.. k.Manifest.Requires.Select(r => r.Id)], PluginGraph.Dependents(k.Manifest.Id, manifests), k.Manifest.ExtensionPoints, k.Manifest.OutboundHosts,
-                k.Manifest.Permissions, k.Manifest.Enforcing, k.Manifest.Settings, k.Manifest.Ui?.Replaces ?? [], Removed: false))], registry.SafeMode));
+                k.Manifest.Permissions, k.Manifest.Enforcing, k.Manifest.Settings, k.Manifest.Ui?.Replaces ?? [], Removed: false)),
+                // Removed plugins whose tables were kept: listed so their data can still be deleted.
+                .. (await installer.RemovedAsync(ct)).Select(s => new PluginInfoDto(s.PluginId, s.PluginId, s.ActiveVersion ?? "", "", null, PluginOrigin.Uploaded, PluginState.Disabled, null,
+                    Locked: false, Loaded: false, "upload", [], [], [], [], [], Enforcing: false, [], [], Removed: true))], registry.SafeMode));
         });
 
         // The package is the raw request body. The web server's own size limit still applies and answers 413.

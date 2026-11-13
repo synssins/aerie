@@ -2,6 +2,7 @@ using Kb.Core.Audit;
 using Kb.Core.Content;
 using Kb.Core.Plugins;
 using Kb.Data;
+using Kb.Data.Plugins;
 using Kb.Plugins;
 using Microsoft.EntityFrameworkCore;
 
@@ -44,6 +45,10 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
         }
         return known;
     }
+
+    /// <summary>Plugins that were removed with their tables kept.</summary>
+    public Task<List<PluginStatus>> RemovedAsync(CancellationToken ct) =>
+        db.PluginStatuses.AsNoTracking().Where(s => s.Removed).OrderBy(s => s.PluginId).ToListAsync(ct);
 
     public async Task<Outcome<InstalledDto>> InstallAsync(byte[] package, PluginSource source, Guid? by, CancellationToken ct)
     {
@@ -109,19 +114,24 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
         return default(Unit);
     }
 
-    /// <summary>Deletes the packages and the settings. Until plugins have tables of their own there is no data to keep, so the status row goes too.</summary>
+    /// <summary>
+    /// Deletes the packages and the settings. A plugin's own tables are kept unless <paramref name="deleteData"/> says to drop them:
+    /// its status row then stays, marked removed, so the Plugins screen can still offer to delete the data.
+    /// </summary>
     public async Task<Outcome<Unit>> RemoveAsync(string id, bool deleteData, Guid by, CancellationToken ct)
     {
-        _ = deleteData;
         var known = await KnownAsync(ct);
         if (known.FirstOrDefault(k => k.Manifest.Id == id) is not { } plugin) return Problem.NotFound;
         if (plugin.Origin == PluginOrigin.BuiltIn) return Problem.Conflict("Built-in plugins cannot be removed.");
         if (await HeldAsync(plugin, known, ct) is { } held) return held;
 
+        var keepsData = !deleteData && (await PluginDataHost.TablesAsync(db, PluginId.TablePrefix(id), ct)).Count > 0;
         await ForgetPackagesAsync(id, ct);
         db.PluginSettingValues.RemoveRange(await db.PluginSettingValues.Where(v => v.PluginId == id).ToListAsync(ct));
-        db.PluginStatuses.Remove(plugin.Status);
+        if (keepsData) (plugin.Status.Removed, plugin.Status.Reason, plugin.Status.LockedAt, plugin.Status.UpdatedAt) = (true, null, null, time.GetUtcNow());
+        else db.PluginStatuses.Remove(plugin.Status);
         await db.SaveChangesAsync(CancellationToken.None); // packages, settings and status go in one save
+        if (deleteData) await PluginDataHost.DropAsync(db, id, CancellationToken.None);
         await ChangedAsync(AuditActions.PluginRemove, id, by, plugin.Sha256, plugin.Source, plugin.Manifest.Version, null, ct);
         return default(Unit);
     }
@@ -132,6 +142,7 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
         var status = await db.PluginStatuses.FirstOrDefaultAsync(s => s.PluginId == id, ct);
         if (status is null) return Problem.NotFound;
         if (!status.Removed) return Problem.Conflict("Remove the plugin first.");
+        await PluginDataHost.DropAsync(db, id, CancellationToken.None);
         db.PluginStatuses.Remove(status);
         await db.SaveChangesAsync(CancellationToken.None);
         await ChangedAsync(AuditActions.PluginDataDelete, id, by, "", "", status.ActiveVersion ?? "", null, ct);

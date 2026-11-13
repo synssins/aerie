@@ -144,6 +144,13 @@ public static class PluginBootstrap
                     contexts[id] = context;
                 }
                 var configured = PluginRuntime.Configure(assembly, c.Manifest, settings);
+                // Its tables are made ready before anything of it is kept: a plugin whose tables cannot be made is not loaded.
+                foreach (var data in configured.Registrations.OfType<Kb.Plugins.Data.PluginData>())
+                {
+                    var (context, dataOptions) = (data.Context, PluginDataHost.Options(id, options));
+                    await PluginDataHost.ReadyAsync(context, dataOptions, ct);
+                    pluginServices.Add(ServiceDescriptor.Scoped(context, _ => PluginDataHost.Create(context, dataOptions)));
+                }
                 pluginServices.AddRange(configured.Services);
                 foreach (var registration in configured.Registrations) registrations.Add(id, registration);
                 loaded[id] = assembly;
