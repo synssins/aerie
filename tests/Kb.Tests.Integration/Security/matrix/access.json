@@ -14,8 +14,7 @@
     "path": "/api/v1/access-requests/{accessRequest}/decision",
     "body": {"approve": false},
     "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 204, "admin": 204},
-    "sensitive": {"admin": 404},
-    "known": [{"caller": "outsider", "space": "both", "got": 403, "why": "A caller with no role in the space gets 403, not 404. Reported to the owner; not changed."}, {"caller": "admin", "space": "sensitive", "got": 403, "why": "The same: an Admin has no role in a sensitive space and gets 403, not 404."}]
+    "sensitive": {"admin": 404}
   },
   {
     "action": "space.sensitive.emergency",

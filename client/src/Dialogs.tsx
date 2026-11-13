@@ -23,14 +23,22 @@ export function useDialogs(): Dialogs {
 
 export function DialogProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<Pending | null>(null);
-  const ask = useCallback((o: AskOptions) => new Promise<string | null>((resolve) => setPending({ kind: "ask", o, resolve })), []);
-  const confirm = useCallback((o: ConfirmOptions) => new Promise<boolean>((resolve) => setPending({ kind: "confirm", o, resolve })), []);
+  // One dialog at a time. A question that another one replaces is answered as cancelled, so whoever asked it does not wait for good.
+  const open = useRef<Pending | null>(null);
+  const show = useCallback((next: Pending | null) => {
+    const before = open.current;
+    open.current = next;
+    if (before && before !== next) { if (before.kind === "ask") before.resolve(null); else before.resolve(false); }
+    setPending(next);
+  }, []);
+  const ask = useCallback((o: AskOptions) => new Promise<string | null>((resolve) => show({ kind: "ask", o, resolve })), [show]);
+  const confirm = useCallback((o: ConfirmOptions) => new Promise<boolean>((resolve) => show({ kind: "confirm", o, resolve })), [show]);
   // A plugin's script asks through the same dialogs.
   useEffect(() => { dialogBridge.ask = ask; dialogBridge.confirm = confirm; }, [ask, confirm]);
   return (
     <Ctx.Provider value={{ ask, confirm }}>
       {children}
-      {pending && <DialogView key={Date.now()} pending={pending} done={() => setPending(null)} />}
+      {pending && <DialogView key={Date.now()} pending={pending} done={() => { if (open.current === pending) open.current = null; setPending(null); }} />}
     </Ctx.Provider>
   );
 }

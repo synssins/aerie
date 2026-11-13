@@ -157,7 +157,7 @@ public sealed class AccessPipelineTests : IAsyncLifetime
 
     /// <summary>The core says no before any plugin code has seen the action.</summary>
     [Fact]
-    public async Task APersonWhoMayNot_Is403_BeforeAnyHook()
+    public async Task APersonWhoMayNot_IsRefused_BeforeAnyHook()
     {
         var tech = await UserAsync("tech1");
         var hidden = await SpaceAsync("hr", "HR", sensitive: true);
@@ -166,7 +166,8 @@ public sealed class AccessPipelineTests : IAsyncLifetime
         var decided = await DecideAsync(tech, request);
         var opened = await EmergencyAsync(tech, hidden, "let me in please");
 
-        Assert.Equal((HttpStatusCode.Forbidden, "access.decide"), (decided.StatusCode, Action(decided)));
+        // No role in the request's space: the request does not exist for this caller (404, not 403).
+        Assert.Equal((HttpStatusCode.NotFound, "access.decide"), (decided.StatusCode, Action(decided)));
         Assert.Equal((HttpStatusCode.Forbidden, "space.sensitive.emergency"), (opened.StatusCode, Action(opened)));
         var counters = await CountersAsync();
         Assert.True(counters.TryGetProperty("before:access.request", out _));

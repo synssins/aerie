@@ -20,12 +20,16 @@ internal sealed class ExportPageHandler(KbDbContext db, IAccess access, IFileSto
         if (fmt is not ("pdf" or "docx")) return Problem.Invalid("format", "pdf or docx.");
         var blocks = DocText.Blocks(page.ContentJson, renderers);
 
-        // Only this page's own stored images, in formats the document can hold.
+        // What the page shows this reader, in formats the document can hold: images the page's space may show (its own, and those a
+        // move granted it), and images of another space the reader has a role in (pasted from a page there).
+        // Whoever edits a page can write any image id into it; an export must not hand out an image its reader may not see.
         var images = new Dictionary<Guid, ExportImage>();
         foreach (var imageId in DocText.ImageIds(page.ContentJson))
         {
             var meta = await db.SpaceImages.AsNoTracking().FirstOrDefaultAsync(i => i.Id == imageId, ctx.Cancel);
             if (meta is null) continue;
+            if (meta.SpaceId != page.SpaceId && !await db.SpaceImageGrants.AnyAsync(g => g.ImageId == imageId && g.SpaceId == page.SpaceId, ctx.Cancel)
+                && await access.RoleAsync(ctx.Actor, meta.SpaceId, ctx.Cancel) is null) continue;
             await using var s = await store.OpenAsync(imageId.ToString("N"), ctx.Cancel);
             if (s is null) continue;
             using var ms = new MemoryStream();

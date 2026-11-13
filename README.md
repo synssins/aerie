@@ -94,11 +94,12 @@ Products like Confluence cover this scope, but their sprawl makes them slow for 
 
 ### Plugins
 
-- In-process execution restricted to curated plugins.
-- Post-install plugins load only if their binary hash matches a configuration allow-list. Rejected loads are logged.
-- Outbound network calls are restricted to hosts declared in the plugin manifest.
-- Plugin secrets are stored in Azure Key Vault or the IIS protected secret store, never in plugin settings.
-- Plugin install, enable, and disable events are audited.
+- A plugin runs inside the app, with the app's rights. Install only a plugin from a publisher you trust as much as the app itself.
+- A plugin is either shipped in the app's folder (built-in) or installed by an Admin, who uploads its package. The package's SHA-256 is written to the audit log with the install. There is no allow-list of hashes: a package an Admin uploads is loaded.
+- The HTTP client the app gives a plugin refuses a request to a host the plugin's manifest does not declare. A redirect from a declared host is followed.
+- A value saved for a secret setting is stored in the database encrypted with ASP.NET Core Data Protection. The API never returns it and it is not written to logs.
+- Plugin install, update, enable, disable, removal and data deletion are audited.
+- A plugin that keeps failing is switched off by the app. Safe Mode starts the app without uploaded plugins.
 
 ### Supply chain
 

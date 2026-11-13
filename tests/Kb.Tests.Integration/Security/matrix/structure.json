@@ -19,8 +19,7 @@
     "method": "POST",
     "path": "/api/v1/pages/{deletedPage}/restore",
     "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 403, "supervisor": 200, "owner": 200, "admin": 200},
-    "sensitive": {"admin": 404},
-    "known": [{"caller": "admin", "space": "sensitive", "got": 200, "why": "An Admin restores a deleted page of a sensitive space without a role there (the handler skips the space check for an Admin, as the route did before the pipeline). Reported to the owner; not changed."}]
+    "sensitive": {"admin": 404}
   },
   {
     "action": "bin.list",

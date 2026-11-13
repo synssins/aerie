@@ -171,7 +171,10 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
     },
   }, [page.id, page.version, extensions]);
 
-  useEffect(() => { editor?.setEditable(editing); onDirty(editing); }, [editor, editing, onDirty]);
+  useEffect(() => { editor?.setEditable(editing); }, [editor, editing]);
+  // Said after every drawing, not only when it changes: the shell switches its guard off when "Discard?" is answered yes, and when
+  // that led back to this same page the editor is still open and must count as an open edit again.
+  useEffect(() => { onDirty(editing); });
   useEffect(() => {
     if (!editing) return;
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
@@ -352,7 +355,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
           </div>
         </div>
         {error && <p className="form-error" role="alert">{error}</p>}
-        {!editing && hasDraft && page.draft && (
+        {!editing && hasDraft && page.draft && page.canEdit && (
           <div className="note-row" role="status">
             <span>Unsaved draft · {new Date(page.draft.updatedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</span>
             <button className="tb" onClick={() => void resumeDraft()}>Resume</button>

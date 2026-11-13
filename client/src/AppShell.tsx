@@ -16,6 +16,7 @@ import { PageTree } from "./PageTree";
 import { PageView } from "./PageView";
 import { current as currentView } from "./kit/current";
 import { navigation } from "./kit/host";
+import { createShellHistory, type ShellHistory } from "./shellHistory";
 import { PluginScreen } from "./kit/PluginScreen";
 import { SlotMenuItems } from "./kit/SlotViews";
 
@@ -166,11 +167,14 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
       await applyRoute(await loadSpaces(), st.startPage);
     })();
   }, [loadSpaces, applyRoute]);
+  // The browser's Back and Forward. Someone in the middle of an edit is asked first, as for a click on a link; on Cancel they stay.
+  const shellHistory = useRef<ShellHistory | null>(null);
+  const onMove = useRef({ ask: async () => true, apply: async () => {} });
   useEffect(() => {
-    const onPop = () => void applyRoute(spaces, "");
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, [applyRoute, spaces]);
+    const h = createShellHistory({ dirty: () => dirty.current, ask: () => onMove.current.ask(), apply: () => onMove.current.apply() });
+    shellHistory.current = h;
+    return () => { h.dispose(); shellHistory.current = null; };
+  }, []);
 
   useEffect(() => {
     const poll = () => api.get<{ unread: number }>("/notifications/count").then((r) => setUnread(r.unread)).catch(() => undefined);
@@ -211,8 +215,10 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
     dirty.current = false; // the editor is gone after this; it won't report clean itself
     return true;
   };
+  onMove.current = { ask: discardOk, apply: () => applyRoute(spaces, "") };
   const go = (path: string) => {
-    if (location.pathname + location.search !== path) history.pushState(null, "", path);
+    if (shellHistory.current) shellHistory.current.go(path);
+    else if (location.pathname + location.search !== path) history.pushState(null, "", path);
     if (path.startsWith("/p/") || path.startsWith("/s/")) store("kb.last", path);
   };
   // A plugin's kb.navigate comes through here: someone in the middle of an edit is asked first, as for a click on a link.
@@ -355,7 +361,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
   async function signOut() {
     if (!await discardOk()) return;
     await api.post("/auth/signout");
-    history.replaceState(null, "", "/");
+    history.replaceState(history.state, "", "/"); // the entry keeps its place in the row (shellHistory)
     onSignedOut();
   }
 

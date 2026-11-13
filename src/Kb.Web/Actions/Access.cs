@@ -25,7 +25,8 @@ internal sealed class DecideAccessHandler(KbDbContext db, IAccess access, Access
     public async Task<Problem?> AuthorizeAsync(ActionContext<DecideAccess> ctx)
     {
         var request = await db.AccessRequests.AsNoTracking().FirstOrDefaultAsync(r => r.Id == ctx.Action.RequestId, ctx.Cancel);
-        if (request is null) return Problem.NotFound;
+        // No role in the request's space: the request does not exist for this caller, an Admin in a sensitive space included.
+        if (request is null || await access.RoleAsync(ctx.Actor, request.SpaceId, ctx.Cancel) is null) return Problem.NotFound;
         if (!await access.CanAsync(ctx.Actor, request.SpaceId, SpaceAction.ApproveAccessRequests, ctx.Cancel)) return Problem.Forbidden;
         return ctx.Actor.UserId is null ? Problem.Unauthorized : null;
     }

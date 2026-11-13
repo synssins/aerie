@@ -81,6 +81,34 @@ describe("PageView and content of a plugin that is not loaded", () => {
   });
 });
 
+describe("PageView and a draft", () => {
+  it("offers Resume and Discard only to someone who may edit the page", async () => {
+    server();
+    show(page({ draft: { mine: true, by: "cara", updatedAt: "2026-11-12T10:00:00Z" } }));
+    expect(await screen.findByText(/Unsaved draft/)).toBeTruthy();
+    cleanup();
+
+    // Her role was lowered to Reader after she wrote the draft: the server would refuse both, so neither is offered.
+    show(page({ canEdit: false, draft: { mine: true, by: "cara", updatedAt: "2026-11-12T10:00:00Z" } }));
+    await screen.findByText("Before");
+    expect(screen.queryByText(/Unsaved draft/)).toBeNull();
+  });
+
+  it("says again that an edit is open when the same page is shown anew, so leaving still asks", async () => {
+    server();
+    const onDirty = vi.fn();
+    const props = { spaceName: "Docs", role: "Owner", autoEdit: true, onSaved: () => {}, onOpen: () => {}, onHome: () => {}, onDirty, onHistory: () => {}, onMove: () => {}, onDelete: () => {} };
+    const { rerender } = render(<DialogProvider><PageView page={page()} {...props} /></DialogProvider>);
+    await screen.findByText("Before");
+    onDirty.mockClear();
+
+    // The shell answered a "Discard?" with yes and switched its guard off, but the address led to the same page: the editor stays open.
+    rerender(<DialogProvider><PageView page={page()} {...props} /></DialogProvider>);
+
+    expect(onDirty).toHaveBeenLastCalledWith(true);
+  });
+});
+
 describe("the editor's toolbar", () => {
   it("an entry whose label throws is left out and reported; the page and the other entries stay", async () => {
     const calls = server();

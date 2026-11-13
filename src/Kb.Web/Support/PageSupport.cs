@@ -15,6 +15,16 @@ internal static class PageSupport
     private const int MaxContentChars = 5_000_000;
 
     /// <summary>Writes a new version of a page (or renames a folder), re-indexes it and clears the author's draft.</summary>
+    private static bool OfPage(object row, Guid page) => row switch
+    {
+        Page p => p.Id == page,
+        PageVersion v => v.PageId == page,
+        PageTag t => t.PageId == page,
+        PageDraft d => d.PageId == page,
+        SearchTerm s => s.PageId == page,
+        _ => false,
+    };
+
     internal static async Task<Outcome<PageDto>> PublishAsync(KbDbContext db, IAccess access, DocRenderers renderers, Actor actor, Page page, string contentJson, bool major, string? note, IEnumerable<string> tags, DateTimeOffset now)
     {
         if (actor.UserId is not { } me) return Problem.Unauthorized; // a version names its author
@@ -29,7 +39,14 @@ internal static class PageSupport
         db.PageDrafts.RemoveRange(db.PageDrafts.Where(d => d.PageId == page.Id && d.UserId == me));
         await SearchIndex.StageAsync(db, page, tags, renderers);
         try { await db.SaveChangesAsync(); }
-        catch (DbUpdateException) { return new Problem(409); } // concurrent save took this version number
+        catch (DbUpdateException)
+        {
+            // A concurrent save took this version number. What was changed for this page is let go of, so that whatever the session
+            // writes next (an audit entry) does not carry the failed save with it. Only this page's rows: a hook may have sent this
+            // save from inside another action, whose handler still holds rows of its own.
+            foreach (var entry in db.ChangeTracker.Entries().Where(e => OfPage(e.Entity, page.Id)).ToList()) entry.State = EntityState.Detached;
+            return new Problem(409);
+        }
         await ImageEndpoints.KeepAsync(db, page.ContentJson);
         return await ToDtoAsync(db, access, actor, page);
     }
@@ -51,10 +68,12 @@ internal static class PageSupport
     internal static Task<bool> CanRemoveAsync(IAccess access, Actor actor, Guid spaceId, IEnumerable<Page> items) =>
         access.CanAsync(actor, spaceId, items.All(p => p.CreatedBy == actor.UserId) ? SpaceAction.MoveDeleteOwn : SpaceAction.MoveDeleteOthers);
 
-    internal static async Task<List<BinItemDto>> BinAsync(KbDbContext db, Guid? spaceId, bool includeHidden)
+    /// <param name="within">With no one space named: the spaces whose bins are listed. The caller's visible spaces.</param>
+    internal static async Task<List<BinItemDto>> BinAsync(KbDbContext db, Guid? spaceId, bool includeHidden, IReadOnlyCollection<Guid>? within = null)
     {
         var roots = await db.Pages.IgnoreQueryFilters().AsNoTracking()
             .Where(p => p.DeletedAt != null && p.DeleteRootId == p.Id && (spaceId == null || p.SpaceId == spaceId) && (includeHidden || !p.BinHidden))
+            .Where(p => within == null || within.Contains(p.SpaceId))
             .OrderByDescending(p => p.DeletedAt).Take(500)
             .Select(p => new { p.Id, p.SpaceId, p.Kind, p.Title, p.ParentId, p.DeletedAt, p.DeletedBy, p.BinHidden }).ToListAsync();
         var rootIds = roots.Select(r => r.Id).ToList();

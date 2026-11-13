@@ -71,22 +71,34 @@ internal sealed class RestoreVersionHandler(KbDbContext db, IAccess access, Time
         page.Title = v.Title;
         var tags = await db.PageTags.Where(t => t.PageId == page.Id).Select(t => t.Tag).ToListAsync(ctx.Cancel);
         var result = await PublishAsync(db, access, renderers, ctx.Actor, page, v.ContentJson, major: false, $"Restored from {version}", tags, time.GetUtcNow());
-        // As before, the entry is asked for whatever the publish answered: evenIfRefused keeps it when the publish answers a conflict.
-        ctx.Audit(AuditActions.PageVersionRestore, "page", page.Id.ToString(), page.SpaceId, new Dictionary<string, string> { ["from"] = version, ["to"] = page.Version }, evenIfRefused: true);
+        // Only a restore that happened is in the audit log. One that lost the race for its version number answers 409 and changed nothing.
+        if (result.Problem is null) ctx.Audit(AuditActions.PageVersionRestore, "page", page.Id.ToString(), page.SpaceId, new Dictionary<string, string> { ["from"] = version, ["to"] = page.Version });
         return result;
     }
 }
 
-// A draft belongs to its author. Reading and discarding one ask for no role in the space, as before: every query below is narrowed to the caller.
+// A draft belongs to its author: every query below is narrowed to the caller. Reading and discarding one ask for the role that writing
+// one asks for, because a draft holds text of the page: someone who lost their role in the space has lost their draft of its pages too.
 
-internal sealed class ReadDraftHandler(KbDbContext db) : IActionHandler<ReadDraft, DraftDto>
+internal static class DraftChecks
+{
+    /// <summary>404 for a page the caller cannot see, 403 without the right to edit in its space, 401 for nobody.</summary>
+    public static async Task<Problem?> MayHaveAsync(KbDbContext db, IAccess access, Actor actor, Guid pageId, CancellationToken ct)
+    {
+        if (await db.FindVisibleAsync(access, actor, pageId, track: false, ct) is not { } page) return Problem.NotFound;
+        if (!await access.CanAsync(actor, page.SpaceId, SpaceAction.CreateEdit, ct)) return Problem.Forbidden;
+        return actor.UserId is null ? Problem.Unauthorized : null;
+    }
+}
+
+internal sealed class ReadDraftHandler(KbDbContext db, IAccess access) : IActionHandler<ReadDraft, DraftDto>
 {
     private PageDraft? _draft;
 
     public async Task<Problem?> AuthorizeAsync(ActionContext<ReadDraft> ctx)
     {
-        if (ctx.Actor.UserId is not { } me) return Problem.Unauthorized;
-        var id = ctx.Action.PageId;
+        if (await DraftChecks.MayHaveAsync(db, access, ctx.Actor, ctx.Action.PageId, ctx.Cancel) is { } refused) return refused;
+        var (id, me) = (ctx.Action.PageId, ctx.Actor.UserId!.Value);
         return (_draft = await db.PageDrafts.AsNoTracking().FirstOrDefaultAsync(x => x.PageId == id && x.UserId == me, ctx.Cancel)) is null ? Problem.NotFound : null;
     }
 
@@ -100,11 +112,13 @@ internal sealed class ReadDraftHandler(KbDbContext db) : IActionHandler<ReadDraf
 internal sealed class SaveDraftHandler(KbDbContext db, IAccess access, TimeProvider time) : IActionHandler<SaveDraft, DraftSavedDto>
 {
     private static readonly TimeSpan DraftLock = TimeSpan.FromHours(24);
+    private Guid _space;
 
     public async Task<Problem?> AuthorizeAsync(ActionContext<SaveDraft> ctx)
     {
         // Only a page has a draft: a folder answers like a page that is not there.
         if (await db.FindVisibleAsync(access, ctx.Actor, ctx.Action.PageId, track: false, ctx.Cancel) is not { Kind: PageKind.Page } page) return Problem.NotFound;
+        _space = page.SpaceId;
         if (!await access.CanAsync(ctx.Actor, page.SpaceId, SpaceAction.CreateEdit, ctx.Cancel)) return Problem.Forbidden;
         return ctx.Actor.UserId is null ? Problem.Unauthorized : null; // a draft names its author
     }
@@ -118,8 +132,10 @@ internal sealed class SaveDraftHandler(KbDbContext db, IAccess access, TimeProvi
 
         var now = time.GetUtcNow();
         var d = await db.PageDrafts.FirstOrDefaultAsync(x => x.PageId == req.PageId, ctx.Cancel);
-        // One draft per page. Someone else's stays theirs unless it has sat untouched for a day.
-        if (d is not null && d.UserId != me && d.UpdatedAt > now - DraftLock) return new Problem(409);
+        // One draft per page. Someone else's stays theirs unless it has sat untouched for a day, or its author may no longer edit
+        // here (their role was lowered or taken away): they cannot discard it any more, so it must not keep the page from others.
+        if (d is not null && d.UserId != me && d.UpdatedAt > now - DraftLock
+            && await access.CanAsync(Actor.User(d.UserId), _space, SpaceAction.CreateEdit, ctx.Cancel)) return new Problem(409);
         if (d is null) db.PageDrafts.Add(d = new PageDraft { PageId = req.PageId, Title = title, ContentJson = req.ContentJson, BaseVersion = req.BaseVersion });
         d.UserId = me; d.Title = title; d.ContentJson = req.ContentJson; d.BaseVersion = req.BaseVersion; d.Tags = string.Join(',', tags); d.UpdatedAt = now;
         try { await db.SaveChangesAsync(); } catch (DbUpdateException) { return new Problem(409); }
@@ -128,9 +144,9 @@ internal sealed class SaveDraftHandler(KbDbContext db, IAccess access, TimeProvi
     }
 }
 
-internal sealed class DiscardDraftHandler(KbDbContext db) : IActionHandler<DiscardDraft, Unit>
+internal sealed class DiscardDraftHandler(KbDbContext db, IAccess access) : IActionHandler<DiscardDraft, Unit>
 {
-    public Task<Problem?> AuthorizeAsync(ActionContext<DiscardDraft> ctx) => Task.FromResult(ctx.Actor.UserId is null ? Problem.Unauthorized : null);
+    public Task<Problem?> AuthorizeAsync(ActionContext<DiscardDraft> ctx) => DraftChecks.MayHaveAsync(db, access, ctx.Actor, ctx.Action.PageId, ctx.Cancel);
 
     public async Task<Outcome<Unit>> HandleAsync(ActionContext<DiscardDraft> ctx)
     {

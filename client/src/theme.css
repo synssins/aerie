@@ -172,7 +172,9 @@ h2.s { font-size: 17px; margin: 22px 0 8px; }
 .etb-select { height: 30px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); font: inherit; font-size: 13px; padding: 0 6px; }
 
 /* Document content (read and edit share one look) */
-.prose { outline: none; min-height: 120px; }
+/* white-space: the editor needs it, or several spaces in a row are not kept as typed. */
+.prose { outline: none; min-height: 120px; white-space: pre-wrap; white-space: break-spaces; word-wrap: break-word; }
+.prose [contenteditable="false"] { white-space: normal; }
 .editing .prose { min-height: 320px; border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; resize: both; overflow: auto; max-width: 100%; }
 textarea { resize: both; max-width: 100%; }
 .editing .prose:focus-within { border-color: var(--accent); }

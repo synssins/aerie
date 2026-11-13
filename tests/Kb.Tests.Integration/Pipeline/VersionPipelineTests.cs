@@ -170,12 +170,12 @@ public sealed class VersionPipelineTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// A restore that loses the race for its version number. The publish answers 409, and the restore still asks for its audit entry.
-    /// That entry is written through the database session that holds the failed save, so writing it fails too: the answer is 500 and nothing is kept.
-    /// It was so before the route went through the bus; this pins that the bus did not change it.
+    /// A restore that loses the race for its version number answers 409, as a save does, and keeps nothing: the page is as it was and no
+    /// restore is in the audit log, because none happened. (It used to answer 500: the audit entry was written through the database
+    /// session that still held the failed save.)
     /// </summary>
     [Fact]
-    public async Task Restore_VersionNumberTaken_AnswersAsBefore()
+    public async Task Restore_VersionNumberTaken_Answers409_AndKeepsNothing()
     {
         var page = await PageAsync();
         await _f.WithDbAsync(async db =>
@@ -186,10 +186,13 @@ public sealed class VersionPipelineTests : IAsyncLifetime
 
         var r = await _admin.PostAsync($"/api/v1/pages/{page.Id}/versions/1.0/restore", null, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, r.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, r.StatusCode);
         var after = await ReadAsync(page.Id);
         Assert.Equal(("1.1", Doc("Step 1")), (after.Version, after.ContentJson));
         Assert.Empty(await RestoresAsync());
+        // The session that lost the race is clean again: the same request, once the number is free, works.
+        await _f.WithDbAsync(async db => { await db.PageVersions.Where(v => v.PageId == page.Id && v.Minor == 2).ExecuteDeleteAsync(Ct); });
+        Assert.Equal(HttpStatusCode.OK, (await _admin.PostAsync($"/api/v1/pages/{page.Id}/versions/1.0/restore", null, Ct)).StatusCode);
     }
 
     [Fact]
@@ -224,11 +227,13 @@ public sealed class VersionPipelineTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.BadRequest, tags.StatusCode);
         Assert.True((await tags.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("errors").TryGetProperty("tags", out _));
 
-        // A draft belongs to its author: reading and discarding ask for no role, and reach nobody else's draft.
+        // A draft belongs to its author, and reading or discarding one asks for the same role as writing one.
         Assert.Equal(HttpStatusCode.OK, (await DraftAsync(_admin, page.Id)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await outsider.GetAsync($"{at}/draft", Ct)).StatusCode);
-        Assert.Equal(HttpStatusCode.NoContent, (await outsider.DeleteAsync($"{at}/draft", Ct)).StatusCode);
-        Assert.Equal(HttpStatusCode.NoContent, (await reader.DeleteAsync($"/api/v1/pages/{Guid.NewGuid()}/draft", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await outsider.DeleteAsync($"{at}/draft", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await reader.GetAsync($"{at}/draft", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await reader.DeleteAsync($"{at}/draft", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await reader.DeleteAsync($"/api/v1/pages/{Guid.NewGuid()}/draft", Ct)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await _admin.GetAsync($"{at}/draft", Ct)).StatusCode);
         // Someone else's fresh draft is not taken over.
         var contributor = await UserAsync("dana", "Contributor");

@@ -272,17 +272,8 @@ public sealed class MatrixTests : IAsyncLifetime
         Assert.Empty(entries.GroupBy(e => e.Action).Where(g => g.Count() > 1).Select(g => $"{g.Key} has {g.Count()} entries"));
     }
 
-    /// <summary>The mismatches the owner has not decided yet. Listed here so the count cannot grow unseen.</summary>
+    /// <summary>A mismatch the owner has not decided yet is listed in its entry under "known". None is open now; this keeps a new one from going unseen.</summary>
     [Fact]
-    public void KnownMismatches_AreTheOnesReported()
-    {
-        var known = Load().SelectMany(e => (e.Known ?? []).Select(k => $"{e.Action} as {k.Caller} ({k.Space}): {k.Got}")).Order(StringComparer.Ordinal).ToList();
-        Assert.Equal(
-        [
-            "access.decide as admin (sensitive): 403", "access.decide as outsider (both): 403",
-            "draft.discard as admin (sensitive): 204", "draft.discard as outsider (both): 204", "draft.discard as reader (both): 204",
-            "draft.read as reader (both): 404",
-            "page.restore as admin (sensitive): 200",
-        ], known);
-    }
+    public void KnownMismatches_AreTheOnesReported() =>
+        Assert.Empty(Load().SelectMany(e => (e.Known ?? []).Select(k => $"{e.Action} as {k.Caller} ({k.Space}): {k.Got}")));
 }
