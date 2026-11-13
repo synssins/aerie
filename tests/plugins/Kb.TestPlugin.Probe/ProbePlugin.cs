@@ -40,6 +40,7 @@ public sealed class ProbePlugin : IKbPlugin
             .After<ProbeEcho, ProbeEchoResult, EchoAfter>()
             .After<ProbePeek, ProbePeekResult, PeekAfter>()
             .Routes(ProbeRoutes.Map);
+        AnyAction.Register(app);
     }
 }
 

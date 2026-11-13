@@ -108,5 +108,16 @@ public static partial class EndpointMappings
             await audit.AppendAsync(new AuditEvent(AuditActions.SpaceRoleRevoke, me, a.PrincipalType.ToString(), a.PrincipalId, id));
             return Results.NoContent();
         });
+
+        var admin = api.AdminGroup();
+        admin.MapGet("/spaces", async (KbDbContext db) =>
+            Results.Ok((await db.Spaces.AsNoTracking().OrderBy(x => x.Name).ToListAsync()).Select(x => ToDto(x, null))));
+
+        admin.MapPatch("/spaces/{id:guid}", async (Guid id, UpdateSpaceRequest req, HttpContext http, KbDbContext db, IAuditLog audit) =>
+        {
+            var s = await db.Spaces.FirstOrDefaultAsync(x => x.Id == id);
+            if (s is null) return Results.NotFound();
+            return await UpdateSpaceAsync(s, req, isAdmin: true, http.User.UserId(), db, audit) ?? Results.Ok(ToDto(s, null));
+        });
     }
 }

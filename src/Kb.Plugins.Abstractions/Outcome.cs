@@ -38,5 +38,14 @@ public readonly struct Outcome<T> : IEquatable<Outcome<T>>
     public static bool operator !=(Outcome<T> left, Outcome<T> right) => !left.Equals(right);
 }
 
+public static class Outcome
+{
+    /// <summary>For a value whose type is an interface (a list held as IReadOnlyList): C# does not convert those by itself.</summary>
+    public static Outcome<T> Of<T>(T value) => value;
+
+    /// <summary>A list as the result of an action that answers one.</summary>
+    public static Outcome<IReadOnlyList<T>> List<T>(IReadOnlyList<T> items) => Of(items);
+}
+
 /// <summary>The result of an action that returns nothing (HTTP 204).</summary>
 public readonly record struct Unit;

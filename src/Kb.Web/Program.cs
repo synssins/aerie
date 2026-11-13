@@ -183,6 +183,8 @@ var api = app.MapGroup("/api/v1");
 api.MapAuthEndpoints();
 api.MapSetupEndpoints();
 api.MapPageEndpoints();
+api.MapPageStructureEndpoints();
+api.MapVersionEndpoints();
 api.MapUserSettingsEndpoints();
 api.MapSpaceEndpoints();
 api.MapAccessEndpoints();

@@ -299,8 +299,10 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
       onSaved(saved);
     } catch (e) {
       const s = e instanceof ApiError ? e.status : 0;
+      const detail = e instanceof ApiError ? e.body?.detail : undefined;
       setError(
-        s === 409 ? "Someone saved a newer version. Copy your changes, then reload."
+        (s === 422 || s === 423) && detail ? detail
+        : s === 409 ? "Someone saved a newer version. Copy your changes, then reload."
         : s === 400 ? "Not saved. Check the title and tags."
         : s === 401 ? "Signed out. Copy your changes, then sign in again."
         : s === 403 ? "You can't edit this page."

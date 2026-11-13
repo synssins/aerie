@@ -78,6 +78,14 @@
     {
       "key": "FailWith",
       "label": "FailWith"
+    },
+    {
+      "key": "Blank",
+      "label": "Blank"
+    },
+    {
+      "key": "FailFilter",
+      "label": "FailFilter"
     }
   ]
 }

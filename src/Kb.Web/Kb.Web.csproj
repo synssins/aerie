@@ -12,6 +12,10 @@
     <PackageReference Include="PDFsharp-MigraDoc" />
   </ItemGroup>
   <ItemGroup>
+    <Using Include="Kb.Plugins" />
+    <Using Include="Kb.Plugins.Actions" />
+  </ItemGroup>
+  <ItemGroup>
     <InternalsVisibleTo Include="Kb.Tests.Integration" />
   </ItemGroup>
 </Project>

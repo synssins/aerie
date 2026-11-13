@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Reflection;
 using Kb.Plugins;
 using Kb.Plugins.Actions;
 using Microsoft.AspNetCore.Builder;
@@ -42,6 +43,12 @@ public sealed class ProbeState(IPluginContext context)
     public int After => _after;
     public int AfterReads => _afterReads;
     public string? LastAfter { get; set; }
+    /// <summary>How often the hooks on core actions ran, by "before:page.save", "filter:page.read", "after:page.create".</summary>
+    public ConcurrentDictionary<string, int> ByAction { get; } = new();
+    /// <summary>The last core action an after handler saw, with the id of its result: "page.create|&lt;id&gt;".</summary>
+    public string? LastAfterAny { get; set; }
+
+    public void Count(string kind, string action) => ByAction.AddOrUpdate($"{kind}:{action}", 1, (_, n) => n + 1);
 
     public void CountHook() => Interlocked.Increment(ref _hooks);
     public void CountHandled() => Interlocked.Increment(ref _handled);
@@ -135,6 +142,69 @@ public sealed class PeekAfter(ProbeState state) : IAfterAction<ProbePeek, ProbeP
     }
 }
 
+/// <summary>
+/// Hooks on every core action, so a test can refuse, rewrite, shape or watch any of them by name without changing this plugin:
+/// Refuse = "&lt;action&gt;"; Rewrite = "&lt;action&gt;:&lt;Property&gt;=&lt;text&gt;"; Blank = "&lt;action&gt;:&lt;Property&gt;" empties a text of a read's result;
+/// FailFilter = "&lt;action&gt;" makes the filter throw.
+/// </summary>
+public static class AnyAction
+{
+    public static void Register(IPluginApp app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        foreach (var action in typeof(IAction<>).Assembly.GetTypes())
+        {
+            if (action.GetCustomAttribute<ActionAttribute>() is not { } described) continue;
+            var result = action.GetInterfaces().Single(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IAction<>)).GetGenericArguments()[0];
+            app.Add(new BeforeHook(action, typeof(AnyHook<>).MakeGenericType(action), false));
+            if (described.Read) app.Add(new ResultFilter(action, result, typeof(AnyFilter<,>).MakeGenericType(action, result), false));
+            app.Add(new AfterHandler(action, result, typeof(AnyAfter<,>).MakeGenericType(action, result)));
+        }
+    }
+
+    /// <summary>A copy of a record with one text property set.</summary>
+    internal static T With<T>(T source, string property, string value)
+    {
+        var copy = (T)typeof(T).GetMethod("<Clone>$")!.Invoke(source, null)!;
+        typeof(T).GetProperty(property)!.SetValue(copy, value);
+        return copy;
+    }
+}
+
+public sealed class AnyHook<TAction>(ProbeState state) : IBeforeAction<TAction>
+{
+    public Task<Problem?> BeforeAsync(ActionContext<TAction> ctx)
+    {
+        state.Count("before", ctx.Name);
+        if (state.Setting("Refuse") == ctx.Name) return Task.FromResult<Problem?>(Problem.Refused("Probe refused."));
+        if (state.Setting("Rewrite") is { } rewrite && rewrite.StartsWith(ctx.Name + ":", StringComparison.Ordinal) && rewrite.Split('=', 2) is [var target, var value])
+            ctx.Action = AnyAction.With(ctx.Action, target[(ctx.Name.Length + 1)..], value);
+        return Task.FromResult<Problem?>(null);
+    }
+}
+
+public sealed class AnyFilter<TAction, TResult>(ProbeState state) : IResultFilter<TAction, TResult>
+{
+    public Task<TResult> FilterAsync(ActionContext<TAction> ctx, TResult result)
+    {
+        state.Count("filter", ctx.Name);
+        if (state.Setting("FailFilter") == ctx.Name) throw new InvalidOperationException("Probe filter failed.");
+        return Task.FromResult(state.Setting("Blank") is { } blank && blank.StartsWith(ctx.Name + ":", StringComparison.Ordinal)
+            ? AnyAction.With(result, blank[(ctx.Name.Length + 1)..], "")
+            : result);
+    }
+}
+
+public sealed class AnyAfter<TAction, TResult>(ProbeState state) : IAfterAction<TAction, TResult>
+{
+    public Task AfterAsync(TAction action, TResult result, ActionEvent e, CancellationToken ct)
+    {
+        state.LastAfterAny = $"{e.Action}|{result?.GetType().GetProperty("Id")?.GetValue(result)}";
+        state.Count("after", e.Action);
+        return Task.CompletedTask;
+    }
+}
+
 public static class ProbeRoutes
 {
     /// <summary>Mapped under /api/v1/plugins/&lt;id&gt;/.</summary>
@@ -142,7 +212,9 @@ public static class ProbeRoutes
     {
         group.MapPost("/echo", (EchoBody body, IActionBus bus, CancellationToken ct) => bus.SendAsync(new ProbeEcho { Target = body.Target, Text = body.Text }, ct).ToHttp());
         group.MapGet("/peek/{target}", (string target, IActionBus bus, CancellationToken ct) => bus.SendAsync(new ProbePeek { Target = target }, ct).ToHttp());
-        group.MapGet("/counters", (ProbeState state) => Results.Ok(new { hooks = state.Hooks, handled = state.Handled, filters = state.Filters, after = state.After, afterReads = state.AfterReads, lastAfter = state.LastAfter, lastActor = state.LastActor, written = state.Written }));
+        group.MapGet("/counters", (ProbeState state) => Results.Ok(new { hooks = state.Hooks, handled = state.Handled, filters = state.Filters, after = state.After, afterReads = state.AfterReads, lastAfter = state.LastAfter, lastActor = state.LastActor, written = state.Written, byAction = state.ByAction, lastAfterAny = state.LastAfterAny }));
+        // A route that names one action and sends another: the bus must refuse it.
+        group.MapGet("/mismatch", (IActionBus bus, CancellationToken ct) => bus.SendAsync(new ProbeEcho { Target = "mismatch", Text = "x" }, ct).ToHttp()).WithAction<ProbePeek>();
         group.MapGet("/hello", () => Results.Ok(new { hello = "anonymous" })).AllowAnonymous();
     }
 }

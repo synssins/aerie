@@ -80,4 +80,20 @@ public static partial class ImageEndpoints
 
     private static IResult TooLarge() => Results.ValidationProblem(new Dictionary<string, string[]> { ["file"] = ["20 MB maximum."] });
     private static IResult NotFetched() => Results.ValidationProblem(new Dictionary<string, string[]> { ["url"] = ["Image could not be fetched."] });
+
+    private static async Task<IResult> StoreAsync(KbDbContext db, IFileStore store, Guid spaceId, Guid me, byte[] data, string? name, DateTimeOffset now, CancellationToken ct)
+    {
+        if (Sniff(data) is not { } type)
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["file"] = ["PNG, JPEG, GIF or WebP only."] });
+        var img = new SpaceImage
+        {
+            Id = Guid.NewGuid(), SpaceId = spaceId, ContentType = type, Size = data.Length, CreatedBy = me, CreatedAt = now, Pending = true,
+            FileName = string.IsNullOrWhiteSpace(name) ? "image" : name[..Math.Min(name.Length, 255)],
+        };
+        await store.SaveAsync(img.Id.ToString("N"), data, ct);
+        db.SpaceImages.Add(img);
+        await db.SaveChangesAsync(ct);
+        var url = $"/api/v1/images/{img.Id}";
+        return Results.Created(url, new ImageDto(img.Id, url));
+    }
 }

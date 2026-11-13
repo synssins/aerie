@@ -1,4 +1,6 @@
+using System.Reflection;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 
 namespace Kb.Plugins.Actions;
@@ -165,6 +167,16 @@ public static class PluginAppExtensions
     {
         ArgumentNullException.ThrowIfNull(app);
         return app.Add(new ActionHandler(typeof(TAction), typeof(TResult), typeof(THandler)));
+    }
+
+    /// <summary>
+    /// Says which action a route sends. The bus refuses to run another one for that route, and answers with the name in the X-Kb-Action header.
+    /// </summary>
+    public static RouteHandlerBuilder WithAction<TAction>(this RouteHandlerBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        var action = typeof(TAction).GetCustomAttribute<ActionAttribute>() ?? throw new InvalidOperationException($"{typeof(TAction).FullName} has no [Action] name.");
+        return builder.WithMetadata(action);
     }
 
     public static IPluginApp Routes(this IPluginApp app, Action<RouteGroupBuilder> map)

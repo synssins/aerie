@@ -15,22 +15,6 @@ public static partial class ImageEndpoints
     public const int MaxImageBytes = 20 * 1_048_576;
     private static readonly TimeSpan PendingLife = TimeSpan.FromDays(7);
 
-    private static async Task<IResult> StoreAsync(KbDbContext db, IFileStore store, Guid spaceId, Guid me, byte[] data, string? name, DateTimeOffset now, CancellationToken ct)
-    {
-        if (Sniff(data) is not { } type)
-            return Results.ValidationProblem(new Dictionary<string, string[]> { ["file"] = ["PNG, JPEG, GIF or WebP only."] });
-        var img = new SpaceImage
-        {
-            Id = Guid.NewGuid(), SpaceId = spaceId, ContentType = type, Size = data.Length, CreatedBy = me, CreatedAt = now, Pending = true,
-            FileName = string.IsNullOrWhiteSpace(name) ? "image" : name[..Math.Min(name.Length, 255)],
-        };
-        await store.SaveAsync(img.Id.ToString("N"), data, ct);
-        db.SpaceImages.Add(img);
-        await db.SaveChangesAsync(ct);
-        var url = $"/api/v1/images/{img.Id}";
-        return Results.Created(url, new ImageDto(img.Id, url));
-    }
-
     /// <summary>Marks the images a saved page or draft uses, so cleanup leaves them alone.</summary>
     public static async Task KeepAsync(KbDbContext db, string? contentJson, CancellationToken ct = default)
     {

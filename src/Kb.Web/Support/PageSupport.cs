@@ -9,13 +9,15 @@ using System.Text.Json;
 
 namespace Kb.Web;
 
-public static partial class PageEndpoints
+/// <summary>What the page actions share. Nothing here answers HTTP: a check gives a <see cref="Problem"/>, a write an <see cref="Outcome{T}"/>.</summary>
+internal static class PageSupport
 {
     private const int MaxContentChars = 5_000_000;
 
     /// <summary>Writes a new version of a page (or renames a folder), re-indexes it and clears the author's draft.</summary>
-    private static async Task<IResult> PublishAsync(KbDbContext db, ISpacePermissionService perms, Page page, Guid me, string contentJson, bool major, string? note, IEnumerable<string> tags, DateTimeOffset now)
+    internal static async Task<Outcome<PageDto>> PublishAsync(KbDbContext db, IAccess access, Actor actor, Page page, string contentJson, bool major, string? note, IEnumerable<string> tags, DateTimeOffset now)
     {
+        if (actor.UserId is not { } me) return Problem.Unauthorized; // a version names its author
         page.UpdatedBy = me;
         page.UpdatedAt = now;
         if (page.Kind == PageKind.Page)
@@ -27,16 +29,16 @@ public static partial class PageEndpoints
         db.PageDrafts.RemoveRange(db.PageDrafts.Where(d => d.PageId == page.Id && d.UserId == me));
         await SearchIndex.StageAsync(db, page, tags);
         try { await db.SaveChangesAsync(); }
-        catch (DbUpdateException) { return Results.Conflict(); } // concurrent save took this version number
+        catch (DbUpdateException) { return new Problem(409); } // concurrent save took this version number
         await ImageEndpoints.KeepAsync(db, page.ContentJson);
-        return Results.Ok(await ToDtoAsync(db, perms, page, me));
+        return await ToDtoAsync(db, access, actor, page);
     }
 
-    private static async Task<int> NextSortAsync(KbDbContext db, Guid spaceId, Guid? parentId) =>
+    internal static async Task<int> NextSortAsync(KbDbContext db, Guid spaceId, Guid? parentId) =>
         (await db.Pages.Where(p => p.SpaceId == spaceId && p.ParentId == parentId).MaxAsync(p => (int?)p.Sort) ?? 0) + 1;
 
     /// <summary>The item and everything under it, deleted items included, tracked for update.</summary>
-    private static async Task<List<Page>> SubtreeAsync(KbDbContext db, Page root)
+    internal static async Task<List<Page>> SubtreeAsync(KbDbContext db, Page root)
     {
         var links = await db.Pages.IgnoreQueryFilters().Where(p => p.SpaceId == root.SpaceId).Select(p => new { p.Id, p.ParentId }).ToListAsync();
         var children = links.Where(l => l.ParentId is not null).ToLookup(l => l.ParentId!.Value, l => l.Id);
@@ -46,10 +48,10 @@ public static partial class PageEndpoints
     }
 
     /// <summary>Contributors move and delete their own work; other people's needs a Supervisor.</summary>
-    private static Task<bool> CanRemoveAsync(ISpacePermissionService perms, Guid me, Guid spaceId, IEnumerable<Page> items) =>
-        perms.CanAsync(me, spaceId, items.All(p => p.CreatedBy == me) ? SpaceAction.MoveDeleteOwn : SpaceAction.MoveDeleteOthers);
+    internal static Task<bool> CanRemoveAsync(IAccess access, Actor actor, Guid spaceId, IEnumerable<Page> items) =>
+        access.CanAsync(actor, spaceId, items.All(p => p.CreatedBy == actor.UserId) ? SpaceAction.MoveDeleteOwn : SpaceAction.MoveDeleteOthers);
 
-    private static async Task<List<BinItemDto>> BinAsync(KbDbContext db, Guid? spaceId, bool includeHidden)
+    internal static async Task<List<BinItemDto>> BinAsync(KbDbContext db, Guid? spaceId, bool includeHidden)
     {
         var roots = await db.Pages.IgnoreQueryFilters().AsNoTracking()
             .Where(p => p.DeletedAt != null && p.DeleteRootId == p.Id && (spaceId == null || p.SpaceId == spaceId) && (includeHidden || !p.BinHidden))
@@ -76,14 +78,14 @@ public static partial class PageEndpoints
         }).ToList();
     }
 
-    private static async Task<PageVersion?> VersionAsync(KbDbContext db, Guid pageId, string version)
+    internal static async Task<PageVersion?> VersionAsync(KbDbContext db, Guid pageId, string version)
     {
         var parts = version.Split('.');
         if (parts.Length != 2 || !int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var major) || !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var minor)) return null;
         return await db.PageVersions.AsNoTracking().FirstOrDefaultAsync(v => v.PageId == pageId && v.Major == major && v.Minor == minor);
     }
 
-    private static async Task<List<VersionDto>> HistoryAsync(KbDbContext db, Guid pageId, int take)
+    internal static async Task<List<VersionDto>> HistoryAsync(KbDbContext db, Guid pageId, int take)
     {
         var rows = await (from v in db.PageVersions.AsNoTracking()
                           where v.PageId == pageId
@@ -95,22 +97,19 @@ public static partial class PageEndpoints
         return rows.Select(h => new VersionDto($"{h.Major}.{h.Minor}", h.At, h.Author, h.Note)).ToList();
     }
 
-    private static IResult? TitleError(string? title) =>
-        string.IsNullOrWhiteSpace(title) || title.Trim().Length > 200
-            ? Results.ValidationProblem(new Dictionary<string, string[]> { ["title"] = ["1-200 characters."] })
-            : null;
+    internal static Problem? TitleError(string? title) =>
+        string.IsNullOrWhiteSpace(title) || title.Trim().Length > 200 ? Problem.Invalid("title", "1-200 characters.") : null;
 
     /// <summary>Trimmed, de-duplicated (case-insensitive) tags; null when any tag is invalid.</summary>
-    private static List<string>? CleanTags(string[]? tags)
+    internal static List<string>? CleanTags(IEnumerable<string>? tags)
     {
         var list = (tags ?? []).Select(t => t?.Trim() ?? "").Where(t => t.Length > 0).DistinctBy(t => t.ToLowerInvariant()).ToList();
         return list.Count <= 20 && list.All(t => t.Length <= 50 && !t.Contains(',')) ? list.Select(t => t.ToLowerInvariant()).ToList() : null;
     }
 
-    private static IResult TagError() =>
-        Results.ValidationProblem(new Dictionary<string, string[]> { ["tags"] = ["Up to 20 tags, 1-50 characters each, no commas."] });
+    internal static Problem TagError() => Problem.Invalid("tags", "Up to 20 tags, 1-50 characters each, no commas.");
 
-    private static bool IsEditorDoc(string? json)
+    internal static bool IsEditorDoc(string? json)
     {
         if (string.IsNullOrEmpty(json) || json.Length > MaxContentChars) return false;
         try
@@ -122,8 +121,9 @@ public static partial class PageEndpoints
         catch (JsonException) { return false; }
     }
 
-    internal static async Task<PageDto> ToDtoAsync(KbDbContext db, ISpacePermissionService perms, Page page, Guid me)
+    internal static async Task<PageDto> ToDtoAsync(KbDbContext db, IAccess access, Actor actor, Page page)
     {
+        var me = actor.UserId;
         var path = new List<CrumbDto>();
         var parentId = page.ParentId;
         for (var i = 0; parentId is { } pid && i < 50; i++)
@@ -141,9 +141,9 @@ public static partial class PageEndpoints
                            select new { d.UserId, u.DisplayName, d.UpdatedAt }).FirstOrDefaultAsync();
         var files = await db.Attachments.AsNoTracking().Where(a => a.PageId == page.Id && a.DeletedAt == null).OrderBy(a => a.FileName)
             .Select(a => new AttachmentDto(a.Id, a.FileName, a.Size, "/api/v1/attachments/" + a.Id, a.CreatedAt)).ToListAsync();
-        var canEdit = await perms.CanAsync(me, page.SpaceId, SpaceAction.CreateEdit);
+        var canEdit = await access.CanAsync(actor, page.SpaceId, SpaceAction.CreateEdit);
         // Folders: whether their contents allow it is checked on the delete itself.
-        var canDelete = await perms.CanAsync(me, page.SpaceId, page.CreatedBy == me ? SpaceAction.MoveDeleteOwn : SpaceAction.MoveDeleteOthers);
+        var canDelete = await access.CanAsync(actor, page.SpaceId, page.CreatedBy == me ? SpaceAction.MoveDeleteOwn : SpaceAction.MoveDeleteOthers);
 
         return new PageDto(page.Id, page.SpaceId, page.ParentId, page.Kind.ToString(), page.Title, page.ContentJson, page.Version,
             page.UpdatedAt, updatedBy, path, await HistoryAsync(db, page.Id, 10), canEdit, tags, canDelete,

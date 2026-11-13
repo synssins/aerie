@@ -6,17 +6,18 @@ using Kb.Plugins;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using System.Text.Json;
+using static Kb.Web.PageSupport;
 
 namespace Kb.Web;
 
 public sealed record MoveRequest(Guid? SpaceId, Guid? ParentId);
 public sealed record BinItemDto(Guid Id, Guid SpaceId, string SpaceName, string Kind, string Title, string Location, int Items, DateTimeOffset DeletedAt, string DeletedBy, bool Hidden);
 
-public static partial class PageEndpoints
+public static class PageStructureEndpoints
 {
-    private static void MapMoveDelete(RouteGroupBuilder api)
+    public static void MapPageStructureEndpoints(this RouteGroupBuilder api)
     {
-        api.MapPost("/pages/{id:guid}/move", async (Guid id, MoveRequest req, HttpContext http, ISpacePermissionService perms, KbDbContext db, IAuditLog audit) =>
+        api.MapPost("/pages/{id:guid}/move", async (Guid id, MoveRequest req, HttpContext http, ISpacePermissionService perms, KbDbContext db, IAuditLog audit, IAccess access, IActorAccessor actors) =>
         {
             var me = http.User.UserId();
             var page = await db.Pages.FirstOrDefaultAsync(p => p.Id == id);
@@ -26,14 +27,14 @@ public static partial class PageEndpoints
             if (await perms.GetRoleAsync(me, target) is null) return Results.NotFound();
             if (!await perms.CanAsync(me, target, SpaceAction.CreateEdit)) return Results.StatusCode(StatusCodes.Status403Forbidden);
             var subtree = await SubtreeAsync(db, page);
-            if (!await CanRemoveAsync(perms, me, from, subtree)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+            if (!await CanRemoveAsync(access, actors.Current, from, subtree)) return Results.StatusCode(StatusCodes.Status403Forbidden);
             if (req.ParentId is { } pid)
             {
                 if (subtree.Any(p => p.Id == pid)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["parentId"] = ["A folder can't move into itself."] });
                 if (!await db.Pages.AnyAsync(p => p.Id == pid && p.SpaceId == target && p.Kind == PageKind.Folder))
                     return Results.ValidationProblem(new Dictionary<string, string[]> { ["parentId"] = ["Must be a folder in the target space."] });
             }
-            if (page.ParentId == req.ParentId && target == from) return Results.Ok(await ToDtoAsync(db, perms, page, me));
+            if (page.ParentId == req.ParentId && target == from) return Results.Ok(await ToDtoAsync(db, access, actors.Current, page));
 
             page.Sort = await NextSortAsync(db, target, req.ParentId);
             page.ParentId = req.ParentId;
@@ -51,17 +52,17 @@ public static partial class PageEndpoints
             await db.SaveChangesAsync();
             await audit.AppendAsync(new AuditEvent(AuditActions.PageMove, me, "page", page.Id.ToString(), target,
                 new Dictionary<string, string> { ["fromSpace"] = from.ToString(), ["parent"] = req.ParentId?.ToString() ?? "" }));
-            return Results.Ok(await ToDtoAsync(db, perms, page, me));
+            return Results.Ok(await ToDtoAsync(db, access, actors.Current, page));
         });
 
         // Delete = move to the recycle bin. Nothing here destroys data.
-        api.MapDelete("/pages/{id:guid}", async (Guid id, HttpContext http, ISpacePermissionService perms, KbDbContext db, IAuditLog audit, TimeProvider time) =>
+        api.MapDelete("/pages/{id:guid}", async (Guid id, HttpContext http, ISpacePermissionService perms, KbDbContext db, IAuditLog audit, TimeProvider time, IAccess access, IActorAccessor actors) =>
         {
             var me = http.User.UserId();
             var page = await db.Pages.FirstOrDefaultAsync(p => p.Id == id);
             if (page is null || await perms.GetRoleAsync(me, page.SpaceId) is null) return Results.NotFound();
             var live = (await SubtreeAsync(db, page)).Where(p => p.DeletedAt is null).ToList();
-            if (!await CanRemoveAsync(perms, me, page.SpaceId, live)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+            if (!await CanRemoveAsync(access, actors.Current, page.SpaceId, live)) return Results.StatusCode(StatusCodes.Status403Forbidden);
             var now = time.GetUtcNow();
             foreach (var p in live) { p.DeletedAt = now; p.DeletedBy = me; p.DeleteRootId = page.Id; p.BinHidden = false; }
             await db.SaveChangesAsync();

@@ -82,8 +82,11 @@ public sealed class ActionCatalog
 /// and an action sent from inside another runs on its own.
 /// </summary>
 public sealed class ActionBus(ActionCatalog catalog, IServiceProvider services, IActorAccessor actors, IAuditLog audit, IPluginFailures failures, PluginRegistry registry,
-    ActionQueueWorker queue, TimeProvider time) : IActionBus
+    ActionQueueWorker queue, TimeProvider time, IHttpContextAccessor http) : IActionBus
 {
+    public const string Header = "X-Kb-Action";
+    private int _depth;
+
     private static readonly ConcurrentDictionary<Type, MethodInfo> Runners = new();
     private static readonly MethodInfo Runner = typeof(ActionBus).GetMethod(nameof(RunAsync), BindingFlags.NonPublic | BindingFlags.Instance)!;
 
@@ -97,8 +100,18 @@ public sealed class ActionBus(ActionCatalog catalog, IServiceProvider services, 
     private async Task<Outcome<TResult>> RunAsync<TAction, TResult>(TAction action, CancellationToken ct) where TAction : IAction<TResult>
     {
         var described = ActionCatalog.Describe(typeof(TAction));
+        // The action a request sends itself (not one a handler sends inside it) is the one its route names. The answer says which it was.
+        if (_depth == 0 && http.HttpContext is { } web)
+        {
+            if (web.GetEndpoint()?.Metadata.GetMetadata<ActionAttribute>() is { } named && named.Name != described.Name)
+                throw new InvalidOperationException($"The route names {named.Name} but sent {described.Name}.");
+            if (!web.Response.HasStarted) web.Response.Headers[Header] = described.Name;
+        }
         var ctx = new ActionContext<TAction>(described.Name, actors.Current, services, action, ct);
-        var outcome = await StepsAsync<TAction, TResult>(ctx, described.Read);
+        _depth++;
+        Outcome<TResult> outcome;
+        try { outcome = await StepsAsync<TAction, TResult>(ctx, described.Read); }
+        finally { _depth--; }
         // Step 8. A handler or a plugin cannot leave these out; when the action failed, only the entries marked evenIfRefused are written.
         foreach (var note in ctx.AuditNotes(outcome.Ok))
             await audit.AppendAsync(new AuditEvent(note.Action, ctx.Actor.UserId, note.TargetType, note.TargetId, note.SpaceId, note.Data), ct);

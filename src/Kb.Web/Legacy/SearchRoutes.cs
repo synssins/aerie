@@ -3,6 +3,9 @@ using Kb.Core.Search;
 using Kb.Core.Spaces;
 using Kb.Data;
 using Microsoft.EntityFrameworkCore;
+using ISearchProvider = Kb.Core.Search.ISearchProvider;
+using SearchHit = Kb.Core.Search.SearchHit;
+using SearchQuery = Kb.Core.Search.SearchQuery;
 
 namespace Kb.Web;
 

@@ -21,8 +21,7 @@ public static partial class EndpointMappings
 {
     public static void MapAdminEndpoints(this RouteGroupBuilder api)
     {
-        var admin = api.MapGroup("/admin").AddEndpointFilter(async (ctx, next) =>
-            await IsAdminAsync(ctx.HttpContext, ctx.HttpContext.RequestServices.GetRequiredService<KbDbContext>()) ? await next(ctx) : Results.StatusCode(403));
+        var admin = api.AdminGroup();
 
         admin.MapGet("/audit/verify", async (IAuditLog audit) => Results.Ok(await audit.VerifyAsync()));
 
@@ -36,16 +35,6 @@ public static partial class EndpointMappings
                               select new AuditEntryDto(a.Sequence, a.At, a.Action, u == null ? null : u.DisplayName, a.TargetType, a.TargetId))
                              .Take(n).ToListAsync();
             return Results.Ok(rows);
-        });
-
-        admin.MapGet("/spaces", async (KbDbContext db) =>
-            Results.Ok((await db.Spaces.AsNoTracking().OrderBy(x => x.Name).ToListAsync()).Select(x => ToDto(x, null))));
-
-        admin.MapPatch("/spaces/{id:guid}", async (Guid id, UpdateSpaceRequest req, HttpContext http, KbDbContext db, IAuditLog audit) =>
-        {
-            var s = await db.Spaces.FirstOrDefaultAsync(x => x.Id == id);
-            if (s is null) return Results.NotFound();
-            return await UpdateSpaceAsync(s, req, isAdmin: true, http.User.UserId(), db, audit) ?? Results.Ok(ToDto(s, null));
         });
 
         admin.MapGet("/users", async (KbDbContext db) => Results.Ok(await db.Users.AsNoTracking().OrderBy(u => u.DisplayName)
