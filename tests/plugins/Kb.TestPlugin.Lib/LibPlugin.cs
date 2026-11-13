@@ -24,7 +24,8 @@ public sealed record LibGreet : IAction<LibGreeting>
     public required string Name { get; init; }
 }
 
-public sealed record LibGreeting(string Text);
+/// <summary>By: the user the action ran as, so a test can see that an action sent from another plugin's route still runs as the caller.</summary>
+public sealed record LibGreeting(string Text, Guid? By = null);
 
 /// <summary>A library plugin: it brings a contract, an extension point and an action, and leaves the behaviour to the plugins that require it.</summary>
 public sealed class LibPlugin : IKbPlugin
@@ -44,5 +45,5 @@ public sealed class LibGreetHandler(IEnumerable<ILibGreeter> greeters) : IAction
     public Task<Problem?> AuthorizeAsync(ActionContext<LibGreet> ctx) => Task.FromResult(ctx.Actor.Kind == ActorKind.Anonymous ? Problem.Unauthorized : null);
 
     public Task<Outcome<LibGreeting>> HandleAsync(ActionContext<LibGreet> ctx) =>
-        Task.FromResult<Outcome<LibGreeting>>(greeters.FirstOrDefault() is { } greeter ? new LibGreeting(greeter.Greet(ctx.Action.Name)) : Problem.NotFound);
+        Task.FromResult<Outcome<LibGreeting>>(greeters.FirstOrDefault() is { } greeter ? new LibGreeting(greeter.Greet(ctx.Action.Name), ctx.Actor.UserId) : Problem.NotFound);
 }

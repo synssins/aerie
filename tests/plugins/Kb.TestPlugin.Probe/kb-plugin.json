@@ -95,6 +95,14 @@
     {
       "key": "JobPage",
       "label": "JobPage"
+    },
+    {
+      "key": "HookReads",
+      "label": "HookReads"
+    },
+    {
+      "key": "HookAudit",
+      "label": "HookAudit"
     }
   ]
 }

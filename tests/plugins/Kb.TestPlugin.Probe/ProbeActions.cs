@@ -47,6 +47,8 @@ public sealed class ProbeState(IPluginContext context)
     public ConcurrentDictionary<string, int> ByAction { get; } = new();
     /// <summary>The last core action an after handler saw, with the id of its result: "page.create|&lt;id&gt;".</summary>
     public string? LastAfterAny { get; set; }
+    /// <summary>What a hook got when it read the page named by the HookReads setting: its title, or "refused 404".</summary>
+    public string? LastHookRead { get; set; }
     public string? LastJob { get; set; }
     public string? LastJobRead { get; set; }
 
@@ -173,15 +175,23 @@ public static class AnyAction
     }
 }
 
-public sealed class AnyHook<TAction>(ProbeState state) : IBeforeAction<TAction>
+public sealed class AnyHook<TAction>(ProbeState state, IActionBus bus) : IBeforeAction<TAction>
 {
-    public Task<Problem?> BeforeAsync(ActionContext<TAction> ctx)
+    public async Task<Problem?> BeforeAsync(ActionContext<TAction> ctx)
     {
         state.Count("before", ctx.Name);
-        if (state.Setting("Refuse") == ctx.Name) return Task.FromResult<Problem?>(Problem.Refused("Probe refused."));
+        // HookReads = "<action>:<page id>": while hooking that action, read another page through the bus. It answers what the caller may see.
+        if (state.Setting("HookReads") is { } reads && reads.StartsWith(ctx.Name + ":", StringComparison.Ordinal) && Guid.TryParse(reads[(ctx.Name.Length + 1)..], out var page))
+        {
+            var read = await bus.SendAsync(new ReadPage { PageId = page }, ctx.Cancel);
+            state.LastHookRead = read.Ok ? read.Value!.Title : $"refused {read.Problem!.Status}";
+        }
+        // HookAudit = "<action>": the hook adds an audit entry of its own.
+        if (state.Setting("HookAudit") == ctx.Name) ctx.Audit("probe.hook", "probe", ctx.Name);
+        if (state.Setting("Refuse") == ctx.Name) return Problem.Refused("Probe refused.");
         if (state.Setting("Rewrite") is { } rewrite && rewrite.StartsWith(ctx.Name + ":", StringComparison.Ordinal) && rewrite.Split('=', 2) is [var target, var value])
             ctx.Action = AnyAction.With(ctx.Action, target[(ctx.Name.Length + 1)..], value);
-        return Task.FromResult<Problem?>(null);
+        return null;
     }
 }
 
@@ -214,7 +224,7 @@ public static class ProbeRoutes
     {
         group.MapPost("/echo", (EchoBody body, IActionBus bus, CancellationToken ct) => bus.SendAsync(new ProbeEcho { Target = body.Target, Text = body.Text }, ct).ToHttp());
         group.MapGet("/peek/{target}", (string target, IActionBus bus, CancellationToken ct) => bus.SendAsync(new ProbePeek { Target = target }, ct).ToHttp());
-        group.MapGet("/counters", (ProbeState state) => Results.Ok(new { hooks = state.Hooks, handled = state.Handled, filters = state.Filters, after = state.After, afterReads = state.AfterReads, lastAfter = state.LastAfter, lastActor = state.LastActor, written = state.Written, byAction = state.ByAction, lastAfterAny = state.LastAfterAny, lastJob = state.LastJob, lastJobRead = state.LastJobRead }));
+        group.MapGet("/counters", (ProbeState state) => Results.Ok(new { hooks = state.Hooks, handled = state.Handled, filters = state.Filters, after = state.After, afterReads = state.AfterReads, lastAfter = state.LastAfter, lastActor = state.LastActor, written = state.Written, byAction = state.ByAction, lastAfterAny = state.LastAfterAny, lastHookRead = state.LastHookRead, lastJob = state.LastJob, lastJobRead = state.LastJobRead }));
         // A route that names one action and sends another: the bus must refuse it.
         group.MapGet("/mismatch", (IActionBus bus, CancellationToken ct) => bus.SendAsync(new ProbeEcho { Target = "mismatch", Text = "x" }, ct).ToHttp()).WithAction<ProbePeek>();
         group.MapGet("/hello", () => Results.Ok(new { hello = "anonymous" })).AllowAnonymous();

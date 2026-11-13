@@ -1,6 +1,7 @@
 using Kb.Plugins;
 using Kb.Plugins.Actions;
 using Kb.TestPlugin.Lib;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 
 [assembly: KbPlugin(typeof(Kb.TestPlugin.Dependent.DependentPlugin))]
@@ -13,7 +14,9 @@ public sealed class DependentPlugin : IKbPlugin
     public void ConfigureServices(IServiceCollection services, IPluginContext context) => services.AddSingleton<ILibGreeter, DependentGreeter>();
 
     public void Configure(IPluginApp app, IPluginContext context) =>
-        app.Add(new LibThing("from the dependent")).Before<LibGreet, ShoutHook>();
+        app.Add(new LibThing("from the dependent")).Before<LibGreet, ShoutHook>()
+            // A route of this plugin that sends the library's action.
+            .Routes(group => group.MapGet("/greet/{name}", (string name, IActionBus bus, CancellationToken ct) => bus.SendAsync(new LibGreet { Name = name }, ct).ToHttp()).WithAction<LibGreet>());
 }
 
 public sealed class DependentGreeter : ILibGreeter
