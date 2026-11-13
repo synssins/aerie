@@ -163,7 +163,7 @@ public sealed class FindingTests : IAsyncLifetime
     {
         var vault = await SpaceAsync("vault");
         var (olga, _) = await UserAsync("olga", roles: (vault, "Owner"));
-        var (adam, _) = await UserAsync("adam", admin: true);
+        var (adam, adamId) = await UserAsync("adam", admin: true);
         (await _admin.PatchAsJsonAsync($"/api/v1/admin/spaces/{vault}", new { isSensitive = true }, Ct)).EnsureSuccessStatusCode();
         async Task<List<string>> AlertsAsync() => [.. (await olga.GetFromJsonAsync<JsonElement>("/api/v1/notifications", Ct)).EnumerateArray()
             .Where(n => n.GetProperty("kind").GetString() == "security.alert").Select(n => n.GetProperty("title").GetString()!)];
@@ -173,7 +173,7 @@ public sealed class FindingTests : IAsyncLifetime
         {
             var refused = await adam.PatchAsJsonAsync($"/api/v1/admin/spaces/{vault}", change, Ct);
             Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
-            Assert.Equal("No access to this space. Use emergency access first.", (await refused.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("detail").GetString());
+            Assert.Equal("No access to this space.", (await refused.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("detail").GetString());
         }
         await _f.WithDbAsync(async db => Assert.True((await db.Spaces.SingleAsync(s => s.Id == vault, Ct)) is { IsSensitive: true, IsPublic: false }));
         // What does not lower the space's protection needs no access: a new name, and the flag itself on a space that has none.
@@ -184,6 +184,12 @@ public sealed class FindingTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, (await adam.PatchAsJsonAsync($"/api/v1/admin/spaces/{vault}", new { isSensitive = false }, Ct)).StatusCode);
 
         Assert.Contains("Vault is no longer a sensitive space", await AlertsAsync());
+
+        // The same change by the space's own address, by an Admin who is an Owner there: the other Owners hear of it all the same.
+        (await _admin.PatchAsJsonAsync($"/api/v1/admin/spaces/{vault}", new { isSensitive = true }, Ct)).EnsureSuccessStatusCode();
+        (await olga.PutAsJsonAsync($"/api/v1/spaces/{vault}/roles", new { principalType = "User", principalId = adamId.ToString(), role = "Owner" }, Ct)).EnsureSuccessStatusCode();
+        Assert.Equal(HttpStatusCode.OK, (await adam.PatchAsJsonAsync($"/api/v1/spaces/{vault}", new { isSensitive = false }, Ct)).StatusCode);
+        Assert.Equal(2, (await AlertsAsync()).Count(a => a == "Vault is no longer a sensitive space"));
     }
 
     /// <summary>Finding 12. A space may show an image of another space while a page that uses it is there. When the last such page leaves, so does that right.</summary>

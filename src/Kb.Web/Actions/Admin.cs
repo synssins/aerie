@@ -186,6 +186,9 @@ internal sealed class NewPasswordLinkHandler(KbDbContext db, UserManager<KbUser>
 
 internal sealed class DeleteUserHandler(KbDbContext db, IAccess access, TimeProvider time) : IActionHandler<DeleteUser, Unit>
 {
+    // One delete at a time, so two Admins who delete each other at the same moment cannot both pass the last-administrator check.
+    // shortcut: holds within one server; several servers on one database need a serializable transaction here.
+    private static readonly SemaphoreSlim Gate = new(1, 1);
     private KbUser? _user;
 
     public async Task<Problem?> AuthorizeAsync(ActionContext<DeleteUser> ctx)
@@ -201,6 +204,13 @@ internal sealed class DeleteUserHandler(KbDbContext db, IAccess access, TimeProv
         if (u.Id == ctx.Actor.UserId) return Problem.Conflict("You can't delete your own account.");
         if (u.IsBreakGlass) return Problem.Conflict("The break-glass account can't be deleted.");
         if (u.Source != UserSource.Local) return Problem.Conflict("Only local users can be deleted.");
+        await Gate.WaitAsync(ctx.Cancel);
+        try { return await DeleteAsync(ctx, u); }
+        finally { Gate.Release(); }
+    }
+
+    private async Task<Outcome<Unit>> DeleteAsync(ActionContext<DeleteUser> ctx, KbUser u)
+    {
         // Without an Administrator besides the break-glass account the app would ask to be set up again.
         if (u.IsAdmin && u.DeactivatedAt is null && !await db.Users.AnyAsync(x => x.Id != u.Id && x.IsAdmin && !x.IsBreakGlass && x.DeactivatedAt == null))
             return Problem.Conflict("The last administrator can't be deleted.");
@@ -210,6 +220,8 @@ internal sealed class DeleteUserHandler(KbDbContext db, IAccess access, TimeProv
         // The row and the display name stay, so pages and audit entries still name their author.
         (u.DeletedAt, u.DeactivatedAt) = (now, u.DeactivatedAt ?? now);
         (u.PasswordHash, u.SecurityStamp, u.IsAdmin, u.CanAnnounce) = (null, Guid.NewGuid().ToString("N"), false, false);
+        // A request that read the account before this moment and writes it after (a failed sign-in, saved settings) is refused, not written over this.
+        u.ConcurrencyStamp = Guid.NewGuid().ToString();
         (u.Email, u.NormalizedEmail, u.PhoneNumber) = (null, null, null);
         // Its user name is free for a new account; this one keeps a name nobody can type at the sign-in.
         u.UserName = $"deleted-{u.Id:N}";

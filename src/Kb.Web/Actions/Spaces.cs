@@ -87,8 +87,7 @@ internal sealed class UpdateSpaceHandler(KbDbContext db, IAccess access) : IActi
     }
 }
 
-internal sealed class UpdateSpaceAdminHandler(KbDbContext db, IAccess access, Kb.Core.Access.IAccessData owners, Kb.Core.Notifications.INotifier notifier)
-    : IActionHandler<UpdateSpaceAdmin, SpaceDto>
+internal sealed class UpdateSpaceAdminHandler(KbDbContext db, IAccess access) : IActionHandler<UpdateSpaceAdmin, SpaceDto>
 {
     private Space? _space;
 
@@ -100,7 +99,7 @@ internal sealed class UpdateSpaceAdminHandler(KbDbContext db, IAccess access, Kb
         // "Admins have no silent access to a sensitive space." Clearing its flag makes every Admin its Owner, and making it public
         // opens it to everyone: an Admin does either only with access to the space (a role, or emergency access, which tells the Owners).
         return Lowers(_space, ctx.Action) && await access.RoleAsync(ctx.Actor, id, ctx.Cancel) is null
-            ? new Problem(403, "No access to this space. Use emergency access first.") : null;
+            ? new Problem(403, "No access to this space.") : null;
     }
 
     /// <summary>True when the update takes protection from a sensitive space: the flag is cleared, or the space is made public.</summary>
@@ -109,16 +108,10 @@ internal sealed class UpdateSpaceAdminHandler(KbDbContext db, IAccess access, Kb
     public async Task<Outcome<SpaceDto>> HandleAsync(ActionContext<UpdateSpaceAdmin> ctx)
     {
         var (req, s) = (ctx.Action, _space!);
-        var (cleared, opened) = (s.IsSensitive && req.IsSensitive == false, s.IsSensitive && req.IsPublic == true && !s.IsPublic);
         // The same update as an Owner's. An Admin needs no role in the space for it, except to lower a sensitive space's protection (above).
         var update = new UpdateSpace { SpaceId = req.SpaceId, Name = req.Name, Description = req.Description, IsSensitive = req.IsSensitive, IsPublic = req.IsPublic,
             CommentsEnabled = req.CommentsEnabled, AgingDays = req.AgingDays, AgingAudience = req.AgingAudience, RecycleDays = req.RecycleDays };
         if (await UpdateSpaceAsync(s, update, db, ctx) is { } problem) return problem;
-        // The Owners hear of it whoever did it, as they do of emergency access.
-        if (cleared || opened)
-            await notifier.NotifyAsync(await owners.GetOwnerUserIdsAsync(s.Id, CancellationToken.None), Kb.Core.Notifications.NotificationKinds.SecurityAlert,
-                cleared ? $"{s.Name} is no longer a sensitive space" : $"{s.Name}, a sensitive space, was made public",
-                "An administrator changed it.", $"/spaces/{s.Id}", alsoEmail: true, CancellationToken.None);
         return ToDto(s, null);
     }
 }
@@ -191,12 +184,13 @@ internal sealed class ListDeletedSpacesHandler(KbDbContext db, IAccess access) :
     {
         // system: the recycle bin of spaces. Names only, as an Admin sees the name of every space; nothing of their content.
         var spaces = await db.Spaces.IgnoreQueryFilters().AsNoTracking().Where(x => x.DeletedAt != null).OrderByDescending(x => x.DeletedAt).ToListAsync(ctx.Cancel);
-        var ids = spaces.Select(x => x.Id).ToList();
+        // A sensitive space says nothing of what it holds, not even how much.
+        var ids = spaces.Where(x => !x.IsSensitive).Select(x => x.Id).ToList();
         var counts = await db.Pages.Where(p => ids.Contains(p.SpaceId)).GroupBy(p => p.SpaceId).Select(g => new { g.Key, N = g.Count() }).ToDictionaryAsync(g => g.Key, g => g.N, ctx.Cancel); // system: a count, no content
         var by = spaces.Where(x => x.DeletedBy != null).Select(x => x.DeletedBy!.Value).Distinct().ToList();
         var names = await db.Users.AsNoTracking().Where(u => by.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.DisplayName, ctx.Cancel);
         return Outcome.List<DeletedSpaceDto>([.. spaces.Select(x => new DeletedSpaceDto(x.Id, x.Key, x.Name, x.IsSensitive, x.DeletedAt!.Value,
-            x.DeletedBy is { } u && names.TryGetValue(u, out var name) ? name : "Unknown", counts.GetValueOrDefault(x.Id)))]);
+            x.DeletedBy is { } u && names.TryGetValue(u, out var name) ? name : "Unknown", x.IsSensitive ? null : counts.GetValueOrDefault(x.Id)))]);
     }
 }
 
@@ -223,7 +217,9 @@ internal sealed class GrantSpaceRoleHandler(IAccess access, IAccessData data) : 
     public async Task<Outcome<Unit>> HandleAsync(ActionContext<GrantSpaceRole> ctx)
     {
         var req = ctx.Action;
-        if (string.IsNullOrWhiteSpace(req.PrincipalId) || !Enum.IsDefined(req.Role)) return Problem.Invalid("principal", "Invalid.");
+        // A user is named by id. A name there would be a role nobody holds, and a row the Owners' list cannot read.
+        if (string.IsNullOrWhiteSpace(req.PrincipalId) || !Enum.IsDefined(req.Role) || (req.PrincipalType == PrincipalType.User && !Guid.TryParse(req.PrincipalId, out _)))
+            return Problem.Invalid("principal", "Invalid.");
         await data.AddAssignmentAsync(new SpaceRoleAssignment { SpaceId = req.SpaceId, PrincipalType = req.PrincipalType, PrincipalId = req.PrincipalId, Role = req.Role }, default);
         ctx.Audit(AuditActions.SpaceRoleGrant, req.PrincipalType.ToString(), req.PrincipalId, req.SpaceId, new Dictionary<string, string> { ["role"] = req.Role.ToString() });
         return new Unit();

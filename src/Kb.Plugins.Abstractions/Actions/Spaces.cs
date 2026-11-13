@@ -99,7 +99,7 @@ public sealed record RestoreSpace : IAction<SpaceDto>
 [Action("space.list.deleted", Read = true)]
 public sealed record ListDeletedSpaces : IAction<IReadOnlyList<DeletedSpaceDto>>;
 
-public sealed record DeletedSpaceDto(Guid Id, string Key, string Name, bool IsSensitive, DateTimeOffset DeletedAt, string DeletedBy, int Pages);
+public sealed record DeletedSpaceDto(Guid Id, string Key, string Name, bool IsSensitive, DateTimeOffset DeletedAt, string DeletedBy, int? Pages);
 
 /// <summary>Every space, by name, for an Admin. No role is named.</summary>
 [Action("space.list.all", Read = true)]

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Kb.Core.Identity;
@@ -136,7 +137,43 @@ public sealed class BinBrowseTests : IAsyncLifetime
             Assert.Empty(await NodesAsync(who, "/api/v1/admin/bin/tree"));
             Assert.Equal(HttpStatusCode.NotFound, (await who.GetAsync($"/api/v1/bin/pages/{_page.Id}", Ct)).StatusCode);
         }
-        Assert.Single((await adam.GetFromJsonAsync<JsonElement>("/api/v1/admin/spaces/deleted", Ct)).EnumerateArray());
+        // The row in the bin names the space and says nothing of what it holds, not even how much.
+        var row = Assert.Single((await adam.GetFromJsonAsync<JsonElement>("/api/v1/admin/spaces/deleted", Ct)).EnumerateArray());
+        Assert.Equal(("Service Desk", JsonValueKind.Null), (row.GetProperty("name").GetString(), row.GetProperty("pages").ValueKind));
+    }
+
+    /// <summary>A page of a deleted space is shown to an Admin as it was, with its images. Nobody else gets them, and nobody those of a sensitive space.</summary>
+    [Fact]
+    public async Task DeletedSpace_ShowsItsImages_ToAnAdminOnly()
+    {
+        var upload = new ByteArrayContent([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D, 0x49, 0x48, 0x44, 0x52]);
+        upload.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        upload.Headers.Add("X-File-Name", "shot.png");
+        var image = (await (await _sue.PostAsync($"/api/v1/spaces/{_space}/images", upload, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("url").GetString()!;
+        var adam = await UserAsync("adam", null, admin: true);
+        Assert.Equal(HttpStatusCode.OK, (await _sue.GetAsync(image, Ct)).StatusCode);
+
+        (await _admin.PostAsJsonAsync($"/api/v1/admin/spaces/{_space}/delete", new { confirm = "delete desk" }, Ct)).EnsureSuccessStatusCode();
+
+        Assert.Equal(HttpStatusCode.OK, (await adam.GetAsync(image, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await _sue.GetAsync(image, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await _otto.GetAsync(image, Ct)).StatusCode);
+
+        (await _admin.PostAsync($"/api/v1/admin/spaces/{_space}/restore", null, Ct)).EnsureSuccessStatusCode();
+        (await _admin.PatchAsJsonAsync($"/api/v1/admin/spaces/{_space}", new { isSensitive = true }, Ct)).EnsureSuccessStatusCode();
+        (await adam.PostAsJsonAsync($"/api/v1/admin/spaces/{_space}/delete", new { confirm = "delete desk" }, Ct)).EnsureSuccessStatusCode();
+        Assert.Equal(HttpStatusCode.NotFound, (await adam.GetAsync(image, Ct)).StatusCode);
+    }
+
+    /// <summary>The tree shows what the bin's list and Restore do: a page deleted on its own is its own item, also when its folder is deleted later.</summary>
+    [Fact]
+    public async Task Tree_NestsOnlyWhatWasDeletedTogether()
+    {
+        (await _sue.DeleteAsync($"/api/v1/pages/{_page.Id}", Ct)).EnsureSuccessStatusCode();
+        (await DeleteFolderAsync()).EnsureSuccessStatusCode();
+
+        Assert.Equal([(_folder.Id, null, _space, "Folder", "Printers"), (_page.Id, null, _space, "Page", "Spooler")], await NodesAsync(_sue, $"/api/v1/spaces/{_space}/bin/tree"));
+        Assert.Empty((await _sue.GetFromJsonAsync<JsonElement>($"/api/v1/bin/pages/{_folder.Id}", Ct)).GetProperty("children").EnumerateArray());
     }
 
     /// <summary>The same in a live sensitive space: the admin bin tree leaves it out, as the admin bin list does.</summary>

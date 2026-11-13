@@ -143,7 +143,8 @@ public sealed class AccessData(KbDbContext db) : IAccessData
         var ids = await db.SpaceRoleAssignments.AsNoTracking()
             .Where(a => a.SpaceId == spaceId && a.Role == SpaceRole.Owner && a.PrincipalType == PrincipalType.User)
             .Select(a => a.PrincipalId).ToListAsync(ct);
-        return ids.Select(Guid.Parse).ToList();
+        // A row that names no user id (written before the role action checked it) is skipped: the real Owners are still found.
+        return [.. ids.Where(s => Guid.TryParse(s, out _)).Select(Guid.Parse)];
     }
 }
 

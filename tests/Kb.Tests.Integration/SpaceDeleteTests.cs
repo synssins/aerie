@@ -3,6 +3,8 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Kb.Core.Identity;
+using Kb.Core.Spaces;
+using Kb.Plugins;
 using Kb.Web;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -157,6 +159,24 @@ public sealed class SpaceDeleteTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Conflict, same.StatusCode);
         var derived = await _admin.PostAsJsonAsync("/api/v1/spaces", new { name = "Desk" }, Ct);
         Assert.Equal((HttpStatusCode.Created, "desk-2"), (derived.StatusCode, (await derived.Content.ReadFromJsonAsync<SpaceDto>(Ct))!.Key));
+    }
+
+    /// <summary>A role is given to a user by id. A row that names no user is refused, and one that is there already does not stop the Owners being told.</summary>
+    [Fact]
+    public async Task ARoleRow_ThatNamesNoUser_IsRefused_AndDoesNotBreakTheDelete()
+    {
+        var r = await _admin.PutAsJsonAsync($"/api/v1/spaces/{_space}/roles", new { principalType = "User", principalId = "the-service-desk", role = "Reader" }, Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode);
+        await _f.WithDbAsync(async db =>
+        {
+            db.SpaceRoleAssignments.Add(new SpaceRoleAssignment { SpaceId = _space, PrincipalType = PrincipalType.User, PrincipalId = "the-service-desk", Role = SpaceRole.Owner });
+            await db.SaveChangesAsync(Ct);
+        });
+
+        Assert.Equal(HttpStatusCode.NoContent, (await DeleteAsync(_admin, "delete desk")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await _admin.PostAsync($"/api/v1/admin/spaces/{_space}/restore", null, Ct)).StatusCode);
+        var alerts = (await _olga.GetFromJsonAsync<JsonElement>("/api/v1/notifications", Ct)).EnumerateArray().Select(n => n.GetProperty("title").GetString()).ToList();
+        Assert.Contains("Service Desk was deleted", alerts);
     }
 
     /// <summary>An Admin has nothing in a sensitive space. Deleting it is still the Admin's to do; reading it is not, before or after.</summary>

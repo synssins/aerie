@@ -69,7 +69,7 @@ export function DeleteSpaceDialog({ space, onClose, onDeleted }: { space: { id: 
   );
 }
 
-type DeletedSpace = { id: string; key: string; name: string; isSensitive: boolean; deletedAt: string; deletedBy: string; pages: number };
+type DeletedSpace = { id: string; key: string; name: string; isSensitive: boolean; deletedAt: string; deletedBy: string; pages: number | null };
 
 /** Administration > Recycle bin: the deleted spaces, above the deleted pages. Nothing is drawn when there is none. */
 export function DeletedSpaces({ onRestored }: { onRestored: () => void }) {

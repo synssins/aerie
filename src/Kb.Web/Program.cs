@@ -85,13 +85,14 @@ services.Configure<Microsoft.AspNetCore.Authentication.AuthenticationOptions>(o 
 services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    // A token is counted by itself; sign-in attempts are counted by the address they come from.
+    // Sign-in attempts are counted by the address they come from; a token is counted by itself. The route that matched decides, not
+    // the text of the address (a trailing slash reaches the same route), and it decides first (a refused token does not buy a higher limit).
+    // Guessing a password link is counted like guessing a password.
     o.GlobalLimiter = System.Threading.RateLimiting.PartitionedRateLimiter.Create<HttpContext, string>(http =>
-        ApiTokenAuth.PresentedId(http) is { } tokenId
-            ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("token:" + tokenId, _ => new() { PermitLimit = kb.Tokens.RequestsPerMinute, Window = TimeSpan.FromMinutes(1) })
-        : HttpMethods.IsPost(http.Request.Method) && (http.Request.Path.Equals("/api/v1/auth/local/signin", StringComparison.OrdinalIgnoreCase)
-            || http.Request.Path.Equals("/api/v1/auth/local/password", StringComparison.OrdinalIgnoreCase)) // guessing a link is counted like guessing a password
+        HttpMethods.IsPost(http.Request.Method) && (http.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText is "/api/v1/auth/local/signin" or "/api/v1/auth/local/password"
             ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("signin:" + http.Connection.RemoteIpAddress, _ => new() { PermitLimit = kb.Auth.SignInsPerMinutePerAddress, Window = TimeSpan.FromMinutes(1) })
+        : ApiTokenAuth.PresentedId(http) is { } tokenId
+            ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("token:" + tokenId, _ => new() { PermitLimit = kb.Tokens.RequestsPerMinute, Window = TimeSpan.FromMinutes(1) })
         : System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter(""));
 });
 
@@ -182,7 +183,9 @@ await using (var scope = app.Services.CreateAsyncScope())
     await scope.ServiceProvider.GetRequiredService<SetupService>().OnStartupAsync();
     await SearchIndex.BackfillAsync(db, app.Services.GetRequiredService<DocRenderers>()); // pages saved before the search index existed
     // Image grants no page needs any more (a page moved in and out again, or a grant written before moves checked what they pass on).
-    foreach (var space in await db.SpaceImageGrants.Select(g => g.SpaceId).Distinct().ToListAsync()) await ImageEndpoints.PruneGrantsAsync(db, space);
+    // A failed clean-up must not stop the start: the grants stay one more run.
+    try { foreach (var space in await db.SpaceImageGrants.Select(g => g.SpaceId).Distinct().ToListAsync()) await ImageEndpoints.PruneGrantsAsync(db, space); }
+    catch (Exception e) when (e is not OperationCanceledException) { app.Logger.LogError(e, "Image grants were not cleaned up at start."); }
     await LogShipperService.EnsureFirstTargetAsync(db, kb.Logs.Folder, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow());
     await ActiveFileStore.EnsureFirstPlaceAsync(db, kb.Storage.Folder, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow());
 }

@@ -6,6 +6,9 @@ import { DialogProvider } from "./Dialogs";
 import { editorExtensions } from "./editor/extensions";
 import { BinTable } from "./Views";
 
+HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) { this.setAttribute("open", ""); };
+HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) { this.removeAttribute("open"); };
+
 type Call = { key: string };
 function server(routes: Record<string, () => { status?: number; body?: unknown }>): Call[] {
   const calls: Call[] = [];
@@ -89,6 +92,19 @@ describe("BinTable", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Printers" }));
 
     expect(onOpen).toHaveBeenCalledWith("f1");
+  });
+});
+
+describe("BinTable, emptied", () => {
+  it("says so when the bin was emptied, so the tree beside it loads again", async () => {
+    server({ "GET /spaces/s1/bin": () => ({ body: [{ id: "f1", spaceId: "s1", spaceName: "Service Desk", kind: "Folder", title: "Printers", location: "Service Desk", items: 2, deletedAt: "2026-11-13T10:00:00Z", deletedBy: "Pat", hidden: false }] }), "POST /spaces/s1/bin/empty": () => ({ body: {} }) });
+    const onEmptied = vi.fn();
+    render(<DialogProvider><BinTable spaceId="s1" canEmpty onRestored={() => {}} onEmptied={onEmptied} /></DialogProvider>);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Empty bin" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Empty" }));
+
+    await waitFor(() => expect(onEmptied).toHaveBeenCalled());
   });
 });
 

@@ -54,10 +54,11 @@ internal sealed class MovePageHandler(KbDbContext db, IAccess access) : IActionH
             foreach (var p in subtree) p.SpaceId = target;
         }
         await db.SaveChangesAsync();
-        // What the pages took with them, the space they left no longer needs to show.
-        if (target != from) await ImageEndpoints.PruneGrantsAsync(db, from);
+        // Noted before the clean-up below: the move is done, and its entry is written also when the clean-up fails.
         ctx.Audit(AuditActions.PageMove, "page", page.Id.ToString(), target,
             new Dictionary<string, string> { ["fromSpace"] = from.ToString(), ["parent"] = req.ParentId?.ToString() ?? "" });
+        // What the pages took with them, the space they left no longer needs to show.
+        if (target != from) await ImageEndpoints.PruneGrantsAsync(db, from);
         return await ToDtoAsync(db, access, ctx.Actor, page);
     }
 }
@@ -258,8 +259,11 @@ internal static class BinChecks
     /// <summary>The items as a tree of their own: an item whose folder is not among them stands at the top.</summary>
     public static List<BinNodeDto> Tree(List<Page> items)
     {
-        var ids = items.Select(p => p.Id).ToHashSet();
-        return [.. items.OrderBy(p => p.Sort).Select(p => new BinNodeDto(p.Id, p.ParentId is { } up && ids.Contains(up) ? up : null, p.SpaceId, p.Kind.ToString(), p.Title, p.Sort))];
+        // Only what was deleted together nests (in a deleted space: everything, nothing there was deleted by itself). A page deleted
+        // on its own is its own bin item, also under a folder deleted later: it is listed and restored apart, so it is shown apart.
+        var byId = items.ToDictionary(p => p.Id);
+        return [.. items.OrderBy(p => p.Sort).Select(p => new BinNodeDto(p.Id,
+            p.ParentId is { } up && byId.TryGetValue(up, out var folder) && folder.DeleteRootId == p.DeleteRootId ? up : null, p.SpaceId, p.Kind.ToString(), p.Title, p.Sort))];
     }
 
     /// <summary>404 without a role in the space, 403 without the right to manage its bin.</summary>

@@ -16,7 +16,7 @@ function Crumbs({ onHome, children }: { onHome: () => void; children?: ReactNode
 const Sep = () => <ChevronRight className="ic sm" aria-hidden />;
 
 /** Recycle bin table. spaceId null = every space (administrators). */
-export function BinTable({ spaceId, canEmpty, reloadKey, onRestored, onOpen }: { spaceId: string | null; canEmpty: boolean; reloadKey?: number; onRestored: (spaceId: string) => void; onOpen?: (id: string) => void }) {
+export function BinTable({ spaceId, canEmpty, reloadKey, onRestored, onOpen, onEmptied }: { spaceId: string | null; canEmpty: boolean; reloadKey?: number; onRestored: (spaceId: string) => void; onOpen?: (id: string) => void; onEmptied?: () => void }) {
   const dialogs = useDialogs();
   const [items, setItems] = useState<BinItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +32,7 @@ export function BinTable({ spaceId, canEmpty, reloadKey, onRestored, onOpen }: {
   async function empty() {
     if (!spaceId || !await dialogs.confirm({ title: "Empty the recycle bin?", ok: "Empty", danger: true })) return;
     await api.post(`/spaces/${spaceId}/bin/empty`);
+    onEmptied?.();
     await load();
   }
 
@@ -61,14 +62,14 @@ export function BinTable({ spaceId, canEmpty, reloadKey, onRestored, onOpen }: {
   );
 }
 
-export function BinView({ space, onHome, onOpenSpace, onRestored, onOpen }: { space: Space; onHome: () => void; onOpenSpace: () => void; onRestored: (spaceId: string) => void; onOpen?: (id: string) => void }) {
+export function BinView({ space, onHome, onOpenSpace, onRestored, onOpen, onEmptied }: { space: Space; onHome: () => void; onOpenSpace: () => void; onRestored: (spaceId: string) => void; onOpen?: (id: string) => void; onEmptied?: () => void }) {
   return (
     <>
       <main className="doc wide">
         <div className="col">
           <Crumbs onHome={onHome}><Sep /><button className="crumb-link" onClick={onOpenSpace}>{space.name}</button><Sep /><b>Recycle bin</b></Crumbs>
           <div className="titlebar"><h1>Recycle bin</h1></div>
-          <BinTable spaceId={space.id} canEmpty onRestored={onRestored} onOpen={onOpen} />
+          <BinTable spaceId={space.id} canEmpty onRestored={onRestored} onOpen={onOpen} onEmptied={onEmptied} />
         </div>
       </main>
       <aside className="side" aria-label="Details"><h3>Space</h3><div>{space.name}</div></aside>

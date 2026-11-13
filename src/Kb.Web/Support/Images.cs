@@ -33,17 +33,17 @@ public static partial class ImageEndpoints
     /// </summary>
     public static async Task<int> PruneGrantsAsync(KbDbContext db, Guid spaceId, CancellationToken ct = default)
     {
-        var grants = await db.SpaceImageGrants.Where(g => g.SpaceId == spaceId).ToListAsync(ct);
-        if (grants.Count == 0) return 0;
-        var pages = await db.Pages.IgnoreQueryFilters().Where(p => p.SpaceId == spaceId).Select(p => new { p.Id, p.ContentJson }).ToListAsync(ct); // system: pages in the bin can come back, so they count
-        var ids = pages.Select(p => p.Id).ToList();
-        var used = new HashSet<Guid>(pages.SelectMany(p => DocText.ImageIds(p.ContentJson)));
-        foreach (var json in await db.PageVersions.Where(v => ids.Contains(v.PageId)).Select(v => v.ContentJson).ToListAsync(ct)) used.UnionWith(DocText.ImageIds(json));
-        foreach (var json in await db.PageDrafts.Where(d => ids.Contains(d.PageId)).Select(d => d.ContentJson).ToListAsync(ct)) used.UnionWith(DocText.ImageIds(json));
-        var stale = grants.Where(g => !used.Contains(g.ImageId)).ToList();
-        db.SpaceImageGrants.RemoveRange(stale);
-        if (stale.Count > 0) await db.SaveChangesAsync(ct);
-        return stale.Count;
+        var granted = await db.SpaceImageGrants.AsNoTracking().Where(g => g.SpaceId == spaceId).Select(g => g.ImageId).ToListAsync(ct);
+        if (granted.Count == 0) return 0;
+        // One document in memory at a time: the history of a space can be large, and this runs at every start.
+        var used = new HashSet<Guid>();
+        var pages = db.Pages.IgnoreQueryFilters().Where(p => p.SpaceId == spaceId); // system: pages in the bin can come back, so they count
+        await foreach (var json in pages.Select(p => p.ContentJson).AsAsyncEnumerable().WithCancellation(ct)) used.UnionWith(DocText.ImageIds(json));
+        await foreach (var json in db.PageVersions.Where(v => pages.Any(p => p.Id == v.PageId)).Select(v => v.ContentJson).AsAsyncEnumerable().WithCancellation(ct)) used.UnionWith(DocText.ImageIds(json));
+        await foreach (var json in db.PageDrafts.Where(d => pages.Any(p => p.Id == d.PageId)).Select(d => d.ContentJson).AsAsyncEnumerable().WithCancellation(ct)) used.UnionWith(DocText.ImageIds(json));
+        var stale = granted.Where(i => !used.Contains(i)).ToList();
+        // Deleted in the database, not through tracked rows: a grant another request took first is no error, and nothing failed stays behind in this request.
+        return stale.Count == 0 ? 0 : await db.SpaceImageGrants.Where(g => g.SpaceId == spaceId && stale.Contains(g.ImageId)).ExecuteDeleteAsync(ct);
     }
 
     /// <summary>Deletes uploads that no saved page or draft ever used. Returns how many.</summary>

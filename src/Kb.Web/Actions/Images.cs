@@ -58,6 +58,10 @@ internal sealed class ReadImageHandler(KbDbContext db, IAccess access, IFileStor
         var id = ctx.Action.ImageId;
         if ((_image = await db.SpaceImages.AsNoTracking().FirstOrDefaultAsync(i => i.Id == id, ctx.Cancel)) is null) return Problem.NotFound;
         if (await access.RoleAsync(ctx.Actor, _image.SpaceId, ctx.Cancel) is not null) return null;
+        // The admin bin shows the pages of a deleted space that is not sensitive as they were, with their images.
+        var home = _image.SpaceId;
+        if (await db.Spaces.IgnoreQueryFilters().AnyAsync(s => s.Id == home && s.DeletedAt != null && !s.IsSensitive, ctx.Cancel) // system: whether the image's space lies in the bin
+            && await access.IsAdminAsync(ctx.Actor, ctx.Cancel)) return null;
         // A page that uses the image may have moved to another space.
         var visible = await access.VisibleSpacesAsync(ctx.Actor, ctx.Cancel);
         return await db.SpaceImageGrants.AnyAsync(g => g.ImageId == id && visible.Contains(g.SpaceId), ctx.Cancel) ? null : Problem.NotFound;

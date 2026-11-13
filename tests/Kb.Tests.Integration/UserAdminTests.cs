@@ -56,6 +56,56 @@ public sealed class UserAdminTests : IAsyncLifetime
         return rows;
     }
 
+    /// <summary>A request that read the account before the delete and writes it after must not write the old row back.</summary>
+    [Fact]
+    public async Task Delete_IsNotUndone_ByAWriteThatReadTheAccountBefore()
+    {
+        var (_, id) = await UserAsync("erin");
+        await using var scope = _f.Services.CreateAsyncScope();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<KbUser>>();
+        var stale = (await users.FindByIdAsync(id.ToString()))!;
+
+        Assert.Equal(HttpStatusCode.NoContent, (await _admin.DeleteAsync($"/api/v1/admin/users/{id}", Ct)).StatusCode);
+        stale.DisplayName = "Erin again";
+        var written = await users.UpdateAsync(stale);
+
+        Assert.False(written.Succeeded);
+        await _f.WithDbAsync(async db => Assert.True((await db.Users.AsNoTracking().SingleAsync(u => u.Id == id, Ct)) is { DeletedAt: not null, PasswordHash: null }));
+    }
+
+    [Fact]
+    public async Task TwoAdmins_WhoDeleteEachOtherAtOnce_LeaveOne()
+    {
+        var (ann, annId) = await UserAsync("ann", admin: true);
+        var (bob, bobId) = await UserAsync("bob", admin: true);
+
+        var codes = await Task.WhenAll(ann.DeleteAsync($"/api/v1/admin/users/{bobId}", Ct), bob.DeleteAsync($"/api/v1/admin/users/{annId}", Ct));
+
+        Assert.Single(codes, c => c.StatusCode == HttpStatusCode.NoContent);
+        await _f.WithDbAsync(async db => Assert.Equal(1, await db.Users.CountAsync(u => u.IsAdmin && !u.IsBreakGlass && u.DeactivatedAt == null, Ct)));
+    }
+
+    /// <summary>Sign-in attempts are counted by where they come from, however the address is written and whatever else the request carries.</summary>
+    [Fact]
+    public async Task SignInLimit_HoldsWithATrailingSlash_AndWithARefusedToken()
+    {
+        await using var strict = new KbAppFactory(KbAppFactory.NewDbPath(), settings: new Dictionary<string, string> { ["Kb:Auth:SignInsPerMinutePerAddress"] = "4" });
+        var admin = await strict.SignedInBreakGlassAsync();
+        var made = await (await admin.PostAsJsonAsync("/api/v1/tokens", new { name = "old", kind = "Personal", scopes = new[] { new { spaceId = (Guid?)null, access = "Read" } }, days = 1 }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct);
+        Assert.Equal(HttpStatusCode.NoContent, (await admin.DeleteAsync($"/api/v1/tokens/{made.GetProperty("info").GetProperty("id").GetString()}", Ct)).StatusCode);
+        var revoked = strict.NewClient();
+        revoked.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", made.GetProperty("token").GetString());
+        var plain = strict.NewClient();
+
+        var codes = new List<HttpStatusCode>();
+        for (var i = 0; i < 4; i++) codes.Add((await plain.PostAsJsonAsync("/api/v1/auth/local/signin/", new { userName = "nobody", password = "x" }, Ct)).StatusCode);
+        for (var i = 0; i < 4; i++) codes.Add((await revoked.PostAsJsonAsync("/api/v1/auth/local/signin", new { userName = "nobody", password = "x" }, Ct)).StatusCode);
+        for (var i = 0; i < 2; i++) codes.Add((await plain.PostAsJsonAsync("/api/v1/auth/local/password/", new { userId = Guid.NewGuid(), token = "x", password = Password }, Ct)).StatusCode);
+
+        // The window allowed four, the Admin's own sign-in among them: at most three of these ten were let through.
+        Assert.True(codes.Count(c => c == HttpStatusCode.TooManyRequests) >= 7, string.Join(",", codes.Select(c => (int)c)));
+    }
+
     private static async Task<string?> DetailAsync(HttpResponseMessage r) =>
         (await r.Content.ReadFromJsonAsync<JsonElement>(Ct)).TryGetProperty("detail", out var d) ? d.GetString() : null;
 

@@ -91,6 +91,13 @@ describe("DeletedSpaces", () => {
     expect(container.querySelector("table")).toBeNull();
   });
 
+  it("shows no page count for a sensitive space", async () => {
+    server({ "GET /admin/spaces/deleted": () => ({ body: [{ ...deleted[0], name: "Vault", isSensitive: true, pages: null }] }) });
+    render(<DeletedSpaces onRestored={() => {}} />);
+    const row = (await screen.findByText("Vault")).closest("tr")!;
+    expect(row.querySelectorAll("td")[1].textContent).toBe("");
+  });
+
   it("lists the deleted spaces and restores one", async () => {
     let list = deleted;
     const calls = server({ "GET /admin/spaces/deleted": () => ({ body: list }), "POST /admin/spaces/s1/restore": () => { list = []; return { body: {} }; } });

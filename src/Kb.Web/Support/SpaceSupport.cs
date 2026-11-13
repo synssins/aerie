@@ -35,6 +35,8 @@ internal static partial class SpaceSupport
     {
         if (req.AgingDays is < 1 or > 3650 || req.RecycleDays is < 1 or > 3650) return Problem.Invalid("days", "1-3650.");
 
+        // Protection taken from a sensitive space: the flag cleared (every Admin is its Owner from then on), or the space made public.
+        var (cleared, opened) = (s.IsSensitive && req.IsSensitive == false, s.IsSensitive && req.IsPublic == true && !s.IsPublic);
         if (IsRename(s, req)) s.Name = req.Name!.Trim();
         if (req.Description is { } d) s.Description = string.IsNullOrWhiteSpace(d) ? null : d.Trim();
         if (req.CommentsEnabled is { } c) s.CommentsEnabled = c;
@@ -47,6 +49,12 @@ internal static partial class SpaceSupport
         await db.SaveChangesAsync();
         ctx.Audit(sensitiveChanged ? AuditActions.SpaceSensitiveSet : AuditActions.SpaceUpdate, "space", s.Id.ToString(), s.Id,
             new Dictionary<string, string> { ["isSensitive"] = s.IsSensitive.ToString(), ["isPublic"] = s.IsPublic.ToString() });
+        // The Owners hear of it whoever did it and by whichever address, as they do of emergency access.
+        if (cleared || opened)
+            await ctx.Services.GetRequiredService<Kb.Core.Notifications.INotifier>().NotifyAsync(
+                await ctx.Services.GetRequiredService<Kb.Core.Access.IAccessData>().GetOwnerUserIdsAsync(s.Id, CancellationToken.None), Kb.Core.Notifications.NotificationKinds.SecurityAlert,
+                cleared ? $"{s.Name} is no longer a sensitive space" : $"{s.Name}, a sensitive space, was made public",
+                "An administrator changed it.", $"/spaces/{s.Id}", alsoEmail: true, CancellationToken.None);
         return null;
     }
 
