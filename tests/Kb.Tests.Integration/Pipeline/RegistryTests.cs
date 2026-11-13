@@ -122,6 +122,35 @@ public sealed partial class RegistryTests : IAsyncLifetime
         Assert.Equal(text, File.ReadAllText(file).ReplaceLineEndings("\n"));
     }
 
+    /// <summary>
+    /// docs/api-reference.md lists every route of the API with the action it sends and whether an API token may call it.
+    /// Written from the running app, like the action reference: run this test with KB_WRITE_REFS=1 after adding or changing a route.
+    /// </summary>
+    [Fact]
+    public void ApiReference_IsUpToDate()
+    {
+        var text = new StringBuilder("# API reference\n\n")
+            .Append("Written by the test `ApiReference_IsUpToDate` (run it with `KB_WRITE_REFS=1`). Do not edit by hand.\n\n")
+            .Append("Every route sends one action; [the action reference](plugins/action-reference.md) lists each action's fields and result.\n")
+            .Append("The answer names the action in the `X-Kb-Action` header. A route needs sign-in unless it says otherwise.\n")
+            .Append("API token: the scope a token needs to call the route. \"No\" means the route answers 403 to every token. See [the agent API](agent-api.md).\n\n")
+            .Append("| Method | Route | Action | Changes data | Sign-in | API token |\n|---|---|---|---|---|---|\n");
+        foreach (var (method, template, endpoint) in Routes().Where(r => r.Endpoint.Metadata.GetMetadata<ActionAttribute>() is not null)
+                     .OrderBy(r => r.Template, StringComparer.Ordinal).ThenBy(r => r.Method, StringComparer.Ordinal))
+        {
+            var action = endpoint.Metadata.GetMetadata<ActionAttribute>()!;
+            var anonymous = endpoint.Metadata.GetMetadata<Microsoft.AspNetCore.Authorization.IAllowAnonymous>() is not null;
+            var token = !Kb.Web.ApiTokenAuth.IsOpen(method, template) ? "No" : method == "GET" ? "Read" : "Write";
+            text.Append(System.Globalization.CultureInfo.InvariantCulture, $"| {method} | `{template}` | `{action.Name}` | {(action.Read ? "No" : "Yes")} | {(anonymous ? "Not needed" : "Needed")} | {token} |\n");
+        }
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Kb.sln"))) dir = dir.Parent;
+        var file = Path.Combine(dir!.FullName, "docs", "api-reference.md");
+        if (Environment.GetEnvironmentVariable("KB_WRITE_REFS") == "1") File.WriteAllText(file, text.ToString());
+        Assert.True(File.Exists(file), "docs/api-reference.md is missing. Run this test with KB_WRITE_REFS=1.");
+        Assert.Equal(text.ToString(), File.ReadAllText(file).ReplaceLineEndings("\n"));
+    }
+
     private static string ActionReference(ActionCatalog catalog)
     {
         var contract = typeof(IAction<>).Assembly;

@@ -136,6 +136,11 @@ Runs on two or more nodes behind a load balancer. Updates use rolling node drain
 - [Admin guide](docs/plugins/admin-guide.md): install, update, remove, settings, locks, Safe Mode.
 - [Action reference](docs/plugins/action-reference.md): every action a plugin can hook.
 
+## API
+
+- [Agent API](docs/agent-api.md): how an agent or another system signs in with a token, finds, reads and changes pages.
+- [API reference](docs/api-reference.md): every route, the action it sends, and whether an API token may call it.
+
 ## Open items
 
 - DNS provider for the company's public zone (required for Phase 2 ACME certificate automation).

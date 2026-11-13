@@ -30,6 +30,9 @@ public static class ApiTokenAuth
     /// The routes a token may call, each of which decides access through <see cref="ISpacePermissionService"/>.
     /// A route that is not here is closed to tokens, so a new route is closed until someone lists it.
     /// </summary>
+    /// <summary>True when a token may call this route (method and route template). For the API reference; the middleware below decides.</summary>
+    internal static bool IsOpen(string method, string template) => Open.Contains($"{method} {template}");
+
     private static readonly HashSet<string> Open = new(StringComparer.Ordinal)
     {
         "GET /api/v1/me", "GET /api/v1/spaces", "GET /api/v1/spaces/{id:guid}", "GET /api/v1/spaces/{id:guid}/tree", "GET /api/v1/home", "GET /api/v1/search",
