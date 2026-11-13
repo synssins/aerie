@@ -33,7 +33,7 @@ internal sealed class ReadVersionHandler(KbDbContext db, IAccess access) : IActi
     }
 }
 
-internal sealed class DiffPageHandler(KbDbContext db, IAccess access) : IActionHandler<DiffPage, DiffDto>
+internal sealed class DiffPageHandler(KbDbContext db, IAccess access, DocRenderers renderers) : IActionHandler<DiffPage, DiffDto>
 {
     private PageVersion? _from, _to;
 
@@ -46,13 +46,13 @@ internal sealed class DiffPageHandler(KbDbContext db, IAccess access) : IActionH
 
     public Task<Outcome<DiffDto>> HandleAsync(ActionContext<DiffPage> ctx)
     {
-        static List<string> Lines(PageVersion v) => [$"# {v.Title}", "", .. DocText.MarkdownLines(v.ContentJson)];
+        List<string> Lines(PageVersion v) => [$"# {v.Title}", "", .. DocText.MarkdownLines(v.ContentJson, renderers)];
         return Task.FromResult<Outcome<DiffDto>>(new DiffDto(ctx.Action.From, ctx.Action.To, LineDiff.Diff(Lines(_from!), Lines(_to!))));
     }
 }
 
 // Restoring never rewrites history: the old content becomes a new version. It publishes through PageSupport, not by sending page.save.
-internal sealed class RestoreVersionHandler(KbDbContext db, IAccess access, TimeProvider time) : IActionHandler<RestoreVersion, PageDto>
+internal sealed class RestoreVersionHandler(KbDbContext db, IAccess access, TimeProvider time, DocRenderers renderers) : IActionHandler<RestoreVersion, PageDto>
 {
     private Page? _page;
     private PageVersion? _version;
@@ -70,7 +70,7 @@ internal sealed class RestoreVersionHandler(KbDbContext db, IAccess access, Time
         var (page, v, version) = (_page!, _version!, ctx.Action.Version);
         page.Title = v.Title;
         var tags = await db.PageTags.Where(t => t.PageId == page.Id).Select(t => t.Tag).ToListAsync(ctx.Cancel);
-        var result = await PublishAsync(db, access, ctx.Actor, page, v.ContentJson, major: false, $"Restored from {version}", tags, time.GetUtcNow());
+        var result = await PublishAsync(db, access, renderers, ctx.Actor, page, v.ContentJson, major: false, $"Restored from {version}", tags, time.GetUtcNow());
         // As before, the entry is asked for whatever the publish answered: evenIfRefused keeps it when the publish answers a conflict.
         ctx.Audit(AuditActions.PageVersionRestore, "page", page.Id.ToString(), page.SpaceId, new Dictionary<string, string> { ["from"] = version, ["to"] = page.Version }, evenIfRefused: true);
         return result;

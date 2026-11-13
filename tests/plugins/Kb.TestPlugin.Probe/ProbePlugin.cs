@@ -49,7 +49,20 @@ public sealed class ProbePlugin : IKbPlugin
         if (context.GetSetting("Register") == "health") app.HealthCheck<ProbeHealth>("remote");
         if (context.GetSetting("Register") == "data") app.AddData<ProbeData>().Routes(ProbeDataRoutes.Map);
         if (context.GetSetting("Register") == "baddata") app.AddData<ProbeBrokenData>();
+        // An editor node of the probe's own. What it gives is unlike the placeholder, so a test can tell who rendered the node.
+        if (context.GetSetting("Register") == "nodes")
+            app.EditorNode(new NodeRenderer
+            {
+                Type = "probeBox",
+                Plain = n => "probeword" + Label(context, n),
+                MarkdownLines = n => ["> [box] " + Label(context, n)],
+                Blocks = n => [new DocParagraph([new DocRun("BOX " + Label(context, n))])],
+            });
+        if (context.GetSetting("Register") == "corenode") app.EditorNode(new NodeRenderer { Type = "paragraph", Plain = _ => "taken over" }); // a node the editor has by itself
     }
+
+    private static string Label(IPluginContext context, System.Text.Json.JsonElement node) =>
+        context.GetSetting("FailOn") == "node" ? throw new InvalidOperationException("Probe renderer failed.") : node.GetProperty("attrs").GetProperty("label").GetString()!;
 }
 
 public sealed class ProbeSink(IPluginContext context) : IAuditSink

@@ -14,9 +14,9 @@ public static class SearchIndex
 {
     public const string SynonymsKey = "Search.Synonyms";
 
-    public static async Task StageAsync(KbDbContext db, Page page, IEnumerable<string> tags, CancellationToken ct = default)
+    public static async Task StageAsync(KbDbContext db, Page page, IEnumerable<string> tags, DocRenderers renderers, CancellationToken ct = default)
     {
-        var body = page.Kind == PageKind.Page ? DocText.Plain(page.ContentJson) : "";
+        var body = page.Kind == PageKind.Page ? DocText.Plain(page.ContentJson, renderers) : "";
         page.SearchText = body;
         var weights = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var t in SearchText.Tokenize(body)) weights[t] = Math.Min(weights.GetValueOrDefault(t) + 1, 5);
@@ -33,14 +33,14 @@ public static class SearchIndex
     }
 
     /// <summary>Indexes pages that have no index rows yet (first run after upgrade, or a rebuild).</summary>
-    public static async Task<int> BackfillAsync(KbDbContext db, bool all = false, CancellationToken ct = default)
+    public static async Task<int> BackfillAsync(KbDbContext db, DocRenderers renderers, bool all = false, CancellationToken ct = default)
     {
         var ids = await db.Pages.IgnoreQueryFilters().Where(p => all || !db.SearchTerms.Any(t => t.PageId == p.Id)).Select(p => p.Id).ToListAsync(ct);
         foreach (var chunk in ids.Chunk(100))
         {
             var pages = await db.Pages.IgnoreQueryFilters().Where(p => chunk.Contains(p.Id)).ToListAsync(ct);
             var tags = (await db.PageTags.Where(t => chunk.Contains(t.PageId)).ToListAsync(ct)).ToLookup(t => t.PageId, t => t.Tag);
-            foreach (var p in pages) await StageAsync(db, p, tags[p.Id], ct);
+            foreach (var p in pages) await StageAsync(db, p, tags[p.Id], renderers, ct);
             await db.SaveChangesAsync(ct);
         }
         return ids.Count;

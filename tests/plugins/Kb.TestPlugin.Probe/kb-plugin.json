@@ -22,7 +22,8 @@
         "before",
         "filter",
         "after",
-        "job"
+        "job",
+        "node"
       ]
     },
     {

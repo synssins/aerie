@@ -15,7 +15,7 @@ internal static class PageSupport
     private const int MaxContentChars = 5_000_000;
 
     /// <summary>Writes a new version of a page (or renames a folder), re-indexes it and clears the author's draft.</summary>
-    internal static async Task<Outcome<PageDto>> PublishAsync(KbDbContext db, IAccess access, Actor actor, Page page, string contentJson, bool major, string? note, IEnumerable<string> tags, DateTimeOffset now)
+    internal static async Task<Outcome<PageDto>> PublishAsync(KbDbContext db, IAccess access, DocRenderers renderers, Actor actor, Page page, string contentJson, bool major, string? note, IEnumerable<string> tags, DateTimeOffset now)
     {
         if (actor.UserId is not { } me) return Problem.Unauthorized; // a version names its author
         page.UpdatedBy = me;
@@ -27,7 +27,7 @@ internal static class PageSupport
             db.PageVersions.Add(new PageVersion { PageId = page.Id, Major = page.Major, Minor = page.Minor, Title = page.Title, ContentJson = page.ContentJson, AuthorId = me, At = now, Note = note });
         }
         db.PageDrafts.RemoveRange(db.PageDrafts.Where(d => d.PageId == page.Id && d.UserId == me));
-        await SearchIndex.StageAsync(db, page, tags);
+        await SearchIndex.StageAsync(db, page, tags, renderers);
         try { await db.SaveChangesAsync(); }
         catch (DbUpdateException) { return new Problem(409); } // concurrent save took this version number
         await ImageEndpoints.KeepAsync(db, page.ContentJson);

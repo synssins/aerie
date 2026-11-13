@@ -7,17 +7,36 @@ namespace Kb.Core.Content;
 
 public sealed record DocCodeBlock(string Language, string Text, string? Heading);
 
-/// <summary>A run of text with its formatting.</summary>
-public sealed record DocRun(string Text, bool Bold = false, bool Italic = false, bool Underline = false, bool Strike = false, bool Code = false, string? Href = null);
+/// <summary>The renderers plugins registered for editor node types of their own. One per node type.</summary>
+public sealed class DocRenderers
+{
+    private readonly Dictionary<string, Registered<NodeRenderer>> _byType = new(StringComparer.Ordinal);
+    private readonly Action<string, Exception>? _failed;
 
-/// <summary>A page flattened to simple blocks, for exporters that lay pages out themselves (Word, PDF).</summary>
-public abstract record DocBlock;
-/// <summary>Heading is 0 for body text. Marker is the list bullet or number, if any. Indent counts list and quote nesting.</summary>
-public sealed record DocParagraph(IReadOnlyList<DocRun> Runs, int Heading = 0, string? Marker = null, int Indent = 0, bool Quote = false) : DocBlock;
-public sealed record DocCode(string Language, string Text) : DocBlock;
-public sealed record DocTable(IReadOnlyList<IReadOnlyList<string>> Rows, bool HeaderRow) : DocBlock;
-public sealed record DocImage(Guid? ImageId, string Alt, int? Width) : DocBlock;
-public sealed record DocRule : DocBlock;
+    public static DocRenderers None { get; } = new([]);
+
+    /// <param name="renderers">In load order; the first for a type is used.</param>
+    /// <param name="failed">Told the plugin id and the error when a renderer throws.</param>
+    public DocRenderers(IEnumerable<Registered<NodeRenderer>> renderers, Action<string, Exception>? failed = null)
+    {
+        ArgumentNullException.ThrowIfNull(renderers);
+        foreach (var r in renderers) _byType.TryAdd(r.Value.Type, r);
+        _failed = failed;
+    }
+
+    public string? Plain(JsonElement node) => Run(node, r => r.Plain);
+    public IReadOnlyList<string>? MarkdownLines(JsonElement node) => Run(node, r => r.MarkdownLines)?.ToList();
+    public IReadOnlyList<DocBlock>? Blocks(JsonElement node) => Run(node, r => r.Blocks);
+
+    /// <summary>What the plugin's renderer gives for this node; null when there is none, it gives nothing, or it throws (then the caller uses the placeholder).</summary>
+    private T? Run<T>(JsonElement node, Func<NodeRenderer, Func<JsonElement, T>?> part) where T : class
+    {
+        if (_byType.Count == 0 || node.ValueKind != JsonValueKind.Object || !node.TryGetProperty("type", out var t) || t.ValueKind != JsonValueKind.String) return null;
+        if (!_byType.TryGetValue(t.GetString()!, out var renderer) || part(renderer.Value) is not { } render) return null;
+        try { return render(node); }
+        catch (Exception e) { _failed?.Invoke(renderer.PluginId, e); return null; } // a plugin's renderer may throw anything; the page is still read
+    }
+}
 
 /// <summary>
 /// Reads an editor document (ProseMirror JSON) as text. One walker feeds search, diff, exports and the agent API,
@@ -26,6 +45,13 @@ public sealed record DocRule : DocBlock;
 public static class DocText
 {
     private const string ImagePrefix = "/api/v1/images/";
+
+    /// <summary>The node types the editor has by itself. Any other type belongs to a plugin, loaded or not.</summary>
+    public static IReadOnlySet<string> CoreNodes { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "doc", "paragraph", "text", "heading", "codeBlock", "blockquote", "bulletList", "orderedList", "listItem", "taskList", "taskItem",
+        "table", "tableRow", "tableHeader", "tableCell", "horizontalRule", "hardBreak", "image",
+    };
 
     private static JsonDocument? Parse(string? json)
     {
@@ -54,34 +80,51 @@ public static class DocText
             foreach (var d in Walk(k)) yield return d;
     }
 
-    /// <summary>The plain text under a node; blocks are separated by a space.</summary>
-    private static string InnerText(JsonElement n)
+    /// <summary>The plain text under a node; blocks are separated by a space. A plugin's node gives the text its renderer gives, or the text inside it.</summary>
+    private static string InnerText(JsonElement n, DocRenderers r)
     {
         var sb = new StringBuilder();
-        foreach (var d in Walk(n))
-        {
-            if (Type(d) == "text" && d.TryGetProperty("text", out var t)) sb.Append(t.GetString());
-            else if (Type(d) is "hardBreak" or "paragraph" or "tableCell" or "tableHeader" or "listItem" or "taskItem" && sb.Length > 0 && sb[^1] != ' ') sb.Append(' ');
-        }
+        Text(n, r, sb);
         return sb.ToString().Trim();
     }
 
+    private static void Text(JsonElement n, DocRenderers r, StringBuilder sb)
+    {
+        var type = Type(n);
+        if (type == "text") { if (n.TryGetProperty("text", out var t)) sb.Append(t.GetString()); return; }
+        var plugins = IsPlugins(type);
+        if ((plugins || type is "hardBreak" or "paragraph" or "tableCell" or "tableHeader" or "listItem" or "taskItem") && sb.Length > 0 && sb[^1] != ' ') sb.Append(' ');
+        if (plugins && r.Plain(n) is { } own) { sb.Append(own); return; }
+        foreach (var k in Kids(n)) Text(k, r, sb);
+    }
+
+    private static bool IsPlugins(string type) => type.Length > 0 && !CoreNodes.Contains(type);
+
+    /// <summary>What stands for a plugin's node nothing renders: its type, then the text inside it. The node is never read as if it were not there.</summary>
+    private static string Placeholder(JsonElement n, DocRenderers r)
+    {
+        var sb = new StringBuilder();
+        foreach (var k in Kids(n)) Text(k, r, sb);
+        var inside = sb.ToString().Trim();
+        return inside.Length > 0 ? $"[{Type(n)}] {inside}" : $"[{Type(n)}]";
+    }
+
     /// <summary>Plain text for search and snippets: one line per block.</summary>
-    public static string Plain(string? json)
+    public static string Plain(string? json, DocRenderers? renderers = null)
     {
         using var doc = Parse(json);
         if (doc is null) return "";
         var sb = new StringBuilder();
         foreach (var block in Kids(doc.RootElement))
         {
-            var text = InnerText(block);
+            var text = InnerText(block, renderers ?? DocRenderers.None);
             if (text.Length > 0) sb.Append(text).Append('\n');
         }
         return sb.ToString().TrimEnd();
     }
 
     /// <summary>The page as Markdown lines. Used for diffs and for agents, which read Markdown far more cheaply than editor JSON.</summary>
-    public static IReadOnlyList<string> MarkdownLines(string? json)
+    public static IReadOnlyList<string> MarkdownLines(string? json, DocRenderers? renderers = null)
     {
         using var doc = Parse(json);
         var lines = new List<string>();
@@ -89,19 +132,19 @@ public static class DocText
         foreach (var block in Kids(doc.RootElement))
         {
             if (lines.Count > 0) lines.Add("");
-            Block(block, "", lines);
+            Block(block, "", lines, renderers ?? DocRenderers.None);
         }
         return lines;
     }
 
-    public static string Markdown(string? json) => string.Join('\n', MarkdownLines(json));
+    public static string Markdown(string? json, DocRenderers? renderers = null) => string.Join('\n', MarkdownLines(json, renderers));
 
-    private static void Block(JsonElement n, string indent, List<string> lines)
+    private static void Block(JsonElement n, string indent, List<string> lines, DocRenderers r)
     {
         switch (Type(n))
         {
             case "heading":
-                lines.Add(indent + new string('#', int.TryParse(Attr(n, "level"), out var lv) ? Math.Clamp(lv, 1, 6) : 2) + " " + Inline(n));
+                lines.Add(indent + new string('#', int.TryParse(Attr(n, "level"), out var lv) ? Math.Clamp(lv, 1, 6) : 2) + " " + Inline(n, r));
                 break;
             case "codeBlock":
                 lines.Add(indent + "```" + (Attr(n, "language") ?? ""));
@@ -109,7 +152,7 @@ public static class DocText
                 lines.Add(indent + "```");
                 break;
             case "blockquote":
-                foreach (var k in Kids(n)) Block(k, indent + "> ", lines);
+                foreach (var k in Kids(n)) Block(k, indent + "> ", lines, r);
                 break;
             case "bulletList":
             case "orderedList":
@@ -127,7 +170,7 @@ public static class DocText
                     foreach (var k in Kids(item))
                     {
                         var sub = new List<string>();
-                        Block(k, "", sub);
+                        Block(k, "", sub, r);
                         foreach (var s in sub)
                         {
                             lines.Add(indent + (first ? marker : new string(' ', marker.Length)) + s);
@@ -141,7 +184,7 @@ public static class DocText
                 var header = true;
                 foreach (var row in Kids(n))
                 {
-                    var cells = Kids(row).Select(c => InnerText(c).Replace("|", "\\|", StringComparison.Ordinal)).ToList();
+                    var cells = Kids(row).Select(c => InnerText(c, r).Replace("|", "\\|", StringComparison.Ordinal)).ToList();
                     lines.Add(indent + "| " + string.Join(" | ", cells) + " |");
                     if (header) lines.Add(indent + "|" + string.Concat(cells.Select(_ => " --- |")));
                     header = false;
@@ -154,7 +197,9 @@ public static class DocText
                 lines.Add(indent + $"![{Attr(n, "alt")}]({Attr(n, "src")})");
                 break;
             default:
-                lines.Add(indent + Inline(n));
+                if (!IsPlugins(Type(n))) lines.Add(indent + Inline(n, r));
+                else if (r.MarkdownLines(n) is { } own) lines.AddRange(own.Select(l => indent + l));
+                else lines.Add(indent + Placeholder(n, r));
                 break;
         }
     }
@@ -162,7 +207,7 @@ public static class DocText
     private static string RawText(JsonElement n) =>
         string.Concat(Walk(n).Where(d => Type(d) == "text" && d.TryGetProperty("text", out _)).Select(d => d.GetProperty("text").GetString()));
 
-    private static string Inline(JsonElement n)
+    private static string Inline(JsonElement n, DocRenderers r)
     {
         var sb = new StringBuilder();
         foreach (var k in Kids(n))
@@ -190,34 +235,37 @@ public static class DocText
                     break;
                 case "hardBreak": sb.Append(' '); break;
                 case "image": sb.Append(CultureInfo.InvariantCulture, $"![{Attr(k, "alt")}]({Attr(k, "src")})"); break;
-                default: sb.Append(Inline(k)); break;
+                default:
+                    if (!IsPlugins(Type(k))) sb.Append(Inline(k, r));
+                    else sb.Append(r.MarkdownLines(k) is { } own ? string.Join(' ', own) : Placeholder(k, r));
+                    break;
             }
         }
         return sb.ToString();
     }
 
     /// <summary>The page as a flat list of blocks, in reading order.</summary>
-    public static IReadOnlyList<DocBlock> Blocks(string? json)
+    public static IReadOnlyList<DocBlock> Blocks(string? json, DocRenderers? renderers = null)
     {
         using var doc = Parse(json);
         var list = new List<DocBlock>();
         if (doc is null) return list;
-        foreach (var n in Kids(doc.RootElement)) Flatten(n, list, 0, false, null);
+        foreach (var n in Kids(doc.RootElement)) Flatten(n, list, 0, false, null, renderers ?? DocRenderers.None);
         return list;
     }
 
-    private static void Flatten(JsonElement n, List<DocBlock> list, int indent, bool quote, string? marker)
+    private static void Flatten(JsonElement n, List<DocBlock> list, int indent, bool quote, string? marker, DocRenderers r)
     {
         switch (Type(n))
         {
             case "heading":
-                list.Add(new DocParagraph(Runs(n), int.TryParse(Attr(n, "level"), out var lv) ? Math.Clamp(lv, 1, 6) : 2));
+                list.Add(new DocParagraph(Runs(n, r), int.TryParse(Attr(n, "level"), out var lv) ? Math.Clamp(lv, 1, 6) : 2));
                 break;
             case "codeBlock":
                 list.Add(new DocCode(Attr(n, "language") ?? "plaintext", RawText(n)));
                 break;
             case "blockquote":
-                foreach (var k in Kids(n)) Flatten(k, list, indent + 1, true, null);
+                foreach (var k in Kids(n)) Flatten(k, list, indent + 1, true, null, r);
                 break;
             case "bulletList":
             case "orderedList":
@@ -229,13 +277,13 @@ public static class DocText
                     var first = true;
                     foreach (var k in Kids(item))
                     {
-                        Flatten(k, list, indent + 1, quote, first ? m : null);
+                        Flatten(k, list, indent + 1, quote, first ? m : null, r);
                         first = false;
                     }
                 }
                 break;
             case "table":
-                var rows = Kids(n).Select(r => (IReadOnlyList<string>)Kids(r).Select(InnerText).ToList()).ToList();
+                var rows = Kids(n).Select(row => (IReadOnlyList<string>)Kids(row).Select(c => InnerText(c, r)).ToList()).ToList();
                 list.Add(new DocTable(rows, Kids(n).FirstOrDefault() is var top && Kids(top).Any(c => Type(c) == "tableHeader")));
                 break;
             case "horizontalRule":
@@ -247,18 +295,21 @@ public static class DocText
                 list.Add(new DocImage(id, Attr(n, "alt") ?? "", int.TryParse(Attr(n, "width"), out var w) ? w : null));
                 break;
             default:
-                list.Add(new DocParagraph(Runs(n), 0, marker, indent, quote));
+                if (!IsPlugins(Type(n))) list.Add(new DocParagraph(Runs(n, r), 0, marker, indent, quote));
+                else if (r.Blocks(n) is { } own) list.AddRange(own);
+                else list.Add(new DocParagraph([new DocRun(Placeholder(n, r))], 0, marker, indent, quote));
                 break;
         }
     }
 
-    private static List<DocRun> Runs(JsonElement n)
+    private static List<DocRun> Runs(JsonElement n, DocRenderers r)
     {
         var runs = new List<DocRun>();
         foreach (var k in Kids(n))
         {
             if (Type(k) == "hardBreak") { runs.Add(new DocRun("\n")); continue; }
-            if (Type(k) != "text") { runs.AddRange(Runs(k)); continue; }
+            if (IsPlugins(Type(k))) { runs.Add(new DocRun(r.Plain(k) ?? Placeholder(k, r))); continue; } // a plugin's inline node is its text
+            if (Type(k) != "text") { runs.AddRange(Runs(k, r)); continue; }
             var marks = k.TryGetProperty("marks", out var ms) && ms.ValueKind == JsonValueKind.Array ? ms.EnumerateArray().ToList() : [];
             bool Has(string t) => marks.Any(m => Type(m) == t);
             var link = marks.FirstOrDefault(m => Type(m) == "link");
@@ -274,7 +325,7 @@ public static class DocText
         using var doc = Parse(json);
         if (doc is null) return [];
         return Walk(doc.RootElement).Where(n => Type(n) == "table")
-            .Select(t => (IReadOnlyList<IReadOnlyList<string>>)Kids(t).Select(r => (IReadOnlyList<string>)Kids(r).Select(InnerText).ToList()).ToList())
+            .Select(t => (IReadOnlyList<IReadOnlyList<string>>)Kids(t).Select(r => (IReadOnlyList<string>)Kids(r).Select(c => InnerText(c, DocRenderers.None)).ToList()).ToList())
             .ToList();
     }
 
@@ -287,7 +338,7 @@ public static class DocText
         string? heading = null;
         foreach (var n in Walk(doc.RootElement))
         {
-            if (Type(n) == "heading") heading = InnerText(n);
+            if (Type(n) == "heading") heading = InnerText(n, DocRenderers.None);
             else if (Type(n) == "codeBlock") list.Add(new DocCodeBlock(Attr(n, "language") ?? "plaintext", RawText(n), heading));
         }
         return list;

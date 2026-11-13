@@ -109,6 +109,7 @@ public static class PluginBootstrap
         var registrations = new PluginRegistrations();
         var pluginServices = new List<ServiceDescriptor>();
         var handledActions = new HashSet<Type>();
+        var renderedNodes = new HashSet<string>(StringComparer.Ordinal);
         var enabled = candidates.Where(c => (c.Status?.State ?? PluginState.Enabled) == PluginState.Enabled && (c.Origin == PluginOrigin.BuiltIn || !safeMode)).ToList();
         var byId = enabled.ToDictionary(c => c.Manifest.Id, StringComparer.Ordinal);
         var work = WorkFolder(options.Plugins.WorkFolder, contentRoot);
@@ -167,6 +168,11 @@ public static class PluginBootstrap
                     if (handled.Action.Assembly == typeof(Kb.Plugins.Actions.IAction<>).Assembly || !handledActions.Add(handled.Action))
                         throw new InvalidOperationException($"{handled.Action.GetCustomAttribute<Kb.Plugins.Actions.ActionAttribute>()?.Name ?? handled.Action.FullName} already has a handler.");
                 }
+                // An editor node type has one renderer, and the editor's own types have none.
+                var nodes = configured.Registrations.OfType<NodeRenderer>().Select(n => n.Type).ToList();
+                if (nodes.Any(n => string.IsNullOrWhiteSpace(n) || n.Length > 100)) throw new InvalidOperationException("An editor node type is 1 to 100 characters.");
+                if (nodes.FirstOrDefault(Kb.Core.Content.DocText.CoreNodes.Contains) is { } core) throw new InvalidOperationException($"{core} is a node of the editor.");
+                if (nodes.FirstOrDefault(n => renderedNodes.Contains(n) || nodes.Count(x => x == n) > 1) is { } taken) throw new InvalidOperationException($"{taken} already has a renderer.");
                 if (c.Manifest.Schedules.Any(s => string.IsNullOrWhiteSpace(s.Name) || s.Name.Length > 100)) throw new InvalidOperationException("A schedule name is 1 to 100 characters.");
                 // Every schedule of the manifest names a job the plugin registered, and every job has a schedule.
                 var jobs = configured.Registrations.OfType<JobReg>().Select(j => j.Name).ToList();
@@ -182,6 +188,7 @@ public static class PluginBootstrap
                 }
                 pluginServices.AddRange(configured.Services);
                 foreach (var registration in configured.Registrations) registrations.Add(id, registration);
+                renderedNodes.UnionWith(nodes);
                 loaded[id] = assembly;
             }
             catch (Exception e) when (!(e is OperationCanceledException && ct.IsCancellationRequested)) // a plugin whose HTTP call times out throws a cancellation too

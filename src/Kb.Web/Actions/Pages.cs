@@ -24,7 +24,7 @@ internal sealed class ReadTreeHandler(KbDbContext db, IAccess access) : IActionH
             .Select(p => new TreeNodeDto(p.Id, p.ParentId, p.Kind.ToString(), p.Title, p.Sort)).ToListAsync(ctx.Cancel));
 }
 
-internal sealed class CreatePageHandler(KbDbContext db, IAccess access, TimeProvider time) : IActionHandler<CreatePage, PageDto>
+internal sealed class CreatePageHandler(KbDbContext db, IAccess access, TimeProvider time, DocRenderers renderers) : IActionHandler<CreatePage, PageDto>
 {
     public async Task<Problem?> AuthorizeAsync(ActionContext<CreatePage> ctx)
     {
@@ -50,7 +50,7 @@ internal sealed class CreatePageHandler(KbDbContext db, IAccess access, TimeProv
         db.PageTags.AddRange(tags.Select(t => new PageTag { PageId = page.Id, Tag = t }));
         if (kind == PageKind.Page)
             db.PageVersions.Add(new PageVersion { PageId = page.Id, Major = 1, Minor = 0, Title = page.Title, ContentJson = page.ContentJson, AuthorId = me, At = now });
-        await SearchIndex.StageAsync(db, page, tags);
+        await SearchIndex.StageAsync(db, page, tags, renderers);
         await db.SaveChangesAsync();
         await ImageEndpoints.KeepAsync(db, page.ContentJson);
         return await ToDtoAsync(db, access, ctx.Actor, page);
@@ -67,7 +67,7 @@ internal sealed class ReadPageHandler(KbDbContext db, IAccess access) : IActionH
     public async Task<Outcome<PageDto>> HandleAsync(ActionContext<ReadPage> ctx) => await ToDtoAsync(db, access, ctx.Actor, _page!);
 }
 
-internal sealed class SavePageHandler(KbDbContext db, IAccess access, TimeProvider time) : IActionHandler<SavePage, PageDto>
+internal sealed class SavePageHandler(KbDbContext db, IAccess access, TimeProvider time, DocRenderers renderers) : IActionHandler<SavePage, PageDto>
 {
     private Page? _page;
 
@@ -94,6 +94,6 @@ internal sealed class SavePageHandler(KbDbContext db, IAccess access, TimeProvid
             db.PageTags.AddRange(tags.Select(t => new PageTag { PageId = page.Id, Tag = t }));
         }
         else tags = await db.PageTags.Where(t => t.PageId == page.Id).Select(t => t.Tag).ToListAsync(ctx.Cancel);
-        return await PublishAsync(db, access, ctx.Actor, page, req.ContentJson, req.Major, req.Note, tags, time.GetUtcNow());
+        return await PublishAsync(db, access, renderers, ctx.Actor, page, req.ContentJson, req.Major, req.Note, tags, time.GetUtcNow());
     }
 }

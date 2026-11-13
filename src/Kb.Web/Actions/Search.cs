@@ -8,7 +8,7 @@ using SearchQuery = Kb.Core.Search.SearchQuery;
 
 namespace Kb.Web.Actions;
 
-internal sealed class SearchPagesHandler(KbDbContext db, IAccess access, ISearchProvider search) : IActionHandler<SearchPages, SearchResponse>
+internal sealed class SearchPagesHandler(KbDbContext db, IAccess access, ISearchProvider search, DocRenderers renderers) : IActionHandler<SearchPages, SearchResponse>
 {
     // Nobody is refused: the answer holds only what is in the spaces the caller may read.
     public Task<Problem?> AuthorizeAsync(ActionContext<SearchPages> ctx) => Task.FromResult<Problem?>(null);
@@ -42,7 +42,7 @@ internal sealed class SearchPagesHandler(KbDbContext db, IAccess access, ISearch
             var parent = p.ParentId;
             for (var i = 0; parent is { } pid && i < 50 && folders.TryGetValue(pid, out var f); i++) { path.Insert(0, f.Title); parent = f.ParentId; }
             string? md = null;
-            if (withText && p.Kind == PageKind.Page) { md = DocText.Markdown(p.ContentJson); if (md.Length > cap) md = md[..cap]; }
+            if (withText && p.Kind == PageKind.Page) { md = DocText.Markdown(p.ContentJson, renderers); if (md.Length > cap) md = md[..cap]; }
             hits.Add(new SearchHitDto(p.Id, p.SpaceId, spaceNames.GetValueOrDefault(p.SpaceId, ""), p.Kind.ToString(), p.Title, path, $"/p/{p.Id}", p.Version,
                 p.UpdatedAt, tags[p.Id].Order().ToList(), SearchText.Snippet(p.SearchText, h.Matched), h.Score, h.Matched, md));
         }
@@ -50,7 +50,7 @@ internal sealed class SearchPagesHandler(KbDbContext db, IAccess access, ISearch
     }
 }
 
-internal sealed class ReadPageMarkdownHandler(KbDbContext db, IAccess access) : IActionHandler<ReadPageMarkdown, PageMarkdownDto>
+internal sealed class ReadPageMarkdownHandler(KbDbContext db, IAccess access, DocRenderers renderers) : IActionHandler<ReadPageMarkdown, PageMarkdownDto>
 {
     private Page? _page;
 
@@ -60,7 +60,7 @@ internal sealed class ReadPageMarkdownHandler(KbDbContext db, IAccess access) : 
     public Task<Outcome<PageMarkdownDto>> HandleAsync(ActionContext<ReadPageMarkdown> ctx)
     {
         var p = _page!;
-        return Task.FromResult<Outcome<PageMarkdownDto>>(new PageMarkdownDto(p.Id, p.Title, p.Version, p.UpdatedAt, DocText.Markdown(p.ContentJson)));
+        return Task.FromResult<Outcome<PageMarkdownDto>>(new PageMarkdownDto(p.Id, p.Title, p.Version, p.UpdatedAt, DocText.Markdown(p.ContentJson, renderers)));
     }
 }
 
@@ -87,10 +87,10 @@ internal sealed class SaveSynonymsHandler(KbDbContext db, IAccess access, TimePr
     }
 }
 
-internal sealed class ReindexSearchHandler(KbDbContext db, IAccess access) : IActionHandler<ReindexSearch, ReindexResult>
+internal sealed class ReindexSearchHandler(KbDbContext db, IAccess access, DocRenderers renderers) : IActionHandler<ReindexSearch, ReindexResult>
 {
     public async Task<Problem?> AuthorizeAsync(ActionContext<ReindexSearch> ctx) => await access.IsAdminAsync(ctx.Actor, ctx.Cancel) ? null : Problem.Forbidden;
 
     // It writes from its first chunk on, so it takes no cancellation token: a request that goes away leaves no half-built index.
-    public async Task<Outcome<ReindexResult>> HandleAsync(ActionContext<ReindexSearch> ctx) => new ReindexResult(await SearchIndex.BackfillAsync(db, all: true));
+    public async Task<Outcome<ReindexResult>> HandleAsync(ActionContext<ReindexSearch> ctx) => new ReindexResult(await SearchIndex.BackfillAsync(db, renderers, all: true));
 }

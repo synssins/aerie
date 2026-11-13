@@ -1,6 +1,7 @@
 using Kb.Core.Access;
 using Kb.Core.Audit;
 using Kb.Core.Config;
+using Kb.Core.Content;
 using Kb.Core.Identity;
 using Kb.Core.Notifications;
 using Kb.Core.Plugins;
@@ -99,6 +100,9 @@ services.AddScoped<PluginInstaller>();
 services.AddSingleton<PluginSettingsStore>();
 services.AddSingleton<PluginFailures>();
 services.AddSingleton<IPluginFailures>(sp => sp.GetRequiredService<PluginFailures>());
+// How search, history and exports read the editor nodes plugins add. A renderer that throws counts against its plugin.
+services.AddSingleton(sp => new DocRenderers(sp.GetRequiredService<IRegistrations>().All<NodeRenderer>(),
+    (plugin, e) => sp.GetRequiredService<IPluginFailures>().Report(plugin, "editor node", e)));
 services.AddSingleton<PluginWatcher>();
 services.AddHostedService(sp => sp.GetRequiredService<PluginWatcher>());
 services.AddHttpContextAccessor();
@@ -159,7 +163,7 @@ await using (var scope = app.Services.CreateAsyncScope())
 
     await scope.ServiceProvider.GetRequiredService<BreakGlassService>().EnsureAccountAsync();
     await scope.ServiceProvider.GetRequiredService<SetupService>().OnStartupAsync();
-    await SearchIndex.BackfillAsync(db); // pages saved before the search index existed
+    await SearchIndex.BackfillAsync(db, app.Services.GetRequiredService<DocRenderers>()); // pages saved before the search index existed
     await LogShipperService.EnsureFirstTargetAsync(db, kb.Logs.Folder, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow());
     await ActiveFileStore.EnsureFirstPlaceAsync(db, kb.Storage.Folder, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow());
 }

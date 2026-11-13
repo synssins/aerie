@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Kb.Web.Actions;
 
-internal sealed class ExportPageHandler(KbDbContext db, IAccess access, IFileStore store) : IActionHandler<ExportPage, FileOut>
+internal sealed class ExportPageHandler(KbDbContext db, IAccess access, IFileStore store, DocRenderers renderers) : IActionHandler<ExportPage, FileOut>
 {
     private Page? _page;
 
@@ -18,7 +18,7 @@ internal sealed class ExportPageHandler(KbDbContext db, IAccess access, IFileSto
         var page = _page!;
         var fmt = (ctx.Action.Format ?? "pdf").ToLowerInvariant();
         if (fmt is not ("pdf" or "docx")) return Problem.Invalid("format", "pdf or docx.");
-        var blocks = DocText.Blocks(page.ContentJson);
+        var blocks = DocText.Blocks(page.ContentJson, renderers);
 
         // Only this page's own stored images, in formats the document can hold.
         var images = new Dictionary<Guid, ExportImage>();
@@ -41,7 +41,7 @@ internal sealed class ExportPageHandler(KbDbContext db, IAccess access, IFileSto
     }
 }
 
-internal sealed class ExportPageTableHandler(KbDbContext db, IAccess access) : IActionHandler<ExportPageTable, FileOut>
+internal sealed class ExportPageTableHandler(KbDbContext db, IAccess access, DocRenderers renderers) : IActionHandler<ExportPageTable, FileOut>
 {
     private Page? _page;
 
@@ -51,7 +51,7 @@ internal sealed class ExportPageTableHandler(KbDbContext db, IAccess access) : I
     public Task<Outcome<FileOut>> HandleAsync(ActionContext<ExportPageTable> ctx)
     {
         var (page, n) = (_page!, ctx.Action.Number);
-        var tables = DocText.Blocks(page.ContentJson).OfType<DocTable>().ToList();
+        var tables = DocText.Blocks(page.ContentJson, renderers).OfType<DocTable>().ToList();
         if (n < 1 || n > tables.Count) return Task.FromResult<Outcome<FileOut>>(Problem.NotFound);
         var fmt = (ctx.Action.Format ?? "csv").ToLowerInvariant();
         if (fmt is not ("csv" or "xlsx")) return Task.FromResult<Outcome<FileOut>>(Problem.Invalid("format", "csv or xlsx."));

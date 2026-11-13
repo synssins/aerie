@@ -108,7 +108,7 @@ internal sealed class EmptyBinHandler(KbDbContext db, IAccess access) : IActionH
     }
 }
 
-internal sealed class RestorePageHandler(KbDbContext db, IAccess access) : IActionHandler<RestorePage, RestoredPageDto>
+internal sealed class RestorePageHandler(KbDbContext db, IAccess access, DocRenderers renderers) : IActionHandler<RestorePage, RestoredPageDto>
 {
     private Page? _root;
 
@@ -149,7 +149,7 @@ internal sealed class RestorePageHandler(KbDbContext db, IAccess access) : IActi
         {
             const string suffix = " (restored)";
             root.Title = root.Title[..Math.Min(root.Title.Length, 200 - suffix.Length)] + suffix;
-            await SearchIndex.StageAsync(db, root, await db.PageTags.Where(t => t.PageId == root.Id).Select(t => t.Tag).ToListAsync());
+            await SearchIndex.StageAsync(db, root, await db.PageTags.Where(t => t.PageId == root.Id).Select(t => t.Tag).ToListAsync(), renderers);
         }
         await db.SaveChangesAsync();
         ctx.Audit(AuditActions.PageRestore, "page", root.Id.ToString(), root.SpaceId, new Dictionary<string, string> { ["title"] = root.Title });
