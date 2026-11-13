@@ -31,6 +31,22 @@ public sealed partial class ArchitectureTests
     [GeneratedRegex(@"\.Pages\b(?!\.Add)")]
     private static partial Regex PageQuery();
 
+    [GeneratedRegex(@"\.Map(Get|Post|Put|Patch|Delete|Methods)\(")]
+    private static partial Regex RouteMapping();
+
+    /// <summary>Every route of the core is in src/Kb.Web/Routes, where the rules for routes are checked. (A plugin maps its own, under its own address.)</summary>
+    [Fact]
+    public void NoRouteIsMappedOutsideRoutes()
+    {
+        var web = Path.Combine(Root, "src", "Kb.Web");
+        var outside = Directory.GetFiles(web, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal) && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Where(f => !Path.GetRelativePath(web, f).StartsWith("Routes" + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            .SelectMany(f => File.ReadAllLines(f).Select((text, i) => $"{Path.GetRelativePath(web, f)}:{i + 1}: {text.Trim()}"))
+            .Where(l => RouteMapping().IsMatch(l)).ToList();
+        Assert.Empty(outside);
+    }
+
     /// <summary>A route binds the request, sends one action and answers. The work and the checks are the handler's.</summary>
     [Fact]
     public void Routes_DoNotTouchTheDatabase() => Assert.DoesNotContain(Lines("Routes"), l => DatabaseOrPermission().IsMatch(l));

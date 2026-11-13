@@ -71,6 +71,26 @@ public sealed partial class RegistryTests : IAsyncLifetime
         Assert.Empty(open);
     }
 
+    /// <summary>
+    /// Every route under /api/v1 names the action it sends, and that action exists. With the bus refusing a route that sends another action
+    /// than it names, this means: nothing is reachable over the API that is not an action.
+    /// </summary>
+    [Fact]
+    public void EveryApiRoute_IsNamedAfterARegisteredAction()
+    {
+        var catalog = _f.Services.GetRequiredService<ActionCatalog>();
+        var actions = catalog.Actions.Select(a => ActionCatalog.Describe(a.Action).Name).ToHashSet(StringComparer.Ordinal);
+        var routes = Routes().Where(r => r.Endpoint.Metadata.GetMetadata<HttpMethodMetadata>() is not null).ToList(); // the API's catch-all 404 has no method
+        Assert.True(routes.Count > 90, $"the route list was not read ({routes.Count})");
+
+        var unnamed = routes.Where(r => r.Endpoint.Metadata.GetMetadata<ActionAttribute>() is not { } named || !actions.Contains(named.Name))
+            .Select(r => $"{r.Method} {r.Template}").ToList();
+        Assert.Empty(unnamed);
+        // And the other way round: an action nothing sends is dead weight, or a route forgot to name it.
+        var sent = routes.Select(r => r.Endpoint.Metadata.GetMetadata<ActionAttribute>()!.Name).ToHashSet(StringComparer.Ordinal);
+        Assert.Empty(actions.Except(sent));
+    }
+
     [Fact]
     public void EveryAction_HasExactlyOneHandler()
     {
