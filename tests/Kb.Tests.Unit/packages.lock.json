@@ -654,7 +654,8 @@
       "kb.plugin.sample": {
         "type": "Project",
         "dependencies": {
-          "Kb.Plugins.Abstractions": "[1.0.0, )"
+          "Kb.Plugins.Abstractions": "[1.0.0, )",
+          "Kb.Plugins.Data": "[1.0.0, )"
         }
       },
       "kb.plugins.abstractions": {

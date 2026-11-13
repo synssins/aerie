@@ -19,6 +19,8 @@ public sealed class FakeRestarter : IAppRestarter
 public static class TestPlugins
 {
     public const string Probe = "Kb.TestPlugin.Probe", Lib = "Kb.TestPlugin.Lib", Dependent = "Kb.TestPlugin.Dependent";
+    /// <summary>The sample plugin that ships with the developer guide (plugins/Kb.Plugin.Sample), packaged the same way.</summary>
+    public const string Sample = "Kb.Plugin.Sample";
 
     /// <summary>A zip of the plugin's built output, with its manifest at the top. <paramref name="change"/> edits the manifest.</summary>
     public static byte[] Package(string project, Func<PluginManifest, PluginManifest>? change = null)

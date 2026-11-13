@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
@@ -24,6 +24,7 @@
     <ProjectReference Include="..\plugins\Kb.TestPlugin.Probe\Kb.TestPlugin.Probe.csproj" ReferenceOutputAssembly="false" OutputItemType="TestPluginDll" />
     <ProjectReference Include="..\plugins\Kb.TestPlugin.Lib\Kb.TestPlugin.Lib.csproj" ReferenceOutputAssembly="false" OutputItemType="TestPluginDll" />
     <ProjectReference Include="..\plugins\Kb.TestPlugin.Dependent\Kb.TestPlugin.Dependent.csproj" ReferenceOutputAssembly="false" OutputItemType="TestPluginDll" />
+    <ProjectReference Include="..\..\plugins\Kb.Plugin.Sample\Kb.Plugin.Sample.csproj" ReferenceOutputAssembly="false" OutputItemType="TestPluginDll" />
   </ItemGroup>
   <!-- Each plugin's output folder goes into the test assembly as metadata "TestPlugin:<project>", read by TestPlugins.Package. -->
   <Target Name="TestPluginFolders" DependsOnTargets="ResolveProjectReferences" BeforeTargets="GetAssemblyAttributes">

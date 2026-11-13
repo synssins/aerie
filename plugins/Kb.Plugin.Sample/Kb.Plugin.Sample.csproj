@@ -1,6 +1,7 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <ProjectReference Include="..\..\src\Kb.Plugins.Abstractions\Kb.Plugins.Abstractions.csproj" />
-    <EmbeddedResource Include="kb-plugin.json" />
+    <ProjectReference Include="..\..\src\Kb.Plugins.Data\Kb.Plugins.Data.csproj" />
+    <None Include="kb-plugin.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

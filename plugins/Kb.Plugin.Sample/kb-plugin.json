@@ -1,15 +1,35 @@
 {
   "id": "kb.sample",
-  "version": "1.0.0",
+  "name": "Sample: acknowledgements",
+  "version": "2.0.0",
   "publisher": "Kb first-party",
-  "description": "Reference plugin used by the developer guide and tests.",
-  "minKbVersion": "0.1.0",
-  "extensionPoints": [
-    "page-action"
-  ],
+  "description": "Readers acknowledge a page. The reference plugin of the developer guide.",
+  "assembly": "Kb.Plugin.Sample.dll",
+  "minKbVersion": "0.2.0",
+  "abstractionsVersion": "0.2.0",
+  "extensionPoints": [],
   "outboundHosts": [],
-  "settings": [],
-  "schedules": [],
-  "name": "Sample",
-  "assembly": "Kb.Plugin.Sample.dll"
+  "settings": [
+    {
+      "key": "RequireNoteOnMajor",
+      "label": "A major version needs a note",
+      "type": "toggle"
+    },
+    {
+      "key": "ResetOnMajor",
+      "label": "A major version clears acknowledgements",
+      "type": "toggle"
+    },
+    {
+      "key": "KeepDays",
+      "label": "Days an acknowledgement is kept",
+      "type": "number"
+    }
+  ],
+  "schedules": [
+    {
+      "name": "purge",
+      "everyMinutes": 1440
+    }
+  ]
 }
