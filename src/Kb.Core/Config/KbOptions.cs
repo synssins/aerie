@@ -15,6 +15,7 @@ public sealed class KbOptions
     public RetentionOptions Retention { get; set; } = new();
     public PluginOptions Plugins { get; set; } = new();
     public StorageOptions Storage { get; set; } = new();
+    public TokenOptions Tokens { get; set; } = new();
 }
 
 public sealed class BrandOptions
@@ -96,6 +97,12 @@ public sealed class StorageOptions
 {
     /// <summary>Folder for uploaded files (images); relative paths are under the content root.</summary>
     public string Folder { get; set; } = "App_Data/files";
+}
+
+public sealed class TokenOptions
+{
+    /// <summary>Requests one API token may make in a minute, on one server.</summary>
+    public int RequestsPerMinute { get; set; } = 600;
 }
 
 public sealed class PluginOptions

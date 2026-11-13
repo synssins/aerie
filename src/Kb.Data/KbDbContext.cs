@@ -79,6 +79,7 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     public DbSet<Announcement> Announcements => Set<Announcement>();
     public DbSet<StoragePlace> StoragePlaces => Set<StoragePlace>();
     public DbSet<StorageMove> StorageMoves => Set<StorageMove>();
+    public DbSet<ApiToken> ApiTokens => Set<ApiToken>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -127,6 +128,11 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
         builder.Entity<StoragePlace>().Property(p => p.Kind).HasMaxLength(40);
         builder.Entity<StorageMove>().Property(m => m.LastError).HasMaxLength(500);
         builder.Entity<StorageMove>().Property(m => m.ClaimedBy).HasMaxLength(100);
+        builder.Entity<ApiToken>().Property(t => t.Name).HasMaxLength(100);
+        builder.Entity<ApiToken>().Property(t => t.Prefix).HasMaxLength(16);
+        builder.Entity<ApiToken>().Property(t => t.Hash).HasMaxLength(32);
+        builder.Entity<ApiToken>().HasIndex(t => t.Hash).IsUnique();
+        builder.Entity<ApiToken>().HasIndex(t => t.OwnerUserId);
     }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)

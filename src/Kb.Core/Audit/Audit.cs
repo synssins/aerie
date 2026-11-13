@@ -52,6 +52,7 @@ public static class AuditActions
     public const string TokenCreate = "token.create";
     public const string TokenRevoke = "token.revoke";
     public const string TokenUse = "token.use";
+    public const string TokenRefused = "token.refused";
     public const string SettingsChange = "settings.change";
     public const string PluginEnable = "plugin.enable";
     public const string PluginDisable = "plugin.disable";

@@ -2,7 +2,8 @@ using Microsoft.AspNetCore.Identity;
 
 namespace Kb.Core.Identity;
 
-public enum UserSource { Local, Entra, Ldap }
+/// <summary>Service: an account that only API tokens act as. It has no password and cannot sign in.</summary>
+public enum UserSource { Local, Entra, Ldap, Service }
 
 public sealed class KbUser : IdentityUser<Guid>
 {

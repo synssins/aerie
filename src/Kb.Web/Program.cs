@@ -57,6 +57,21 @@ services.ConfigureApplicationCookie(o =>
     o.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
 });
 
+// API tokens beside the sign-in cookie: a request with a Bearer header goes to the token handler, every other one to the cookie.
+services.AddAuthentication()
+    .AddPolicyScheme(ApiTokenAuth.Selector, null, o => o.ForwardDefaultSelector = ctx => ApiTokenAuth.HasBearer(ctx.Request) ? ApiTokenAuth.Scheme : IdentityConstants.ApplicationScheme)
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, ApiTokenAuthHandler>(ApiTokenAuth.Scheme, null);
+services.Configure<Microsoft.AspNetCore.Authentication.AuthenticationOptions>(o =>
+    o.DefaultAuthenticateScheme = o.DefaultChallengeScheme = o.DefaultForbidScheme = ApiTokenAuth.Selector);
+// shortcut: the limit is counted per server, so N servers allow N times as much; move it to the database if abuse appears.
+services.AddRateLimiter(o =>
+{
+    o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    o.GlobalLimiter = System.Threading.RateLimiting.PartitionedRateLimiter.Create<HttpContext, Guid>(http => ApiTokenAuth.PresentedId(http) is { } tokenId
+        ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(tokenId, _ => new() { PermitLimit = kb.Tokens.RequestsPerMinute, Window = TimeSpan.FromMinutes(1) })
+        : System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter(Guid.Empty));
+});
+
 // Shared keys so any instance can read any instance's cookie (A/B patching, load balancing).
 var dp = services.AddDataProtection().SetApplicationName("kb").PersistKeysToDbContext<KbDbContext>();
 _ = dp;
@@ -85,7 +100,8 @@ services.AddHttpClient(NetGuard.ClientName, c => { c.Timeout = TimeSpan.FromSeco
 services.AddHostedService<ImageCleanupService>();
 services.AddScoped<IAuditLog, SqlAuditLog>();
 services.AddScoped<ISpaceAccessData, SpaceAccessData>();
-services.AddScoped<ISpacePermissionService, SpacePermissionService>();
+services.AddScoped<SpacePermissionService>();
+services.AddScoped<ISpacePermissionService, TokenScopedPermissions>();
 services.AddScoped<IAccessData, AccessData>();
 services.AddScoped<INotificationStore, NotificationStore>();
 services.AddScoped<IUserDirectory, UserDirectory>();
@@ -129,6 +145,8 @@ app.UseStaticFiles(new StaticFileOptions
     OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "no-cache",
 });
 app.UseAuthentication();
+app.UseRateLimiter();
+app.Use(ApiTokenAuth.EnforceAsync);
 app.UseAuthorization();
 
 app.MapHealthChecks("/health/live", new() { Predicate = _ => false }).AllowAnonymous();
@@ -147,6 +165,7 @@ api.MapBrandingEndpoints();
 api.MapImageEndpoints();
 api.MapAttachmentEndpoints();
 api.MapStorageEndpoints();
+api.MapTokenEndpoints();
 api.MapSearchEndpoints();
 api.MapHomeEndpoints();
 api.MapExportEndpoints();
