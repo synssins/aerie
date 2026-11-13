@@ -65,6 +65,7 @@ public void Configure(IPluginApp app, IPluginContext context) => app
     .After<SavePage, PageDto, ClearOnMajor>()                  // react once a core action has succeeded
     .Job<PurgeJob>("purge")                                    // the schedule "purge" of the manifest
     .HealthCheck<TableCheck>("table")
+    .EditorNode(Notice.Renderer)                               // how the server reads its editor block
     .Routes(SampleRoutes.Map);                                 // under /api/v1/plugins/kb.sample/
 ```
 
@@ -430,12 +431,13 @@ export default function (kb) {
     label: "Acknowledge",
     onClick: (c) => kb.api.post(`/pages/${c.page.id}/ack`).then(changed).catch(() => undefined),
   });
+  addNotice(kb); // the editor block, below
 }
 ```
 
-- Take React from `/shared/v1/react.js` (also `/shared/v1/react-jsx-runtime.js` and `/shared/v1/react-dom.js`). They hand back the app's own copy. A script that brings its own React breaks hooks.
+- Take React from `/shared/v1/react.js` (also `/shared/v1/react-jsx-runtime.js` and `/shared/v1/react-dom.js`), and the editor from `/shared/v1/tiptap-react.js`. They hand back the app's own copies. A script that brings its own React breaks hooks; a node made with another copy of the editor is not a node of this one.
 - The app serves only the `ui/` folder of a loaded plugin, to people who are signed in, and only these file types: js, css, json, map, svg, png, jpg, webp, woff2.
-- `kb.slots.add(slot, item)` adds to a named place of a screen. Today's slots: `page.tools` (buttons in the page's tool row: `id`, `label`, `onClick(ctx)`) and `page.panel` (parts of the page's right panel: `id`, `title`, `render(ctx)`). The context is `{ page }`. `order` places an item; `when(ctx)` shows it only when it answers true.
+- `kb.slots.add(slot, item)` adds to a named place of a screen. Today's slots: `page.tools` (buttons in the page's tool row: `id`, `label`, `onClick(ctx)`), `page.panel` (parts of the page's right panel: `id`, `title`, `render(ctx)`), both with the context `{ page }`, and `editor.toolbar` (buttons of the editor's toolbar, with the context `{ editor }`). `order` places an item; `when(ctx)` shows it only when it answers true.
 - `kb.api` calls the plugin's own routes (`/api/v1/plugins/<id>/...`); `kb.core` calls the app's API. The server answers what the signed-in person may see.
 - `kb.me()` is the signed-in person. `kb.current.page()` and `kb.current.space()` are what they are looking at; `kb.current.subscribe(fn)` tells when that changes.
 - `kb.navigate(path)` goes to an address inside the app.
@@ -445,6 +447,75 @@ export default function (kb) {
 - A script runs in every signed-in person's browser with that person's session. It can do in the browser whatever that person can.
 
 The rules of the app's screens hold for a plugin's parts: no help text and no placeholder text; the right panel holds facts about the thing, not controls for it beyond what the app puts there; use the app's class names (`tb` for a button, `muted`, `small`).
+
+## Editor blocks
+
+A plugin can add its own kind of content to pages: a block, an inline node or a mark of the editor (TipTap 3).
+It has two halves. Without the first nobody can write the content; without the second the server still keeps it, and reads it as a placeholder.
+
+**In the browser.** The script adds TipTap extensions with `kb.editor.extend(...)` and a toolbar button in the slot `editor.toolbar`. The sample's notice block:
+
+<!-- sample:editor -->
+```js
+import { Node } from "/shared/v1/tiptap-react.js";
+
+/** A block of the plugin's own: a line of text shown as a notice. Its type in the stored page is "sampleNotice". */
+const Notice = Node.create({
+  name: "sampleNotice",
+  group: "block",
+  content: "inline*",
+  parseHTML: () => [{ tag: "p[data-sample-notice]" }],
+  renderHTML: ({ HTMLAttributes }) => ["p", { ...HTMLAttributes, "data-sample-notice": "", class: "sample-notice" }, 0],
+});
+
+function addNotice(kb) {
+  // A stylesheet of the plugin's own ui folder, beside this script.
+  const css = document.createElement("link");
+  css.rel = "stylesheet";
+  css.href = new URL("./notice.css", import.meta.url).href;
+  document.head.append(css);
+
+  kb.editor.extend(Notice);
+  // The button turns the line the cursor is in into a notice, and back.
+  kb.slots.add("editor.toolbar", { id: "notice", label: "Notice", onClick: (c) => c.editor.chain().focus().toggleNode("sampleNotice", "paragraph").run() });
+}
+```
+
+- The node's `name` is its type in the stored page. Choose one no other plugin will use.
+- A script can load a stylesheet from its own `ui/` folder, as above. Use the app's colour variables (`--ink`, `--line`, `--warn-bg`, ...) so the block follows the theme.
+- Every editor made after the call has the extensions. A page that is open and not being edited is drawn again with them.
+- An extension that takes a name of the editor's own (`paragraph`, `bold`, ...), or with which the editor cannot be built, is left out and written to the server's log. The editor stays.
+
+**On the server.** Search, history, the Markdown an agent reads, and the Word and PDF exports read a page's content on the server. `app.EditorNode(Notice.Renderer)` in `Configure` tells them how to read the node:
+
+<!-- sample:editornode -->
+```csharp
+/// <summary>
+/// How the server reads the block for history, agents and exports.
+/// It gives no Plain: search then finds the page by the text inside the block, which is what a notice needs.
+/// </summary>
+public static NodeRenderer Renderer { get; } = new()
+{
+    Type = "sampleNotice",
+    MarkdownLines = node => ["> **Notice:** " + Text(node)],
+    Blocks = node => [new DocParagraph([new DocRun("Notice: ", Bold: true), new DocRun(Text(node))], Quote: true)],
+};
+
+// The node is the stored JSON of the block: { "type": "sampleNotice", "content": [ { "type": "text", "text": "..." } ] }.
+private static string Text(JsonElement node) =>
+    node.TryGetProperty("content", out var kids) ? string.Concat(kids.EnumerateArray().Select(k => k.TryGetProperty("text", out var t) ? t.GetString() : "")) : "";
+```
+
+- Each part (`Plain`, `MarkdownLines`, `Blocks`) is optional. A part that is missing, answers null or throws gives the placeholder: the text inside the node, with `[sampleNotice]` before it in Markdown and exports. A renderer that throws counts against the plugin like a failing hook.
+- A renderer runs on every save, diff and export of a page that holds the node. It must be quick and must not call other systems.
+- `Plain` given, the text inside the node is no longer indexed by itself: return it from `Plain` if search should find it.
+- One renderer per node type. A plugin that registers one for a node of the editor itself, or for a type another plugin renders, is not loaded.
+- Pages saved before the plugin was installed keep their old search words until they are saved again or an Admin selects Rebuild index (Administration > Search).
+
+**Content is never lost.** The server stores a page as the editor sent it and never rewrites it. An editor that does not know a node or a mark (the plugin is disabled, removed, or its script failed) shows a box with the type's name. The box can be moved or deleted, not edited, and a save sends the content back as it was. When the plugin is back, so is the block.
+Where a box cannot stand (first in a list item, inside a table row, a mark inside a code block), the nearest part that can be carried is carried whole: the list, the table or the code block becomes the box.
+
+Limit: an attribute a plugin adds to one of the editor's own nodes (an alignment on `paragraph`) is not carried. Without the plugin's extension the editor drops it on the next save. Use a node or a mark of your own.
 
 ## Calling other systems
 
@@ -488,9 +559,9 @@ The contract is at 0.2.0 and can still change.
 
 ## Planned, not built
 
-- More slots in the app's screens (today: `page.tools`, `page.panel`), the screen kit (tables, forms), wrapping or replacing parts of the app's screens, editor blocks.
+- More slots in the app's screens (today: `page.tools`, `page.panel`, `editor.toolbar`), the screen kit (tables, forms), wrapping or replacing parts of the app's screens.
 - A build preset for scripts written in TypeScript or JSX; scripts on the sign-in screen; calling other hosts from the browser.
 - Data attached to core rows (a count that comes with the page).
-- Sign-in schemes, page kinds, export formats.
+- Sign-in schemes, page kinds of a plugin's own, export formats.
 - After handlers that survive a crash (a queue in the database).
 - A plugin table save inside the core action's transaction.

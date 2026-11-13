@@ -167,6 +167,7 @@ h2.s { font-size: 17px; margin: 22px 0 8px; }
 .etb { height: 30px; min-width: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--ink2); }
 .etb:hover { background: var(--hover); color: var(--ink); }
 .etb.on { background: var(--cur-bg); color: var(--accent); }
+.etb.text { padding: 0 8px; font-size: 13px; }
 .editor-toolbar .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
 .etb-select { height: 30px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); font: inherit; font-size: 13px; padding: 0 6px; }
 
@@ -193,6 +194,11 @@ textarea { resize: both; max-width: 100%; }
 .prose pre { margin: 0; background: #0f1720; color: #e2e8f0; border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
 .prose pre code { background: none; border: 0; padding: 0; color: inherit; font-size: 13px; }
 .prose img { max-width: 100%; height: auto; border-radius: 4px; }
+/* Content of a plugin that is not loaded: a box with the type's name. */
+.prose .kb-unknown { border: 1px dashed var(--line); border-radius: 6px; background: var(--rail); color: var(--ink2); font-size: 13px; }
+.prose div.kb-unknown { padding: 6px 10px; margin: 8px 0; }
+.prose span.kb-unknown { padding: 0 6px; }
+.prose .kb-unknown.ProseMirror-selectednode { outline: 2px solid var(--accent); }
 .prose [data-resize-container] { max-width: 100%; }
 .prose .ProseMirror-selectednode img, .prose img.ProseMirror-selectednode { outline: 2px solid var(--accent); }
 .prose table { border-collapse: collapse; table-layout: auto; width: auto; max-width: 100%; margin: 0; overflow: hidden; }

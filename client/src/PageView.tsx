@@ -1,40 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import { TaskItem, TaskList } from "@tiptap/extension-list";
-import { TableKit } from "@tiptap/extension-table";
-import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
-import Image from "@tiptap/extension-image";
 import type { EditorView } from "@tiptap/pm/view";
-import { common, createLowlight } from "lowlight";
-import powershell from "highlight.js/lib/languages/powershell";
 import {
   Bold, ChevronRight, House, Code, Download, Ellipsis, FolderInput, History, ImagePlus, Heading2, Heading3, Italic, Link as LinkIcon, List, ListOrdered, ListTodo, Minus,
   Paperclip, Pencil, Quote, Redo2, SquareCode, Strikethrough, Table, Trash2, Underline, Undo2, X,
 } from "lucide-react";
 import { api, ApiError, fmtSize, upload, type Attachment, type Draft, type Page } from "./api";
-import { SlotSections, SlotTools } from "./kit/SlotViews";
+import { editorExtensions, fromEditor, makeExtensions, toEditor } from "./editor/extensions";
+import { PluginBoundary, SlotSections, SlotTools } from "./kit/SlotViews";
+import { reportUiError } from "./kit/errors";
+import { useSlot, type ActionItem } from "./kit/slots";
 import { useDialogs } from "./Dialogs";
 import { TagInput } from "./TagInput";
 import { MenuButton, type MenuItem } from "./ui";
 
-const lowlight = createLowlight(common);
-lowlight.register("powershell", powershell);
-
 export const LANGUAGES = ["plaintext", "powershell", "bash", "shell", "sql", "json", "yaml", "xml", "ini", "csharp", "javascript", "typescript", "python", "go", "java", "css", "markdown", "diff"];
-
-const makeExtensions = (codeLanguage: string) => [
-  StarterKit.configure({
-    codeBlock: false,
-    heading: { levels: [2, 3, 4] },
-    link: { openOnClick: false, autolink: true, protocols: ["http", "https", "mailto"], defaultProtocol: "https" },
-  }),
-  TaskList,
-  TaskItem.configure({ nested: true }),
-  TableKit.configure({ table: { resizable: true } }),
-  CodeBlockLowlight.configure({ lowlight, defaultLanguage: codeLanguage }),
-  Image.configure({ allowBase64: false, resize: { enabled: true, directions: ["bottom-right"], minWidth: 48, minHeight: 48, alwaysPreserveAspectRatio: true } }),
-];
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const NEW_DRAFT_KEY = "kb.draft.new";
@@ -156,9 +136,16 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
   const live = useRef({ editing, title, tags, base, lock: false });
   live.current = { ...live.current, editing, title, tags, base };
 
+  // A plugin's script may add to the editor after this page was drawn. The editor is made again then, but never under someone's hands.
+  const added = useSyncExternalStore(editorExtensions.subscribe, editorExtensions.version);
+  const madeWith = useRef(added);
+  if (!editing) madeWith.current = added;
+  const made = madeWith.current;
+  const extensions = useMemo(() => makeExtensions(codeLanguage), [codeLanguage, made]);
+
   const editor = useEditor({
-    extensions: makeExtensions(codeLanguage),
-    content: JSON.parse(stored?.contentJson || page.contentJson || EMPTY_DOC),
+    extensions,
+    content: toEditor(stored?.contentJson || page.contentJson || EMPTY_DOC, extensions),
     editable: false,
     editorProps: {
       attributes: { class: "prose", "aria-label": "Page content" },
@@ -182,7 +169,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
         return true;
       },
     },
-  }, [page.id, page.version]);
+  }, [page.id, page.version, extensions]);
 
   useEffect(() => { editor?.setEditable(editing); onDirty(editing); }, [editor, editing, onDirty]);
   useEffect(() => {
@@ -202,7 +189,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
     let timer: number | undefined;
     const run = async () => {
       const s = live.current;
-      const contentJson = JSON.stringify(editor.getJSON());
+      const contentJson = fromEditor(editor);
       if (isNew) {
         try { localStorage.setItem(NEW_DRAFT_KEY, JSON.stringify({ spaceId: page.spaceId, parentId: page.parentId, title: s.title, tags: s.tags, contentJson } satisfies NewDraft)); } catch { /* storage blocked */ }
         return;
@@ -236,7 +223,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
     setTitle(d.title);
     setTags(d.tags);
     setBase(d.baseVersion);
-    editor?.commands.setContent(JSON.parse(d.contentJson));
+    editor?.commands.setContent(toEditor(d.contentJson, extensions));
     setError(null);
     setEditing(true);
   }
@@ -249,7 +236,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
   function cancel() {
     if (isNew) { clearNewDraft(); live.current.editing = false; onDirty(false); onCancelNew?.(); return; }
     void api.del(`/pages/${page.id}/draft`).catch(() => undefined);
-    editor?.commands.setContent(JSON.parse(page.contentJson || EMPTY_DOC));
+    editor?.commands.setContent(toEditor(page.contentJson || EMPTY_DOC, extensions));
     setEditing(false);
     setSavedAt(null);
     setError(null);
@@ -287,7 +274,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
     setBusy(true);
     setError(null);
     try {
-      const contentJson = JSON.stringify(editor.getJSON());
+      const contentJson = fromEditor(editor);
       // A new page is created on its first save, as version 1.0.
       const saved = isNew
         ? await api.post<Page>(`/spaces/${page.spaceId}/pages`, { parentId: page.parentId, kind: "Page", title, contentJson, tags })
@@ -443,6 +430,8 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
 function Toolbar({ editor, onImages }: { editor: Editor; onImages: (files: File[]) => void }) {
   const dialogs = useDialogs();
   const picker = useRef<HTMLInputElement>(null);
+  const ctx = useMemo(() => ({ editor }), [editor]);
+  const extra = useSlot<ActionItem<{ editor: Editor }>>("editor.toolbar", ctx);
   const s = useEditorState({
     editor,
     selector: ({ editor: e }) => ({
@@ -515,6 +504,14 @@ function Toolbar({ editor, onImages }: { editor: Editor; onImages: (files: File[
       <B label="Image" run={() => picker.current?.click()}><ImagePlus className="ic" /></B>
       <input ref={picker} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden
         onChange={(e) => { const f = imagesIn(e.target.files); e.target.value = ""; if (f.length) onImages(f); }} />
+      {extra.map((e) => (
+        <PluginBoundary key={`${e.source}:${e.item.id}`} source={e.source} where="editor.toolbar">
+          <button type="button" className="etb text" onMouseDown={(ev) => ev.preventDefault()}
+            onClick={() => { try { e.item.onClick?.(ctx); } catch (err) { reportUiError(e.source, "editor.toolbar", err); } }}>
+            {typeof e.item.label === "function" ? e.item.label(ctx) : e.item.label}
+          </button>
+        </PluginBoundary>
+      ))}
       <span className="sep" />
       <B label="Undo" run={() => c().undo().run()}><Undo2 className="ic" /></B>
       <B label="Redo" run={() => c().redo().run()}><Redo2 className="ic" /></B>

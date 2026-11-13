@@ -91,6 +91,25 @@ public sealed class SamplePluginTests : IAsyncLifetime
         var text = await script.Content.ReadAsStringAsync(Ct);
         Assert.Contains("\"/shared/v1/react.js\"", text); // the app's React, not one of its own
         Assert.Contains("page.panel", text);
+        // Its stylesheet is served from the same folder, where the script looks for it.
+        var css = await _admin.GetAsync(listed.GetProperty("script").GetString()!.Split('?')[0].Replace("index.js", "notice.css", StringComparison.Ordinal), Ct);
+        Assert.Equal((HttpStatusCode.OK, "text/css"), (css.StatusCode, css.Content.Headers.ContentType?.MediaType));
+    }
+
+    [Fact]
+    public async Task Notice_IsReadByHistorySearchAndExport()
+    {
+        const string doc = """{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello"}]},{"type":"sampleNotice","content":[{"type":"text","text":"Acknowledge by "},{"type":"text","text":"Friday","marks":[{"type":"bold"}]}]}]}""";
+        (await _admin.PutAsJsonAsync($"/api/v1/pages/{_page}", new { title = "Reset password", contentJson = doc, baseVersion = "1.0" }, Ct)).EnsureSuccessStatusCode();
+
+        Assert.Equal("Hello\n\n> **Notice:** Acknowledge by Friday", (await _admin.GetFromJsonAsync<PageMarkdownDto>($"/api/v1/pages/{_page}/markdown", Ct))!.Markdown);
+        Assert.Equal(1, (await _admin.GetFromJsonAsync<SearchResponse>("/api/v1/search?q=friday", Ct))!.Total); // by the text inside the block
+        var docx = await (await _admin.GetAsync($"/api/v1/pages/{_page}/export?format=docx", Ct)).Content.ReadAsByteArrayAsync(Ct);
+        using var zip = new System.IO.Compression.ZipArchive(new MemoryStream(docx));
+        using var body = new StreamReader(zip.GetEntry("word/document.xml")!.Open());
+        var xml = await body.ReadToEndAsync(Ct);
+        Assert.Contains("Notice: ", xml);
+        Assert.Contains("Acknowledge by Friday", xml);
     }
 
     [Fact]

@@ -41,6 +41,14 @@ Remove deletes the package and the settings. The dialog has a "Delete data" box,
 
 For a plugin listed as "Removed, data kept", select it and select Delete data.
 
+## Content of a plugin that is not loaded
+
+A plugin can add its own blocks to pages. When such a plugin is disabled or removed, its blocks stay in the pages.
+A page shows a box with the block's type name in their place. The box can be moved or deleted, not edited. Saving the page keeps the block.
+Search still finds the page by the text inside the block. History and exports show `[type]` and that text.
+Enable or install the plugin again and the blocks are back.
+After installing or updating a plugin that adds blocks, select Rebuild index (Administration > Search) so search reads older pages the plugin's way.
+
 ## Settings and secrets
 
 Select a plugin to see its settings. A secret that is set shows as dots. Its value is never loaded into the browser; type a new value to replace it.

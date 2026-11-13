@@ -1,0 +1,2 @@
+/* The sample's notice block. It uses the app's colours, so it follows the light and the dark theme. */
+.prose p.sample-notice { padding: 6px 10px; background: var(--warn-bg); color: var(--warn-ink); border: 1px solid var(--warn-line); border-radius: 8px; }

@@ -35,5 +35,31 @@ export default function (kb) {
     label: "Acknowledge",
     onClick: (c) => kb.api.post(`/pages/${c.page.id}/ack`).then(changed).catch(() => undefined),
   });
+  addNotice(kb); // the editor block, below
+}
+// #endregion
+
+// #region guide:editor
+import { Node } from "/shared/v1/tiptap-react.js";
+
+/** A block of the plugin's own: a line of text shown as a notice. Its type in the stored page is "sampleNotice". */
+const Notice = Node.create({
+  name: "sampleNotice",
+  group: "block",
+  content: "inline*",
+  parseHTML: () => [{ tag: "p[data-sample-notice]" }],
+  renderHTML: ({ HTMLAttributes }) => ["p", { ...HTMLAttributes, "data-sample-notice": "", class: "sample-notice" }, 0],
+});
+
+function addNotice(kb) {
+  // A stylesheet of the plugin's own ui folder, beside this script.
+  const css = document.createElement("link");
+  css.rel = "stylesheet";
+  css.href = new URL("./notice.css", import.meta.url).href;
+  document.head.append(css);
+
+  kb.editor.extend(Notice);
+  // The button turns the line the cursor is in into a notice, and back.
+  kb.slots.add("editor.toolbar", { id: "notice", label: "Notice", onClick: (c) => c.editor.chain().focus().toggleNode("sampleNotice", "paragraph").run() });
 }
 // #endregion

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as React from "react";
 import * as jsxRuntime from "react/jsx-runtime";
 import * as ReactDOM from "react-dom";
+import * as tiptap from "@tiptap/react";
 import { fileOf, LIBRARIES, moduleFor } from "../../tools/gen-shared.mjs";
 import { SHARED } from "./shared";
 
@@ -12,7 +13,7 @@ describe("shared modules", () => {
   });
 
   it("each module exports every name of its library, taken from the app's copy", async () => {
-    for (const [library, live] of [["react", React], ["react/jsx-runtime", jsxRuntime], ["react-dom", ReactDOM]] as const) {
+    for (const [library, live] of [["react", React], ["react/jsx-runtime", jsxRuntime], ["react-dom", ReactDOM], ["@tiptap/react", tiptap]] as const) {
       const text = await moduleFor(library);
       expect(text).toContain(`const m = window.__kbShared[${JSON.stringify(library)}];`);
       // "module.exports" is the test runner's own key for a CommonJS library, not a name of the library.
@@ -21,6 +22,6 @@ describe("shared modules", () => {
   });
 
   it("names a module's file after its library", () => {
-    expect(LIBRARIES.map(fileOf)).toEqual(["react.js", "react-jsx-runtime.js", "react-dom.js"]);
+    expect(LIBRARIES.map(fileOf)).toEqual(["react.js", "react-jsx-runtime.js", "react-dom.js", "tiptap-react.js"]);
   });
 });

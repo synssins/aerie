@@ -105,6 +105,9 @@ The app starts without the plugin and shows the reason on the Plugins screen.
 | A schedule name is 1 to 100 characters. | |
 | <action> is not open to plugins. | It registered a hook, a filter, an after handler or a handler on a core-only action. |
 | <action> already has a handler. | It registered a handler for an action of the core or of another plugin. |
+| <type> is a node of the editor. | It registered a renderer for a node type the editor has by itself. |
+| <type> already has a renderer. | It registered a renderer for a node type another plugin renders, or twice. |
+| An editor node type is 1 to 100 characters. | |
 | Its tables changed. A plugin that changes its tables needs migrations. | A plugin without migrations has some of its tables and misses others. |
 | Requires <plugin>. | A required plugin is disabled or failed. |
 | Circular requirement. | |

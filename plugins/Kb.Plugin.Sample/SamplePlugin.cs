@@ -26,6 +26,7 @@ public sealed class SamplePlugin : IKbPlugin
         .After<SavePage, PageDto, ClearOnMajor>()                  // react once a core action has succeeded
         .Job<PurgeJob>("purge")                                    // the schedule "purge" of the manifest
         .HealthCheck<TableCheck>("table")
+        .EditorNode(Notice.Renderer)                               // how the server reads its editor block
         .Routes(SampleRoutes.Map);                                 // under /api/v1/plugins/kb.sample/
     // #endregion
 }

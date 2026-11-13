@@ -1,4 +1,6 @@
+import type { AnyExtension } from "@tiptap/react";
 import { api, type Me, type Page, type Space } from "../api";
+import { editorExtensions } from "../editor/extensions";
 import { current } from "./current";
 import { screens, type ScreenDef } from "./screens";
 import { slots } from "./slots";
@@ -33,6 +35,8 @@ export type KbHost = {
   /** Screens of the plugin's own, at /x/<plugin id>/<path>. */
   screens: { add(def: ScreenDef): void };
   dialogs: { confirm(o: ConfirmOptions): Promise<boolean>; ask(o: AskOptions): Promise<string | null> };
+  /** Adds TipTap extensions (nodes, marks, paste and drop handlers) to every editor made from now on. Buttons go in the slot "editor.toolbar". */
+  editor: { extend(...extensions: AnyExtension[]): void };
 };
 
 const rooted = (root: string): Api => ({
@@ -55,5 +59,6 @@ export function makeHost(plugin: { id: string; version: string }, me: Me): KbHos
     },
     screens: { add: (def) => screens.add(plugin.id, def) },
     dialogs: { confirm: (o) => dialogBridge.confirm(o), ask: (o) => dialogBridge.ask(o) },
+    editor: { extend: (...extensions) => editorExtensions.add(plugin.id, ...extensions) },
   };
 }

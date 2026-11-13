@@ -5,7 +5,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const LIBRARIES = ["react", "react/jsx-runtime", "react-dom"];
+// "@tiptap/react" is the editor: it also has everything of @tiptap/core (Node, Mark, Extension, mergeAttributes).
+export const LIBRARIES = ["react", "react/jsx-runtime", "react-dom", "@tiptap/react"];
 /** "react/jsx-runtime" -> "react-jsx-runtime.js". */
 export const fileOf = (library) => library.replace(/^@/, "").replace(/[/@]/g, "-") + ".js";
 
