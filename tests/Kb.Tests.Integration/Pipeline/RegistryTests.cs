@@ -1,5 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Text;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Kb.Core.Identity;
 using Kb.Web.Pipeline;
@@ -76,5 +80,61 @@ public sealed partial class RegistryTests : IAsyncLifetime
         // A name is used once: two actions of one name could not be told apart in the audit log, a lock or the action reference.
         var names = actions.Select(a => ActionCatalog.Describe(a.Action).Name).ToList();
         Assert.Equal(names.Distinct(StringComparer.Ordinal).Count(), names.Count);
+    }
+
+    /// <summary>
+    /// docs/plugins/action-reference.md lists every action: what a plugin author reads to know what can be hooked.
+    /// It is written from the running app, so it cannot drift: run this test with KB_WRITE_REFS=1 to write the file after adding or changing an action.
+    /// </summary>
+    [Fact]
+    public void ActionReference_IsUpToDate()
+    {
+        var text = ActionReference(_f.Services.GetRequiredService<ActionCatalog>());
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Kb.sln"))) dir = dir.Parent;
+        var file = Path.Combine(dir!.FullName, "docs", "plugins", "action-reference.md");
+        if (Environment.GetEnvironmentVariable("KB_WRITE_REFS") == "1")
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.WriteAllText(file, text);
+        }
+        Assert.True(File.Exists(file), "docs/plugins/action-reference.md is missing. Run this test with KB_WRITE_REFS=1.");
+        Assert.Equal(text, File.ReadAllText(file).ReplaceLineEndings("\n"));
+    }
+
+    private static string ActionReference(ActionCatalog catalog)
+    {
+        var contract = typeof(IAction<>).Assembly;
+        var nullability = new NullabilityInfoContext();
+        var text = new StringBuilder("# Action reference\n\n")
+            .Append("Written by the test `ActionReference_IsUpToDate` (run it with `KB_WRITE_REFS=1`). Do not edit by hand.\n\n")
+            .Append("Every operation of the core is one action, sent through one bus. A plugin can put a before hook, a result filter (reads only) or an after handler\n")
+            .Append("on an action of the contract assembly (`Kb.Plugins.Abstractions`). Core-only actions go through the same bus but are not part of the contract:\n")
+            .Append("a plugin cannot hook how plugins, API tokens, storage and log shipping are administered.\n");
+        foreach (var action in catalog.Actions.Select(a => a.Action).OrderBy(a => ActionCatalog.Describe(a).Name, StringComparer.Ordinal))
+        {
+            var described = ActionCatalog.Describe(action);
+            var result = action.GetInterfaces().Single(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IAction<>)).GetGenericArguments()[0];
+            text.Append(System.Globalization.CultureInfo.InvariantCulture,
+                $"\n## {described.Name}\n\n{(described.Read ? "Read" : "Write")}. `{action.Name}`, answers `{TypeName(result)}`.{(action.Assembly == contract ? "" : " Core only.")}\n");
+            var fields = action.GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(p => p.Name != "EqualityContract").ToList();
+            if (fields.Count == 0) continue;
+            text.Append("\n| Field | Type | |\n|---|---|---|\n");
+            foreach (var p in fields)
+            {
+                var type = TypeName(p.PropertyType) + (!p.PropertyType.IsValueType && nullability.Create(p).ReadState == NullabilityState.Nullable ? "?" : "");
+                var notes = new[] { p.GetCustomAttribute<RequiredMemberAttribute>() is not null ? "required" : null, p.GetCustomAttribute<JsonIgnoreAttribute>() is not null ? "never logged" : null };
+                text.Append(System.Globalization.CultureInfo.InvariantCulture, $"| {p.Name} | `{type}` | {string.Join(", ", notes.Where(n => n is not null))} |\n");
+            }
+        }
+        return text.ToString();
+    }
+
+    private static string TypeName(Type t)
+    {
+        if (Nullable.GetUnderlyingType(t) is { } inner) return TypeName(inner) + "?";
+        if (t.IsArray) return TypeName(t.GetElementType()!) + "[]";
+        if (t.IsGenericType) return $"{t.Name[..t.Name.IndexOf('`', StringComparison.Ordinal)]}<{string.Join(", ", t.GetGenericArguments().Select(TypeName))}>";
+        return t == typeof(string) ? "string" : t == typeof(int) ? "int" : t == typeof(long) ? "long" : t == typeof(bool) ? "bool" : t.Name;
     }
 }
