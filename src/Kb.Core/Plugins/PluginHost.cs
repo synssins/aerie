@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using System.Runtime.Loader;
 using Kb.Plugins;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -40,6 +39,9 @@ public sealed class PluginSettingsSnapshot
     private volatile IReadOnlyDictionary<(string PluginId, string Key), string?> _values = new Dictionary<(string, string), string?>();
 
     public string? Get(string pluginId, string key) => _values.GetValueOrDefault((pluginId, key));
+
+    /// <summary>Reads a plugin's secret (plugin id, key). Set by the settings store once the app has started; null before that.</summary>
+    public Func<string, string, CancellationToken, Task<string?>>? SecretReader { get; set; }
 
     public void Replace(IEnumerable<(string PluginId, string Key, string? Value)> values)
     {
@@ -96,12 +98,12 @@ public static class PluginRuntime
     /// Runs the plugin's <c>ConfigureServices</c> and <c>Configure</c> against scratch lists and returns them.
     /// It throws what the plugin throws; the caller then keeps nothing of it.
     /// </summary>
-    public static ConfiguredPlugin Configure(Assembly assembly, PluginManifest manifest, PluginSettingsSnapshot settings, IConfiguration config)
+    public static ConfiguredPlugin Configure(Assembly assembly, PluginManifest manifest, PluginSettingsSnapshot settings)
     {
         ArgumentNullException.ThrowIfNull(assembly);
         var type = assembly.GetCustomAttribute<KbPluginAttribute>()?.PluginType ?? throw new InvalidOperationException("The assembly names no plugin class.");
         var plugin = Activator.CreateInstance(type) as IKbPlugin ?? throw new InvalidOperationException($"{type.FullName} is not a plugin.");
-        var context = new PluginContext(manifest, settings, config, new ConfigurationSecretStore(config));
+        var context = new PluginContext(manifest, settings);
         var services = new ServiceCollection();
         var app = new ScratchApp();
         plugin.ConfigureServices(services, context);
@@ -159,23 +161,14 @@ public static class PluginRuntime
     }
 }
 
-internal sealed class PluginContext(PluginManifest manifest, PluginSettingsSnapshot settings, IConfiguration config, IPluginSecretStore secrets) : IPluginContext
+/// <summary>What a plugin sees of the host: its manifest, and its settings as they are set in the app right now.</summary>
+internal sealed class PluginContext(PluginManifest manifest, PluginSettingsSnapshot settings) : IPluginContext
 {
     public PluginManifest Manifest { get; } = manifest;
-    // Until settings are edited in the app (task 1.5), a value in configuration still counts when the app has none.
-    public string? GetSetting(string key) => settings.Get(Manifest.Id, key) ?? config[$"Kb:Plugins:Settings:{Manifest.Id}:{key}"];
-    public Task<string?> GetSecretAsync(string key, CancellationToken ct = default) => secrets.GetAsync($"{Manifest.Id}--{key}", ct);
-}
+    public string? GetSetting(string key) => settings.Get(Manifest.Id, key);
 
-/// <summary>Host secret store. Default reads configuration (user-secrets / env / Key Vault config provider).</summary>
-public interface IPluginSecretStore
-{
-    Task<string?> GetAsync(string name, CancellationToken ct = default);
-}
-
-public sealed class ConfigurationSecretStore(IConfiguration config) : IPluginSecretStore
-{
-    public Task<string?> GetAsync(string name, CancellationToken ct = default) => Task.FromResult(config[name]);
+    public Task<string?> GetSecretAsync(string key, CancellationToken ct = default) =>
+        settings.SecretReader is { } read ? read(Manifest.Id, key, ct) : throw new InvalidOperationException("Secrets are read after startup, not while a plugin is configured.");
 }
 
 /// <summary>Blocks plugin HTTP calls to hosts not declared in the manifest.</summary>

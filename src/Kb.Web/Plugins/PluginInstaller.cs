@@ -1,7 +1,5 @@
-using System.Globalization;
 using Kb.Core.Audit;
 using Kb.Core.Content;
-using Kb.Core.Identity;
 using Kb.Core.Plugins;
 using Kb.Data;
 using Kb.Plugins;
@@ -195,9 +193,7 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
 
     private async Task ChangedAsync(string action, string id, Guid? by, string sha256, string source, string version, string? reason, CancellationToken ct)
     {
-        var generation = (long.TryParse(await db.GetAsync(RuntimeSettingKeys.PluginGeneration, ct), out var g) ? g : 0) + 1;
-        await db.SetAsync(RuntimeSettingKeys.PluginGeneration, generation.ToString(CultureInfo.InvariantCulture), by, time.GetUtcNow(), ct);
-        watcher.Saw(generation);
+        watcher.Saw(await PluginGeneration.RaiseAsync(db, by, time.GetUtcNow(), ct));
         await audit.AppendAsync(new AuditEvent(action, by, "plugin", id, Data: Data(sha256, source, version, reason)), ct);
         restarter.Restart($"{action} {id}");
     }

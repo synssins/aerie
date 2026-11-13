@@ -1,6 +1,8 @@
 using Kb.Core.Plugins;
+using Kb.Data;
 using Kb.Plugins;
 using Kb.Web.Pipeline;
+using Microsoft.EntityFrameworkCore;
 
 namespace Kb.Web.Plugins;
 
@@ -52,6 +54,17 @@ public static class PluginAdminRoutes
 
         admin.MapDelete("/plugins/{id}/data", (string id, HttpContext http, PluginInstaller installer, CancellationToken ct) =>
             installer.DeleteDataAsync(id, http.User.UserId(), ct).ToHttp());
+
+        // A secret's value is never returned: only which secrets are set.
+        admin.MapGet("/plugins/{id}/settings", async (string id, PluginRegistry registry, KbDbContext db, CancellationToken ct) =>
+        {
+            if (registry.Find(id) is null) return Results.NotFound();
+            var rows = await db.PluginSettingValues.AsNoTracking().Where(v => v.PluginId == id).ToListAsync(ct);
+            return Results.Ok(new PluginSettingsDto(rows.Where(r => !r.Secret).ToDictionary(r => r.Key, r => r.Value), [.. rows.Where(r => r.Secret).Select(r => r.Key)]));
+        });
+
+        admin.MapPut("/plugins/{id}/settings", (string id, PluginSettingsRequest req, HttpContext http, PluginSettingsStore store, CancellationToken ct) =>
+            store.SaveAsync(id, req.Values ?? [], http.User.UserId(), ct).ToHttp(restart => Results.Ok(new { restart })));
 
         admin.MapPost("/plugins/{id}/release-lock", (string id, HttpContext http, PluginInstaller installer, CancellationToken ct) =>
             installer.ReleaseLockAsync(id, http.User.UserId(), ct).ToHttp());

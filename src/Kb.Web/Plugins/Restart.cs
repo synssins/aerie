@@ -24,6 +24,18 @@ public sealed class HostRestarter(IHostApplicationLifetime lifetime, ILogger<Hos
     }
 }
 
+/// <summary>The number every plugin change raises. A server that started with a lower one restarts.</summary>
+public static class PluginGeneration
+{
+    public static async Task<long> RaiseAsync(KbDbContext db, Guid? by, DateTimeOffset now, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        var generation = (long.TryParse(await db.GetAsync(RuntimeSettingKeys.PluginGeneration, ct), out var g) ? g : 0) + 1;
+        await db.SetAsync(RuntimeSettingKeys.PluginGeneration, generation.ToString(System.Globalization.CultureInfo.InvariantCulture), by, now, ct);
+        return generation;
+    }
+}
+
 /// <summary>
 /// Every 5 seconds reads the plugin generation from the database. When another server changed the plugins,
 /// the number is higher than the one this server knows, and this server restarts to load the same set.
@@ -31,6 +43,7 @@ public sealed class HostRestarter(IHostApplicationLifetime lifetime, ILogger<Hos
 public sealed class PluginWatcher(IServiceScopeFactory scopes, PluginRegistry registry, IAppRestarter restarter, TimeProvider time, ILogger<PluginWatcher> log) : BackgroundService
 {
     private long _known = registry.Generation;
+    private volatile string? _stamp;
 
     /// <summary>Called by this server after it made a change itself: it already asked for its restart.</summary>
     public void Saw(long generation)
@@ -39,10 +52,21 @@ public sealed class PluginWatcher(IServiceScopeFactory scopes, PluginRegistry re
         while ((known = Interlocked.Read(ref _known)) < generation && Interlocked.CompareExchange(ref _known, generation, known) != known) { }
     }
 
+    /// <summary>Called by this server after it saved a setting itself: its own values are already current.</summary>
+    public void SawStamp(string stamp) => _stamp = stamp;
+
     internal async Task CheckAsync(CancellationToken ct)
     {
         await using var scope = scopes.CreateAsyncScope();
-        var value = await scope.ServiceProvider.GetRequiredService<KbDbContext>().GetAsync(RuntimeSettingKeys.PluginGeneration, ct);
+        var db = scope.ServiceProvider.GetRequiredService<KbDbContext>();
+        // A setting changed on another server: read the values again. The first check always reads, to cover a change made while this server was starting.
+        var stamp = await db.GetAsync(RuntimeSettingKeys.PluginSettingsStamp, ct) ?? "";
+        if (stamp != _stamp)
+        {
+            await scope.ServiceProvider.GetRequiredService<PluginSettingsStore>().ReloadAsync(ct);
+            _stamp = stamp;
+        }
+        var value = await db.GetAsync(RuntimeSettingKeys.PluginGeneration, ct);
         if (!long.TryParse(value, out var generation) || generation <= Interlocked.Read(ref _known)) return;
         Saw(generation);
         restarter.Restart("Plugins changed on another server.");

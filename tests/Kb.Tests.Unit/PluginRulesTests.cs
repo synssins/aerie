@@ -140,6 +140,20 @@ public class PluginRulesTests
     }
 
     [Fact]
+    public async Task Context_ReadsSettingsAsTheyAreNow_AndSecretsOnlyAfterStartup()
+    {
+        var settings = new PluginSettingsSnapshot();
+        var context = new PluginContext(M("kb.x"), settings);
+        Assert.Null(context.GetSetting("Greeting"));
+        settings.Replace([("kb.x", "Greeting", "Hello"), ("kb.other", "Greeting", "Not mine")]);
+        Assert.Equal("Hello", context.GetSetting("Greeting"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => context.GetSecretAsync("Token"));
+        settings.SecretReader = (id, key, _) => Task.FromResult<string?>($"{id}/{key}");
+        Assert.Equal("kb.x/Token", await context.GetSecretAsync("Token"));
+    }
+
+    [Fact]
     public void Outcome_HoldsAValueOrAProblem()
     {
         Outcome<int> ok = 5;

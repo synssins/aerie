@@ -4,8 +4,12 @@
   "publisher": "Kb first-party",
   "description": "Reference plugin used by the developer guide and tests.",
   "minKbVersion": "0.1.0",
-  "extensionPoints": ["page-action"],
+  "extensionPoints": [
+    "page-action"
+  ],
   "outboundHosts": [],
   "settings": [],
-  "schedules": []
+  "schedules": [],
+  "name": "Sample",
+  "assembly": "Kb.Plugin.Sample.dll"
 }

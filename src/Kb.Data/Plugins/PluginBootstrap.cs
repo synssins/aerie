@@ -31,6 +31,7 @@ public static class PluginBootstrap
     public static async Task<PluginBoot> RunAsync(IServiceCollection services, IConfiguration config, KbOptions options, string contentRoot, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(options);
+        _ = config; // plugin settings are in the database; configuration is no longer read for them
         var builder = new DbContextOptionsBuilder<KbDbContext>();
         _ = options.Database.Provider switch
         {
@@ -125,7 +126,7 @@ public static class PluginBootstrap
                     assembly = PluginRuntime.LoadUploaded(c.Manifest, folder, exports, out var context);
                     contexts[id] = context;
                 }
-                var configured = PluginRuntime.Configure(assembly, c.Manifest, settings, config);
+                var configured = PluginRuntime.Configure(assembly, c.Manifest, settings);
                 pluginServices.AddRange(configured.Services);
                 foreach (var registration in configured.Registrations) registrations.Add(id, registration);
                 loaded[id] = assembly;
@@ -150,7 +151,6 @@ public static class PluginBootstrap
         services.AddSingleton(registry);
         services.AddSingleton<IRegistrations>(registrations);
         services.AddSingleton(settings);
-        services.AddSingleton<IPluginSecretStore, ConfigurationSecretStore>();
         return new PluginBoot(registry, registrations, events) { PluginServices = pluginServices };
     }
 

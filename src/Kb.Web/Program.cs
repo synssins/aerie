@@ -94,6 +94,7 @@ services.AddSingleton(typeof(ProviderSelector<>));
 services.AddSingleton(TimeProvider.System);
 services.AddSingleton<IAppRestarter, HostRestarter>();
 services.AddScoped<PluginInstaller>();
+services.AddSingleton<PluginSettingsStore>();
 services.AddSingleton<PluginWatcher>();
 services.AddHostedService(sp => sp.GetRequiredService<PluginWatcher>());
 services.AddHttpContextAccessor();
@@ -138,6 +139,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     var db = scope.ServiceProvider.GetRequiredService<KbDbContext>();
     var audit = scope.ServiceProvider.GetRequiredService<IAuditLog>();
     foreach (var e in boot.Events) await audit.AppendAsync(e);
+    _ = app.Services.GetRequiredService<PluginSettingsStore>(); // from here a plugin can read its secrets
 
     await scope.ServiceProvider.GetRequiredService<BreakGlassService>().EnsureAccountAsync();
     await scope.ServiceProvider.GetRequiredService<SetupService>().OnStartupAsync();
