@@ -1,0 +1,46 @@
+[
+  {
+    "action": "page.move",
+    "method": "POST",
+    "path": "/api/v1/pages/{page}/move",
+    "body": {"parentId": "{folder}"},
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 403, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "page.delete",
+    "method": "DELETE",
+    "path": "/api/v1/pages/{page}",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 403, "supervisor": 204, "owner": 204, "admin": 204},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "page.restore",
+    "method": "POST",
+    "path": "/api/v1/pages/{deletedPage}/restore",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 403, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404},
+    "known": [{"caller": "admin", "space": "sensitive", "got": 200, "why": "An Admin restores a deleted page of a sensitive space without a role there (the handler skips the space check for an Admin, as the route did before the pipeline). Reported to the owner; not changed."}]
+  },
+  {
+    "action": "bin.list",
+    "method": "GET",
+    "path": "/api/v1/spaces/{space}/bin",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 403, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "bin.empty",
+    "method": "POST",
+    "path": "/api/v1/spaces/{space}/bin/empty",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 403, "supervisor": 204, "owner": 204, "admin": 204},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "bin.list.all",
+    "method": "GET",
+    "path": "/api/v1/admin/bin",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  }
+]

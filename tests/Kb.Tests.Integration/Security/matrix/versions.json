@@ -1,0 +1,57 @@
+[
+  {
+    "action": "page.version.list",
+    "method": "GET",
+    "path": "/api/v1/pages/{page}/versions",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "page.version.read",
+    "method": "GET",
+    "path": "/api/v1/pages/{page}/versions/1.0",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "page.diff",
+    "method": "GET",
+    "path": "/api/v1/pages/{page}/diff?from=1.0&to=1.0",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "page.version.restore",
+    "method": "POST",
+    "path": "/api/v1/pages/{page}/versions/1.0/restore",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "draft.save",
+    "method": "PUT",
+    "path": "/api/v1/pages/{page}/draft",
+    "body": {"title": "Draft", "contentJson": "{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]}]}", "baseVersion": "1.0"},
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "draft.read",
+    "method": "GET",
+    "path": "/api/v1/pages/{page}/draft",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 404, "supervisor": 404, "owner": 404, "admin": 404},
+    "sensitive": {"admin": 404},
+    "note": "No draft exists, so a caller who may have one gets 404; a Reader may not have one and gets 403.",
+    "known": [{"caller": "reader", "space": "both", "got": 404, "why": "The route looks only for the caller's own draft of the page and does not ask for the caller's role in the space. A Reader gets 404 (no draft), not 403. Someone whose role was taken away can still read the draft they wrote. Reported to the owner; not changed."}]
+  },
+  {
+    "action": "draft.discard",
+    "method": "DELETE",
+    "path": "/api/v1/pages/{page}/draft",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 204, "supervisor": 204, "owner": 204, "admin": 204},
+    "sensitive": {"admin": 404},
+    "known": [{"caller": "outsider", "space": "both", "got": 204, "why": "The route deletes the caller's own draft of the page, if any, and does not ask for the caller's role in the space. It answers 204 to anyone signed in, for any page id, so it discloses nothing and removes nothing of anyone else's. Reported to the owner; not changed."},
+      {"caller": "reader", "space": "both", "got": 204, "why": "The same: 204 instead of 403."},
+      {"caller": "admin", "space": "sensitive", "got": 204, "why": "The same: 204 instead of 404."}]
+  }
+]

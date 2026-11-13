@@ -1,0 +1,30 @@
+[
+  {
+    "action": "access.request",
+    "method": "POST",
+    "path": "/api/v1/spaces/{space}/access-requests",
+    "body": {"role": "Reader", "reason": "matrix"},
+    "expect": {"anonymous": 401, "outsider": "allowed", "reader": "allowed", "contributor": "allowed", "supervisor": "allowed", "owner": "allowed", "admin": "allowed"},
+    "scope": "space",
+    "note": "Anyone signed in may ask for access to a space, a sensitive one too."
+  },
+  {
+    "action": "access.decide",
+    "method": "POST",
+    "path": "/api/v1/access-requests/{accessRequest}/decision",
+    "body": {"approve": false},
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 204, "admin": 204},
+    "sensitive": {"admin": 404},
+    "known": [{"caller": "outsider", "space": "both", "got": 403, "why": "A caller with no role in the space gets 403, not 404. Reported to the owner; not changed."}, {"caller": "admin", "space": "sensitive", "got": 403, "why": "The same: an Admin has no role in a sensitive space and gets 403, not 404."}]
+  },
+  {
+    "action": "space.sensitive.emergency",
+    "method": "POST",
+    "path": "/api/v1/spaces/{space}/emergency-access",
+    "body": {"reason": "matrix"},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "space",
+    "last": true,
+    "note": "Emergency access is an Admin's. Everyone else is refused, whatever their role in the space."
+  }
+]

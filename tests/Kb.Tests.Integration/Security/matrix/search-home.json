@@ -1,0 +1,62 @@
+[
+  {
+    "action": "search.query",
+    "method": "GET",
+    "path": "/api/v1/search?q=hello",
+    "expect": {"anonymous": 401, "outsider": 200, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "home.read",
+    "method": "GET",
+    "path": "/api/v1/home",
+    "expect": {"anonymous": 401, "outsider": 200, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "announcement.post",
+    "method": "POST",
+    "path": "/api/v1/announcements",
+    "body": {"title": "Matrix", "body": "Posted by the matrix."},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server",
+    "note": "Posting needs the announcer right, which an Admin gives; none of the role callers has it."
+  },
+  {
+    "action": "announcement.remove",
+    "method": "DELETE",
+    "path": "/api/v1/announcements/{announcement}",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "user.announcer.set",
+    "method": "PUT",
+    "path": "/api/v1/admin/users/{victim}/announcer",
+    "body": {"enabled": true},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "search.synonyms.read",
+    "method": "GET",
+    "path": "/api/v1/admin/search/synonyms",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "search.synonyms.save",
+    "method": "PUT",
+    "path": "/api/v1/admin/search/synonyms",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "search.reindex",
+    "method": "POST",
+    "path": "/api/v1/admin/search/reindex",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  }
+]

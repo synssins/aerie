@@ -1,0 +1,23 @@
+[
+  {
+    "action": "page.export",
+    "method": "GET",
+    "path": "/api/v1/pages/{page}/export?format=docx",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "page.export.table",
+    "method": "GET",
+    "path": "/api/v1/pages/{richPage}/export/table/1?format=csv",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "page.export.code",
+    "method": "GET",
+    "path": "/api/v1/pages/{richPage}/export/code/1",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
+  }
+]

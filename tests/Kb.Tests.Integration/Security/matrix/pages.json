@@ -1,0 +1,39 @@
+[
+  {
+    "action": "tree.read",
+    "method": "GET",
+    "path": "/api/v1/spaces/{space}/tree",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "page.read",
+    "method": "GET",
+    "path": "/api/v1/pages/{page}",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "page.markdown",
+    "method": "GET",
+    "path": "/api/v1/pages/{page}/markdown",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "page.create",
+    "method": "POST",
+    "path": "/api/v1/spaces/{space}/pages",
+    "body": {"kind": "Page", "title": "New"},
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 201, "supervisor": 201, "owner": 201, "admin": 201},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "page.save",
+    "method": "PUT",
+    "path": "/api/v1/pages/{page}",
+    "body": {"title": "Saved", "contentJson": "{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]}]}", "baseVersion": "1.0"},
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
+  }
+]

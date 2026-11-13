@@ -1,0 +1,76 @@
+[
+  {
+    "action": "storage.read",
+    "method": "GET",
+    "path": "/api/v1/admin/storage/",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "storage.move.preview",
+    "method": "PUT",
+    "path": "/api/v1/admin/storage/move/preview",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "storage.move.start",
+    "method": "POST",
+    "path": "/api/v1/admin/storage/move",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "storage.move.cancel",
+    "method": "POST",
+    "path": "/api/v1/admin/storage/move/cancel",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "storage.move.copy-again",
+    "method": "POST",
+    "path": "/api/v1/admin/storage/move/copy-again",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "storage.move.switch",
+    "method": "POST",
+    "path": "/api/v1/admin/storage/move/switch",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "storage.place.add",
+    "method": "POST",
+    "path": "/api/v1/admin/storage/places",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "storage.place.save",
+    "method": "PUT",
+    "path": "/api/v1/admin/storage/places/{newGuid}",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "storage.place.test",
+    "method": "POST",
+    "path": "/api/v1/admin/storage/places/{newGuid}/test",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "storage.place.remove",
+    "method": "DELETE",
+    "path": "/api/v1/admin/storage/places/{newGuid}",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  }
+]

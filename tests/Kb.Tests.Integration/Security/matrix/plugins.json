@@ -1,0 +1,83 @@
+[
+  {
+    "action": "plugin.list",
+    "method": "GET",
+    "path": "/api/v1/admin/plugins",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "plugin.health",
+    "method": "GET",
+    "path": "/api/v1/admin/plugins/health",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "plugin.install",
+    "method": "POST",
+    "path": "/api/v1/admin/plugins",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "plugin.remove",
+    "method": "DELETE",
+    "path": "/api/v1/admin/plugins/kb.none",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "plugin.data.delete",
+    "method": "DELETE",
+    "path": "/api/v1/admin/plugins/kb.none/data",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "plugin.permissions.read",
+    "method": "GET",
+    "path": "/api/v1/admin/plugins/kb.none/permissions",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "plugin.permissions.save",
+    "method": "PUT",
+    "path": "/api/v1/admin/plugins/kb.none/permissions",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "plugin.lock.release",
+    "method": "POST",
+    "path": "/api/v1/admin/plugins/kb.none/release-lock",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "plugin.settings.read",
+    "method": "GET",
+    "path": "/api/v1/admin/plugins/kb.none/settings",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "plugin.settings.save",
+    "method": "PUT",
+    "path": "/api/v1/admin/plugins/kb.none/settings",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "plugin.state.set",
+    "method": "PUT",
+    "path": "/api/v1/admin/plugins/kb.none/state",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  }
+]

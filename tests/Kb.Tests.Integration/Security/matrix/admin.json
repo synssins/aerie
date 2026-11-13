@@ -1,0 +1,61 @@
+[
+  {
+    "action": "user.list",
+    "method": "GET",
+    "path": "/api/v1/admin/users",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "user.invite",
+    "method": "POST",
+    "path": "/api/v1/admin/users/invite",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "user.permissions.set",
+    "method": "PUT",
+    "path": "/api/v1/admin/users/{victim}/permissions",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "audit.list",
+    "method": "GET",
+    "path": "/api/v1/admin/audit?take=1",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "audit.verify",
+    "method": "GET",
+    "path": "/api/v1/admin/audit/verify",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "settings.public-space.set",
+    "method": "PUT",
+    "path": "/api/v1/admin/settings/public-space?enabled=false",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "settings.uploads.read",
+    "method": "GET",
+    "path": "/api/v1/admin/uploads",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "settings.uploads.save",
+    "method": "PUT",
+    "path": "/api/v1/admin/uploads",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  }
+]

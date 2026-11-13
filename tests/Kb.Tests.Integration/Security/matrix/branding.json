@@ -1,0 +1,39 @@
+[
+  {
+    "action": "brand.read",
+    "method": "GET",
+    "path": "/api/v1/brand",
+    "expect": {"anonymous": 200, "outsider": 200, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "brand.logo.read",
+    "method": "GET",
+    "path": "/api/v1/brand/logo/light",
+    "expect": {"anonymous": "allowed", "outsider": "allowed", "reader": "allowed", "contributor": "allowed", "supervisor": "allowed", "owner": "allowed", "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "brand.update",
+    "method": "PUT",
+    "path": "/api/v1/admin/brand",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "brand.logo.set",
+    "method": "PUT",
+    "path": "/api/v1/admin/brand/logo/light",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  },
+  {
+    "action": "brand.logo.remove",
+    "method": "DELETE",
+    "path": "/api/v1/admin/brand/logo/light",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server"
+  }
+]

@@ -1,0 +1,26 @@
+[
+  {
+    "action": "image.read",
+    "method": "GET",
+    "path": "/api/v1/images/{image}",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "image.add",
+    "method": "POST",
+    "path": "/api/v1/spaces/{space}/images",
+    "upload": "png",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 201, "supervisor": 201, "owner": 201, "admin": 201},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "image.import",
+    "method": "POST",
+    "path": "/api/v1/spaces/{space}/images/import",
+    "body": {"url": "https://images.example.invalid/a.png"},
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": "allowed", "supervisor": "allowed", "owner": "allowed", "admin": "allowed"},
+    "sensitive": {"admin": 404},
+    "note": "The address cannot be fetched, so a caller who may import gets a refusal of the address, not of the caller."
+  }
+]

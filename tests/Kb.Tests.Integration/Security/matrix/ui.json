@@ -1,0 +1,18 @@
+[
+  {
+    "action": "ui.plugins",
+    "method": "GET",
+    "path": "/api/v1/ui/plugins",
+    "expect": {"anonymous": 401, "outsider": 200, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "ui.error.report",
+    "method": "POST",
+    "path": "/api/v1/ui/errors",
+    "body": {"plugin": "kb.none", "where": "matrix", "message": "Sent by the matrix."},
+    "expect": {"anonymous": 401, "outsider": 400, "reader": 400, "contributor": 400, "supervisor": 400, "owner": 400, "admin": 400},
+    "scope": "server",
+    "note": "kb.none is not a loaded plugin, so the report is refused as a request (400) for everyone signed in."
+  }
+]
