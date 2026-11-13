@@ -11,9 +11,6 @@ using System.Text;
 
 namespace Kb.Web;
 
-public sealed record SetupStatus(bool Required, bool CodeRequired);
-public sealed record SetupRequest(string UserName, string DisplayName, string Password, string? Code);
-
 /// <summary>First-run setup: creates the first regular admin. See <see cref="SetupOptions"/>.</summary>
 public sealed class SetupService(
     UserManager<KbUser> users,
@@ -35,7 +32,7 @@ public sealed class SetupService(
         !await db.Users.AnyAsync(u => u.IsAdmin && !u.IsBreakGlass && u.DeactivatedAt == null, ct);
 
     /// <summary>Requests from the server itself skip the setup code.</summary>
-    public static bool IsLocal(HttpContext http) => http.Connection.RemoteIpAddress is { } ip && IPAddress.IsLoopback(ip);
+    public static bool IsLocal(HttpContext? http) => http?.Connection.RemoteIpAddress is { } ip && IPAddress.IsLoopback(ip);
 
     public async Task OnStartupAsync()
     {
@@ -87,20 +84,23 @@ public sealed class SetupService(
         return (user, result);
     }
 
-    public static async Task<IResult> RunAsync(SetupRequest req, SetupService setup, SignInManager<KbUser> signIn, HttpContext http)
+    /// <summary><paramref name="local"/>: the request came from the server itself, so it needs no setup code.</summary>
+    public async Task<Outcome<MeResponse>> RunAsync(RunSetup req, bool local, SignInManager<KbUser> signIn, CancellationToken ct)
     {
-        await Gate.WaitAsync(http.RequestAborted);
+        ArgumentNullException.ThrowIfNull(req);
+        ArgumentNullException.ThrowIfNull(signIn);
+        await Gate.WaitAsync(ct);
         try
         {
-            if (!await setup.IsRequiredAsync(http.RequestAborted)) return Results.Conflict();
-            if (!IsLocal(http) && !setup.CodeMatches(req.Code)) return Results.StatusCode(StatusCodes.Status403Forbidden);
-            if (string.IsNullOrWhiteSpace(req.UserName)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["userName"] = ["Required."] });
+            if (!await IsRequiredAsync(ct)) return new Problem(409);
+            if (!local && !CodeMatches(req.Code)) return Problem.Forbidden;
+            if (string.IsNullOrWhiteSpace(req.UserName)) return Problem.Invalid("userName", "Required.");
 
-            var (user, result) = await setup.CreateAdminAsync(req.UserName, req.DisplayName, req.Password, IsLocal(http) ? "setup-local" : "setup-code");
-            if (user is null) return Results.ValidationProblem(new Dictionary<string, string[]> { ["password"] = result.Errors.Select(e => e.Description).ToArray() });
+            var (user, result) = await CreateAdminAsync(req.UserName, req.DisplayName, req.Password, local ? "setup-local" : "setup-code");
+            if (user is null) return new Problem(400, Fields: new Dictionary<string, string[]> { ["password"] = result.Errors.Select(e => e.Description).ToArray() });
 
             await signIn.SignInAsync(user, isPersistent: false);
-            return Results.Ok(new MeResponse(user.Id, user.UserName!, user.DisplayName, user.IsAdmin, user.IsBreakGlass, user.IsAdmin));
+            return new MeResponse(user.Id, user.UserName!, user.DisplayName, user.IsAdmin, user.IsBreakGlass, user.IsAdmin);
         }
         finally { Gate.Release(); }
     }

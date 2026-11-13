@@ -1,22 +1,14 @@
 using Kb.Core.Identity;
-using Kb.Core.Notifications;
-using Kb.Plugins;
-using Microsoft.AspNetCore.Identity;
 using System.Text.Json;
 
 namespace Kb.Web;
 
-/// <summary>Per-user app settings. Stored as JSON on the user.</summary>
-public sealed record UserSettings(string Theme, string Width, string StartPage, string CodeLanguage, Dictionary<string, NotifyPref> Notify)
+/// <summary>How a user's settings are stored (JSON on the user) and what they may hold.</summary>
+public static class UserSettingsModel
 {
-    public static UserSettings Default => new("system", "boxed", "last", "plaintext", []);
-}
-
-public static partial class UserSettingsEndpoints
-{
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
-    private static readonly string[] Themes = ["light", "dark", "system"];
-    private static readonly string[] Widths = ["boxed", "full"];
+    internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    internal static readonly string[] Themes = ["light", "dark", "system"];
+    internal static readonly string[] Widths = ["boxed", "full"];
 
     public static UserSettings Read(KbUser u)
     {

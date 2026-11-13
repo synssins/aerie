@@ -1,39 +1,41 @@
-using Kb.Core.Access;
 using Kb.Core.Audit;
-using Kb.Core.Config;
-using Kb.Core.Identity;
-using Kb.Core.Plugins;
 using Kb.Core.Spaces;
 using Kb.Data;
-using Kb.Plugins;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using System.Text.RegularExpressions;
 
 namespace Kb.Web;
 
-public static partial class EndpointMappings
+/// <summary>What the space handlers share. No HTTP here: a refusal is a <see cref="Problem"/>.</summary>
+internal static partial class SpaceSupport
 {
     [GeneratedRegex("^[a-z0-9][a-z0-9-]{1,31}$")]
-    private static partial Regex SpaceKeyPattern();
+    internal static partial Regex SpaceKeyPattern();
 
     [GeneratedRegex("[^a-z0-9]+")]
-    private static partial Regex NonKeyChars();
+    internal static partial Regex NonKeyChars();
+
+    /// <summary>404 for one with no role in the space, so it is not disclosed; 403 for one who has a role but does not manage the space.</summary>
+    internal static async Task<Problem?> ManagesAsync(IAccess access, Actor actor, Guid spaceId, CancellationToken ct)
+    {
+        if (await access.RoleAsync(actor, spaceId, ct) is null) return Problem.NotFound;
+        return await access.CanAsync(actor, spaceId, SpaceAction.ManageRolesSettingsSensitive, ct) ? null : Problem.Forbidden;
+    }
+
+    /// <summary>True when the update changes the name, the sensitive flag or the public flag: only an Admin changes those.</summary>
+    internal static bool NeedsAdmin(Space s, UpdateSpace req) =>
+        IsRename(s, req) || (req.IsSensitive is { } a && a != s.IsSensitive) || (req.IsPublic is { } b && b != s.IsPublic);
+
+    private static bool IsRename(Space s, UpdateSpace req) => req.Name is { } n && !string.IsNullOrWhiteSpace(n) && n.Trim() != s.Name;
 
     /// <summary>
-    /// Applies a space update. Owners change the description and space settings; only admins change the name,
-    /// the sensitive flag and the public flag. Returns an error result, or null on success.
+    /// Applies a space update and notes its audit entry. Owners change the description and space settings; who may change the name,
+    /// the sensitive flag and the public flag is the caller's to check first (<see cref="NeedsAdmin"/>). Returns a problem, or null on success.
     /// </summary>
-    private static async Task<IResult?> UpdateSpaceAsync(Space s, UpdateSpaceRequest req, bool isAdmin, Guid me, KbDbContext db, IAuditLog audit)
+    internal static async Task<Problem?> UpdateSpaceAsync(Space s, UpdateSpace req, KbDbContext db, ActionContext ctx)
     {
-        var nameChange = req.Name is { } n && !string.IsNullOrWhiteSpace(n) && n.Trim() != s.Name;
-        var adminOnly = nameChange || (req.IsSensitive is { } a && a != s.IsSensitive) || (req.IsPublic is { } b && b != s.IsPublic);
-        if (adminOnly && !isAdmin) return Results.StatusCode(403);
-        if (req.AgingDays is < 1 or > 3650 || req.RecycleDays is < 1 or > 3650)
-            return Results.ValidationProblem(new Dictionary<string, string[]> { ["days"] = ["1-3650."] });
+        if (req.AgingDays is < 1 or > 3650 || req.RecycleDays is < 1 or > 3650) return Problem.Invalid("days", "1-3650.");
 
-        if (nameChange) s.Name = req.Name!.Trim();
+        if (IsRename(s, req)) s.Name = req.Name!.Trim();
         if (req.Description is { } d) s.Description = string.IsNullOrWhiteSpace(d) ? null : d.Trim();
         if (req.CommentsEnabled is { } c) s.CommentsEnabled = c;
         if (req.AgingDays is { } ad) s.AgingDays = ad;
@@ -43,17 +45,11 @@ public static partial class EndpointMappings
         var sensitiveChanged = req.IsSensitive is { } sens && sens != s.IsSensitive;
         if (req.IsSensitive is { } v) s.IsSensitive = v;
         await db.SaveChangesAsync();
-        await audit.AppendAsync(new AuditEvent(sensitiveChanged ? AuditActions.SpaceSensitiveSet : AuditActions.SpaceUpdate, me, "space", s.Id.ToString(), s.Id,
-            new Dictionary<string, string> { ["isSensitive"] = s.IsSensitive.ToString(), ["isPublic"] = s.IsPublic.ToString() }));
+        ctx.Audit(sensitiveChanged ? AuditActions.SpaceSensitiveSet : AuditActions.SpaceUpdate, "space", s.Id.ToString(), s.Id,
+            new Dictionary<string, string> { ["isSensitive"] = s.IsSensitive.ToString(), ["isPublic"] = s.IsPublic.ToString() });
         return null;
     }
 
-    private static async Task<bool> IsAdminAsync(HttpContext http, KbDbContext db)
-    {
-        var id = http.User.UserId();
-        return await db.Users.AsNoTracking().AnyAsync(u => u.Id == id && u.IsAdmin && u.DeactivatedAt == null);
-    }
-
-    private static SpaceDto ToDto(Space s, SpaceRole? role) => new(s.Id, s.Key, s.Name, s.Description, s.IsSensitive, s.IsPublic, role?.ToString(),
+    internal static SpaceDto ToDto(Space s, SpaceRole? role) => new(s.Id, s.Key, s.Name, s.Description, s.IsSensitive, s.IsPublic, role?.ToString(),
         s.CommentsEnabled, s.AgingDays, s.AgingAudience.ToString(), s.RecycleDays, s.CreatedAt);
 }
