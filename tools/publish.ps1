@@ -6,7 +6,8 @@ if (-not (Test-Path $dotnet)) { $dotnet = 'dotnet' }
 Push-Location (Join-Path $root 'client')
 try {
     if (-not (Test-Path node_modules)) { npm ci --no-fund }
-    npx vite build
+    # "npm run build" also writes the shared modules plugin scripts import (wwwroot/shared/v1).
+    npm run build
     if ($LASTEXITCODE -ne 0) { throw 'UI build failed' }
 } finally { Pop-Location }
 $out = Join-Path $root 'artifacts\publish'

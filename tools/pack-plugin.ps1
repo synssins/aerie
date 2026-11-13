@@ -21,6 +21,14 @@ Copy-Item $manifestPath (Join-Path $out 'kb-plugin.json') -Force
 
 $package = Join-Path $root "artifacts\plugins\$($manifest.id)-$($manifest.version).kbplugin"
 if (Test-Path $package) { Remove-Item $package -Force }
+# Entry names use "/", as the zip format says; Windows PowerShell's CreateFromDirectory writes "\".
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::CreateFromDirectory($out, $package)
+$zip = [System.IO.Compression.ZipFile]::Open($package, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    foreach ($file in Get-ChildItem $out -Recurse -File) {
+        $name = $file.FullName.Substring($out.Length).TrimStart([char]92).Replace([string][char]92, '/')
+        [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $file.FullName, $name)
+    }
+} finally { $zip.Dispose() }
 Write-Host $package
