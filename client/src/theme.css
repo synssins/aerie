@@ -310,6 +310,8 @@ textarea { resize: both; max-width: 100%; }
   width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font: inherit; background: var(--paper); color: var(--ink);
 }
 .form textarea { min-height: 84px; resize: both; align-self: start; }
+/* A selection is as wide as its choices, not as wide as the form. */
+.form select.sel { width: auto; justify-self: start; }
 .form input[readonly] { background: var(--rail); color: var(--ink2); }
 .form .actions { grid-column: 2; display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .days { display: inline-flex; align-items: center; gap: 8px; color: var(--ink2); }
