@@ -95,6 +95,8 @@ services.AddSingleton(TimeProvider.System);
 services.AddSingleton<IAppRestarter, HostRestarter>();
 services.AddScoped<PluginInstaller>();
 services.AddSingleton<PluginSettingsStore>();
+services.AddSingleton<PluginFailures>();
+services.AddSingleton<IPluginFailures>(sp => sp.GetRequiredService<PluginFailures>());
 services.AddSingleton<PluginWatcher>();
 services.AddHostedService(sp => sp.GetRequiredService<PluginWatcher>());
 services.AddHttpContextAccessor();

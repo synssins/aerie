@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 namespace Kb.Data;
 
 /// <summary>Hash-chained audit log. Appends serialize across instances (SQL Server app lock / SQLite write lock).</summary>
-public sealed class SqlAuditLog(KbDbContext db, TimeProvider time, IEnumerable<IAuditSink> sinks, ILogger<SqlAuditLog> log) : IAuditLog
+public sealed class SqlAuditLog(KbDbContext db, TimeProvider time, IEnumerable<IAuditSink> sinks, IPluginFailures failures, ILogger<SqlAuditLog> log) : IAuditLog
 {
     private static readonly SemaphoreSlim LocalGate = new(1, 1);
 
@@ -54,7 +54,12 @@ public sealed class SqlAuditLog(KbDbContext db, TimeProvider time, IEnumerable<I
         foreach (var sink in sinks)
         {
             try { await sink.ForwardAsync(record, ct); }
-            catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "Audit sink {Sink} failed", sink.ProviderId); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // The entry is already written; a sink cannot undo or silence it.
+                log.LogError(ex, "Audit sink {Sink} failed", sink.ProviderId);
+                failures.Report(sink.ProviderId, "audit sink", ex);
+            }
         }
     }
 

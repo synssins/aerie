@@ -46,6 +46,15 @@ public interface IRegistrations
     IReadOnlyList<Registered<T>> All<T>() where T : class;
 }
 
+/// <summary>
+/// Where a failure of a plugin is reported: a hook, a sink, a job or a sender that threw. Enough failures in a short time
+/// and the core turns the plugin off. The core's own code and plugins that host other plugins' code call it.
+/// </summary>
+public interface IPluginFailures
+{
+    void Report(string pluginId, string where, Exception? exception = null);
+}
+
 /// <summary>Contents of <c>kb-plugin.json</c>, shipped next to the plugin assembly.</summary>
 public sealed record PluginManifest
 {

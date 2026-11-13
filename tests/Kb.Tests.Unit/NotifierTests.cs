@@ -23,7 +23,7 @@ public sealed class NotifierTests
         var mail = Substitute.For<IEmailSender>();
         mail.ProviderId.Returns("smtp");
         var opts = Options.Create(new KbOptions { Email = new EmailOptions { Provider = "smtp" } });
-        return (new Notifier(store, dir, new ProviderSelector<IEmailSender>([mail]), opts, new FakeTimeProvider(), NullLogger<Notifier>.Instance), store, mail);
+        return (new Notifier(store, dir, new ProviderSelector<IEmailSender>([mail]), opts, new FakeTimeProvider(), Substitute.For<IPluginFailures>(), NullLogger<Notifier>.Instance), store, mail);
     }
 
     [Fact]

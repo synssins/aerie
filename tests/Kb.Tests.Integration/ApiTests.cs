@@ -195,7 +195,7 @@ public sealed class ApiTests : IAsyncLifetime
         await _f.SignedInBreakGlassAsync(); // writes signin + breakglass entries
         await _f.WithDbAsync(async db =>
         {
-            var audit = new SqlAuditLog(db, TimeProvider.System, [], Microsoft.Extensions.Logging.Abstractions.NullLogger<SqlAuditLog>.Instance);
+            var audit = new SqlAuditLog(db, TimeProvider.System, [], NSubstitute.Substitute.For<Kb.Plugins.IPluginFailures>(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SqlAuditLog>.Instance);
             await audit.AppendAsync(new AuditEvent("test.one", null), TestContext.Current.CancellationToken);
             Assert.True((await audit.VerifyAsync(TestContext.Current.CancellationToken)).Valid);
 

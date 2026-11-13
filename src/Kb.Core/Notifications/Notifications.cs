@@ -53,6 +53,7 @@ public sealed class Notifier(
     ProviderSelector<IEmailSender> senders,
     IOptions<KbOptions> options,
     TimeProvider time,
+    IPluginFailures failures,
     ILogger<Notifier> log) : INotifier
 {
     public async Task NotifyAsync(IReadOnlyCollection<Guid> userIds, string kind, string title, string? body, string? link, bool alsoEmail, CancellationToken ct = default)
@@ -88,6 +89,7 @@ public sealed class Notifier(
         {
             // In-app notification already stored; email failure must not undo the action that triggered it.
             log.LogError(ex, "Email send failed via {Provider}", sender.ProviderId);
+            failures.Report(sender.ProviderId, "email send", ex);
         }
     }
 }
