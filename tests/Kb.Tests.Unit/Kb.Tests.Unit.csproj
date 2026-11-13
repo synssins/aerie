@@ -13,6 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="Kb.Plugins.Actions" />
     <ProjectReference Include="..\..\src\Kb.Core\Kb.Core.csproj" />
     <ProjectReference Include="..\..\src\Kb.Data\Kb.Data.csproj" />
     <ProjectReference Include="..\..\plugins\Kb.Plugin.Sample\Kb.Plugin.Sample.csproj" />

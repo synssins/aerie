@@ -1,6 +1,3 @@
-using System.Net;
-using System.Security.Cryptography;
-using System.Text;
 using Kb.Core.Audit;
 using Kb.Core.Config;
 using Kb.Core.Identity;
@@ -8,6 +5,9 @@ using Kb.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Kb.Web;
 
@@ -103,19 +103,5 @@ public sealed class SetupService(
             return Results.Ok(new MeResponse(user.Id, user.UserName!, user.DisplayName, user.IsAdmin, user.IsBreakGlass, user.IsAdmin));
         }
         finally { Gate.Release(); }
-    }
-}
-
-public static class SetupEndpoints
-{
-    public static void MapSetupEndpoints(this RouteGroupBuilder api)
-    {
-        api.MapGet("/setup/status", async (SetupService setup, HttpContext http) =>
-        {
-            var required = await setup.IsRequiredAsync(http.RequestAborted);
-            return Results.Ok(new SetupStatus(required, required && !SetupService.IsLocal(http)));
-        }).AllowAnonymous();
-
-        api.MapPost("/setup", SetupService.RunAsync).AllowAnonymous();
     }
 }
