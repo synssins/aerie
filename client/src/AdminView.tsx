@@ -57,7 +57,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
     if (!isAdmin) return;
     if (section === "users") void api.get<AdminUser[]>("/admin/users").then(setUsers);
     if (section === "uploads") void api.get<UploadSettings>("/admin/uploads").then(setUploads);
-    if (section === "plugins") void api.get<{ loaded: Plugin[]; refused: Refused[] }>("/admin/plugins").then(setPlugins);
+    if (section === "plugins") void api.get<{ plugins: (Plugin & { loaded: boolean })[] }>("/admin/plugins").then((r) => setPlugins({ loaded: r.plugins.map((p) => ({ ...p, enabled: p.loaded })), refused: [] }));
     if (section === "audit") { setVerify(null); void api.get<AuditRow[]>("/admin/audit?take=200").then(setAudit); }
   }, [section, isAdmin]);
 

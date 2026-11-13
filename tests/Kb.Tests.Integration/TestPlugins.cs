@@ -3,7 +3,7 @@ using System.Net;
 using System.Reflection;
 using Kb.Core.Plugins;
 using Kb.Plugins;
-using Kb.Web;
+using Kb.Web.Plugins;
 
 namespace Kb.Tests.Integration;
 

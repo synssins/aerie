@@ -17,6 +17,11 @@ public sealed class ProbePlugin : IKbPlugin
         services.AddSingleton<IAuditSink>(new ProbeSink(context));
         if (context.GetSetting("FailOn") == "services") throw new InvalidOperationException("Probe failed in ConfigureServices.");
         if (context.GetSetting("Register") == "filestore") services.AddSingleton<IFileStore, ProbeFileStore>(); // a service the core has
+        if (context.GetSetting("Register") == "kinds")
+        {
+            services.AddSingleton<IFileStoreKind, ProbeStoreKind>();
+            services.AddSingleton<ILogShipperKind, ProbeLogKind>();
+        }
         if (context.GetSetting("Register") == "hosted") services.AddSingleton<Microsoft.Extensions.Hosting.IHostedService, ProbeHosted>();
     }
 
@@ -47,4 +52,43 @@ public sealed class ProbeHosted : Microsoft.Extensions.Hosting.IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken) => throw new InvalidOperationException("Probe hosted service failed.");
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+/// <summary>A storage kind and a log kind only this plugin supplies. Both keep what they get in memory.</summary>
+public sealed class ProbeStoreKind : IFileStoreKind
+{
+    public string Kind => "probe-store";
+    public string Label => "Probe store";
+    public IReadOnlyList<FileStoreField> Fields => [];
+    public IFileStore Open(IReadOnlyDictionary<string, string?> settings) => new MemoryStore();
+
+    private sealed class MemoryStore : IFileStore
+    {
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte[]> Files = new();
+        public Task SaveAsync(string key, byte[] data, CancellationToken ct) { Files[key] = data; return Task.CompletedTask; }
+        public async Task<long> SaveAsync(string key, Stream source, long maxBytes, CancellationToken ct)
+        {
+            using var ms = new MemoryStream();
+            await source.CopyToAsync(ms, ct);
+            if (ms.Length > maxBytes) return -1;
+            Files[key] = ms.ToArray();
+            return ms.Length;
+        }
+        public Task<Stream?> OpenAsync(string key, CancellationToken ct) => Task.FromResult<Stream?>(Files.TryGetValue(key, out var data) ? new MemoryStream(data) : null);
+        public Task DeleteAsync(string key, CancellationToken ct) { Files.TryRemove(key, out _); return Task.CompletedTask; }
+        public Task<long?> SizeAsync(string key, CancellationToken ct) => Task.FromResult<long?>(Files.TryGetValue(key, out var data) ? data.Length : null);
+    }
+}
+
+public sealed class ProbeLogKind : ILogShipperKind
+{
+    public string Kind => "probe-log";
+    public string Label => "Probe log";
+    public IReadOnlyList<LogShipField> Fields => [];
+    public ILogShipper Open(IReadOnlyDictionary<string, string?> settings) => new Discard();
+
+    private sealed class Discard : ILogShipper
+    {
+        public Task SendAsync(IReadOnlyList<LogEvent> events, CancellationToken ct) => Task.CompletedTask;
+    }
 }

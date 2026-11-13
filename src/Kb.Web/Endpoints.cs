@@ -27,7 +27,6 @@ public sealed record AccessRequestBody(SpaceRole Role, string? Reason);
 public sealed record DecideBody(bool Approve);
 public sealed record EmergencyBody(string Reason);
 public sealed record InviteRequest(string UserName, string DisplayName, string? Email, bool IsAdmin = false);
-public sealed record PluginDto(string Id, string Version, string Publisher, string Origin, bool Enabled, IReadOnlyList<string> ExtensionPoints, IReadOnlyList<string> OutboundHosts);
 
 public static partial class EndpointMappings
 {
@@ -236,12 +235,6 @@ public static partial class EndpointMappings
     {
         var admin = api.MapGroup("/admin").AddEndpointFilter(async (ctx, next) =>
             await IsAdminAsync(ctx.HttpContext, ctx.HttpContext.RequestServices.GetRequiredService<KbDbContext>()) ? await next(ctx) : Results.StatusCode(403));
-
-        admin.MapGet("/plugins", (PluginRegistry reg) => Results.Ok(new
-        {
-            loaded = reg.All.Select(p => new PluginDto(p.Manifest.Id, p.Manifest.Version, p.Manifest.Publisher, p.Origin.ToString(), p.Loaded, p.Manifest.ExtensionPoints, p.Manifest.OutboundHosts)),
-            refused = Array.Empty<object>(),
-        }));
 
         admin.MapGet("/audit/verify", async (IAuditLog audit) => Results.Ok(await audit.VerifyAsync()));
 

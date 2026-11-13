@@ -1,0 +1,45 @@
+using Kb.Plugins;
+
+namespace Kb.Web.Pipeline;
+
+/// <summary>Turns an <see cref="Outcome{T}"/> into the HTTP answer. One place, so every route answers a problem the same way.</summary>
+public static class HttpOutcome
+{
+    public static IResult ToHttp<T>(this Outcome<T> outcome) => outcome.ToHttp(value => value is Unit ? Results.NoContent() : Results.Ok(value));
+
+    public static IResult ToHttp<T>(this Outcome<T> outcome, Func<T, IResult> ok)
+    {
+        ArgumentNullException.ThrowIfNull(ok);
+        return outcome.Problem is { } problem ? ToHttp(problem) : ok(outcome.Value!);
+    }
+
+    public static async Task<IResult> ToHttp<T>(this Task<Outcome<T>> outcome)
+    {
+        ArgumentNullException.ThrowIfNull(outcome);
+        return (await outcome).ToHttp();
+    }
+
+    public static async Task<IResult> ToHttp<T>(this Task<Outcome<T>> outcome, Func<T, IResult> ok)
+    {
+        ArgumentNullException.ThrowIfNull(outcome);
+        return (await outcome).ToHttp(ok);
+    }
+
+    /// <summary>
+    /// 400 with fields is a validation problem. 401, 403 and 404 answer bare, as the routes always did.
+    /// 409 answers its body when it has one. Everything else that carries a message answers problem details whose "detail" is the message.
+    /// </summary>
+    public static IResult ToHttp(Problem problem)
+    {
+        ArgumentNullException.ThrowIfNull(problem);
+        return problem switch
+        {
+            { Status: 400, Fields: { } fields } => Results.ValidationProblem(fields.ToDictionary(f => f.Key, f => f.Value)),
+            { Status: 401 } => Results.Unauthorized(),
+            { Status: 404 } => Results.NotFound(),
+            { Status: 409, Body: { } body } => Results.Conflict(body),
+            { Message: { } message } => Results.Problem(detail: message, statusCode: problem.Status),
+            _ => Results.StatusCode(problem.Status),
+        };
+    }
+}

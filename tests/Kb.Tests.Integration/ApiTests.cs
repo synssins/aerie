@@ -4,6 +4,7 @@ using Kb.Core.Audit;
 using Kb.Core.Spaces;
 using Kb.Data;
 using Kb.Web;
+using Kb.Web.Plugins;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
