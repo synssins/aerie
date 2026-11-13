@@ -77,6 +77,13 @@ export type ApiToken = {
   id: string; name: string; kind: "Personal" | "Service"; prefix: string; scopes: TokenScope[]; ownerId: string; owner: string;
   createdAt: string; expiresAt: string; revokedAt: string | null; lastUsedAt: string | null; state: "Active" | "Expired" | "Revoked";
 };
+export type LogField = { key: string; label: string; type: "text" | "secret" | "select"; options: string[] | null };
+export type LogKind = { kind: string; label: string; fields: LogField[] };
+export type LogTarget = {
+  id: string; name: string; kind: string; settings: Record<string, string | null>; secretsSet: string[]; enabled: boolean; lastSequence: number;
+  lastShippedAt: string | null; lastError: string | null; lastErrorAt: string | null; createdAt: string;
+};
+export type LogsInfo = { kinds: LogKind[]; targets: LogTarget[]; head: number };
 export type StorageField = { key: string; label: string; type: "text" | "secret" };
 export type StorageKind = { kind: string; label: string; fields: StorageField[] };
 export type StoragePlace = { id: string; name: string; kind: string; settings: Record<string, string | null>; secretsSet: string[]; role: "Active" | "Target" | "Old"; createdAt: string };
