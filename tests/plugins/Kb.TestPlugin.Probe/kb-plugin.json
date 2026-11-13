@@ -1,0 +1,40 @@
+{
+  "id": "kb.test.probe",
+  "name": "Test probe",
+  "version": "1.0.0",
+  "publisher": "Kb tests",
+  "assembly": "Kb.TestPlugin.Probe.dll",
+  "minKbVersion": "0.1.0",
+  "abstractionsVersion": "0.2.0",
+  "extensionPoints": [
+    "audit-sink"
+  ],
+  "settings": [
+    {
+      "key": "FailOn",
+      "label": "Fail on",
+      "type": "select",
+      "options": [
+        "",
+        "services",
+        "configure",
+        "sink"
+      ]
+    },
+    {
+      "key": "Greeting",
+      "label": "Greeting"
+    },
+    {
+      "key": "Token",
+      "label": "Token",
+      "secret": true,
+      "type": "secret"
+    },
+    {
+      "key": "Mode",
+      "label": "Mode",
+      "restart": true
+    }
+  ]
+}

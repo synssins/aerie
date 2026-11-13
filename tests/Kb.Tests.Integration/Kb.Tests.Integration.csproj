@@ -18,4 +18,16 @@
     <ProjectReference Include="..\..\src\Kb.Core\Kb.Core.csproj" />
     <ProjectReference Include="..\..\src\Kb.Data\Kb.Data.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Built first, never referenced: tests install them as packages through the real install path. -->
+    <ProjectReference Include="..\plugins\Kb.TestPlugin.Probe\Kb.TestPlugin.Probe.csproj" ReferenceOutputAssembly="false" OutputItemType="TestPluginDll" />
+    <ProjectReference Include="..\plugins\Kb.TestPlugin.Lib\Kb.TestPlugin.Lib.csproj" ReferenceOutputAssembly="false" OutputItemType="TestPluginDll" />
+    <ProjectReference Include="..\plugins\Kb.TestPlugin.Dependent\Kb.TestPlugin.Dependent.csproj" ReferenceOutputAssembly="false" OutputItemType="TestPluginDll" />
+  </ItemGroup>
+  <!-- Each plugin's output folder goes into the test assembly as metadata "TestPlugin:<project>", read by TestPlugins.Package. -->
+  <Target Name="TestPluginFolders" DependsOnTargets="ResolveProjectReferences" BeforeTargets="GetAssemblyAttributes">
+    <ItemGroup>
+      <AssemblyMetadata Include="TestPlugin:%(TestPluginDll.Filename)" Value="%(TestPluginDll.RootDir)%(TestPluginDll.Directory)" />
+    </ItemGroup>
+  </Target>
 </Project>

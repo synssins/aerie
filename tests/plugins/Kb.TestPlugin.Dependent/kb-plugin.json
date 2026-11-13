@@ -1,0 +1,15 @@
+{
+  "id": "kb.test.dependent",
+  "name": "Test dependent",
+  "version": "1.0.0",
+  "publisher": "Kb tests",
+  "assembly": "Kb.TestPlugin.Dependent.dll",
+  "minKbVersion": "0.1.0",
+  "abstractionsVersion": "0.2.0",
+  "requires": [
+    {
+      "id": "kb.test.lib",
+      "minVersion": "1.0.0"
+    }
+  ]
+}

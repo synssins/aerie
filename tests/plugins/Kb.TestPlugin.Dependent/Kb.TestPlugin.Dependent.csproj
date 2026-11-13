@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <!-- Test plugins: built by the test project, packaged by TestPlugins.Package and installed through the real install path. -->
+    <NoWarn>$(NoWarn);CA1062;CA1707;CA1716;CA2201</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Kb.Plugins.Abstractions\Kb.Plugins.Abstractions.csproj" />
+    <ProjectReference Include="..\Kb.TestPlugin.Lib\Kb.TestPlugin.Lib.csproj" />
+    <None Include="kb-plugin.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

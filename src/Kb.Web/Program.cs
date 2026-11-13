@@ -92,6 +92,7 @@ services.AddSingleton(typeof(ProviderSelector<>));
 
 // ---- core services ----
 services.AddSingleton(TimeProvider.System);
+services.AddSingleton<IAppRestarter, HostRestarter>();
 services.AddHttpContextAccessor();
 services.AddSingleton<IFileStoreKind, FolderFileStoreKind>();
 services.AddSingleton<ActiveFileStore>();

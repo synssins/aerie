@@ -9,16 +9,21 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Kb.Tests.Integration;
 
 /// <summary>App on a throwaway SQLite file. Two factories given the same path behave like two load-balanced instances.</summary>
-public sealed class KbAppFactory(string dbPath, bool breakGlass = true, bool loopback = false, IDictionary<string, string>? settings = null, Action<IServiceCollection>? services = null)
-    : WebApplicationFactory<Program>
+public sealed class KbAppFactory(string dbPath, bool breakGlass = true, bool loopback = false, IDictionary<string, string>? settings = null, Action<IServiceCollection>? services = null,
+    string? workFolder = null) : WebApplicationFactory<Program>
 {
     public const string BreakGlassPassword = "test-breakglass-password-0123456789";
     public string DbPath { get; } = dbPath;
     public string SetupCodeFile { get; } = dbPath + ".setup-code.txt";
+    /// <summary>Where this instance unpacks plugins. A restarted instance keeps it; a second instance has its own.</summary>
+    public string WorkFolder { get; } = workFolder ?? dbPath + ".plugins";
+    /// <summary>Records the restarts the app asked for.</summary>
+    public FakeRestarter Restarter { get; } = new();
 
     public static string NewDbPath() => Path.Combine(Path.GetTempPath(), $"kb-test-{Guid.NewGuid():N}.db");
 
@@ -34,6 +39,8 @@ public sealed class KbAppFactory(string dbPath, bool breakGlass = true, bool loo
         foreach (var (k, v) in settings ?? new Dictionary<string, string>()) builder.UseSetting(k, v);
         // TestServer has no remote address; loopback=true makes requests look like they come from the server itself.
         if (loopback) builder.ConfigureServices(s => s.AddSingleton<IStartupFilter, LoopbackFilter>());
+        builder.UseSetting("Kb:Plugins:WorkFolder", WorkFolder);
+        builder.ConfigureServices(s => s.Replace(ServiceDescriptor.Singleton<IAppRestarter>(Restarter)));
         if (services is not null) builder.ConfigureServices(services);
     }
 
@@ -45,6 +52,16 @@ public sealed class KbAppFactory(string dbPath, bool breakGlass = true, bool loo
             next(app);
         };
     }
+
+    /// <summary>Stops this instance and starts a new one on the same database and work folder: what a restart of the app does.</summary>
+    public async Task<KbAppFactory> RestartAsync()
+    {
+        await DisposeAsync();
+        return new KbAppFactory(DbPath, breakGlass, loopback, settings, services, WorkFolder);
+    }
+
+    /// <summary>Another server: the same database, its own work folder.</summary>
+    public KbAppFactory SecondInstance() => new(DbPath, breakGlass, loopback, settings, services, $"{DbPath}.plugins-{Guid.NewGuid():N}");
 
     public HttpClient NewClient() => CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), HandleCookies = true });
 

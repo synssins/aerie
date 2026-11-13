@@ -1,0 +1,12 @@
+{
+  "id": "kb.test.lib",
+  "name": "Test library",
+  "version": "1.0.0",
+  "publisher": "Kb tests",
+  "assembly": "Kb.TestPlugin.Lib.dll",
+  "minKbVersion": "0.1.0",
+  "abstractionsVersion": "0.2.0",
+  "exports": [
+    "Kb.TestPlugin.Lib"
+  ]
+}
