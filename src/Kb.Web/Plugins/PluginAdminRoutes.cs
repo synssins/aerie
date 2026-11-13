@@ -8,7 +8,7 @@ namespace Kb.Web.Plugins;
 
 public sealed record PluginInfoDto(string Id, string Name, string Version, string Publisher, string? Description, PluginOrigin Origin, PluginState State, string? Reason,
     bool Locked, bool Loaded, string Source, IReadOnlyList<string> Requires, IReadOnlyList<string> RequiredBy, IReadOnlyList<string> ExtensionPoints, IReadOnlyList<string> OutboundHosts,
-    IReadOnlyList<PluginPermission> Permissions, bool Enforcing, IReadOnlyList<PluginSetting> Settings, bool Removed);
+    IReadOnlyList<PluginPermission> Permissions, bool Enforcing, IReadOnlyList<PluginSetting> Settings, IReadOnlyList<string> Replaces, bool Removed);
 public sealed record PluginListDto(IReadOnlyList<PluginInfoDto> Plugins, bool SafeMode);
 public sealed record PluginStateRequest(bool Enabled);
 
@@ -28,7 +28,7 @@ public static class PluginAdminRoutes
                 k.Manifest.Id, PluginManifests.NameOf(k.Manifest), k.Manifest.Version, k.Manifest.Publisher, k.Manifest.Description, k.Origin, k.Status.State, k.Status.Reason,
                 k.Status.LockedAt is not null, registry.Find(k.Manifest.Id) is { Loaded: true } loaded && loaded.Manifest.Version == k.Manifest.Version, k.Source,
                 [.. k.Manifest.Requires.Select(r => r.Id)], PluginGraph.Dependents(k.Manifest.Id, manifests), k.Manifest.ExtensionPoints, k.Manifest.OutboundHosts,
-                k.Manifest.Permissions, k.Manifest.Enforcing, k.Manifest.Settings, Removed: false))], registry.SafeMode));
+                k.Manifest.Permissions, k.Manifest.Enforcing, k.Manifest.Settings, k.Manifest.Ui?.Replaces ?? [], Removed: false))], registry.SafeMode));
         });
 
         // The package is the raw request body. The web server's own size limit still applies and answers 413.

@@ -6,8 +6,8 @@ let serverVersion: string | null = null;
 export let reloadPending = false;
 
 export class ApiError extends Error {
-  /** The answer's JSON, when it had one: `{ error }` for a refusal, `{ errors }` for fields. */
-  constructor(public status: number, message: string, public body: { error?: string; errors?: Record<string, string[]> } | null = null) {
+  /** The answer's JSON, when it had one: `{ detail }` or `{ error }` for a refusal, `{ errors }` for fields. */
+  constructor(public status: number, message: string, public body: { error?: string; detail?: string; errors?: Record<string, string[]> } | null = null) {
     super(message);
   }
 }
@@ -77,6 +77,12 @@ export type ApiToken = {
   id: string; name: string; kind: "Personal" | "Service"; prefix: string; scopes: TokenScope[]; ownerId: string; owner: string;
   createdAt: string; expiresAt: string; revokedAt: string | null; lastUsedAt: string | null; state: "Active" | "Expired" | "Revoked";
 };
+export type PluginSetting = { key: string; label: string; secret: boolean; required: boolean; type: string; options: string[] | null; restart: boolean };
+export type PluginInfo = {
+  id: string; name: string; version: string; publisher: string; description: string | null; origin: "BuiltIn" | "Uploaded"; state: "Enabled" | "Disabled" | "DisabledByCore";
+  reason: string | null; locked: boolean; loaded: boolean; source: string; requires: string[]; requiredBy: string[]; extensionPoints: string[]; outboundHosts: string[];
+  permissions: { key: string; label: string; scope: string; defaultRole: string }[]; enforcing: boolean; settings: PluginSetting[]; replaces: string[]; removed: boolean;
+};
 export type LogField = { key: string; label: string; type: "text" | "secret" | "select"; options: string[] | null };
 export type LogKind = { kind: string; label: string; fields: LogField[] };
 export type LogTarget = {
@@ -104,7 +110,7 @@ export async function upload<T>(path: string, file: File): Promise<T> {
     method: "POST", body: file, credentials: "same-origin",
     headers: { "Content-Type": "application/octet-stream", "X-File-Name": encodeURIComponent(file.name) },
   });
-  if (!r.ok) throw new ApiError(r.status, r.statusText);
+  if (!r.ok) throw new ApiError(r.status, r.statusText, await r.json().catch(() => null));
   return await r.json() as T;
 }
 

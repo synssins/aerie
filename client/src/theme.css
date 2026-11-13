@@ -418,6 +418,11 @@ label.inline { display: inline-flex; align-items: center; gap: 8px; font-size: 1
 .form .unit input { width: 110px; }
 .form .form-error.wide { grid-column: 2; }
 
+/* Administration > Plugins */
+.state-line { margin: 10px 0 12px; }
+.form + .form, .ptools.row + .form { margin-top: 18px; }
+.check { display: flex; align-items: center; gap: 8px; margin: 12px 0 4px; }
+
 /* API tokens */
 .form.made { margin: 0 0 18px; }
 .form.below { margin-top: 24px; }

@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronRight, FolderTree, HardDrive, House, KeyRound, Lock, 
 import { BinTable } from "./Views";
 import { BrandingPanel } from "./Branding";
 import { LogShipping } from "./admin/LogShipping";
+import { Plugins } from "./admin/Plugins";
 import { Storage } from "./admin/Storage";
 import { TokensPanel } from "./Tokens";
 import { api, ApiError, fmtSize, type Brand, type Space, type TreeNode } from "./api";
@@ -12,10 +13,8 @@ export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "branding", "s
 type UploadSettings = { attachmentMb: number; serverLimitBytes: number | null };
 
 type AdminUser = { id: string; userName: string; displayName: string; source: string; isAdmin: boolean; isBreakGlass: boolean; createdAt: string; deactivatedAt: string | null; canAnnounce: boolean };
-type Plugin = { id: string; version: string; publisher: string; origin: string; enabled: boolean; extensionPoints: string[]; outboundHosts: string[] };
-type Refused = { path: string; reason: string };
 type AuditRow = { sequence: number; at: string; action: string; actor: string | null; targetType: string | null; targetId: string | null };
-type Picked = { kind: "user"; item: AdminUser } | { kind: "plugin"; item: Plugin } | null;
+type Picked = { kind: "user"; item: AdminUser } | null;
 
 const fmt = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { dateStyle: "medium" });
@@ -39,7 +38,6 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
   const [allSpaces, setAllSpaces] = useState<Space[]>([]);
   const [open, setOpen] = useState<Record<string, boolean>>({ spaces: true, appearance: section === "branding" });
   const [users, setUsers] = useState<AdminUser[]>([]);
-  const [plugins, setPlugins] = useState<{ loaded: Plugin[]; refused: Refused[] }>({ loaded: [], refused: [] });
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [verify, setVerify] = useState<string | null>(null);
   const [picked, setPicked] = useState<Picked>(null);
@@ -57,7 +55,6 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
     if (!isAdmin) return;
     if (section === "users") void api.get<AdminUser[]>("/admin/users").then(setUsers);
     if (section === "uploads") void api.get<UploadSettings>("/admin/uploads").then(setUploads);
-    if (section === "plugins") void api.get<{ plugins: (Plugin & { loaded: boolean })[] }>("/admin/plugins").then((r) => setPlugins({ loaded: r.plugins.map((p) => ({ ...p, enabled: p.loaded })), refused: [] }));
     if (section === "audit") { setVerify(null); void api.get<AuditRow[]>("/admin/audit?take=200").then(setAudit); }
   }, [section, isAdmin]);
 
@@ -127,6 +124,8 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
 
       {space ? (
         <SpaceEditor key={space.id} space={space} isAdmin={isAdmin} area={area} onBack={() => onNavigate("spaces")} onSaved={changed} onHome={onHome} />
+      ) : section === "plugins" && isAdmin ? (
+        <Plugins area={area} onHome={onHome} />
       ) : section === "logs" && isAdmin ? (
         <LogShipping area={area} targetId={spaceId} onSelect={(id) => onNavigate("logs", id ?? undefined)} onHome={onHome} />
       ) : section === "storage" && isAdmin ? (
@@ -185,30 +184,6 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
                 </table>
               )}
 
-              {section === "plugins" && isAdmin && (
-                <>
-                  <table className="grid-table">
-                    <thead><tr><th>Plugin</th><th>Version</th><th>Publisher</th><th>Origin</th><th>Status</th></tr></thead>
-                    <tbody>
-                      {plugins.loaded.map((p) => (
-                        <tr key={p.id} className={`row ${picked?.kind === "plugin" && picked.item.id === p.id ? "sel" : ""}`} onClick={() => setPicked({ kind: "plugin", item: p })}>
-                          <td className="mono">{p.id}</td><td>{p.version}</td><td className="muted">{p.publisher}</td><td className="muted">{p.origin}</td><td>{p.enabled ? "Enabled" : "Disabled"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {plugins.refused.length > 0 && (
-                    <>
-                      <h2 className="s">Refused</h2>
-                      <table className="grid-table">
-                        <thead><tr><th>Path</th><th>Reason</th></tr></thead>
-                        <tbody>{plugins.refused.map((r) => <tr key={r.path}><td className="mono">{r.path}</td><td>{r.reason}</td></tr>)}</tbody>
-                      </table>
-                    </>
-                  )}
-                </>
-              )}
-
               {section === "audit" && isAdmin && (
                 <table className="grid-table">
                   <thead><tr><th>#</th><th>Time</th><th>Action</th><th>By</th><th>Target</th></tr></thead>
@@ -241,14 +216,6 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
                 <div>{uploads.serverLimitBytes === null ? "None" : fmtSize(uploads.serverLimitBytes)}</div>
                 <h3>Image limit</h3>
                 <div>20 MB</div>
-              </>
-            )}
-            {picked?.kind === "plugin" && (
-              <>
-                <h3>Plugin</h3><div className="mono">{picked.item.id}</div>
-                <h3>Extension points</h3>{picked.item.extensionPoints.map((x) => <div key={x}>{x}</div>)}
-                <h3>Outbound hosts</h3>
-                {picked.item.outboundHosts.length ? picked.item.outboundHosts.map((h) => <div key={h} className="mono">{h}</div>) : <div className="muted">None</div>}
               </>
             )}
           </aside>
