@@ -3,6 +3,7 @@ using Kb.Core.Audit;
 using Kb.Core.Content;
 using Kb.Core.Identity;
 using Kb.Core.Notifications;
+using Kb.Core.Plugins;
 using Kb.Core.Spaces;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -82,6 +83,9 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     public DbSet<StorageMove> StorageMoves => Set<StorageMove>();
     public DbSet<ApiToken> ApiTokens => Set<ApiToken>();
     public DbSet<LogTarget> LogTargets => Set<LogTarget>();
+    public DbSet<PluginPackage> PluginPackages => Set<PluginPackage>();
+    public DbSet<PluginStatus> PluginStatuses => Set<PluginStatus>();
+    public DbSet<PluginSettingValue> PluginSettingValues => Set<PluginSettingValue>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -130,6 +134,18 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
         builder.Entity<StoragePlace>().Property(p => p.Kind).HasMaxLength(40);
         builder.Entity<StorageMove>().Property(m => m.LastError).HasMaxLength(500);
         builder.Entity<StorageMove>().Property(m => m.ClaimedBy).HasMaxLength(100);
+        builder.Entity<PluginPackage>().HasKey(p => new { p.PluginId, p.Version });
+        builder.Entity<PluginPackage>().Property(p => p.PluginId).HasMaxLength(64);
+        builder.Entity<PluginPackage>().Property(p => p.Version).HasMaxLength(32);
+        builder.Entity<PluginPackage>().Property(p => p.Sha256).HasMaxLength(64);
+        builder.Entity<PluginPackage>().Property(p => p.Source).HasMaxLength(400);
+        builder.Entity<PluginStatus>().HasKey(s => s.PluginId);
+        builder.Entity<PluginStatus>().Property(s => s.PluginId).HasMaxLength(64);
+        builder.Entity<PluginStatus>().Property(s => s.ActiveVersion).HasMaxLength(32);
+        builder.Entity<PluginStatus>().Property(s => s.Reason).HasMaxLength(300);
+        builder.Entity<PluginSettingValue>().HasKey(v => new { v.PluginId, v.Key });
+        builder.Entity<PluginSettingValue>().Property(v => v.PluginId).HasMaxLength(64);
+        builder.Entity<PluginSettingValue>().Property(v => v.Key).HasMaxLength(100);
         builder.Entity<LogTarget>().Property(t => t.Name).HasMaxLength(100);
         builder.Entity<LogTarget>().Property(t => t.Kind).HasMaxLength(40);
         builder.Entity<LogTarget>().Property(t => t.LastError).HasMaxLength(500);

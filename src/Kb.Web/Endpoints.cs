@@ -239,8 +239,8 @@ public static partial class EndpointMappings
 
         admin.MapGet("/plugins", (PluginRegistry reg) => Results.Ok(new
         {
-            loaded = reg.All.Select(p => new PluginDto(p.Manifest.Id, p.Manifest.Version, p.Manifest.Publisher, p.Origin.ToString(), p.Enabled, p.Manifest.ExtensionPoints, p.Manifest.OutboundHosts)),
-            refused = reg.Refused,
+            loaded = reg.All.Select(p => new PluginDto(p.Manifest.Id, p.Manifest.Version, p.Manifest.Publisher, p.Origin.ToString(), p.Loaded, p.Manifest.ExtensionPoints, p.Manifest.OutboundHosts)),
+            refused = Array.Empty<object>(),
         }));
 
         admin.MapGet("/audit/verify", async (IAuditLog audit) => Results.Ok(await audit.VerifyAsync()));

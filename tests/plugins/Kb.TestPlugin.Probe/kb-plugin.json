@@ -22,6 +22,10 @@
       ]
     },
     {
+      "key": "Register",
+      "label": "Register"
+    },
+    {
       "key": "Greeting",
       "label": "Greeting"
     },

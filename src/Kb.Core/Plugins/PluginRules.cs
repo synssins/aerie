@@ -34,6 +34,7 @@ public static partial class PluginId
 
 public static class PluginManifests
 {
+    public const string FileName = "kb-plugin.json";
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
 
     /// <summary>Reads a <c>kb-plugin.json</c>. Null when the text is not a manifest.</summary>

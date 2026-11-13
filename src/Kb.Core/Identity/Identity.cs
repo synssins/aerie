@@ -53,4 +53,8 @@ public static class RuntimeSettingKeys
     public const string PublicSpaceEnabled = "PublicSpaceEnabled";
     public const string ExternalAdminVerifiedAt = "ExternalAdminVerifiedAt";
     public const string LocalSignInDisabled = "LocalSignInDisabled";
+    /// <summary>Raised by every plugin change. A server that started with an older number restarts.</summary>
+    public const string PluginGeneration = "Plugins.Generation";
+    /// <summary>Raised by every plugin settings change. A server that sees a newer one reloads its settings.</summary>
+    public const string PluginSettingsStamp = "Plugins.SettingsStamp";
 }

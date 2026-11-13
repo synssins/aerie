@@ -728,6 +728,107 @@ namespace Kb.Data.Migrations
                     b.ToTable("Notifications");
                 });
 
+            modelBuilder.Entity("Kb.Core.Plugins.PluginPackage", b =>
+                {
+                    b.Property<string>("PluginId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Version")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<byte[]>("Bytes")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<DateTimeOffset>("InstalledAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("InstalledBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ManifestJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.HasKey("PluginId", "Version");
+
+                    b.ToTable("PluginPackages");
+                });
+
+            modelBuilder.Entity("Kb.Core.Plugins.PluginSettingValue", b =>
+                {
+                    b.Property<string>("PluginId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Key")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("Secret")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Value")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("PluginId", "Key");
+
+                    b.ToTable("PluginSettingValues");
+                });
+
+            modelBuilder.Entity("Kb.Core.Plugins.PluginStatus", b =>
+                {
+                    b.Property<string>("PluginId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ActiveVersion")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("GuardsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("LockedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<bool>("Removed")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("State")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("PluginId");
+
+                    b.ToTable("PluginStatuses");
+                });
+
             modelBuilder.Entity("Kb.Core.Spaces.Space", b =>
                 {
                     b.Property<Guid>("Id")

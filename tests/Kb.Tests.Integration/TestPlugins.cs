@@ -31,7 +31,7 @@ public static class TestPlugins
             {
                 var name = Path.GetRelativePath(folder, file).Replace('\\', '/');
                 using var entry = zip.CreateEntry(name).Open();
-                if (name == PluginLoader.ManifestFileName && change is not null)
+                if (name == PluginManifests.FileName && change is not null)
                     entry.Write(System.Text.Encoding.UTF8.GetBytes(PluginManifests.Write(change(PluginManifests.Parse(File.ReadAllText(file))!))));
                 else
                     entry.Write(File.ReadAllBytes(file));

@@ -1,124 +1,169 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 using System.Runtime.Loader;
-using System.Security.Cryptography;
-using System.Text.Json;
-using Kb.Core.Config;
 using Kb.Plugins;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Hosting;
 
 namespace Kb.Core.Plugins;
 
-public enum PluginOrigin { BuiltIn, DropIn }
+public enum PluginOrigin { BuiltIn, Uploaded }
 
-public sealed record LoadedPlugin(PluginManifest Manifest, PluginOrigin Origin, IKbPlugin Instance, bool Enabled);
+/// <summary>One plugin as the app sees it: what it is, its state, and whether this server loaded it.</summary>
+public sealed record PluginInfo(PluginManifest Manifest, PluginOrigin Origin, PluginState State, string? Reason, bool Locked, bool Loaded, string Source);
 
-public sealed record RefusedPlugin(string Path, string Reason);
-
-/// <summary>Result of discovery: what loaded, what was refused (and why). Registered as a singleton for the admin UI.</summary>
-public sealed class PluginRegistry
+/// <summary>Every plugin known at start, loaded or not. A singleton; a change restarts the app, so it never changes while the app runs.</summary>
+public sealed class PluginRegistry(IReadOnlyList<PluginInfo> all, bool safeMode, long generation, IReadOnlyDictionary<string, Assembly>? assemblies = null)
 {
-    public PluginRegistry(IReadOnlyList<LoadedPlugin> all, IReadOnlyList<RefusedPlugin> refused)
-    {
-        All = all;
-        Refused = refused;
-    }
-    public IReadOnlyList<LoadedPlugin> All { get; }
-    public IReadOnlyList<RefusedPlugin> Refused { get; }
-    public IEnumerable<LoadedPlugin> Enabled => All.Where(p => p.Enabled);
+    private readonly IReadOnlyDictionary<string, Assembly> _assemblies = assemblies ?? new Dictionary<string, Assembly>();
+
+    public IReadOnlyList<PluginInfo> All { get; } = all;
+    public IEnumerable<PluginInfo> Loaded => All.Where(p => p.Loaded);
+    /// <summary>Safe Mode: uploaded plugins are listed and none is loaded.</summary>
+    public bool SafeMode { get; } = safeMode;
+    /// <summary>The plugin generation this server started with. When the database holds a newer one, this server restarts.</summary>
+    public long Generation { get; } = generation;
+
+    public PluginInfo? Find(string id) => All.FirstOrDefault(p => p.Manifest.Id == id);
+
+    /// <summary>The main assembly of a loaded plugin.</summary>
+    public Assembly? AssemblyOf(string id) => _assemblies.GetValueOrDefault(id);
 }
 
 /// <summary>
-/// Discovers built-in plugins (assemblies with [assembly: KbPlugin]) and drop-in plugins (one folder each under
-/// Plugins:Folder). Drop-ins load only when their assembly SHA-256 is in Plugins:AllowedHashes.
+/// The current plugin settings that are not secret, kept in memory. A plugin's context reads it, so a change made in the app
+/// applies without a restart: the settings store swaps the values in one step.
 /// </summary>
-public static class PluginLoader
+public sealed class PluginSettingsSnapshot
 {
-    public const string ManifestFileName = "kb-plugin.json";
-    private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
+    private volatile IReadOnlyDictionary<(string PluginId, string Key), string?> _values = new Dictionary<(string, string), string?>();
 
-    public static PluginRegistry Discover(IEnumerable<Assembly> builtInAssemblies, PluginOptions options, string contentRoot, ILogger? log = null)
+    public string? Get(string pluginId, string key) => _values.GetValueOrDefault((pluginId, key));
+
+    public void Replace(IEnumerable<(string PluginId, string Key, string? Value)> values)
     {
-        ArgumentNullException.ThrowIfNull(options);
-        var loaded = new List<LoadedPlugin>();
-        var refused = new List<RefusedPlugin>();
-        var disabled = new HashSet<string>(options.Disabled, StringComparer.OrdinalIgnoreCase);
+        ArgumentNullException.ThrowIfNull(values);
+        _values = values.ToDictionary(v => (v.PluginId, v.Key), v => v.Value);
+    }
+}
 
-        foreach (var asm in builtInAssemblies.Distinct())
+/// <summary>Everything plugins registered through <see cref="IPluginApp"/>, in load order.</summary>
+public sealed class PluginRegistrations : IRegistrations
+{
+    private readonly List<(string PluginId, object Value)> _all = [];
+
+    public void Add(string pluginId, object value) => _all.Add((pluginId, value));
+
+    public IReadOnlyList<Registered<T>> All<T>() where T : class =>
+        [.. _all.Where(r => r.Value is T).Select(r => new Registered<T>(r.PluginId, (T)r.Value))];
+}
+
+/// <summary>What one plugin asked for while it was configured. Nothing of it reaches the app unless both of its methods returned.</summary>
+public sealed record ConfiguredPlugin(IReadOnlyList<ServiceDescriptor> Services, IReadOnlyList<object> Registrations);
+
+public static class PluginRuntime
+{
+    /// <summary>Built-in plugins: the <c>Kb.Plugin.*.dll</c> files shipped in the app folder that carry <see cref="KbPluginAttribute"/> and a manifest.</summary>
+    public static IReadOnlyList<(PluginManifest Manifest, Assembly Assembly)> BuiltIns(string appFolder)
+    {
+        var found = new List<(PluginManifest, Assembly)>();
+        foreach (var file in Directory.GetFiles(appFolder, "Kb.Plugin.*.dll").Order(StringComparer.Ordinal))
         {
-            var attr = asm.GetCustomAttribute<KbPluginAttribute>();
-            if (attr is null) continue;
-            var manifestPath = Path.Combine(Path.GetDirectoryName(asm.Location) ?? AppContext.BaseDirectory, $"{asm.GetName().Name}.{ManifestFileName}");
-            var manifest = ReadManifestFromResourceOrFile(asm, manifestPath);
-            if (manifest is null) { refused.Add(new(asm.FullName ?? "?", "missing manifest")); continue; }
-            loaded.Add(new(manifest, PluginOrigin.BuiltIn, Create(attr.PluginType), !disabled.Contains(manifest.Id)));
+            var assembly = Assembly.LoadFrom(file);
+            if (assembly.GetCustomAttribute<KbPluginAttribute>() is null) continue;
+            var resource = assembly.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith(PluginManifests.FileName, StringComparison.OrdinalIgnoreCase));
+            if (resource is null) continue;
+            using var reader = new StreamReader(assembly.GetManifestResourceStream(resource)!);
+            if (PluginManifests.Parse(reader.ReadToEnd()) is { } manifest) found.Add((manifest, assembly));
         }
-
-        var folder = Path.IsPathRooted(options.Folder) ? options.Folder : Path.Combine(contentRoot, options.Folder);
-        if (Directory.Exists(folder))
-        {
-            var allowed = new HashSet<string>(options.AllowedHashes, StringComparer.OrdinalIgnoreCase);
-            foreach (var dir in Directory.GetDirectories(folder))
-            {
-                var manifestFile = Path.Combine(dir, ManifestFileName);
-                if (!File.Exists(manifestFile)) { refused.Add(new(dir, "missing manifest")); continue; }
-                var manifest = JsonSerializer.Deserialize<PluginManifest>(File.ReadAllText(manifestFile), Json);
-                if (manifest is null) { refused.Add(new(dir, "unreadable manifest")); continue; }
-                var dll = Path.Combine(dir, $"{Path.GetFileName(dir)}.dll");
-                if (!File.Exists(dll)) { refused.Add(new(dir, $"expected {Path.GetFileName(dll)}")); continue; }
-                var hash = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(dll)));
-                if (!allowed.Contains(hash))
-                {
-                    refused.Add(new(dir, $"assembly hash {hash} not in Plugins:AllowedHashes"));
-                    log?.LogWarning("Refused drop-in plugin {Dir}: hash {Hash} not allow-listed", dir, hash);
-                    continue;
-                }
-                var alc = new PluginLoadContext(dll);
-                var asm = alc.LoadFromAssemblyPath(dll);
-                var attr = asm.GetCustomAttribute<KbPluginAttribute>();
-                if (attr is null) { refused.Add(new(dir, "no [assembly: KbPlugin] attribute")); continue; }
-                loaded.Add(new(manifest, PluginOrigin.DropIn, Create(attr.PluginType), !disabled.Contains(manifest.Id)));
-            }
-        }
-
-        var dupes = loaded.GroupBy(p => p.Manifest.Id, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
-        if (dupes.Count > 0) throw new InvalidOperationException($"Duplicate plugin ids: {string.Join(", ", dupes)}");
-        return new PluginRegistry(loaded, refused);
+        return found;
     }
 
-    private static PluginManifest? ReadManifestFromResourceOrFile(Assembly asm, string filePath)
+    /// <summary>
+    /// Loads an uploaded plugin's main assembly from its unpacked folder, in its own load context.
+    /// <paramref name="exports"/> maps an assembly name to the context of the required plugin that shares it.
+    /// </summary>
+    public static Assembly LoadUploaded(PluginManifest manifest, string folder, IReadOnlyDictionary<string, AssemblyLoadContext> exports, out AssemblyLoadContext context)
     {
-        var resName = asm.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith(ManifestFileName, StringComparison.OrdinalIgnoreCase));
-        if (resName is not null)
-        {
-            using var s = asm.GetManifestResourceStream(resName)!;
-            return JsonSerializer.Deserialize<PluginManifest>(s, Json);
-        }
-        return File.Exists(filePath) ? JsonSerializer.Deserialize<PluginManifest>(File.ReadAllText(filePath), Json) : null;
+        ArgumentNullException.ThrowIfNull(manifest);
+        var own = new PluginLoadContext(manifest.Id, folder, exports);
+        context = own;
+        return own.LoadFile(Path.Combine(folder, PluginPackageReader.MainAssembly(manifest)));
     }
 
-    private static IKbPlugin Create(Type t) =>
-        Activator.CreateInstance(t) as IKbPlugin ?? throw new InvalidOperationException($"{t.FullName} does not implement IKbPlugin");
-
-    /// <summary>Isolated load context; Kb.Plugins.Abstractions and framework assemblies resolve from the host so types unify.</summary>
-    private sealed class PluginLoadContext(string mainAssemblyPath) : AssemblyLoadContext(isCollectible: true)
+    /// <summary>
+    /// Runs the plugin's <c>ConfigureServices</c> and <c>Configure</c> against scratch lists and returns them.
+    /// It throws what the plugin throws; the caller then keeps nothing of it.
+    /// </summary>
+    public static ConfiguredPlugin Configure(Assembly assembly, PluginManifest manifest, PluginSettingsSnapshot settings, IConfiguration config)
     {
-        private readonly AssemblyDependencyResolver _resolver = new(mainAssemblyPath);
+        ArgumentNullException.ThrowIfNull(assembly);
+        var type = assembly.GetCustomAttribute<KbPluginAttribute>()?.PluginType ?? throw new InvalidOperationException("The assembly names no plugin class.");
+        var plugin = Activator.CreateInstance(type) as IKbPlugin ?? throw new InvalidOperationException($"{type.FullName} is not a plugin.");
+        var context = new PluginContext(manifest, settings, config, new ConfigurationSecretStore(config));
+        var services = new ServiceCollection();
+        var app = new ScratchApp();
+        plugin.ConfigureServices(services, context);
+        plugin.Configure(app, context);
+        // A hosted service that throws stops the whole app. Background work comes with jobs.
+        if (services.Any(d => d.ServiceType == typeof(IHostedService))) throw new InvalidOperationException("Hosted services are not supported.");
+        return new ConfiguredPlugin([.. services], app.Items);
+    }
 
-        protected override Assembly? Load(AssemblyName name)
+    private sealed class ScratchApp : IPluginApp
+    {
+        public List<object> Items { get; } = [];
+
+        public IPluginApp Add<T>(T registration) where T : class
         {
-            if (name.Name == typeof(IKbPlugin).Assembly.GetName().Name) return null; // share host copy
-            var path = _resolver.ResolveAssemblyToPath(name);
-            return path is null ? null : LoadFromAssemblyPath(path);
+            ArgumentNullException.ThrowIfNull(registration);
+            Items.Add(registration);
+            return this;
+        }
+    }
+
+    /// <summary>
+    /// One per uploaded plugin, never unloaded. An assembly name resolves in this order: the host's copy when the host has one
+    /// (.NET, ASP.NET Core, EF Core, Kb.*), so types are the same everywhere; an assembly a required plugin shares; the plugin's own folder.
+    /// Assemblies are read into memory, so the folder is never locked and can be replaced by the next version.
+    /// </summary>
+    private sealed class PluginLoadContext(string name, string folder, IReadOnlyDictionary<string, AssemblyLoadContext> exports) : AssemblyLoadContext("kb-plugin:" + name, isCollectible: false)
+    {
+        private static readonly ConcurrentDictionary<string, bool> InHost = new(StringComparer.OrdinalIgnoreCase);
+
+        protected override Assembly? Load(AssemblyName assemblyName)
+        {
+            var simple = assemblyName.Name;
+            if (simple is null || InHost.GetOrAdd(simple, HostHas)) return null; // null: the default context answers
+            if (Assemblies.FirstOrDefault(a => a.GetName().Name == simple) is { } loaded) return loaded;
+            if (exports.TryGetValue(simple, out var owner)) return owner.LoadFromAssemblyName(assemblyName);
+            var path = Path.Combine(folder, simple + ".dll");
+            return File.Exists(path) ? LoadFile(path) : null;
+        }
+
+        public Assembly LoadFile(string path)
+        {
+            using var assembly = new MemoryStream(File.ReadAllBytes(path));
+            var symbols = Path.ChangeExtension(path, ".pdb");
+            if (!File.Exists(symbols)) return LoadFromStream(assembly);
+            using var pdb = new MemoryStream(File.ReadAllBytes(symbols));
+            return LoadFromStream(assembly, pdb);
+        }
+
+        private static bool HostHas(string simpleName)
+        {
+            try { return Default.LoadFromAssemblyName(new AssemblyName(simpleName)) is not null; }
+            catch (Exception e) when (e is FileNotFoundException or FileLoadException or BadImageFormatException) { return false; }
         }
     }
 }
 
-internal sealed class PluginContext(PluginManifest manifest, IConfiguration config, IPluginSecretStore secrets) : IPluginContext
+internal sealed class PluginContext(PluginManifest manifest, PluginSettingsSnapshot settings, IConfiguration config, IPluginSecretStore secrets) : IPluginContext
 {
     public PluginManifest Manifest { get; } = manifest;
-    public string? GetSetting(string key) => config[$"Kb:Plugins:Settings:{Manifest.Id}:{key}"];
+    // Until settings are edited in the app (task 1.5), a value in configuration still counts when the app has none.
+    public string? GetSetting(string key) => settings.Get(Manifest.Id, key) ?? config[$"Kb:Plugins:Settings:{Manifest.Id}:{key}"];
     public Task<string?> GetSecretAsync(string key, CancellationToken ct = default) => secrets.GetAsync($"{Manifest.Id}--{key}", ct);
 }
 
@@ -142,26 +187,6 @@ public sealed class OutboundHostGuard(IReadOnlyCollection<string> allowedHosts) 
         if (host is null || !allowedHosts.Contains(host, StringComparer.OrdinalIgnoreCase))
             throw new InvalidOperationException($"Plugin outbound call to '{host}' blocked: host not declared in manifest OutboundHosts.");
         return base.SendAsync(request, cancellationToken);
-    }
-}
-
-public static class PluginServiceCollectionExtensions
-{
-    /// <summary>Configures every enabled plugin and registers its guarded HttpClient. Returns the registry.</summary>
-    public static PluginRegistry AddKbPlugins(this IServiceCollection services, IConfiguration config, PluginRegistry registry)
-    {
-        ArgumentNullException.ThrowIfNull(registry);
-        services.AddSingleton(registry);
-        services.AddSingleton<IPluginSecretStore, ConfigurationSecretStore>();
-        var secrets = new ConfigurationSecretStore(config);
-        foreach (var p in registry.Enabled)
-        {
-            var hosts = p.Manifest.OutboundHosts.ToArray();
-            services.AddHttpClient(PluginHttp.ClientName(p.Manifest.Id))
-                .AddHttpMessageHandler(() => new OutboundHostGuard(hosts));
-            p.Instance.ConfigureServices(services, new PluginContext(p.Manifest, config, secrets));
-        }
-        return registry;
     }
 }
 

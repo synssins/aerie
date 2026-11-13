@@ -57,7 +57,13 @@ public static class AuditActions
     public const string SettingsChange = "settings.change";
     public const string PluginEnable = "plugin.enable";
     public const string PluginDisable = "plugin.disable";
-    public const string PluginRefused = "plugin.refused";
+    public const string PluginInstall = "plugin.install";
+    public const string PluginUpdate = "plugin.update";
+    public const string PluginRemove = "plugin.remove";
+    public const string PluginDataDelete = "plugin.data.delete";
+    public const string PluginDisabledByCore = "plugin.disable.core";
+    public const string PluginLockRelease = "plugin.lock.release";
+    public const string PluginSettingsChange = "plugin.settings.change";
     public const string StoragePlaceAdd = "storage.place.add";
     public const string StoragePlaceChange = "storage.place.change";
     public const string StoragePlaceRemove = "storage.place.remove";

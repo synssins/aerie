@@ -174,41 +174,8 @@ public class SpacePermissionServiceTests
     }
 }
 
-public class PluginLoaderTests
+public class PluginHostTests
 {
-    private static readonly string Root = Path.Combine(Path.GetTempPath(), "kb-plugin-tests-" + Guid.NewGuid().ToString("N"));
-
-    [Fact]
-    public void BuiltInPlugin_Loads_FromEmbeddedManifest()
-    {
-        var reg = PluginLoader.Discover([typeof(SmtpPlugin).Assembly, typeof(SamplePlugin).Assembly], new PluginOptions(), Root);
-        Assert.Contains(reg.All, p => p.Manifest.Id == "kb.email.smtp" && p.Origin == PluginOrigin.BuiltIn && p.Enabled);
-        Assert.Contains(reg.All, p => p.Manifest.Id == "kb.sample");
-    }
-
-    [Fact]
-    public void UnlistedDropInAssembly_Refused()
-    {
-        var dir = Path.Combine(Root, "plugins", "Evil.Plugin");
-        Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, "kb-plugin.json"), """{"id":"evil","version":"1","publisher":"x"}""");
-        File.Copy(typeof(SamplePlugin).Assembly.Location, Path.Combine(dir, "Evil.Plugin.dll"), overwrite: true);
-
-        var reg = PluginLoader.Discover([], new PluginOptions(), Root);
-        Assert.DoesNotContain(reg.All, p => p.Manifest.Id == "evil");
-        Assert.Contains(reg.Refused, r => r.Reason.Contains("not in Plugins:AllowedHashes", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void DisabledByConfig_LoadsButNotEnabled_AndNotConfigured()
-    {
-        var reg = PluginLoader.Discover([typeof(SamplePlugin).Assembly], new PluginOptions { Disabled = ["kb.sample"] }, Root);
-        Assert.False(reg.All.Single().Enabled);
-        var services = new ServiceCollection();
-        services.AddKbPlugins(new ConfigurationBuilder().Build(), reg);
-        Assert.DoesNotContain(services, s => s.ServiceType == typeof(IPageAction));
-    }
-
     [Fact]
     public async Task OutboundHttp_HostNotInManifest_Throws()
     {

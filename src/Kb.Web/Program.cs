@@ -1,4 +1,3 @@
-using System.Reflection;
 using Kb.Core.Access;
 using Kb.Core.Audit;
 using Kb.Core.Config;
@@ -7,6 +6,7 @@ using Kb.Core.Notifications;
 using Kb.Core.Plugins;
 using Kb.Core.Spaces;
 using Kb.Data;
+using Kb.Data.Plugins;
 using Kb.Plugins;
 using Kb.Web;
 using Microsoft.AspNetCore.DataProtection;
@@ -83,11 +83,10 @@ _ = dp;
 services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 
-// ---- plugins (native: core features ship as first-party plugins) ----
-// Built-in plugins are the Kb.Plugin.*.dll files shipped in the app folder; drop-ins live under Kb:Plugins:Folder.
-var builtIns = Directory.GetFiles(AppContext.BaseDirectory, "Kb.Plugin.*.dll").Select(Assembly.LoadFrom);
-var registry = PluginLoader.Discover(builtIns, kb.Plugins, builder.Environment.ContentRootPath);
-services.AddKbPlugins(config, registry);
+// ---- plugins ----
+// Built-in plugins are the Kb.Plugin.*.dll files shipped in the app folder; installed ones are packages in the database.
+// This migrates the database, then loads every enabled plugin. What plugins register is added last, by Seal, below.
+var boot = await PluginBootstrap.RunAsync(services, config, kb, builder.Environment.ContentRootPath);
 services.AddSingleton(typeof(ProviderSelector<>));
 
 // ---- core services ----
@@ -126,18 +125,15 @@ services.AddHealthChecks().AddCheck<ReadinessCheck>("ready", tags: ["ready"]);
 services.AddProblemDetails();
 services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
+PluginBootstrap.Seal(services, boot);
 var app = builder.Build();
 
-// ---- startup: migrate (dev/SQLite create), log plugin refusals, ensure break-glass ----
+// ---- startup: record what the plugin start found, ensure break-glass ----
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<KbDbContext>();
-    if (db.Database.IsSqlite()) await db.Database.EnsureCreatedAsync();
-    else await db.Database.MigrateAsync();
-
     var audit = scope.ServiceProvider.GetRequiredService<IAuditLog>();
-    foreach (var r in registry.Refused)
-        await audit.AppendAsync(new AuditEvent(AuditActions.PluginRefused, null, "plugin", r.Path, Data: new Dictionary<string, string> { ["reason"] = r.Reason }));
+    foreach (var e in boot.Events) await audit.AppendAsync(e);
 
     await scope.ServiceProvider.GetRequiredService<BreakGlassService>().EnsureAccountAsync();
     await scope.ServiceProvider.GetRequiredService<SetupService>().OnStartupAsync();

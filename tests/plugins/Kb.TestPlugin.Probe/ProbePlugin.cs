@@ -16,6 +16,8 @@ public sealed class ProbePlugin : IKbPlugin
         // A test proves the plugin is loaded by finding this sink in the container.
         services.AddSingleton<IAuditSink>(new ProbeSink(context));
         if (context.GetSetting("FailOn") == "services") throw new InvalidOperationException("Probe failed in ConfigureServices.");
+        if (context.GetSetting("Register") == "filestore") services.AddSingleton<IFileStore, ProbeFileStore>(); // a service the core has
+        if (context.GetSetting("Register") == "hosted") services.AddSingleton<Microsoft.Extensions.Hosting.IHostedService, ProbeHosted>();
     }
 
     public void Configure(IPluginApp app, IPluginContext context)
@@ -30,4 +32,19 @@ public sealed class ProbeSink(IPluginContext context) : IAuditSink
 
     public Task ForwardAsync(AuditRecord record, CancellationToken ct) =>
         context.GetSetting("FailOn") == "sink" ? throw new InvalidOperationException("Probe sink failed.") : Task.CompletedTask;
+}
+
+public sealed class ProbeFileStore : IFileStore
+{
+    public Task SaveAsync(string key, byte[] data, CancellationToken ct) => throw new NotSupportedException();
+    public Task<long> SaveAsync(string key, Stream source, long maxBytes, CancellationToken ct) => throw new NotSupportedException();
+    public Task<Stream?> OpenAsync(string key, CancellationToken ct) => throw new NotSupportedException();
+    public Task DeleteAsync(string key, CancellationToken ct) => throw new NotSupportedException();
+    public Task<long?> SizeAsync(string key, CancellationToken ct) => throw new NotSupportedException();
+}
+
+public sealed class ProbeHosted : Microsoft.Extensions.Hosting.IHostedService
+{
+    public Task StartAsync(CancellationToken cancellationToken) => throw new InvalidOperationException("Probe hosted service failed.");
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

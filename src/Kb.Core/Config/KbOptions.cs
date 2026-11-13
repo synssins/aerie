@@ -116,12 +116,10 @@ public sealed class TokenOptions
 
 public sealed class PluginOptions
 {
-    /// <summary>Folder scanned for drop-in plugins (each in its own subfolder).</summary>
-    public string Folder { get; set; } = "plugins";
-    /// <summary>Allow-list for drop-in plugin assemblies: SHA-256 hashes (hex). Built-in plugins need no entry.</summary>
-    public List<string> AllowedHashes { get; set; } = [];
-    /// <summary>Plugin ids that are disabled even if present.</summary>
-    public List<string> Disabled { get; set; } = [];
+    /// <summary>Where this server unpacks installed plugin packages. Relative paths are under the content root. The packages themselves are in the database.</summary>
+    public string WorkFolder { get; set; } = "App_Data/plugins";
+    /// <summary>Safe Mode: uploaded plugins are listed and none is loaded. For starting the app when a plugin stops it from starting.</summary>
+    public bool SafeMode { get; set; }
 }
 
 public sealed class KbOptionsValidator : IValidateOptions<KbOptions>
