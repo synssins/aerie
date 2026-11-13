@@ -121,12 +121,20 @@ Runs on two or more nodes behind a load balancer. Updates use rolling node drain
 | Path | Contents |
 |---|---|
 | `src/Kb.Plugins.Abstractions` | Plugin contract interfaces |
+| `src/Kb.Plugins.Data` | Plugin contract for a plugin's own tables |
 | `src/Kb.Core` | Domain logic: permissions, audit, access requests, notifications, plugin host |
 | `src/Kb.Data` | Data access |
 | `src/Kb.Web` | Web application and REST API |
 | `plugins/` | First-party plugins |
 | `tests/` | Unit and integration tests |
 | `docs/` | Design specs, implementation plans, plugin and deployment guides |
+
+## Plugin guides
+
+- [Developer guide](docs/plugins/developer-guide.md): how to write a plugin, with the sample plugin's code.
+- [Manifest reference](docs/plugins/manifest-reference.md): every property of `kb-plugin.json`.
+- [Admin guide](docs/plugins/admin-guide.md): install, update, remove, settings, locks, Safe Mode.
+- [Action reference](docs/plugins/action-reference.md): every action a plugin can hook.
 
 ## Open items
 
