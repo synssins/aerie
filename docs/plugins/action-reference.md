@@ -25,6 +25,24 @@ Write. `RequestAccess`, answers `AccessRequestedDto`.
 | Role | `SpaceRole` | required |
 | Reason | `string?` |  |
 
+## announcement.post
+
+Write. `PostAnnouncement`, answers `AnnouncementPostedDto`.
+
+| Field | Type | |
+|---|---|---|
+| Title | `string` | required |
+| Body | `string?` |  |
+| ExpiresAt | `DateTimeOffset?` |  |
+
+## announcement.remove
+
+Write. `RemoveAnnouncement`, answers `Unit`.
+
+| Field | Type | |
+|---|---|---|
+| AnnouncementId | `Guid` | required |
+
 ## attachment.add
 
 Write. `AddAttachment`, answers `AttachmentDto`.
@@ -99,6 +117,43 @@ Read. `ListBin`, answers `IReadOnlyList<BinItemDto>`.
 
 Read. `ListAllBins`, answers `IReadOnlyList<BinItemDto>`.
 
+## brand.logo.read
+
+Read. `ReadBrandLogo`, answers `FileOut`.
+
+| Field | Type | |
+|---|---|---|
+| Variant | `string` | required |
+
+## brand.logo.remove
+
+Write. `RemoveBrandLogo`, answers `Unit`.
+
+| Field | Type | |
+|---|---|---|
+| Variant | `string` | required |
+
+## brand.logo.set
+
+Write. `SetBrandLogo`, answers `Unit`.
+
+| Field | Type | |
+|---|---|---|
+| Variant | `string` | required |
+| File | `UploadContent?` | never logged |
+
+## brand.read
+
+Read. `ReadBrand`, answers `BrandDto`.
+
+## brand.update
+
+Write. `UpdateBrand`, answers `Unit`.
+
+| Field | Type | |
+|---|---|---|
+| ProductName | `string` | required |
+
 ## draft.discard
 
 Write. `DiscardDraft`, answers `Unit`.
@@ -126,6 +181,10 @@ Write. `SaveDraft`, answers `DraftSavedDto`.
 | ContentJson | `string` | required |
 | BaseVersion | `string` | required |
 | Tags | `IReadOnlyList<string>?` |  |
+
+## home.read
+
+Read. `ReadHome`, answers `HomeDto`.
 
 ## image.add
 
@@ -228,6 +287,42 @@ Read. `DiffPage`, answers `DiffDto`.
 | From | `string` | required |
 | To | `string` | required |
 
+## page.export
+
+Read. `ExportPage`, answers `FileOut`.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+| Format | `string?` |  |
+
+## page.export.code
+
+Read. `ExportPageCode`, answers `FileOut`.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+| Number | `int` | required |
+
+## page.export.table
+
+Read. `ExportPageTable`, answers `FileOut`.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+| Number | `int` | required |
+| Format | `string?` |  |
+
+## page.markdown
+
+Read. `ReadPageMarkdown`, answers `PageMarkdownDto`.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+
 ## page.move
 
 Write. `MovePage`, answers `PageDto`.
@@ -293,6 +388,36 @@ Write. `RestoreVersion`, answers `PageDto`.
 |---|---|---|
 | PageId | `Guid` | required |
 | Version | `string` | required |
+
+## search.query
+
+Read. `SearchPages`, answers `SearchResponse`.
+
+| Field | Type | |
+|---|---|---|
+| Text | `string?` |  |
+| SpaceId | `Guid?` |  |
+| Tag | `string?` |  |
+| Limit | `int?` |  |
+| Offset | `int?` |  |
+| Include | `string?` |  |
+| MaxChars | `int?` |  |
+
+## search.reindex
+
+Write. `ReindexSearch`, answers `ReindexResult`.
+
+## search.synonyms.read
+
+Read. `ReadSynonyms`, answers `SynonymsDto`.
+
+## search.synonyms.save
+
+Write. `SaveSynonyms`, answers `SynonymsDto`.
+
+| Field | Type | |
+|---|---|---|
+| Text | `string` | required |
 
 ## settings.public-space.set
 
@@ -433,6 +558,15 @@ Read. `ReadTree`, answers `IReadOnlyList<TreeNodeDto>`.
 | Field | Type | |
 |---|---|---|
 | SpaceId | `Guid` | required |
+
+## user.announcer.set
+
+Write. `SetAnnouncer`, answers `Unit`.
+
+| Field | Type | |
+|---|---|---|
+| UserId | `Guid` | required |
+| Enabled | `bool` | required |
 
 ## user.invite
 
