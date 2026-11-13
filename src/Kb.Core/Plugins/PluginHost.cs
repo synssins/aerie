@@ -10,7 +10,26 @@ namespace Kb.Core.Plugins;
 public enum PluginOrigin { BuiltIn, Uploaded }
 
 /// <summary>One plugin as the app sees it: what it is, its state, and whether this server loaded it.</summary>
-public sealed record PluginInfo(PluginManifest Manifest, PluginOrigin Origin, PluginState State, string? Reason, bool Locked, bool Loaded, string Source);
+public sealed record PluginInfo(PluginManifest Manifest, PluginOrigin Origin, PluginState State, string? Reason, bool Locked, bool Loaded, string Source)
+{
+    /// <summary>The actions it has before hooks or result filters on, as recorded at its last successful start.</summary>
+    public IReadOnlyList<string> Guards { get; init; } = [];
+}
+
+/// <summary>What a plugin guards, as stored in <see cref="PluginStatus.GuardsJson"/>: <c>{ "actions": ["page.save", ...] }</c>.</summary>
+public static class PluginGuards
+{
+    private sealed record Stored(IReadOnlyList<string>? Actions);
+    private static readonly System.Text.Json.JsonSerializerOptions Json = new(System.Text.Json.JsonSerializerDefaults.Web);
+
+    public static string Write(IEnumerable<string> actions) => System.Text.Json.JsonSerializer.Serialize(new Stored([.. actions.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)]), Json);
+
+    public static IReadOnlyList<string> Read(string? json)
+    {
+        try { return string.IsNullOrEmpty(json) ? [] : System.Text.Json.JsonSerializer.Deserialize<Stored>(json, Json)?.Actions ?? []; }
+        catch (System.Text.Json.JsonException) { return []; }
+    }
+}
 
 /// <summary>Every plugin known at start, loaded or not. A singleton; a change restarts the app, so it never changes while the app runs.</summary>
 public sealed class PluginRegistry(IReadOnlyList<PluginInfo> all, bool safeMode, long generation, IReadOnlyDictionary<string, Assembly>? assemblies = null)

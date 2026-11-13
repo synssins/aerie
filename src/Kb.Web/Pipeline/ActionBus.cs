@@ -85,6 +85,8 @@ public sealed class ActionBus(ActionCatalog catalog, IServiceProvider services, 
     ActionQueueWorker queue, TimeProvider time, IHttpContextAccessor http) : IActionBus
 {
     public const string Header = "X-Kb-Action";
+    /// <summary>Never locked: without sign-in and setup nobody could become the Admin who repairs, and plugin actions are how the repair is done.</summary>
+    private static readonly string[] NeverLocked = ["auth.", "setup.", "plugin."];
     private int _depth;
 
     private static readonly ConcurrentDictionary<Type, MethodInfo> Runners = new();
@@ -136,6 +138,7 @@ public sealed class ActionBus(ActionCatalog catalog, IServiceProvider services, 
 
         var handler = NewHandler();
         if (await handler.AuthorizeAsync(ctx) is { } denied) return denied;
+        if (await LockedAsync(ctx) is { } locked) return locked;
 
         var given = ctx.Action;
         foreach (var hook in catalog.Before(typeof(TAction)))
@@ -170,6 +173,19 @@ public sealed class ActionBus(ActionCatalog catalog, IServiceProvider services, 
             }
         }
         return value;
+    }
+
+    /// <summary>
+    /// Step 3. An enforcing plugin (one that guards a rule the organisation relies on) that the core had to disable leaves its actions locked:
+    /// running them without it would skip the rule. Everyone but an Admin is refused until an Admin releases the lock or repairs the plugin.
+    /// It comes after the core's own check, so it tells nothing to someone who may not see the target anyway. Safe Mode ignores locks.
+    /// </summary>
+    private async Task<Problem?> LockedAsync(ActionContext ctx)
+    {
+        if (registry.SafeMode || NeverLocked.Any(prefix => ctx.Name.StartsWith(prefix, StringComparison.Ordinal))) return null;
+        var holder = registry.All.FirstOrDefault(p => p is { State: PluginState.DisabledByCore, Locked: true } && p.Guards.Contains(ctx.Name));
+        if (holder is null || await services.GetRequiredService<IAccess>().IsAdminAsync(ctx.Actor, ctx.Cancel)) return null;
+        return Problem.Locked($"{PluginManifests.NameOf(holder.Manifest)} is disabled.");
     }
 
     /// <summary>A hook or filter that throws is reported. It refuses the action with 422, unless it was registered as optional: then it is skipped.</summary>

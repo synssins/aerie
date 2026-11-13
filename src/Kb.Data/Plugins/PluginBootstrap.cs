@@ -153,6 +153,19 @@ public static class PluginBootstrap
                 Fail(c, (e is TargetInvocationException { InnerException: { } inner } ? inner : e).Message);
             }
         }
+        if (!safeMode)
+        {
+            // What each loaded plugin guards: the actions it can refuse or change (before hooks) or shape (filters).
+            // Kept in its status, so the actions stay locked if this plugin is enforcing and a later start has to disable it.
+            static string Name(Type action) => action.GetCustomAttribute<Kb.Plugins.Actions.ActionAttribute>()?.Name ?? action.FullName!;
+            var guarded = registrations.All<Kb.Plugins.Actions.BeforeHook>().Select(r => (r.PluginId, Action: Name(r.Value.Action)))
+                .Concat(registrations.All<Kb.Plugins.Actions.ResultFilter>().Select(r => (r.PluginId, Action: Name(r.Value.Action)))).ToLookup(g => g.PluginId, g => g.Action);
+            foreach (var c in enabled.Where(c => loaded.ContainsKey(c.Manifest.Id) && c.Status is not null))
+            {
+                var guards = PluginGuards.Write(guarded[c.Manifest.Id]);
+                if (c.Status!.GuardsJson != guards) c.Status.GuardsJson = guards;
+            }
+        }
         if (events.Count > 0)
         {
             // The core turned something off here. Another server may still run it, so the generation is raised: that server restarts.
@@ -187,7 +200,8 @@ public static class PluginBootstrap
             services.AddHttpClient(PluginHttp.ClientName(id)).AddHttpMessageHandler(() => new OutboundHostGuard(hosts));
         }
         var registry = new PluginRegistry(
-            [.. candidates.Select(c => new PluginInfo(c.Manifest, c.Origin, c.Status?.State ?? PluginState.Enabled, c.Status?.Reason, c.Status?.LockedAt is not null, loaded.ContainsKey(c.Manifest.Id), c.Source))],
+            [.. candidates.Select(c => new PluginInfo(c.Manifest, c.Origin, c.Status?.State ?? PluginState.Enabled, c.Status?.Reason, c.Status?.LockedAt is not null, loaded.ContainsKey(c.Manifest.Id), c.Source)
+                { Guards = PluginGuards.Read(c.Status?.GuardsJson) })],
             safeMode, generation, loaded);
         services.AddSingleton(registry);
         services.AddSingleton<IRegistrations>(registrations);
