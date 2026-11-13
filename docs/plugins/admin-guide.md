@@ -46,6 +46,15 @@ Select a plugin to see its settings. A secret that is set shows as dots. Its val
 A change applies at once, unless the setting needs a restart.
 The audit log records which keys changed, never a value.
 
+## Permissions
+
+A plugin can declare permissions of its own.
+
+- A space permission is held by everyone whose role in a space is at least a minimum role. Select the plugin and choose that role under Permissions. The plugin's own default is shown first.
+- A global permission is given to people one by one. Administration > Users has one column for each; tick the box for a person. Admins hold every permission.
+
+A permission counts only while its plugin is loaded. What was set or given is kept when the plugin is disabled or removed.
+
 ## Disabled by core
 
 The app turns a plugin off by itself when the plugin cannot start, or when it fails five times in ten minutes. The screen shows the reason.
@@ -91,3 +100,5 @@ Select a plugin to see its health checks and its jobs (last run, next run, last 
 | `plugin.data.delete` | Its tables were dropped: with the removal ("Delete data" ticked), or later from the list. |
 | `plugin.lock.release` | |
 | `plugin.settings.change` | Carries the keys that changed. |
+| `plugin.permissions.change` | The minimum role of a space permission was changed. Carries the keys and roles. |
+| `user.permissions.set` | A global permission was given to a person or taken back. |

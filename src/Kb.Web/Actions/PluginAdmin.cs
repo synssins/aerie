@@ -1,3 +1,5 @@
+using Kb.Core.Spaces;
+using Kb.Core.Audit;
 using System.Text.Json.Serialization;
 using Kb.Core.Plugins;
 using Kb.Data;
@@ -228,5 +230,74 @@ internal sealed class ReadPluginHealthHandler(KbDbContext db, IAccess access, IR
             var text = e is OperationCanceledException or TimeoutException ? "Timed out." : e.Message.Split('\r', '\n')[0];
             return new PluginCheckDto(reg.Name, "Unhealthy", text[..Math.Min(text.Length, 300)]);
         }
+    }
+}
+
+/// <summary>Role: the least role that holds a space permission now; null for a global permission, which is given to people one by one.</summary>
+public sealed record PluginPermissionDto(string Key, string Label, string Scope, string DefaultRole, string? Role);
+public sealed record PluginPermissionsDto(IReadOnlyList<PluginPermissionDto> Permissions);
+
+[Action("plugin.permissions.read", Read = true)]
+public sealed record ReadPluginPermissions : IAction<PluginPermissionsDto>
+{
+    public required string Id { get; init; }
+}
+
+/// <summary>Sets the least role that holds each named space permission of a plugin.</summary>
+[Action("plugin.permissions.save")]
+public sealed record SavePluginPermissions : IAction<Unit>
+{
+    public required string Id { get; init; }
+    public required IReadOnlyDictionary<string, string> Roles { get; init; }
+}
+
+internal sealed class ReadPluginPermissionsHandler(KbDbContext db, IAccess access, PluginRegistry registry) : IActionHandler<ReadPluginPermissions, PluginPermissionsDto>
+{
+    private PluginInfo? _plugin;
+
+    public async Task<Problem?> AuthorizeAsync(ActionContext<ReadPluginPermissions> ctx)
+    {
+        if (!await access.IsAdminAsync(ctx.Actor, ctx.Cancel)) return Problem.Forbidden;
+        return (_plugin = registry.Find(ctx.Action.Id)) is null ? Problem.NotFound : null;
+    }
+
+    public async Task<Outcome<PluginPermissionsDto>> HandleAsync(ActionContext<ReadPluginPermissions> ctx)
+    {
+        var id = _plugin!.Manifest.Id;
+        var set = await db.PluginPermissionRoles.AsNoTracking().Where(p => p.Permission.StartsWith(id + ":")).ToDictionaryAsync(p => p.Permission, p => p.MinRole, ctx.Cancel);
+        return new PluginPermissionsDto([.. _plugin.Manifest.Permissions.Select(p => new PluginPermissionDto(p.Key, p.Label, p.Scope, PluginPermissionScopes.DefaultRole(p).ToString(),
+            p.Scope == PluginPermissionScopes.Space ? (set.TryGetValue($"{id}:{p.Key}", out var role) ? role : PluginPermissionScopes.DefaultRole(p)).ToString() : null))]);
+    }
+}
+
+internal sealed class SavePluginPermissionsHandler(KbDbContext db, IAccess access, PluginRegistry registry) : IActionHandler<SavePluginPermissions, Unit>
+{
+    private PluginInfo? _plugin;
+
+    public async Task<Problem?> AuthorizeAsync(ActionContext<SavePluginPermissions> ctx)
+    {
+        if (!await access.IsAdminAsync(ctx.Actor, ctx.Cancel)) return Problem.Forbidden;
+        return (_plugin = registry.Find(ctx.Action.Id)) is null ? Problem.NotFound : null;
+    }
+
+    public async Task<Outcome<Unit>> HandleAsync(ActionContext<SavePluginPermissions> ctx)
+    {
+        var (id, roles) = (_plugin!.Manifest.Id, new Dictionary<string, SpaceRole>(StringComparer.Ordinal));
+        foreach (var (key, text) in ctx.Action.Roles)
+        {
+            if (_plugin.Manifest.Permissions.FirstOrDefault(p => p.Key == key) is not { Scope: PluginPermissionScopes.Space }) return Problem.Invalid(key, "Not a space permission of this plugin.");
+            if (!Enum.TryParse<SpaceRole>(text, out var role) || !Enum.IsDefined(role)) return Problem.Invalid(key, "Reader, Contributor, Supervisor or Owner.");
+            roles[key] = role;
+        }
+        var names = roles.Keys.Select(k => $"{id}:{k}").ToList();
+        var rows = await db.PluginPermissionRoles.Where(p => names.Contains(p.Permission)).ToListAsync(ctx.Cancel);
+        foreach (var (key, role) in roles)
+        {
+            if (rows.FirstOrDefault(r => r.Permission == $"{id}:{key}") is { } row) row.MinRole = role;
+            else db.PluginPermissionRoles.Add(new PluginPermissionRole { Permission = $"{id}:{key}", MinRole = role });
+        }
+        await db.SaveChangesAsync();
+        ctx.Audit(AuditActions.PluginPermissionsChange, "plugin", id, data: roles.ToDictionary(r => r.Key, r => r.Value.ToString()));
+        return new Unit();
     }
 }

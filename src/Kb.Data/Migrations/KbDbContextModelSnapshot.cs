@@ -799,6 +799,20 @@ namespace Kb.Data.Migrations
                     b.ToTable("PluginPackages");
                 });
 
+            modelBuilder.Entity("Kb.Core.Plugins.PluginPermissionRole", b =>
+                {
+                    b.Property<string>("Permission")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("MinRole")
+                        .HasColumnType("int");
+
+                    b.HasKey("Permission");
+
+                    b.ToTable("PluginPermissionRoles");
+                });
+
             modelBuilder.Entity("Kb.Core.Plugins.PluginSettingValue", b =>
                 {
                     b.Property<string>("PluginId")
@@ -859,6 +873,20 @@ namespace Kb.Data.Migrations
                     b.HasKey("PluginId");
 
                     b.ToTable("PluginStatuses");
+                });
+
+            modelBuilder.Entity("Kb.Core.Plugins.UserPermission", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Permission")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("UserId", "Permission");
+
+                    b.ToTable("UserPermissions");
                 });
 
             modelBuilder.Entity("Kb.Core.Spaces.Space", b =>

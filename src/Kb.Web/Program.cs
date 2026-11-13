@@ -122,6 +122,7 @@ services.AddScoped<IAuditLog, SqlAuditLog>();
 services.AddScoped<ISpaceAccessData, SpaceAccessData>();
 services.AddScoped<SpacePermissionService>();
 services.AddScoped<ISpacePermissionService, TokenScopedPermissions>();
+services.AddScoped<IPluginPermissionData, Kb.Data.Plugins.PluginPermissionData>();
 services.AddScoped<IAccess, SpaceAccess>();
 // ---- the action pipeline ----
 services.AddSingleton<ActionCatalog>();

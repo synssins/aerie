@@ -50,14 +50,48 @@ internal sealed class ListAuditHandler(KbDbContext db, IAccess access) : IAction
     }
 }
 
-internal sealed class ListUsersHandler(KbDbContext db, IAccess access) : IActionHandler<ListUsers, IReadOnlyList<AdminUserDto>>
+internal sealed class ListUsersHandler(KbDbContext db, IAccess access, Kb.Core.Plugins.PluginRegistry plugins) : IActionHandler<ListUsers, IReadOnlyList<AdminUserDto>>
 {
     public async Task<Problem?> AuthorizeAsync(ActionContext<ListUsers> ctx) => await access.IsAdminAsync(ctx.Actor, ctx.Cancel) ? null : Problem.Forbidden;
 
-    public async Task<Outcome<IReadOnlyList<AdminUserDto>>> HandleAsync(ActionContext<ListUsers> ctx) =>
-        Outcome.List(await db.Users.AsNoTracking().OrderBy(u => u.DisplayName)
-            .Select(u => new AdminUserDto(u.Id, u.UserName!, u.DisplayName, u.Source.ToString(), u.IsAdmin, u.IsBreakGlass, u.CreatedAt, u.DeactivatedAt, u.CanAnnounce))
-            .ToListAsync(ctx.Cancel));
+    public async Task<Outcome<IReadOnlyList<AdminUserDto>>> HandleAsync(ActionContext<ListUsers> ctx)
+    {
+        var users = await db.Users.AsNoTracking().OrderBy(u => u.DisplayName)
+            .Select(u => new AdminUserDto(u.Id, u.UserName!, u.DisplayName, u.Source.ToString(), u.IsAdmin, u.IsBreakGlass, u.CreatedAt, u.DeactivatedAt, u.CanAnnounce, null))
+            .ToListAsync(ctx.Cancel);
+        // The global plugin permissions each person holds: an Admin every one, anyone else those they were given.
+        var (all, grants) = (PluginPermissions.Global(plugins), await PluginPermissions.GrantsAsync(db, plugins, ctx.Cancel));
+        return Outcome.List<AdminUserDto>([.. users.Select(u => u with { Permissions = u.IsAdmin ? all : [.. grants[u.Id].Order(StringComparer.Ordinal)] })]);
+    }
+}
+
+/// <summary>Gives a person a global permission of a plugin, or takes it back. Core only.</summary>
+[Action("user.permissions.set")]
+public sealed record SetUserPermission : IAction<Unit>
+{
+    public required Guid UserId { get; init; }
+    /// <summary>"&lt;plugin id&gt;:&lt;key&gt;".</summary>
+    public required string Permission { get; init; }
+    public required bool Granted { get; init; }
+}
+
+internal sealed class SetUserPermissionHandler(KbDbContext db, IAccess access, Kb.Core.Plugins.PluginRegistry plugins) : IActionHandler<SetUserPermission, Unit>
+{
+    public async Task<Problem?> AuthorizeAsync(ActionContext<SetUserPermission> ctx) => await access.IsAdminAsync(ctx.Actor, ctx.Cancel) ? null : Problem.Forbidden;
+
+    public async Task<Outcome<Unit>> HandleAsync(ActionContext<SetUserPermission> ctx)
+    {
+        var (user, permission, granted) = (ctx.Action.UserId, ctx.Action.Permission, ctx.Action.Granted);
+        if (!PluginPermissions.Global(plugins).Contains(permission)) return Problem.Invalid("permission", "Not a global permission of a loaded plugin.");
+        if (!await db.Users.AnyAsync(u => u.Id == user, ctx.Cancel)) return Problem.NotFound;
+
+        var row = await db.UserPermissions.FirstOrDefaultAsync(p => p.UserId == user && p.Permission == permission, ctx.Cancel);
+        if (granted && row is null) db.UserPermissions.Add(new Kb.Core.Plugins.UserPermission { UserId = user, Permission = permission });
+        if (!granted && row is not null) db.UserPermissions.Remove(row);
+        await db.SaveChangesAsync();
+        ctx.Audit(AuditActions.UserPermissionsSet, "user", user.ToString(), data: new Dictionary<string, string> { ["permission"] = permission, ["granted"] = granted.ToString() });
+        return new Unit();
+    }
 }
 
 internal sealed class InviteUserHandler(UserManager<KbUser> users, IAccess access, TimeProvider time) : IActionHandler<InviteUser, InvitedUser>

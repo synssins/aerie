@@ -41,6 +41,13 @@ public interface IAccess
     Task<SpaceRole?> RoleAsync(Actor actor, Guid spaceId, CancellationToken ct = default);
     Task<bool> CanAsync(Actor actor, Guid spaceId, SpaceAction action, CancellationToken ct = default);
     Task<IReadOnlyList<Guid>> VisibleSpacesAsync(Actor actor, CancellationToken ct = default);
+    /// <summary>
+    /// Whether the actor holds a permission a plugin declared in its manifest, named "&lt;plugin id&gt;:&lt;key&gt;".
+    /// A space permission is held from its minimum role up in that space (the manifest's default role until an Admin changes it).
+    /// A global permission is held by the people an Admin gave it to, and by every Admin.
+    /// A permission of a plugin that is not loaded, or one nobody declared, is not held.
+    /// </summary>
+    Task<bool> CanAsync(Actor actor, string permission, Guid? spaceId = null, CancellationToken ct = default);
     /// <summary>True for a signed-in Admin. Never for a request made with an API token, a plugin, or nobody.</summary>
     Task<bool> IsAdminAsync(Actor actor, CancellationToken ct = default);
 }

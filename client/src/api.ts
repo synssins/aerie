@@ -44,7 +44,7 @@ export function reloadIfPending(): void {
 
 void bundleVersion;
 
-export type Me = { id: string; userName: string; displayName: string; isAdmin: boolean; isBreakGlass: boolean; canAnnounce: boolean };
+export type Me = { id: string; userName: string; displayName: string; isAdmin: boolean; isBreakGlass: boolean; canAnnounce: boolean; permissions?: string[] | null };
 export type Brand = { productName: string; logoLightUrl: string | null; logoDarkUrl: string | null; primaryColor: string };
 export type Space = {
   id: string; key: string; name: string; description: string | null; isSensitive: boolean; isPublic: boolean; myRole: string | null;
@@ -78,6 +78,8 @@ export type ApiToken = {
   createdAt: string; expiresAt: string; revokedAt: string | null; lastUsedAt: string | null; state: "Active" | "Expired" | "Revoked";
 };
 export type PluginSetting = { key: string; label: string; secret: boolean; required: boolean; type: string; options: string[] | null; restart: boolean };
+export type AdminUser = { id: string; userName: string; displayName: string; source: string; isAdmin: boolean; isBreakGlass: boolean; createdAt: string; deactivatedAt: string | null; canAnnounce: boolean; permissions: string[] };
+export type PluginPermissions = { permissions: { key: string; label: string; scope: string; defaultRole: string; role: string | null }[] };
 export type PluginHealth = {
   plugins: {
     id: string;

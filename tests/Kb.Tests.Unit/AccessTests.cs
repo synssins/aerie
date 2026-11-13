@@ -20,7 +20,7 @@ public class AccessTests
         _data.GetPrincipalAsync(_user, Arg.Any<CancellationToken>()).Returns(new PrincipalInfo(_user, IsAdmin: true, HasFullAccess: true, []));
         _perms.GetRoleAsync(_user, _normal, Arg.Any<CancellationToken>()).Returns(SpaceRole.Supervisor);
         _perms.VisibleSpaceIdsAsync(_user, Arg.Any<CancellationToken>()).Returns([_normal]);
-        _access = new SpaceAccess(_perms, _data);
+        _access = new SpaceAccess(_perms, _data, Substitute.For<IPluginPermissionData>(), new Kb.Core.Plugins.PluginRegistry([], false, 0));
     }
 
     [Fact]

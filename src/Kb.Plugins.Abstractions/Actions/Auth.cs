@@ -51,7 +51,8 @@ public sealed record RunSetup : IAction<MeResponse>
     public override string ToString() => $"RunSetup {{ UserName = {UserName}, DisplayName = {DisplayName} }}";
 }
 
-public sealed record MeResponse(Guid Id, string UserName, string DisplayName, bool IsAdmin, bool IsBreakGlass, bool CanAnnounce = false);
+/// <summary>Permissions: the global plugin permissions the person holds ("&lt;plugin id&gt;:&lt;key&gt;"); filled by me.read.</summary>
+public sealed record MeResponse(Guid Id, string UserName, string DisplayName, bool IsAdmin, bool IsBreakGlass, bool CanAnnounce = false, IReadOnlyList<string>? Permissions = null);
 public sealed record SetupStatus(bool Required, bool CodeRequired);
 
 /// <summary>Per-user app settings. Stored as JSON on the user.</summary>

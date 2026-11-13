@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ChevronRight, House, Upload } from "lucide-react";
-import { api, ApiError, fmtDateTime, upload, type PluginHealth, type PluginInfo, type PluginSetting } from "../api";
+import { api, ApiError, fmtDateTime, upload, type PluginHealth, type PluginInfo, type PluginPermissions, type PluginSetting } from "../api";
 import { useDialogs } from "../Dialogs";
 
 type PluginList = { plugins: PluginInfo[]; safeMode: boolean };
@@ -120,6 +120,7 @@ export function Plugins({ area, onHome }: { area: string; onHome: () => void }) 
                 {selected.locked && <button type="button" className="tb" disabled={restarting} onClick={() => void change(() => api.post(`/admin/plugins/${selected.id}/release-lock`), "Not released.")}>Release lock</button>}
               </div>}
               {selected.settings.length > 0 && <SettingsForm key={selected.id} plugin={selected} onRestart={() => setRestarting(true)} />}
+              {!selected.removed && selected.permissions.some((p) => p.scope === "space") && <PermissionsForm key={`${selected.id}-permissions`} plugin={selected} />}
             </>
           )}
         </div>
@@ -194,6 +195,51 @@ function RemoveDialog({ name, onClose, onRemove }: { name: string; onClose: () =
         </div>
       </form>
     </dialog>
+  );
+}
+
+const ROLES = ["Reader", "Contributor", "Supervisor", "Owner"];
+
+/** The least role that holds each space permission of a plugin. A global permission is given per person, on the Users screen. */
+function PermissionsForm({ plugin }: { plugin: PluginInfo }) {
+  const [roles, setRoles] = useState<Record<string, string> | null>(null);
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void api.get<PluginPermissions>(`/admin/plugins/${plugin.id}/permissions`).then((r) => {
+      const space = r.permissions.filter((p) => p.scope === "space");
+      setRoles(Object.fromEntries(space.map((p) => [p.key, p.role ?? p.defaultRole])));
+      setLabels(Object.fromEntries(space.map((p) => [p.key, p.label])));
+    });
+  }, [plugin]);
+
+  if (!roles) return null;
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setStatus(null);
+    try { await api.put(`/admin/plugins/${plugin.id}/permissions`, { roles }); setStatus("Saved."); }
+    catch (err) { setStatus(problem(err, "Not saved.")); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <form className="form" onSubmit={save}>
+      {Object.keys(roles).map((key) => (
+        <FieldRow key={key} label={labels[key]} id={`pp-${key}`} error={null}>
+          <select id={`pp-${key}`} className="sel" value={roles[key]} onChange={(e) => { setRoles((all) => ({ ...all, [key]: e.target.value })); setStatus(null); }}>
+            {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </FieldRow>
+      ))}
+      <div className="actions">
+        <button type="submit" className="tb primary" disabled={busy}>Save permissions</button>
+        {status && <span className="muted" role="status">{status}</span>}
+      </div>
+    </form>
   );
 }
 

@@ -88,6 +88,8 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     public DbSet<PluginStatus> PluginStatuses => Set<PluginStatus>();
     public DbSet<PluginSettingValue> PluginSettingValues => Set<PluginSettingValue>();
     public DbSet<JobRun> JobRuns => Set<JobRun>();
+    public DbSet<PluginPermissionRole> PluginPermissionRoles => Set<PluginPermissionRole>();
+    public DbSet<UserPermission> UserPermissions => Set<UserPermission>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -148,6 +150,10 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
         builder.Entity<PluginSettingValue>().HasKey(v => new { v.PluginId, v.Key });
         builder.Entity<PluginSettingValue>().Property(v => v.PluginId).HasMaxLength(64);
         builder.Entity<PluginSettingValue>().Property(v => v.Key).HasMaxLength(100);
+        builder.Entity<PluginPermissionRole>().HasKey(p => p.Permission);
+        builder.Entity<PluginPermissionRole>().Property(p => p.Permission).HasMaxLength(200);
+        builder.Entity<UserPermission>().HasKey(p => new { p.UserId, p.Permission });
+        builder.Entity<UserPermission>().Property(p => p.Permission).HasMaxLength(200);
         builder.Entity<JobRun>().HasKey(r => new { r.PluginId, r.Name });
         builder.Entity<JobRun>().Property(r => r.PluginId).HasMaxLength(64);
         builder.Entity<JobRun>().Property(r => r.Name).HasMaxLength(100);

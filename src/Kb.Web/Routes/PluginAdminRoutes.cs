@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http.Features;
 namespace Kb.Web;
 
 public sealed record PluginStateRequest(bool Enabled);
+public sealed record PluginPermissionsRequest(Dictionary<string, string>? Roles);
 
 /// <summary>The body of an install request as the package.</summary>
 internal sealed class PluginUpload(HttpRequest request) : UploadContent
@@ -57,6 +58,12 @@ public static class PluginAdminRoutes
 
         admin.MapGet("/plugins/{id}/settings", (string id, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new ReadPluginSettings { Id = id }, ct).ToHttp()).WithAction<ReadPluginSettings>();
+
+        admin.MapGet("/plugins/{id}/permissions", (string id, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new ReadPluginPermissions { Id = id }, ct).ToHttp()).WithAction<ReadPluginPermissions>();
+
+        admin.MapPut("/plugins/{id}/permissions", (string id, PluginPermissionsRequest req, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new SavePluginPermissions { Id = id, Roles = req.Roles ?? [] }, ct).ToHttp()).WithAction<SavePluginPermissions>();
 
         admin.MapPut("/plugins/{id}/settings", (string id, PluginSettingsRequest req, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new SavePluginSettings { Id = id, Values = req.Values ?? [] }, ct).ToHttp()).WithAction<SavePluginSettings>();

@@ -20,7 +20,7 @@ public sealed record CountAcks : IAction<AckCount>
     public required Guid PageId { get; init; }
 }
 
-/// <summary>Who acknowledged the page. For people who review the space (Supervisor and up).</summary>
+/// <summary>Who acknowledged the page. For people who hold the plugin's permission "see-acknowledgements" in the page's space.</summary>
 [Action("sample.acks.read", Read = true)]
 public sealed record ReadAcks : IAction<AckList>
 {
@@ -83,8 +83,9 @@ public sealed class ReadAcksHandler(SampleData db, IActionBus bus, IAccess acces
     {
         var page = await bus.SendAsync(new ReadPage { PageId = ctx.Action.PageId }, ctx.Cancel);
         if (!page.Ok) return page.Problem; // 404: the caller may not even see the page
+        // The manifest declares the permission with a default role (Supervisor). An Admin can change that role on the Plugins screen.
         // IAccess answers for the caller: a person, narrowed by an API token when the request came with one.
-        return await access.CanAsync(ctx.Actor, page.Value!.SpaceId, SpaceAction.ReviewTeamHistory, ctx.Cancel) ? null : Problem.Forbidden;
+        return await access.CanAsync(ctx.Actor, "kb.sample:see-acknowledgements", page.Value!.SpaceId, ctx.Cancel) ? null : Problem.Forbidden;
     }
 
     public async Task<Outcome<AckList>> HandleAsync(ActionContext<ReadAcks> ctx)

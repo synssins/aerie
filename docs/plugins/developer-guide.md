@@ -169,7 +169,7 @@ public sealed record CountAcks : IAction<AckCount>
     public required Guid PageId { get; init; }
 }
 
-/// <summary>Who acknowledged the page. For people who review the space (Supervisor and up).</summary>
+/// <summary>Who acknowledged the page. For people who hold the plugin's permission "see-acknowledgements" in the page's space.</summary>
 [Action("sample.acks.read", Read = true)]
 public sealed record ReadAcks : IAction<AckList>
 {
@@ -221,8 +221,9 @@ public sealed class ReadAcksHandler(SampleData db, IActionBus bus, IAccess acces
     {
         var page = await bus.SendAsync(new ReadPage { PageId = ctx.Action.PageId }, ctx.Cancel);
         if (!page.Ok) return page.Problem; // 404: the caller may not even see the page
+        // The manifest declares the permission with a default role (Supervisor). An Admin can change that role on the Plugins screen.
         // IAccess answers for the caller: a person, narrowed by an API token when the request came with one.
-        return await access.CanAsync(ctx.Actor, page.Value!.SpaceId, SpaceAction.ReviewTeamHistory, ctx.Cancel) ? null : Problem.Forbidden;
+        return await access.CanAsync(ctx.Actor, "kb.sample:see-acknowledgements", page.Value!.SpaceId, ctx.Cancel) ? null : Problem.Forbidden;
     }
 
     public async Task<Outcome<AckList>> HandleAsync(ActionContext<ReadAcks> ctx)
@@ -233,7 +234,14 @@ public sealed class ReadAcksHandler(SampleData db, IActionBus bus, IAccess acces
 }
 ```
 
+A plugin declares its permissions in the manifest and asks for one by name: `"<plugin id>:<key>"`.
+
+- A `space` permission is held, in a space, by everyone whose role there is at least its minimum role. The manifest gives the default (`defaultRole`); an Admin can change it on the Plugins screen. Ask with the space id.
+- A `global` permission is held by the people an Admin gave it to (Administration > Users) and by every Admin. Ask without a space. `me.read` lists the global permissions its caller holds.
+- A permission of a plugin that is not loaded is not held, whatever was set or granted.
+
 `IAccess` answers for an actor: a person (narrowed by an API token when the request came with one), a plugin doing background work, or nobody.
+It also answers the core's own questions: `RoleAsync`, `CanAsync(actor, spaceId, SpaceAction)`, `IsAdminAsync`.
 Answer 404, not 403, when the caller has no role in a space: a space the caller cannot see must look like one that does not exist.
 
 ## Hooks
@@ -424,7 +432,6 @@ The contract is at 0.2.0 and can still change.
 
 - Screens: plugin scripts, slots in core screens, editor blocks, plugin screens.
 - Data attached to core rows (a count that comes with the page).
-- Permissions a plugin declares in its manifest.
 - Sign-in schemes, page kinds, export formats.
 - After handlers that survive a crash (a queue in the database).
 - A plugin table save inside the core action's transaction.

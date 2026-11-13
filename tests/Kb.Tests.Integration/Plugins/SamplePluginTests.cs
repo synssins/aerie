@@ -117,6 +117,18 @@ public sealed class SamplePluginTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AcksRead_FollowsThePluginsPermission_WhenAnAdminChangesItsRole()
+    {
+        var rita = await UserAsync("rita", "Reader");
+        await AckAsync(rita);
+        Assert.Equal(HttpStatusCode.Forbidden, (await rita.GetAsync($"{Sample}/pages/{_page}/acks", Ct)).StatusCode);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await _admin.PutAsJsonAsync($"{Admin}/kb.sample/permissions", new { roles = new Dictionary<string, string> { ["see-acknowledgements"] = "Reader" } }, Ct)).StatusCode);
+
+        Assert.Equal(HttpStatusCode.OK, (await rita.GetAsync($"{Sample}/pages/{_page}/acks", Ct)).StatusCode);
+    }
+
+    [Fact]
     public async Task MajorVersion_WithoutNote_Refused_WhenTheSettingIsOn()
     {
         Assert.Equal(HttpStatusCode.OK, (await SaveAsync(major: false)).StatusCode); // the setting is off: nothing is asked

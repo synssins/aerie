@@ -35,6 +35,20 @@ public sealed class PluginStatus
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+/// <summary>The least role that holds a plugin's space permission, when an Admin changed it from the manifest's default. Key: Permission ("&lt;plugin id&gt;:&lt;key&gt;").</summary>
+public sealed class PluginPermissionRole
+{
+    public required string Permission { get; set; }
+    public Kb.Plugins.SpaceRole MinRole { get; set; }
+}
+
+/// <summary>A global permission of a plugin, given to a person by an Admin. Key: (UserId, Permission).</summary>
+public sealed class UserPermission
+{
+    public Guid UserId { get; set; }
+    public required string Permission { get; set; }
+}
+
 /// <summary>When a plugin's job ran, when it runs next, and which server is running it now. Key: (PluginId, Name).</summary>
 public sealed class JobRun
 {

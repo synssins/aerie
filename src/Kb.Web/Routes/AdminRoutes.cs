@@ -3,6 +3,7 @@ using Kb.Web.Actions;
 namespace Kb.Web;
 
 public sealed record InviteRequest(string UserName, string DisplayName, string? Email, bool IsAdmin = false);
+public sealed record UserPermissionRequest(string Permission, bool Granted);
 
 public static class AdminRoutes
 {
@@ -18,6 +19,9 @@ public static class AdminRoutes
 
         admin.MapGet("/users", (IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new ListUsers(), ct).ToHttp()).WithAction<ListUsers>();
+
+        admin.MapPut("/users/{id:guid}/permissions", (Guid id, UserPermissionRequest req, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new SetUserPermission { UserId = id, Permission = req.Permission, Granted = req.Granted }, ct).ToHttp()).WithAction<SetUserPermission>();
 
         admin.MapPost("/users/invite", (InviteRequest req, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new InviteUser { UserName = req.UserName, DisplayName = req.DisplayName, Email = req.Email, IsAdmin = req.IsAdmin }, ct).ToHttp()).WithAction<InviteUser>();

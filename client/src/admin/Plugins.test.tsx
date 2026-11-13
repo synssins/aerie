@@ -178,6 +178,31 @@ describe("Plugins", () => {
     expect(within(side).queryByText("Jobs")).toBeNull();
   });
 
+  it("shows a role select per space permission and saves the choice", async () => {
+    const withPermissions = plugin({ id: "kb.sample", name: "Sample", origin: "Uploaded", source: "upload", permissions: [
+      { key: "see", label: "See who acknowledged a page", scope: "space", defaultRole: "Supervisor" },
+      { key: "run", label: "Run reports", scope: "global", defaultRole: "Owner" },
+    ] });
+    const calls = server({
+      "GET /plugins": list([withPermissions]),
+      "GET /plugins/kb.sample/permissions": () => ({ body: { permissions: [
+        { key: "see", label: "See who acknowledged a page", scope: "space", defaultRole: "Supervisor", role: "Supervisor" },
+        { key: "run", label: "Run reports", scope: "global", defaultRole: "Owner", role: null },
+      ] } }),
+      "PUT /plugins/kb.sample/permissions": () => ({ status: 204 }),
+    });
+    show();
+    await userEvent.click(await screen.findByText("Sample"));
+    const select = await screen.findByLabelText("See who acknowledged a page") as HTMLSelectElement;
+    expect(select.value).toBe("Supervisor");
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(["Reader", "Contributor", "Supervisor", "Owner"]);
+    expect(screen.queryByLabelText("Run reports")).toBeNull(); // a global permission is given per person, on the Users screen
+    await userEvent.selectOptions(select, "Reader");
+    await userEvent.click(screen.getByRole("button", { name: "Save permissions" }));
+    expect(calls.find((c) => c.key === "PUT /plugins/kb.sample/permissions")?.body).toEqual({ roles: { see: "Reader" } });
+    expect(await screen.findByText("Saved.")).toBeTruthy();
+  });
+
   it("shows Restarting until the server answers, then reloads", async () => {
     vi.useFakeTimers();
     let up = false;

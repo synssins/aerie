@@ -465,6 +465,23 @@ Write. `ReleasePluginLock`, answers `Unit`. Core only.
 |---|---|---|
 | Id | `string` | required |
 
+## plugin.permissions.read
+
+Read. `ReadPluginPermissions`, answers `PluginPermissionsDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+
+## plugin.permissions.save
+
+Write. `SavePluginPermissions`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| Roles | `IReadOnlyDictionary<string, string>` | required |
+
 ## plugin.remove
 
 Write. `RemovePlugin`, answers `Unit`. Core only.
@@ -803,3 +820,13 @@ Write. `InviteUser`, answers `InvitedUser`. Core only.
 ## user.list
 
 Read. `ListUsers`, answers `IReadOnlyList<AdminUserDto>`.
+
+## user.permissions.set
+
+Write. `SetUserPermission`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| UserId | `Guid` | required |
+| Permission | `string` | required |
+| Granted | `bool` | required |

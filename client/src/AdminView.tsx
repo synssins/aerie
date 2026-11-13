@@ -5,14 +5,14 @@ import { BrandingPanel } from "./Branding";
 import { LogShipping } from "./admin/LogShipping";
 import { Plugins } from "./admin/Plugins";
 import { Storage } from "./admin/Storage";
+import { UsersTable, type PermissionColumn } from "./admin/Users";
 import { TokensPanel } from "./Tokens";
-import { api, ApiError, fmtSize, type Brand, type Space, type TreeNode } from "./api";
+import { api, ApiError, fmtSize, type AdminUser, type Brand, type PluginInfo, type Space, type TreeNode } from "./api";
 
 export type AdminSection = "spaces" | "users" | "branding" | "search" | "uploads" | "storage" | "tokens" | "logs" | "bin" | "plugins" | "audit";
 export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "branding", "search", "uploads", "storage", "tokens", "logs", "bin", "plugins", "audit"];
 type UploadSettings = { attachmentMb: number; serverLimitBytes: number | null };
 
-type AdminUser = { id: string; userName: string; displayName: string; source: string; isAdmin: boolean; isBreakGlass: boolean; createdAt: string; deactivatedAt: string | null; canAnnounce: boolean };
 type AuditRow = { sequence: number; at: string; action: string; actor: string | null; targetType: string | null; targetId: string | null };
 type Picked = { kind: "user"; item: AdminUser } | null;
 
@@ -38,6 +38,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
   const [allSpaces, setAllSpaces] = useState<Space[]>([]);
   const [open, setOpen] = useState<Record<string, boolean>>({ spaces: true, appearance: section === "branding" });
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [userPermissions, setUserPermissions] = useState<PermissionColumn[]>([]);
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [verify, setVerify] = useState<string | null>(null);
   const [picked, setPicked] = useState<Picked>(null);
@@ -53,7 +54,12 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
   useEffect(() => {
     setPicked(null);
     if (!isAdmin) return;
-    if (section === "users") void api.get<AdminUser[]>("/admin/users").then(setUsers);
+    if (section === "users") {
+      void api.get<AdminUser[]>("/admin/users").then(setUsers);
+      // One column per global permission of a loaded plugin.
+      void api.get<{ plugins: PluginInfo[] }>("/admin/plugins").then((r) => setUserPermissions(r.plugins.filter((p) => p.loaded)
+        .flatMap((p) => p.permissions.filter((x) => x.scope === "global").map((x) => ({ name: `${p.id}:${x.key}`, label: x.label })))));
+    }
     if (section === "uploads") void api.get<UploadSettings>("/admin/uploads").then(setUploads);
     if (section === "audit") { setVerify(null); void api.get<AuditRow[]>("/admin/audit?take=200").then(setAudit); }
   }, [section, isAdmin]);
@@ -70,6 +76,10 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
   async function setAnnouncer(u: AdminUser, enabled: boolean) {
     await api.put(`/admin/users/${u.id}/announcer`, { enabled });
     setUsers((all) => all.map((x) => (x.id === u.id ? { ...x, canAnnounce: enabled } : x)));
+  }
+  async function setPermission(u: AdminUser, permission: string, granted: boolean) {
+    await api.put(`/admin/users/${u.id}/permissions`, { permission, granted });
+    setUsers((all) => all.map((x) => (x.id === u.id ? { ...x, permissions: granted ? [...(x.permissions ?? []), permission] : (x.permissions ?? []).filter((p) => p !== permission) } : x)));
   }
   const area = isAdmin ? "Administration" : "Manage";
 
@@ -167,21 +177,8 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
               {section === "bin" && isAdmin && <BinTable spaceId={null} canEmpty={false} onRestored={() => void onSpacesChanged()} />}
 
               {section === "users" && isAdmin && (
-                <table className="grid-table">
-                  <thead><tr><th>Name</th><th>User name</th><th>Source</th><th>Role</th><th>Announcements</th><th>Created</th></tr></thead>
-                  <tbody>
-                    {users.map((u) => (
-                      <tr key={u.id} className={`row ${picked?.kind === "user" && picked.item.id === u.id ? "sel" : ""} ${u.deactivatedAt ? "off" : ""}`} onClick={() => setPicked({ kind: "user", item: u })}>
-                        <td>{u.displayName}</td><td className="muted">{u.userName}</td><td className="muted">{u.source}</td>
-                        <td>{u.isBreakGlass ? "Break-glass" : u.isAdmin ? "Administrator" : "User"}</td>
-                        <td onClick={(e) => e.stopPropagation()}>
-                          <input type="checkbox" className="chk" aria-label={`${u.displayName} can post announcements`} checked={u.isAdmin || u.canAnnounce} disabled={u.isAdmin} onChange={(e) => void setAnnouncer(u, e.target.checked)} />
-                        </td>
-                        <td className="muted">{fmt(u.createdAt)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <UsersTable users={users} permissions={userPermissions} pickedId={picked?.kind === "user" ? picked.item.id : null}
+                  onPick={(u) => setPicked({ kind: "user", item: u })} onAnnouncer={(u, enabled) => void setAnnouncer(u, enabled)} onPermission={(u, p, granted) => void setPermission(u, p, granted)} />
               )}
 
               {section === "audit" && isAdmin && (

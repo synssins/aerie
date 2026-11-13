@@ -26,6 +26,8 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | GET | `/api/v1/admin/plugins/health` | `plugin.health` | No | Needed | No |
 | DELETE | `/api/v1/admin/plugins/{id}` | `plugin.remove` | Yes | Needed | No |
 | DELETE | `/api/v1/admin/plugins/{id}/data` | `plugin.data.delete` | Yes | Needed | No |
+| GET | `/api/v1/admin/plugins/{id}/permissions` | `plugin.permissions.read` | No | Needed | No |
+| PUT | `/api/v1/admin/plugins/{id}/permissions` | `plugin.permissions.save` | Yes | Needed | No |
 | POST | `/api/v1/admin/plugins/{id}/release-lock` | `plugin.lock.release` | Yes | Needed | No |
 | GET | `/api/v1/admin/plugins/{id}/settings` | `plugin.settings.read` | No | Needed | No |
 | PUT | `/api/v1/admin/plugins/{id}/settings` | `plugin.settings.save` | Yes | Needed | No |
@@ -54,6 +56,7 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | GET | `/api/v1/admin/users` | `user.list` | No | Needed | No |
 | POST | `/api/v1/admin/users/invite` | `user.invite` | Yes | Needed | No |
 | PUT | `/api/v1/admin/users/{id:guid}/announcer` | `user.announcer.set` | Yes | Needed | No |
+| PUT | `/api/v1/admin/users/{id:guid}/permissions` | `user.permissions.set` | Yes | Needed | No |
 | POST | `/api/v1/announcements` | `announcement.post` | Yes | Needed | No |
 | DELETE | `/api/v1/announcements/{id:guid}` | `announcement.remove` | Yes | Needed | No |
 | DELETE | `/api/v1/attachments/{id:guid}` | `attachment.remove` | Yes | Needed | Write |

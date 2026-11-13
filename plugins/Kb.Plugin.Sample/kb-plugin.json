@@ -1,7 +1,7 @@
 {
   "id": "kb.sample",
   "name": "Sample: acknowledgements",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "publisher": "Kb first-party",
   "description": "Readers acknowledge a page. The reference plugin of the developer guide.",
   "assembly": "Kb.Plugin.Sample.dll",
@@ -30,6 +30,14 @@
     {
       "name": "purge",
       "everyMinutes": 1440
+    }
+  ],
+  "permissions": [
+    {
+      "key": "see-acknowledgements",
+      "label": "See who acknowledged a page",
+      "scope": "space",
+      "defaultRole": "Supervisor"
     }
   ]
 }

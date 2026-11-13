@@ -25,5 +25,7 @@ public sealed record SetPublicSpace : IAction<Unit>
     public required bool Enabled { get; init; }
 }
 
-public sealed record AdminUserDto(Guid Id, string UserName, string DisplayName, string Source, bool IsAdmin, bool IsBreakGlass, DateTimeOffset CreatedAt, DateTimeOffset? DeactivatedAt, bool CanAnnounce);
+/// <summary>Permissions: the global plugin permissions the person holds ("&lt;plugin id&gt;:&lt;key&gt;").</summary>
+public sealed record AdminUserDto(Guid Id, string UserName, string DisplayName, string Source, bool IsAdmin, bool IsBreakGlass, DateTimeOffset CreatedAt, DateTimeOffset? DeactivatedAt, bool CanAnnounce,
+    IReadOnlyList<string>? Permissions = null);
 public sealed record AuditEntryDto(long Sequence, DateTimeOffset At, string Action, string? Actor, string? TargetType, string? TargetId);

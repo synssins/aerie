@@ -23,7 +23,7 @@ Related: [developer guide](developer-guide.md), [admin guide](admin-guide.md).
 | `extensionPoints` | list of text | empty | The extension points it supplies, for example `email-sender` or `audit-sink`. Shown on the Plugins screen. |
 | `outboundHosts` | list of text | empty | The only hosts its `HttpClient` may call. |
 | `settings` | list | empty | The settings an Admin sets in the app. See below. |
-| `permissions` | list | empty | Read and kept; not used yet. See below. |
+| `permissions` | list | empty | The permissions it declares. See below. |
 | `schedules` | list | empty | The jobs it runs. See below. |
 | `ui` | object | none | Read and kept; not used yet. See below. |
 
@@ -48,14 +48,14 @@ Related: [developer guide](developer-guide.md), [admin guide](admin-guide.md).
 
 ## permissions
 
-Not used yet. A plugin checks permissions through `IAccess` today.
+The plugin asks whether its caller holds one with `IAccess.CanAsync(actor, "<plugin id>:<key>", spaceId)`.
 
 | Property | Type | Default | Meaning |
 |---|---|---|---|
-| `key` | text | required | |
-| `label` | text | required | |
-| `scope` | text | required | `space` or `global`. |
-| `defaultRole` | text | `Owner` | |
+| `key` | text | required | The name inside the plugin. The full name is `<plugin id>:<key>`. |
+| `label` | text | required | Shown on the Plugins screen; for a global permission, the heading of its column in the Users table. |
+| `scope` | text | required | `space`: held from a minimum role up, in each space. `global`: given to people one by one by an Admin; Admins hold it. |
+| `defaultRole` | text | `Owner` | For a space permission, the minimum role until an Admin changes it: `Reader`, `Contributor`, `Supervisor` or `Owner`. |
 
 ## schedules
 
