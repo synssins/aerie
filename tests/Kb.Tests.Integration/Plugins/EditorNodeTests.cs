@@ -85,6 +85,21 @@ public sealed class EditorNodeTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task PageOfAnOddShape_IsSavedAsSent_AndRead()
+    {
+        // Not what any editor writes, but JSON with a doc at the top: it is stored as sent, and nothing that reads it throws.
+        const string doc = """{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"oddword"}]},null,7,{"type":"paragraph","content":"oops"},{"type":"paragraph","content":[{"type":"text","text":"x","marks":[null]}]}]}""";
+
+        var page = await PageAsync(doc);
+
+        Assert.Equal(doc, page.ContentJson);
+        Assert.Equal(1, await FoundAsync("oddword"));
+        Assert.StartsWith("oddword", await MarkdownAsync(page.Id), StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.OK, (await _admin.GetAsync($"/api/v1/pages/{page.Id}/export?format=docx", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await _admin.GetAsync($"/api/v1/pages/{page.Id}/export?format=pdf", Ct)).StatusCode);
+    }
+
+    [Fact]
     public async Task EditorNode_Renderer_IsUsedBySearchDiffAndExport()
     {
         await InstallAsync("nodes");

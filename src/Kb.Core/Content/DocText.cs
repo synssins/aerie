@@ -92,7 +92,10 @@ public static class DocText
         try { return JsonDocument.Parse(json); } catch (JsonException) { return null; }
     }
 
-    private static string Type(JsonElement n) => n.TryGetProperty("type", out var t) ? t.GetString() ?? "" : "";
+    // A page is stored as its writer sent it, so a node can be of any shape. What is not as expected reads as nothing; it never throws.
+    private static string Type(JsonElement n) => n.ValueKind == JsonValueKind.Object && n.TryGetProperty("type", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString()! : "";
+
+    private static string TextOf(JsonElement n) => n.ValueKind == JsonValueKind.Object && n.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString()! : "";
 
     private static IEnumerable<JsonElement> Kids(JsonElement n)
     {
@@ -101,7 +104,7 @@ public static class DocText
     }
 
     private static string? Attr(JsonElement n, string name) =>
-        n.TryGetProperty("attrs", out var a) && a.ValueKind == JsonValueKind.Object && a.TryGetProperty(name, out var v)
+        n.ValueKind == JsonValueKind.Object && n.TryGetProperty("attrs", out var a) && a.ValueKind == JsonValueKind.Object && a.TryGetProperty(name, out var v)
             ? v.ValueKind switch { JsonValueKind.String => v.GetString(), JsonValueKind.Number => v.GetRawText(), JsonValueKind.True => "true", JsonValueKind.False => "false", _ => null }
             : null;
 
@@ -124,7 +127,7 @@ public static class DocText
     private static void Text(JsonElement n, DocRenderers r, StringBuilder sb)
     {
         var type = Type(n);
-        if (type == "text") { if (n.TryGetProperty("text", out var t)) sb.Append(t.GetString()); return; }
+        if (type == "text") { sb.Append(TextOf(n)); return; }
         var plugins = IsPlugins(type);
         if ((plugins || type is "hardBreak" or "paragraph" or "tableCell" or "tableHeader" or "listItem" or "taskItem") && sb.Length > 0 && sb[^1] != ' ') sb.Append(' ');
         if (plugins && r.Plain(n) is { } own) { sb.Append(own); return; }
@@ -238,7 +241,7 @@ public static class DocText
     }
 
     private static string RawText(JsonElement n) =>
-        string.Concat(Walk(n).Where(d => Type(d) == "text" && d.TryGetProperty("text", out _)).Select(d => d.GetProperty("text").GetString()));
+        string.Concat(Walk(n).Where(d => Type(d) == "text").Select(TextOf));
 
     private static string Inline(JsonElement n, DocRenderers r)
     {
@@ -248,7 +251,7 @@ public static class DocText
             switch (Type(k))
             {
                 case "text":
-                    var t = k.TryGetProperty("text", out var tv) ? tv.GetString() ?? "" : "";
+                    var t = TextOf(k);
                     if (k.TryGetProperty("marks", out var marks) && marks.ValueKind == JsonValueKind.Array)
                     {
                         foreach (var m in marks.EnumerateArray())
@@ -346,7 +349,7 @@ public static class DocText
             var marks = k.TryGetProperty("marks", out var ms) && ms.ValueKind == JsonValueKind.Array ? ms.EnumerateArray().ToList() : [];
             bool Has(string t) => marks.Any(m => Type(m) == t);
             var link = marks.FirstOrDefault(m => Type(m) == "link");
-            runs.Add(new DocRun(k.TryGetProperty("text", out var tv) ? tv.GetString() ?? "" : "", Has("bold"), Has("italic"), Has("underline"), Has("strike"), Has("code"),
+            runs.Add(new DocRun(TextOf(k), Has("bold"), Has("italic"), Has("underline"), Has("strike"), Has("code"),
                 link.ValueKind == JsonValueKind.Object ? Attr(link, "href") : null));
         }
         return runs;

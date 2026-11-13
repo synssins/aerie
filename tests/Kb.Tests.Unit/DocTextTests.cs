@@ -184,6 +184,30 @@ public sealed class DocTextTests
         Assert.Empty(DocText.Blocks(doc));
     }
 
+    [Theory]
+    [InlineData("""{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Kept"}]},null]}""")]
+    [InlineData("""{"type":"doc","content":[7,"text",true,[1,2],{"type":"paragraph","content":[{"type":"text","text":"Kept"}]}]}""")]
+    [InlineData("""{"type":"doc","content":[{"type":5,"content":[{"type":"text","text":"Kept"}]}]}""")]
+    [InlineData("""{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":7},{"type":"text","text":"Kept"}]}]}""")]
+    [InlineData("""{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Kept","marks":"bold"}]}]}""")]
+    [InlineData("""{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Kept","marks":[null,7,{"type":9},{"type":"link","attrs":"x"}]}]}]}""")]
+    [InlineData("""{"type":"doc","content":[{"type":"heading","attrs":"big","content":[{"type":"text","text":"Kept"}]}]}""")]
+    [InlineData("""{"type":"doc","content":[{"type":"image","attrs":{"src":7,"alt":null}},{"type":"paragraph","content":[{"type":"text","text":"Kept"}]}]}""")]
+    [InlineData("""{"type":"doc","content":[{"type":"table","content":[null,{"type":"tableRow","content":[7,{"type":"tableCell","content":[{"type":"paragraph","content":[{"type":"text","text":"Kept"}]}]}]}]}]}""")]
+    [InlineData("""{"type":"doc","content":[{"type":"bulletList","content":[null,{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"Kept"}]}]}]}]}""")]
+    [InlineData("""{"type":"doc","content":[{"type":"codeBlock","attrs":{"language":7},"content":[{"type":"text","text":"Kept"}]}]}""")]
+    public void OddShapes_AreReadWithoutThrowing(string doc)
+    {
+        // A page is stored as its writer sent it, if it is JSON with a doc at the top. Reading it must never throw: a save indexes the
+        // page for search, and a reader that throws there answers 500.
+        Assert.Contains("Kept", DocText.Plain(doc));
+        Assert.Contains(DocText.MarkdownLines(doc), l => l.Contains("Kept", StringComparison.Ordinal));
+        Assert.NotEmpty(DocText.Blocks(doc));
+        _ = DocText.Tables(doc);
+        _ = DocText.CodeBlocks(doc);
+        _ = DocText.ImageIds(doc);
+    }
+
     [Fact]
     public void CoreNodes_AreTheEditorsOwn()
     {
