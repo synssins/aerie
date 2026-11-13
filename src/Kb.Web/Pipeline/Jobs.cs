@@ -13,6 +13,8 @@ public sealed class JobRunner(IServiceScopeFactory scopes, IRegistrations regist
     : BackgroundService
 {
     private static readonly TimeSpan ShortestClaim = TimeSpan.FromMinutes(5);
+    /// <summary>A test sets a shorter run limit than the claim, so it need not wait five minutes.</summary>
+    internal TimeSpan? RunLimit { get; set; }
     private readonly string _me = $"{Environment.MachineName}:{Guid.NewGuid():N}";
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -40,11 +42,32 @@ public sealed class JobRunner(IServiceScopeFactory scopes, IRegistrations regist
             if (!await ClaimAsync(job.PluginId, job.Value.Name, every, ct)) continue;
 
             string? error = null;
+            // A run may last as long as its claim: the interval, five minutes at least. After that it is told to stop and given up,
+            // so a job that hangs cannot hold up the others, and no second server starts the job while the first still runs it.
+            using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
             try
             {
                 await using var scope = scopes.CreateAsyncScope();
                 scope.ServiceProvider.GetRequiredService<ActorAccessor>().Use(Actor.Plugin(job.PluginId, "job"));
-                await ((IKbJob)ActivatorUtilities.CreateInstance(scope.ServiceProvider, job.Value.Job)).RunAsync(ct);
+                var run = ((IKbJob)ActivatorUtilities.CreateInstance(scope.ServiceProvider, job.Value.Job)).RunAsync(stop.Token);
+                _ = run.ContinueWith(static t => _ = t.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default); // a run given up may still fail later
+                await run.WaitAsync(RunLimit ?? ClaimFor(every), ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // The app is stopping. The job did not finish: it stays due, and its claim is given back so the next start runs it.
+                await using var released = scopes.CreateAsyncScope();
+                var (p, n) = (job.PluginId, job.Value.Name);
+                await released.ServiceProvider.GetRequiredService<KbDbContext>().JobRuns.Where(r => r.PluginId == p && r.Name == n && r.ClaimedBy == _me)
+                    .ExecuteUpdateAsync(s => s.SetProperty(r => r.ClaimedBy, (string?)null).SetProperty(r => r.ClaimedUntil, (DateTimeOffset?)null), CancellationToken.None);
+                throw;
+            }
+            catch (TimeoutException)
+            {
+                await stop.CancelAsync();
+                error = "Timed out.";
+                log.LogError("Job {Job} of {Plugin} ran longer than {Limit} and was given up.", job.Value.Name, job.PluginId, ClaimFor(every));
+                failures.Report(job.PluginId, $"job {job.Value.Name}", new TimeoutException("Timed out."));
             }
             catch (Exception e) when (!(e is OperationCanceledException && ct.IsCancellationRequested))
             {
@@ -66,6 +89,8 @@ public sealed class JobRunner(IServiceScopeFactory scopes, IRegistrations regist
         return ran;
     }
 
+    private static TimeSpan ClaimFor(TimeSpan every) => every > ShortestClaim ? every : ShortestClaim;
+
     /// <summary>True when the job is due and this server now holds it. A job seen for the first time is due at once.</summary>
     private async Task<bool> ClaimAsync(string plugin, string name, TimeSpan every, CancellationToken ct)
     {
@@ -79,7 +104,7 @@ public sealed class JobRunner(IServiceScopeFactory scopes, IRegistrations regist
             catch (DbUpdateException) { } // another server added the row at the same moment; the claim below decides who runs
         }
         // A claim outlives a server that died: it ends by itself after the interval, five minutes at least.
-        var until = now + (every > ShortestClaim ? every : ShortestClaim);
+        var until = now + ClaimFor(every);
         return await db.JobRuns.Where(r => r.PluginId == plugin && r.Name == name && r.NextRunAt <= now && (r.ClaimedUntil == null || r.ClaimedUntil < now))
             .ExecuteUpdateAsync(s => s.SetProperty(r => r.ClaimedBy, _me).SetProperty(r => r.ClaimedUntil, until), ct) == 1;
     }

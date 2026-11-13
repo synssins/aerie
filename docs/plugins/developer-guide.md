@@ -44,7 +44,7 @@ What the core does do:
 7. Sign in as an Admin. Open Administration > Plugins. Select Upload and choose the package.
 8. The screen shows "Restarting" and comes back by itself. The plugin is listed as Enabled.
 9. Select the plugin to set its settings.
-10. If the plugin is listed as "Disabled by core", the screen shows the reason. Correct the plugin, raise its version, and upload it again.
+10. If the plugin is listed as "Disabled by core", the screen shows the reason. Correct the plugin, raise its version, upload it again, and select Enable: an update keeps the state the plugin had.
 
 ## The plugin class
 
@@ -182,6 +182,7 @@ public sealed record AckList(IReadOnlyList<AckEntry> People);
 ```
 
 - The name is `<your prefix>.<what>`. Mark an action that changes nothing with `Read = true`; result filters run only on reads.
+- An action has one handler. A plugin that registers a handler for an action that already has one is not loaded.
 - Put `[JsonIgnore]` on a member that holds a secret or a file.
 - Register the handler with `app.Handle<TAction, TResult, THandler>()`.
 
@@ -256,6 +257,10 @@ public sealed class MajorNeedsNote(SampleSettings settings) : IBeforeAction<Save
 - A hook that throws refuses the action with "<plugin name> failed.", and the failure is counted. Register it as optional
   (`app.Before<TAction, THook>(optional: true)`) when the action must go on without it.
 - A hook runs for every caller, an Admin too.
+- A plugin hooks the actions of the contract assembly and of other plugins. The core-only actions (how plugins, API tokens, storage, log shipping and invitations are administered) are closed: a plugin that registers on one is not loaded.
+- The core sets no time limit on a hook, a filter or an after handler. One that never returns holds every request to that action; an after handler that never returns holds every later after handler of every plugin. Give every wait of your own a limit.
+- A hook on `auth.signin` that refuses can lock everyone out, the break-glass account too. Only Safe Mode gets an Admin back in.
+- An action's password, setup code or file is not in its JSON and not in its text (`ToString()`); do not write them to a log yourself.
 
 ### After an action
 
@@ -319,10 +324,13 @@ public sealed class SampleData(PluginDbOptions options) : PluginDbContext(option
 - Derive a context from `PluginDbContext` and register it with `app.AddData<TContext>()`. Take it from the container like any service; there is one per request.
 - Every table gets the prefix `plg_<id>__` (dots and hyphens of the id become underscores). Name tables plainly.
 - A table may hold the id of a core row as a value. It cannot have a foreign key to a core table.
-- The tables are created the first time the plugin starts. When a later version changes them, the plugin needs EF Core migrations:
-  the app then runs them at start, with their history in `plg_<id>__migrations`. A plugin without migrations whose tables no longer match its model is disabled, with
-  "Its tables changed. A plugin that changes its tables needs migrations."
+- A plugin without EF Core migrations has its tables created the first time it starts, and never changed after that.
+  The app notices only a table that is missing later (the plugin is then disabled with "Its tables changed. A plugin that changes its tables needs migrations.").
+  It does not notice a changed column: the plugin loads and its queries fail.
+- A plugin whose tables will ever change ships migrations from its first version. The app runs them at start, with their history in `plg_<id>__migrations`.
+  Do not add migrations to a plugin that is already installed without them: its first migration would create tables that exist. Its data must be deleted first, or the first migration must tolerate existing tables.
 - For `dotnet ef migrations add`, give the context a design-time factory that builds its options with `PluginDbOptions.ForDesign("<id>", o => o.UseSqlServer("..."))`.
+- Keep the tables in the default schema. The prefix is their only namespace; a schema you set is removed.
 - A save is on its own. It is not part of the core action that caused it: when the action fails afterwards, the plugin's rows stay.
 - Removing the plugin keeps its tables. An Admin deletes them with "Delete data".
 
@@ -344,6 +352,7 @@ public sealed class PurgeJob(SampleSettings settings, SampleData db) : IKbJob
 ```
 
 - A job runs in its own scope, on one server at a time. A job that is seen for the first time runs at once; after that it runs every `everyMinutes`, counted from the end of the last run.
+- A run may last as long as its interval, five minutes at least. After that it is told to stop (its cancellation token), recorded as "Timed out." and counted as a failure.
 - It runs as the plugin: an actor of kind `Plugin`, source `job`. Through the bus it reads every space that is not sensitive, and nothing of a sensitive space.
   An action that records who did it (`page.create`, `page.save` and the like) answers 401 for it today.
 - A job that throws has its error recorded and counts as a failure of the plugin. It runs again at its next slot.
@@ -369,6 +378,7 @@ public sealed class TableCheck(SampleData db) : IHealthCheck
 ```
 
 A health check is registered with `app.HealthCheck<TCheck>(name)`. It is not part of the app's own readiness check.
+It runs when an Admin opens the Plugins screen, as the plugin, with a limit of five seconds. One that throws or takes longer is shown as Unhealthy; that is not counted as a failure of the plugin.
 
 ## Calling other systems
 
@@ -379,7 +389,7 @@ That client refuses a host that is not listed.
 
 A plugin can serve other plugins.
 
-- It lists the assemblies it shares in `exports`. A plugin that names it in `requires` sees those assemblies, and no other plugin's.
+- It lists the assemblies it shares in `exports`, by assembly name without `.dll`. A plugin that names it in `requires` sees those assemblies, and no other plugin's.
 - It defines an extension point as a record. A dependent adds one with `app.Add(new TheRecord(...))`. The library reads them from `IRegistrations.All<TheRecord>()`.
 - It defines an action. A dependent hooks it exactly as it would hook a core action.
 - A required plugin cannot be disabled or removed while a plugin that requires it is enabled.
@@ -397,9 +407,10 @@ Sign-in, setup and plugin administration are never locked.
 - A schedule and its job that do not match.
 - A requirement that is missing, disabled or too old; a circular requirement.
 - A plugin built for a newer plugin API or a newer app.
-- Five failures in ten minutes: a hook, a filter, an after handler, a job, an audit sink or an email sender that threw or timed out.
+- A hook, a handler or a job on an action that is not open to plugins, or a second handler for an action.
+- Five failures in ten minutes: a hook, a filter, an after handler, a job, an audit sink or an email sender that threw, or whose own time limit ran out. A job that runs past its limit counts too.
 
-The plugin stays disabled until an Admin enables it again or uploads a new version. Plugins that require it are disabled with it.
+The plugin stays disabled until an Admin selects Enable. Uploading a new version does not enable it. Plugins that require it are disabled with it; an enforcing one among them is locked.
 
 ## Versions
 

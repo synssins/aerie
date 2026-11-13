@@ -108,7 +108,28 @@ public sealed class PluginDataTests : IAsyncLifetime
 
         Assert.Equal(["plg_kb_test_probe2__notes"], await TablesAsync());
         Assert.Null(await ListedAsync("kb.test.probe"));
+        // The audit log says that data was deleted, not only that the plugin was removed.
+        await _f.WithDbAsync(async db => Assert.Equal(["plugin.remove", "plugin.data.delete"],
+            await db.AuditEntries.Where(a => a.TargetId == "kb.test.probe" && (a.Action == "plugin.remove" || a.Action == "plugin.data.delete")).OrderBy(a => a.Sequence).Select(a => a.Action).ToListAsync(Ct)));
         Assert.Equal(HttpStatusCode.NoContent, (await _admin.PostAsJsonAsync("/api/v1/plugins/kb.test.probe2/notes", new { text = "still works" }, Ct)).StatusCode);
+    }
+
+    /// <summary>
+    /// Two ids can give the same table prefix (a dot and a hyphen both become an underscore). A plugin whose prefix is that of a removed
+    /// plugin's kept tables is refused: it would take over those rows, and "Delete data" for the removed one would drop the new one's tables.
+    /// </summary>
+    [Fact]
+    public async Task Install_WithThePrefixOfARemovedPluginsKeptData_Refused()
+    {
+        await InstallAsync();
+        Assert.Equal(HttpStatusCode.NoContent, (await _admin.DeleteAsync($"{Url}/kb.test.probe", Ct)).StatusCode);
+        await RestartAsync();
+
+        using var body = new ByteArrayContent(TestPlugins.Package(TestPlugins.Probe, m => m with { Id = "kb.test-probe" }));
+        var r = await _admin.PostAsync(Url, body, Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, r.StatusCode);
+        Assert.Equal("Conflicts with kb.test.probe.", (await r.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("detail").GetString());
     }
 
     [Fact]

@@ -96,6 +96,68 @@ public sealed class PluginRuleTests : IAsyncLifetime
         });
     }
 
+    /// <summary>
+    /// A hook may send actions of its own. That must not disturb the action it hooks: the handler's changes are saved
+    /// although an audit entry was written in between on the same database context.
+    /// </summary>
+    [Fact]
+    public async Task Hook_SendingAnAuditedAction_DoesNotLoseTheHandlersChanges()
+    {
+        await InstallAsync(TestPlugins.Probe);
+        var (space, page) = await SpaceAsync("mine", "My page");
+        await SetAsync("HookEchoes", "page.delete");
+
+        Assert.Equal(HttpStatusCode.NoContent, (await _admin.DeleteAsync($"/api/v1/pages/{page}", Ct)).StatusCode);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await _admin.GetAsync($"/api/v1/pages/{page}", Ct)).StatusCode); // it is in the bin
+        Assert.Contains((await _admin.GetFromJsonAsync<JsonElement>($"/api/v1/spaces/{space}/bin", Ct)).EnumerateArray(), b => b.GetProperty("id").GetGuid() == page);
+    }
+
+    /// <summary>The actions that carry or answer a secret are not in the contract assembly, and a plugin that tries to hook one is not loaded.</summary>
+    [Fact]
+    public async Task Plugin_HookingACoreOnlyAction_IsNotLoaded()
+    {
+        await InstallAsync(TestPlugins.Probe);
+        await SetAsync("Register", "corehook");
+        _f = await _f.RestartAsync();
+
+        await _f.WithDbAsync(async db =>
+        {
+            var status = await db.PluginStatuses.SingleAsync(s => s.PluginId == "kb.test.probe", Ct);
+            Assert.Equal((Kb.Core.Plugins.PluginState.DisabledByCore, "token.create is not open to plugins."), (status.State, status.Reason));
+        });
+    }
+
+    /// <summary>An action has one handler. A plugin that brings a second one for an action of the core is not loaded; the core's stays.</summary>
+    [Fact]
+    public async Task Plugin_HandlingAnActionThatHasAHandler_IsNotLoaded()
+    {
+        await InstallAsync(TestPlugins.Probe);
+        var (_, page) = await SpaceAsync("mine", "My page");
+        await SetAsync("Register", "dupehandler");
+        _f = await _f.RestartAsync();
+        _admin = await _f.SignedInBreakGlassAsync();
+
+        await _f.WithDbAsync(async db =>
+        {
+            var status = await db.PluginStatuses.SingleAsync(s => s.PluginId == "kb.test.probe", Ct);
+            Assert.Equal((Kb.Core.Plugins.PluginState.DisabledByCore, "page.read already has a handler."), (status.State, status.Reason));
+        });
+        Assert.Equal(HttpStatusCode.OK, (await _admin.GetAsync($"/api/v1/pages/{page}", Ct)).StatusCode);
+    }
+
+    [Fact]
+    public void ActionsThatCarryASecret_AreNotInTheContractAssembly()
+    {
+        var contract = typeof(IAction<>).Assembly.GetTypes().Select(t => t.GetCustomAttribute<ActionAttribute>()?.Name).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        Assert.Contains("page.save", contract);
+        string[] secret = ["user.invite", "token.create", "plugin.install", "plugin.settings.save", "storage.place.add", "storage.place.save", "log.target.add", "log.target.save"];
+        Assert.DoesNotContain(secret, contract.Contains);
+        // And they exist, as core-only actions.
+        var all = _f.Services.GetRequiredService<Kb.Web.Pipeline.ActionCatalog>().Actions.Select(a => Kb.Web.Pipeline.ActionCatalog.Describe(a.Action).Name).ToHashSet(StringComparer.Ordinal);
+        Assert.Empty(secret.Except(all));
+    }
+
     /// <summary>What a hook holds gives it no way to take an entry back: the context can add to the audit trail and nothing else.</summary>
     [Fact]
     public void ActionContext_HasNoWayToRemoveAnAuditEntry()

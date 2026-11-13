@@ -50,6 +50,8 @@ public sealed class ProbeState(IPluginContext context)
     /// <summary>What a hook got when it read the page named by the HookReads setting: its title, or "refused 404".</summary>
     public string? LastHookRead { get; set; }
     public string? LastJob { get; set; }
+    /// <summary>Who the probe's health check ran as.</summary>
+    public string? LastHealth { get; set; }
     public string? LastJobRead { get; set; }
 
     public void Count(string kind, string action) => ByAction.AddOrUpdate($"{kind}:{action}", 1, (_, n) => n + 1);
@@ -83,6 +85,7 @@ public sealed class EchoHandler(ProbeState state) : IActionHandler<ProbeEcho, Pr
             await bus.SendAsync(new ProbeEcho { Target = "nested", Text = "inner" }, ctx.Cancel);
         }
         ctx.Audit("probe.echo", "probe", action.Target);
+        if (action.Text == "throw") throw new InvalidOperationException("Echo threw after its audit entry.");
         if (action.Text == "fail") return Problem.Conflict("Echo failed.");
         state.Written[action.Target] = action.Text;
         return new ProbeEchoResult(action.Target, action.Text);
@@ -186,6 +189,8 @@ public sealed class AnyHook<TAction>(ProbeState state, IActionBus bus) : IBefore
             var read = await bus.SendAsync(new ReadPage { PageId = page }, ctx.Cancel);
             state.LastHookRead = read.Ok ? read.Value!.Title : $"refused {read.Problem!.Status}";
         }
+        // HookEchoes = "<action>": while hooking that action, send an action of the probe's own, which writes audit entries.
+        if (state.Setting("HookEchoes") == ctx.Name) await bus.SendAsync(new ProbeEcho { Target = "from-hook", Text = "x" }, ctx.Cancel);
         // HookAudit = "<action>": the hook adds an audit entry of its own.
         if (state.Setting("HookAudit") == ctx.Name) ctx.Audit("probe.hook", "probe", ctx.Name);
         if (state.Setting("Refuse") == ctx.Name) return Problem.Refused("Probe refused.");
@@ -224,7 +229,7 @@ public static class ProbeRoutes
     {
         group.MapPost("/echo", (EchoBody body, IActionBus bus, CancellationToken ct) => bus.SendAsync(new ProbeEcho { Target = body.Target, Text = body.Text }, ct).ToHttp());
         group.MapGet("/peek/{target}", (string target, IActionBus bus, CancellationToken ct) => bus.SendAsync(new ProbePeek { Target = target }, ct).ToHttp());
-        group.MapGet("/counters", (ProbeState state) => Results.Ok(new { hooks = state.Hooks, handled = state.Handled, filters = state.Filters, after = state.After, afterReads = state.AfterReads, lastAfter = state.LastAfter, lastActor = state.LastActor, written = state.Written, byAction = state.ByAction, lastAfterAny = state.LastAfterAny, lastHookRead = state.LastHookRead, lastJob = state.LastJob, lastJobRead = state.LastJobRead }));
+        group.MapGet("/counters", (ProbeState state) => Results.Ok(new { hooks = state.Hooks, handled = state.Handled, filters = state.Filters, after = state.After, afterReads = state.AfterReads, lastAfter = state.LastAfter, lastActor = state.LastActor, written = state.Written, byAction = state.ByAction, lastAfterAny = state.LastAfterAny, lastHookRead = state.LastHookRead, lastHealth = state.LastHealth, lastJob = state.LastJob, lastJobRead = state.LastJobRead }));
         // A route that names one action and sends another: the bus must refuse it.
         group.MapGet("/mismatch", (IActionBus bus, CancellationToken ct) => bus.SendAsync(new ProbeEcho { Target = "mismatch", Text = "x" }, ct).ToHttp()).WithAction<ProbePeek>();
         group.MapGet("/hello", () => Results.Ok(new { hello = "anonymous" })).AllowAnonymous();

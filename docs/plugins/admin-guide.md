@@ -51,7 +51,7 @@ The audit log records which keys changed, never a value.
 The app turns a plugin off by itself when the plugin cannot start, or when it fails five times in ten minutes. The screen shows the reason.
 Plugins that require it are turned off with it.
 
-To put it back: correct the cause (a setting, the remote system, a new version of the plugin), then select Enable.
+To put it back: correct the cause (a setting, the remote system, a new version of the plugin), then select Enable. Uploading a new version does not enable it by itself.
 
 ## Locked
 
@@ -62,7 +62,7 @@ Select Release lock when you accept that the rule is not enforced for now. Enabl
 
 ## Safe Mode
 
-When a plugin stops the app from starting, set `Kb:Plugins:SafeMode` to `true` in the app's configuration and start the app.
+When a plugin stops the app from starting, or keeps people from signing in, set `Kb:Plugins:SafeMode` to `true` in the app's configuration and start the app.
 In Safe Mode no uploaded plugin is loaded, no state is changed and locks are ignored. Remove or disable the plugin, then switch Safe Mode off.
 
 ## The upload size limit
@@ -77,7 +77,8 @@ The others see the change within a short time and restart themselves.
 
 ## Jobs
 
-A plugin's jobs run on one server at a time, on the schedule its manifest gives. A job that fails counts as a failure of its plugin.
+A plugin's jobs run on one server at a time, on the schedule its manifest gives. A job that fails, or runs past its interval (five minutes at least), counts as a failure of its plugin.
+Select a plugin to see its health checks and its jobs (last run, next run, last error) in the right panel.
 
 ## The audit log
 
@@ -86,6 +87,7 @@ A plugin's jobs run on one server at a time, on the schedule its manifest gives.
 | `plugin.install`, `plugin.update` | A package was uploaded. Carries the version, the source and the SHA-256. |
 | `plugin.enable`, `plugin.disable` | An Admin changed the state. |
 | `plugin.disable.core` | The app disabled it. Carries the reason. |
-| `plugin.remove`, `plugin.data.delete` | |
+| `plugin.remove` | A plugin was removed. |
+| `plugin.data.delete` | Its tables were dropped: with the removal ("Delete data" ticked), or later from the list. |
 | `plugin.lock.release` | |
 | `plugin.settings.change` | Carries the keys that changed. |

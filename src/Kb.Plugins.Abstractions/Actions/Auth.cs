@@ -9,6 +9,9 @@ public sealed record SignIn : IAction<MeResponse>
 {
     public required string UserName { get; init; }
     [JsonIgnore] public string Password { get; init; } = "";
+
+    /// <summary>A record prints every member; the password stays out, so a log line of the action cannot hold it.</summary>
+    public override string ToString() => $"SignIn {{ UserName = {UserName} }}";
 }
 
 [Action("auth.signout")]
@@ -44,6 +47,8 @@ public sealed record RunSetup : IAction<MeResponse>
     public required string DisplayName { get; init; }
     [JsonIgnore] public string Password { get; init; } = "";
     [JsonIgnore] public string? Code { get; init; }
+
+    public override string ToString() => $"RunSetup {{ UserName = {UserName}, DisplayName = {DisplayName} }}";
 }
 
 public sealed record MeResponse(Guid Id, string UserName, string DisplayName, bool IsAdmin, bool IsBreakGlass, bool CanAnnounce = false);

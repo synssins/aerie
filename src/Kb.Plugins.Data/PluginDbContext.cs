@@ -46,6 +46,8 @@ public abstract class PluginDbContext : DbContext
         foreach (var entity in modelBuilder.Model.GetEntityTypes())
         {
             if (entity.GetTableName() is { } table && !table.StartsWith(_prefix, StringComparison.Ordinal)) entity.SetTableName(_prefix + table);
+            // The prefix is the only namespace a plugin's tables have: the host finds and drops them by name, in the default schema.
+            entity.SetSchema(null);
         }
     }
 }

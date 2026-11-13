@@ -9,7 +9,7 @@ using Kb.Plugins.Actions;
 namespace Kb.Web.Pipeline;
 
 /// <summary>Who the current request, or the current piece of background work, acts as.</summary>
-public sealed class ActorAccessor(IHttpContextAccessor http) : IActorAccessor
+internal sealed class ActorAccessor(IHttpContextAccessor http) : IActorAccessor
 {
     private Actor? _actor;
 
@@ -81,7 +81,7 @@ public sealed class ActionCatalog
 /// 8 the audit entries; 9 after handlers. There is no transaction around an action: the handler saves as it goes,
 /// and an action sent from inside another runs on its own.
 /// </summary>
-public sealed class ActionBus(ActionCatalog catalog, IServiceProvider services, IActorAccessor actors, IAuditLog audit, IPluginFailures failures, PluginRegistry registry,
+internal sealed class ActionBus(ActionCatalog catalog, IServiceProvider services, IActorAccessor actors, IAuditLog audit, IPluginFailures failures, PluginRegistry registry,
     ActionQueueWorker queue, TimeProvider time, IHttpContextAccessor http) : IActionBus
 {
     public const string Header = "X-Kb-Action";
@@ -113,6 +113,14 @@ public sealed class ActionBus(ActionCatalog catalog, IServiceProvider services, 
         _depth++;
         Outcome<TResult> outcome;
         try { outcome = await StepsAsync<TAction, TResult>(ctx, described.Read); }
+        catch
+        {
+            // A handler asks for its audit entry once its work is saved. If it throws after that (building the answer failed),
+            // the work is done and the entry must exist.
+            foreach (var note in ctx.AuditNotes(succeeded: true))
+                await audit.AppendAsync(new AuditEvent(note.Action, ctx.Actor.UserId, note.TargetType, note.TargetId, note.SpaceId, note.Data), CancellationToken.None);
+            throw;
+        }
         finally { _depth--; }
         // Step 8. A handler or a plugin cannot leave these out; when the action failed, only the entries marked evenIfRefused are written.
         // They are written whatever happens to the request: the work is done, and closing the connection must not keep it out of the audit log.

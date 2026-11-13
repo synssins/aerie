@@ -12,14 +12,14 @@ internal sealed class AddImageHandler(KbDbContext db, IAccess access, IFileStore
     {
         if (await ImageSupport.MayAddAsync(access, ctx.Actor, ctx.Action.SpaceId, ctx.Cancel) is { } denied) return denied;
         // The size is settled here, not in HandleAsync: a file over the limit is refused before a plugin hook could read it.
-        var file = ctx.Action.File;
+        if (ctx.Action.File is not { } file) return Problem.Invalid("file", "PNG, JPEG, GIF or WebP only.");
         if (file.Length is > ImageEndpoints.MaxImageBytes) return ImageSupport.TooLarge;
         await using var body = await file.OpenReadAsync(ctx.Cancel);
         return (_data = await ImageSupport.ReadAsync(body, ctx.Cancel)) is null ? ImageSupport.TooLarge : null;
     }
 
     public Task<Outcome<ImageDto>> HandleAsync(ActionContext<AddImage> ctx) =>
-        ImageSupport.StoreAsync(db, store, ctx.Action.SpaceId, ctx.Actor.UserId!.Value, _data!, ctx.Action.File.FileName, time.GetUtcNow());
+        ImageSupport.StoreAsync(db, store, ctx.Action.SpaceId, ctx.Actor.UserId!.Value, _data!, ctx.Action.File?.FileName, time.GetUtcNow());
 }
 
 internal sealed class ImportImageHandler(KbDbContext db, IAccess access, IFileStore store, IHttpClientFactory clients, TimeProvider time) : IActionHandler<ImportImage, ImageDto>

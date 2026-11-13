@@ -26,6 +26,9 @@ public sealed record PluginBoot(PluginRegistry Registry, IRegistrations Registra
 /// </summary>
 public static class PluginBootstrap
 {
+    /// <summary>The assemblies whose actions a plugin may not hook, filter, follow or handle.</summary>
+    private static readonly string[] CoreAssemblies = ["Kb.Web", "Kb.Core", "Kb.Data"];
+
     private sealed record Candidate(PluginManifest Manifest, PluginOrigin Origin, PluginStatus? Status, string Source, Assembly? Assembly, string? Sha256);
 
     public static async Task<PluginBoot> RunAsync(IServiceCollection services, IConfiguration config, KbOptions options, string contentRoot, CancellationToken ct = default)
@@ -104,6 +107,7 @@ public static class PluginBootstrap
         var contexts = new Dictionary<string, AssemblyLoadContext>(StringComparer.Ordinal);
         var registrations = new PluginRegistrations();
         var pluginServices = new List<ServiceDescriptor>();
+        var handledActions = new HashSet<Type>();
         var enabled = candidates.Where(c => (c.Status?.State ?? PluginState.Enabled) == PluginState.Enabled && (c.Origin == PluginOrigin.BuiltIn || !safeMode)).ToList();
         var byId = enabled.ToDictionary(c => c.Manifest.Id, StringComparer.Ordinal);
         var work = WorkFolder(options.Plugins.WorkFolder, contentRoot);
@@ -144,6 +148,24 @@ public static class PluginBootstrap
                     contexts[id] = context;
                 }
                 var configured = PluginRuntime.Configure(assembly, c.Manifest, settings);
+                // Only the actions of the contract assembly, and of plugins, are open to plugins. The core's own (API tokens, plugin and
+                // storage administration and the like) carry secrets or decide about plugins themselves.
+                foreach (var action in configured.Registrations.Select(r => r switch
+                         {
+                             Kb.Plugins.Actions.BeforeHook b => b.Action, Kb.Plugins.Actions.ResultFilter f => f.Action,
+                             Kb.Plugins.Actions.AfterHandler a => a.Action, Kb.Plugins.Actions.ActionHandler h => h.Action, _ => null,
+                         }).OfType<Type>())
+                {
+                    if (CoreAssemblies.Contains(action.Assembly.GetName().Name ?? "", StringComparer.Ordinal))
+                        throw new InvalidOperationException($"{action.GetCustomAttribute<Kb.Plugins.Actions.ActionAttribute>()?.Name ?? action.FullName} is not open to plugins.");
+                }
+                // An action has one handler. Every action of the contract assembly has the core's; a plugin's own action has its plugin's.
+                foreach (var handled in configured.Registrations.OfType<Kb.Plugins.Actions.ActionHandler>())
+                {
+                    if (handled.Action.Assembly == typeof(Kb.Plugins.Actions.IAction<>).Assembly || !handledActions.Add(handled.Action))
+                        throw new InvalidOperationException($"{handled.Action.GetCustomAttribute<Kb.Plugins.Actions.ActionAttribute>()?.Name ?? handled.Action.FullName} already has a handler.");
+                }
+                if (c.Manifest.Schedules.Any(s => string.IsNullOrWhiteSpace(s.Name) || s.Name.Length > 100)) throw new InvalidOperationException("A schedule name is 1 to 100 characters.");
                 // Every schedule of the manifest names a job the plugin registered, and every job has a schedule.
                 var jobs = configured.Registrations.OfType<JobReg>().Select(j => j.Name).ToList();
                 if (c.Manifest.Schedules.FirstOrDefault(s => !jobs.Contains(s.Name, StringComparer.Ordinal)) is { } noJob) throw new InvalidOperationException($"No job named {noJob.Name}.");

@@ -1,3 +1,5 @@
+using Kb.Web.Actions;
+
 namespace Kb.Web;
 
 public sealed record InviteRequest(string UserName, string DisplayName, string? Email, bool IsAdmin = false);

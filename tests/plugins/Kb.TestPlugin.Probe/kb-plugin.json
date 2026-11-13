@@ -103,6 +103,10 @@
     {
       "key": "HookAudit",
       "label": "HookAudit"
+    },
+    {
+      "key": "HookEchoes",
+      "label": "HookEchoes"
     }
   ]
 }

@@ -148,6 +148,24 @@ public sealed class FailureTests : IAsyncLifetime
         await _f.WithDbAsync(async db => Assert.Equal(2, await db.AuditEntries.CountAsync(a => a.Action == AuditActions.PluginDisabledByCore, Ct)));
     }
 
+    /// <summary>An enforcing plugin that goes down with the plugin it requires leaves its lock behind, as it does when it fails itself.</summary>
+    [Fact]
+    public async Task DisabledByCore_LocksAnEnforcingDependent()
+    {
+        await InstallAsync(TestPlugins.Lib);
+        await TestPlugins.InstallAsync(_admin, TestPlugins.Package(TestPlugins.Dependent, m => m with { Enforcing = true }));
+        await RestartAsync();
+        var failures = Failures();
+        for (var i = 0; i < 5; i++) failures.Report("kb.test.lib", "job", new InvalidOperationException("Broken."));
+        await failures.Pending;
+
+        await _f.WithDbAsync(async db =>
+        {
+            Assert.NotNull((await db.PluginStatuses.SingleAsync(s => s.PluginId == "kb.test.dependent", Ct)).LockedAt);
+            Assert.Null((await db.PluginStatuses.SingleAsync(s => s.PluginId == "kb.test.lib", Ct)).LockedAt); // the library enforces nothing itself
+        });
+    }
+
     [Fact]
     public async Task FailingAuditSink_IsReported_AuditEntryStillWritten()
     {

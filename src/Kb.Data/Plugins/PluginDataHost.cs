@@ -36,7 +36,8 @@ public static class PluginDataHost
 
     /// <summary>
     /// Makes the plugin's tables ready. A plugin with migrations is migrated (its history is in <c>&lt;prefix&gt;migrations</c>).
-    /// One without has its tables created the first time; if they later differ from its model it needs migrations, and is refused.
+    /// One without has its tables created the first time. Later, only a table that is missing is noticed (the plugin is refused);
+    /// a changed column is not: a plugin that will change its tables ships migrations from its first version.
     /// </summary>
     public static async Task ReadyAsync(Type context, PluginDbOptions options, CancellationToken ct)
     {
@@ -52,7 +53,13 @@ public static class PluginDataHost
         var present = wanted.Count(t => existing.Contains(t, StringComparer.OrdinalIgnoreCase));
         if (present == wanted.Count) return;
         if (present > 0) throw new InvalidOperationException("Its tables changed. A plugin that changes its tables needs migrations.");
-        await db.GetService<IRelationalDatabaseCreator>().CreateTablesAsync(ct);
+        try { await db.GetService<IRelationalDatabaseCreator>().CreateTablesAsync(ct); }
+        catch (DbException)
+        {
+            // Another server, starting at the same moment, created them first. If they are all there now, that is the wanted result.
+            existing = await TablesAsync(db, options.TablePrefix, ct);
+            if (!wanted.All(t => existing.Contains(t, StringComparer.OrdinalIgnoreCase))) throw;
+        }
     }
 
     /// <summary>The tables whose name starts with the prefix.</summary>

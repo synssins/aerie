@@ -38,14 +38,17 @@ public sealed class SqlAuditLog(KbDbContext db, TimeProvider time, IEnumerable<I
                 now = new DateTimeOffset(now.UtcTicks - now.UtcTicks % TimeSpan.TicksPerMillisecond, TimeSpan.Zero);
                 var data = e.Data ?? new Dictionary<string, string>();
                 var hash = AuditHasher.Hash(prev, seq, now, e);
-                db.AuditEntries.Add(new AuditEntry
+                var entry = new AuditEntry
                 {
                     Sequence = seq, At = now, Action = e.Action, ActorId = e.ActorId, TargetType = e.TargetType, TargetId = e.TargetId,
                     SpaceId = e.SpaceId, DataJson = JsonSerializer.Serialize(data), PrevHash = prev, Hash = hash,
-                });
+                };
+                db.AuditEntries.Add(entry);
                 await db.SaveChangesAsync(ct);
                 await tx.CommitAsync(ct);
-                db.ChangeTracker.Clear();
+                // Only the entry is let go. The context is the request's: clearing it all would detach rows a handler loaded and is about
+                // to change (an action sent from a plugin's hook writes its audit entry in the middle of the action it hooks).
+                db.Entry(entry).State = EntityState.Detached;
                 return new AuditRecord(seq, now, e.Action, e.ActorId, e.TargetType, e.TargetId, e.SpaceId, data, hash);
             });
         }

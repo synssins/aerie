@@ -92,16 +92,28 @@ public sealed class AdminPipelineTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Invite_RefusedByHook_Is422_NoUserNoAuditEntry()
+    public async Task PublicSpaceSetting_RefusedByHook_Is422_NothingStoredNoAuditEntry()
     {
-        await SetAsync("Refuse", "user.invite");
+        await SetAsync("Refuse", "settings.public-space.set");
 
-        var r = await InviteAsync(_admin, "tech1");
+        var r = await _admin.PutAsync($"{Admin}/settings/public-space?enabled=true", null, Ct);
 
         Assert.Equal((HttpStatusCode)422, r.StatusCode);
         Assert.Equal("Probe refused.", (await r.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("detail").GetString());
-        Assert.DoesNotContain((await _admin.GetFromJsonAsync<List<AdminUserDto>>($"{Admin}/users", Ct))!, u => u.UserName == "tech1");
-        await _f.WithDbAsync(async db => Assert.False(await db.AuditEntries.AnyAsync(a => a.Action == AuditActions.UserInvite, Ct)));
+        await _f.WithDbAsync(async db =>
+        {
+            Assert.False(await db.RuntimeSettings.AnyAsync(s => s.Key == RuntimeSettingKeys.PublicSpaceEnabled, Ct));
+            Assert.False(await db.AuditEntries.AnyAsync(a => a.Action == AuditActions.SettingsChange, Ct));
+        });
+    }
+
+    /// <summary>An invite answers the token that sets the new account's password, so it is core-only: the probe's refusal does not reach it.</summary>
+    [Fact]
+    public async Task Invite_IsNotOpenToPlugins()
+    {
+        await SetAsync("Refuse", "user.invite");
+
+        Assert.Equal(HttpStatusCode.OK, (await InviteAsync(_admin, "tech1")).StatusCode);
     }
 
     [Fact]

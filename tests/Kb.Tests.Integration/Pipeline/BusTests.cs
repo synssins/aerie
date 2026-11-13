@@ -214,6 +214,19 @@ public sealed class BusTests : IAsyncLifetime
         Assert.Equal("Test probe failed.", await DetailAsync(r));
     }
 
+    /// <summary>
+    /// A handler asks for its audit entry once its work is saved. If it then throws (building the answer fails), the work is done
+    /// and the entry is still written.
+    /// </summary>
+    [Fact]
+    public async Task Handler_ThrowsAfterItsAuditEntry_TheEntryIsWritten()
+    {
+        var r = await EchoAsync("a", "throw");
+
+        Assert.Equal(HttpStatusCode.InternalServerError, r.StatusCode);
+        Assert.Contains("probe.echo", await AuditAsync());
+    }
+
     /// <summary>A plugin's routes are closed to API tokens in this round: a token reaches only the core routes listed as open.</summary>
     [Fact]
     public async Task PluginRoute_Token_403()

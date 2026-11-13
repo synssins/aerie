@@ -6,6 +6,25 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Kb.Web.Actions;
 
+/// <summary>
+/// Makes a local account without a password. Core only: the answer carries the token with which the password is set,
+/// so no plugin may hook or follow this action.
+/// </summary>
+[Action("user.invite")]
+public sealed record InviteUser : IAction<InvitedUser>
+{
+    public required string UserName { get; init; }
+    public required string DisplayName { get; init; }
+    public string? Email { get; init; }
+    public bool IsAdmin { get; init; }
+}
+
+/// <summary>The new account, and the token with which its password is set. The token is part of the answer; it must never reach a log.</summary>
+public sealed record InvitedUser(Guid Id, string SetPasswordToken)
+{
+    public override string ToString() => $"InvitedUser {{ Id = {Id} }}";
+}
+
 // Every action here is an Admin's: AuthorizeAsync answers 403 to anyone else. An Admin is always a signed-in person, so ctx.Actor.UserId is set in HandleAsync.
 
 internal sealed class VerifyAuditHandler(IAuditLog audit, IAccess access) : IActionHandler<VerifyAudit, AuditVerifyResult>

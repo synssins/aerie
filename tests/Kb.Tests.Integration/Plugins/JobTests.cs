@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Kb.Core.Plugins;
@@ -155,8 +156,69 @@ public sealed class JobTests : IAsyncLifetime
         var check = Assert.Single(probe.GetProperty("checks").EnumerateArray());
         Assert.Equal(("remote", "Unhealthy", "Probe health failed."), (check.GetProperty("name").GetString(), check.GetProperty("status").GetString(), check.GetProperty("text").GetString()));
         Assert.Equal("Probe job failed.", Assert.Single(probe.GetProperty("jobs").EnumerateArray()).GetProperty("lastError").GetString());
+        // The check ran as its plugin, not as the Admin who opened the screen.
+        Assert.Equal("Plugin:kb.test.probe:health", (await _admin.GetFromJsonAsync<JsonElement>($"{Probe}/counters", Ct)).GetProperty("lastHealth").GetString());
         // Looking at the health of a plugin is not a failure of the plugin.
         Assert.Equal(PluginState.Enabled, (await StatusAsync()).State);
+    }
+
+    /// <summary>A run that takes longer than its limit is given up, so one job cannot stop the others or outlive its claim.</summary>
+    [Fact]
+    public async Task Job_ThatRunsTooLong_IsStopped_AndRecorded()
+    {
+        await InstallAsync(new PluginSchedule("tick", 5));
+        await SetAsync("JobDelay", "5000");
+        var runner = _f.Services.GetRequiredService<JobRunner>();
+        runner.RunLimit = TimeSpan.FromSeconds(1);
+
+        var started = DateTimeOffset.UtcNow;
+        Assert.Equal(1, await runner.RunOnceAsync(Ct));
+
+        Assert.True(DateTimeOffset.UtcNow - started < TimeSpan.FromSeconds(4), "the runner waited for the job");
+        Assert.Equal("Timed out.", (await RowAsync()).LastError);
+        Assert.Equal(0, await RunsAsync(_admin)); // the run was cancelled before it counted itself
+    }
+
+    /// <summary>A stop of the app cancels a running job. Its claim is given back, so the job runs at the next start, not when the claim would have ended.</summary>
+    [Fact]
+    public async Task Job_CancelledByAStop_GivesItsClaimBack()
+    {
+        await InstallAsync(new PluginSchedule("tick", 1440));
+        await SetAsync("JobDelay", "5000");
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        var running = _f.Services.GetRequiredService<JobRunner>().RunOnceAsync(stop.Token);
+        JobRun? row = null;
+        for (var waited = 0; row?.ClaimedBy is null && waited < 5000; waited += 50)
+        {
+            await Task.Delay(50, Ct);
+            await _f.WithDbAsync(async db => row = await db.JobRuns.AsNoTracking().FirstOrDefaultAsync(Ct));
+        }
+        Assert.NotNull(row?.ClaimedBy);
+
+        await stop.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+
+        var after = await RowAsync();
+        Assert.Null(after.ClaimedBy);
+        Assert.Null(after.LastRunAt); // it did not finish: it is still due
+        Assert.True(after.NextRunAt <= DateTimeOffset.UtcNow);
+    }
+
+    [Fact]
+    public async Task Remove_DeletesItsJobRows()
+    {
+        await InstallAsync(new PluginSchedule("tick", 5));
+        await RunAsync();
+        Assert.Equal(HttpStatusCode.NoContent, (await _admin.DeleteAsync($"{Url}/kb.test.probe", Ct)).StatusCode);
+
+        await _f.WithDbAsync(async db => Assert.Equal(0, await db.JobRuns.CountAsync(Ct)));
+    }
+
+    [Fact]
+    public async Task Schedule_WithANameTooLong_DisablesThePluginAtLoad()
+    {
+        await InstallAsync(new PluginSchedule(new string('n', 101), 5));
+        Assert.Equal((PluginState.DisabledByCore, "A schedule name is 1 to 100 characters."), await StatusAsync());
     }
 
     [Fact]

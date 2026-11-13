@@ -69,6 +69,10 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
         if (PluginGraph.Missing(manifest, others) is [var missing, ..])
             return Problem.Conflict($"Requires {NameOf(missing.Id, known)} {missing.MinVersion} or later.");
         if (others.FirstOrDefault(o => PluginId.TablePrefix(o.Id) == PluginId.TablePrefix(manifest.Id)) is { } clash) return Problem.Conflict($"Conflicts with {clash.Id}.");
+        // A removed plugin whose tables were kept still owns its prefix: another id with the same prefix would take over its rows,
+        // and "Delete data" for the removed one would drop the new one's tables.
+        if ((await RemovedAsync(ct)).FirstOrDefault(r => r.PluginId != manifest.Id && PluginId.TablePrefix(r.PluginId) == PluginId.TablePrefix(manifest.Id)) is { } kept)
+            return Problem.Conflict($"Conflicts with {kept.PluginId}.");
 
         var now = time.GetUtcNow();
         // An update deletes the older package. To go back, remove the plugin and upload the older package.
@@ -125,14 +129,33 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
         if (plugin.Origin == PluginOrigin.BuiltIn) return Problem.Conflict("Built-in plugins cannot be removed.");
         if (await HeldAsync(plugin, known, ct) is { } held) return held;
 
-        var keepsData = !deleteData && (await PluginDataHost.TablesAsync(db, PluginId.TablePrefix(id), ct)).Count > 0;
+        var hasData = (await PluginDataHost.TablesAsync(db, PluginId.TablePrefix(id), ct)).Count > 0;
         await ForgetPackagesAsync(id, ct);
         db.PluginSettingValues.RemoveRange(await db.PluginSettingValues.Where(v => v.PluginId == id).ToListAsync(ct));
-        if (keepsData) (plugin.Status.Removed, plugin.Status.Reason, plugin.Status.LockedAt, plugin.Status.UpdatedAt) = (true, null, null, time.GetUtcNow());
+        db.JobRuns.RemoveRange(await db.JobRuns.Where(r => r.PluginId == id).ToListAsync(ct));
+        // While it has tables the status stays, marked removed, also when they are about to be dropped: if the drop fails,
+        // the plugin is still listed and its data can be deleted later.
+        if (hasData) (plugin.Status.Removed, plugin.Status.Reason, plugin.Status.LockedAt, plugin.Status.UpdatedAt) = (true, null, null, time.GetUtcNow());
         else db.PluginStatuses.Remove(plugin.Status);
-        await db.SaveChangesAsync(CancellationToken.None); // packages, settings and status go in one save
-        if (deleteData) await PluginDataHost.DropAsync(db, id, CancellationToken.None);
-        await ChangedAsync(AuditActions.PluginRemove, id, by, plugin.Sha256, plugin.Source, plugin.Manifest.Version, null, ct);
+        await db.SaveChangesAsync(CancellationToken.None); // packages, settings, job rows and status go in one save
+        var dropped = false;
+        try
+        {
+            if (deleteData && hasData)
+            {
+                await PluginDataHost.DropAsync(db, id, CancellationToken.None);
+                db.PluginStatuses.Remove(plugin.Status);
+                await db.SaveChangesAsync(CancellationToken.None);
+                dropped = true;
+            }
+        }
+        finally
+        {
+            // The removal is saved: whatever the drop did, it is audited and every server restarts without the plugin.
+            await ChangedAsync(AuditActions.PluginRemove, id, by, plugin.Sha256, plugin.Source, plugin.Manifest.Version, null, ct);
+        }
+        // Deleting data is its own entry, as it is when it is done later from the list of removed plugins.
+        if (dropped) await audit.AppendAsync(new AuditEvent(AuditActions.PluginDataDelete, by, "plugin", id, Data: Data(plugin.Sha256, plugin.Source, plugin.Manifest.Version, null)), CancellationToken.None);
         return default(Unit);
     }
 
@@ -144,6 +167,7 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
         if (!status.Removed) return Problem.Conflict("Remove the plugin first.");
         await PluginDataHost.DropAsync(db, id, CancellationToken.None);
         db.PluginStatuses.Remove(status);
+        db.JobRuns.RemoveRange(await db.JobRuns.Where(r => r.PluginId == id).ToListAsync(ct));
         await db.SaveChangesAsync(CancellationToken.None);
         await ChangedAsync(AuditActions.PluginDataDelete, id, by, "", "", status.ActiveVersion ?? "", null, ct);
         return default(Unit);
@@ -175,7 +199,11 @@ public sealed class PluginInstaller(KbDbContext db, PluginRegistry registry, Plu
 
         (plugin.Status.State, plugin.Status.Reason, plugin.Status.UpdatedAt) = (PluginState.DisabledByCore, reason, now);
         if (plugin.Manifest.Enforcing) plugin.Status.LockedAt = now;
-        foreach (var d in dependents) (d.Status.State, d.Status.Reason, d.Status.UpdatedAt) = (PluginState.DisabledByCore, $"Requires {PluginManifests.NameOf(plugin.Manifest)}.", now);
+        foreach (var d in dependents)
+        {
+            (d.Status.State, d.Status.Reason, d.Status.UpdatedAt) = (PluginState.DisabledByCore, $"Requires {PluginManifests.NameOf(plugin.Manifest)}.", now);
+            if (d.Manifest.Enforcing) d.Status.LockedAt = now; // what it guarded stays refused, as when it fails itself
+        }
         await db.SaveChangesAsync(CancellationToken.None);
         foreach (var d in dependents)
             await audit.AppendAsync(new AuditEvent(AuditActions.PluginDisabledByCore, null, "plugin", d.Manifest.Id, Data: Data(d.Sha256, d.Source, d.Manifest.Version, d.Status.Reason)), ct);

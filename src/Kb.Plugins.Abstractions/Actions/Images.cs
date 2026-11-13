@@ -7,7 +7,8 @@ namespace Kb.Plugins.Actions;
 public sealed record AddImage : IAction<ImageDto>
 {
     public required Guid SpaceId { get; init; }
-    [JsonIgnore] public required UploadContent File { get; init; }
+    /// <summary>Needed. It is not "required" because System.Text.Json refuses a type with a required member under [JsonIgnore].</summary>
+    [JsonIgnore] public UploadContent? File { get; init; }
 }
 
 /// <summary>Copies an image from another site into a space, so a pasted page keeps its pictures.</summary>

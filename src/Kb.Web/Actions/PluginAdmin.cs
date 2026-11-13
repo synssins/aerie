@@ -179,7 +179,7 @@ public sealed record PluginHealthDto(IReadOnlyList<PluginHealthEntry> Plugins);
 [Action("plugin.health", Read = true)]
 public sealed record ReadPluginHealth : IAction<PluginHealthDto>;
 
-internal sealed class ReadPluginHealthHandler(KbDbContext db, IAccess access, IRegistrations registrations, PluginRegistry registry, IServiceProvider services)
+internal sealed class ReadPluginHealthHandler(KbDbContext db, IAccess access, IRegistrations registrations, PluginRegistry registry, IServiceScopeFactory scopes)
     : IActionHandler<ReadPluginHealth, PluginHealthDto>
 {
     private static readonly TimeSpan CheckTimeout = TimeSpan.FromSeconds(5);
@@ -194,7 +194,7 @@ internal sealed class ReadPluginHealthHandler(KbDbContext db, IAccess access, IR
         {
             var id = plugin.Manifest.Id;
             var checks = new List<PluginCheckDto>();
-            foreach (var check in registrations.All<HealthReg>().Where(r => r.PluginId == id)) checks.Add(await RunAsync(check.Value, ctx.Cancel));
+            foreach (var check in registrations.All<HealthReg>().Where(r => r.PluginId == id)) checks.Add(await RunAsync(id, check.Value, ctx.Cancel));
             var jobs = plugin.Manifest.Schedules.Select(s => (Schedule: s, Run: runs.FirstOrDefault(r => r.PluginId == id && r.Name == s.Name)))
                 .Select(j => new PluginJobDto(j.Schedule.Name, j.Schedule.EveryMinutes, j.Run?.LastRunAt, j.Run?.NextRunAt, j.Run?.LastError)).ToList();
             if (checks.Count > 0 || jobs.Count > 0) plugins.Add(new PluginHealthEntry(id, checks, jobs));
@@ -202,24 +202,30 @@ internal sealed class ReadPluginHealthHandler(KbDbContext db, IAccess access, IR
         return new PluginHealthDto(plugins);
     }
 
-    /// <summary>A check that throws or takes too long is unhealthy. It is not counted as a failure of the plugin: an Admin looking must not turn it off.</summary>
-    private async Task<PluginCheckDto> RunAsync(HealthReg reg, CancellationToken ct)
+    /// <summary>
+    /// A check that throws or takes too long is unhealthy. It is not counted as a failure of the plugin: an Admin looking must not turn it off.
+    /// It runs in its own scope as its plugin, like a job: what it does through the bus is done as the plugin, not as the Admin who opened the screen.
+    /// </summary>
+    private async Task<PluginCheckDto> RunAsync(string pluginId, HealthReg reg, CancellationToken ct)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(CheckTimeout);
         try
         {
-            var check = (Microsoft.Extensions.Diagnostics.HealthChecks.IHealthCheck)ActivatorUtilities.CreateInstance(services, reg.Check);
+            await using var scope = scopes.CreateAsyncScope();
+            scope.ServiceProvider.GetRequiredService<Kb.Web.Pipeline.ActorAccessor>().Use(Actor.Plugin(pluginId, "health"));
+            var check = (Microsoft.Extensions.Diagnostics.HealthChecks.IHealthCheck)ActivatorUtilities.CreateInstance(scope.ServiceProvider, reg.Check);
             var context = new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext
             {
                 Registration = new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckRegistration(reg.Name, check, null, null),
             };
-            var result = await check.CheckHealthAsync(context, timeout.Token);
+            // The limit holds also for a check that ignores its cancellation token.
+            var result = await check.CheckHealthAsync(context, timeout.Token).WaitAsync(CheckTimeout, ct);
             return new PluginCheckDto(reg.Name, result.Status.ToString(), result.Description);
         }
         catch (Exception e) when (!(e is OperationCanceledException && ct.IsCancellationRequested))
         {
-            var text = e is OperationCanceledException ? "Timed out." : e.Message.Split('\r', '\n')[0];
+            var text = e is OperationCanceledException or TimeoutException ? "Timed out." : e.Message.Split('\r', '\n')[0];
             return new PluginCheckDto(reg.Name, "Unhealthy", text[..Math.Min(text.Length, 300)]);
         }
     }

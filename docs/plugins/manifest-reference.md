@@ -1,6 +1,6 @@
 # Manifest reference
 
-`kb-plugin.json` sits at the top of the package. Property names are case-sensitive. This file lists every property the app reads.
+`kb-plugin.json` sits at the top of the package. Property names are read without regard to case; the keys of settings are case-sensitive. This file lists every property the app reads.
 
 Related: [developer guide](developer-guide.md), [admin guide](admin-guide.md).
 
@@ -19,7 +19,7 @@ Related: [developer guide](developer-guide.md), [admin guide](admin-guide.md).
 | `uiApiVersion` | text | none | The version of the plugin UI kit its script was built against. Leave it out: plugin scripts are not built yet. |
 | `enforcing` | true or false | false | True when the plugin enforces a rule. If the core disables it, the actions it guarded stay locked until an Admin releases the lock. |
 | `requires` | list | empty | The plugins it needs. See below. |
-| `exports` | list of text | empty | Assembly file names it shares with the plugins that require it. |
+| `exports` | list of text | empty | The assemblies it shares with the plugins that require it, by assembly name without `.dll` (`My.Lib`). |
 | `extensionPoints` | list of text | empty | The extension points it supplies, for example `email-sender` or `audit-sink`. Shown on the Plugins screen. |
 | `outboundHosts` | list of text | empty | The only hosts its `HttpClient` may call. |
 | `settings` | list | empty | The settings an Admin sets in the app. See below. |
@@ -61,8 +61,8 @@ Not used yet. A plugin checks permissions through `IAccess` today.
 
 | Property | Type | Meaning |
 |---|---|---|
-| `name` | text | The name of a job the plugin registers with `app.Job<T>(name)`. |
-| `everyMinutes` | number | 1 or more. Counted from the end of the last run. |
+| `name` | text | The name of a job the plugin registers with `app.Job<T>(name)`. 1 to 100 characters. |
+| `everyMinutes` | number | 1 or more. Counted from the end of the last run. A run is given up after this long, five minutes at least. |
 
 ## ui
 
@@ -104,7 +104,10 @@ The app starts without the plugin and shows the reason on the Plugins screen.
 | No job named <name>. | A schedule has no job. |
 | No schedule named <name>. | A job has no schedule. |
 | Schedule <name>: everyMinutes must be 1 or more. | |
-| Its tables changed. A plugin that changes its tables needs migrations. | |
+| A schedule name is 1 to 100 characters. | |
+| <action> is not open to plugins. | It registered a hook, a filter, an after handler or a handler on a core-only action. |
+| <action> already has a handler. | It registered a handler for an action of the core or of another plugin. |
+| Its tables changed. A plugin that changes its tables needs migrations. | A plugin without migrations has some of its tables and misses others. |
 | Requires <plugin>. | A required plugin is disabled or failed. |
 | Circular requirement. | |
 | The package is missing. | The stored package is gone. Install the plugin again. |

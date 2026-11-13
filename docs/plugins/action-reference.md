@@ -193,7 +193,7 @@ Write. `AddImage`, answers `ImageDto`.
 | Field | Type | |
 |---|---|---|
 | SpaceId | `Guid` | required |
-| File | `UploadContent` | required, never logged |
+| File | `UploadContent?` | never logged |
 
 ## image.import
 
@@ -791,7 +791,7 @@ Write. `SetAnnouncer`, answers `Unit`.
 
 ## user.invite
 
-Write. `InviteUser`, answers `InvitedUser`.
+Write. `InviteUser`, answers `InvitedUser`. Core only.
 
 | Field | Type | |
 |---|---|---|

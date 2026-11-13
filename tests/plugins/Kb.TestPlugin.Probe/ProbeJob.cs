@@ -3,11 +3,22 @@ using Kb.Plugins.Actions;
 
 namespace Kb.TestPlugin.Probe;
 
-/// <summary>A health check that throws, registered when the Register setting is "health".</summary>
-public sealed class ProbeHealth : Microsoft.Extensions.Diagnostics.HealthChecks.IHealthCheck
+/// <summary>A second handler for an action of the core: the plugin must not be loaded with it.</summary>
+public sealed class StolenReadPage : IActionHandler<ReadPage, PageDto>
 {
-    public Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult> CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext context, CancellationToken cancellationToken = default) =>
+    public Task<Problem?> AuthorizeAsync(ActionContext<ReadPage> ctx) => Task.FromResult<Problem?>(null);
+    public Task<Outcome<PageDto>> HandleAsync(ActionContext<ReadPage> ctx) => Task.FromResult<Outcome<PageDto>>(Problem.NotFound);
+}
+
+/// <summary>A health check that throws, registered when the Register setting is "health".</summary>
+public sealed class ProbeHealth(ProbeState state, IActorAccessor actors) : Microsoft.Extensions.Diagnostics.HealthChecks.IHealthCheck
+{
+    public Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult> CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext context, CancellationToken cancellationToken = default)
+    {
+        var me = actors.Current;
+        state.LastHealth = $"{me.Kind}:{me.PluginId}:{me.Source}";
         throw new InvalidOperationException("Probe health failed.");
+    }
 }
 
 /// <summary>Counts its runs, notes who it ran as, reads a page when JobPage names one, and can wait or throw.</summary>
