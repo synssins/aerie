@@ -20,6 +20,7 @@ export default function (kb) {
   kb.slots.add("page.panel", { id: "probe.counter", title: "Probe", render: () => h(Counter) });
   kb.slots.add("page.tools", { id: "probe.hello", label: "Probe", onClick: (c) => kb.navigate(`/x/${kb.plugin.id}/page/${c.page.id}`) });
   kb.screens.add({ path: "", title: "Probe", render: (rest) => h("p", null, `Probe screen: ${rest}`) });
+  kb.slots.add("header.gear", { id: "probe.screen", label: "Probe", onClick: () => kb.navigate(`/x/${kb.plugin.id}/`) });
   kb.editor.extend(ProbeBox);
   kb.slots.add("editor.toolbar", {
     id: "probe.box",

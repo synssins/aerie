@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { slots, useSlot, type ActionItem, type SectionItem } from "./slots";
-import { SlotSections, SlotTools } from "./SlotViews";
+import { SlotMenuItems, SlotSections, SlotTools } from "./SlotViews";
 
 afterEach(() => { cleanup(); slots.clear(); vi.unstubAllGlobals(); });
 
@@ -68,6 +68,39 @@ describe("slots", () => {
     expect(screen.getByText("0 items")).toBeTruthy();
     act(() => slots.add("s", { id: "a", label: "A" }));
     expect(screen.getByText("1 items")).toBeTruthy();
+  });
+});
+
+describe("SlotMenuItems", () => {
+  it("draws nothing for an empty slot, and otherwise a separator and one menu entry per item", async () => {
+    const { container, rerender } = render(<div role="menu"><SlotMenuItems slot="header.gear" ctx={{}} /></div>);
+    expect(container.querySelector("[role=menu]")?.childElementCount).toBe(0);
+
+    const opened = vi.fn(), picked = vi.fn();
+    slots.add("header.gear", { id: "reports", label: "Reports", onClick: opened } satisfies ActionItem, "kb.sample");
+    rerender(<div role="menu"><SlotMenuItems slot="header.gear" ctx={{ n: 1 }} onPick={picked} /></div>);
+
+    expect(container.querySelector(".menu-sep")).toBeTruthy();
+    await userEvent.click(screen.getByRole("menuitem", { name: "Reports" }));
+    expect(picked).toHaveBeenCalledOnce(); // the menu closes
+    expect(opened).toHaveBeenCalledWith({ n: 1 });
+  });
+
+  it("an entry whose label or click throws is reported; the menu stays", async () => {
+    const calls: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => { calls.push(JSON.parse(String(init?.body))); return new Response(null, { status: 204 }); }));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    slots.add("header.gear", { id: "bad", label: () => { throw new Error("No label."); } } satisfies ActionItem, "kb.bad");
+    slots.add("header.gear", { id: "boom", label: "Boom", onClick: () => { throw new Error("Click failed."); } } satisfies ActionItem, "kb.boom");
+
+    render(<div role="menu"><SlotMenuItems slot="header.gear" ctx={{}} /></div>);
+    await userEvent.click(screen.getByRole("menuitem", { name: "Boom" }));
+
+    expect(screen.getAllByRole("menuitem")).toHaveLength(1);
+    await vi.waitFor(() => expect(calls).toEqual([
+      { plugin: "kb.bad", where: "header.gear", message: "No label." },
+      { plugin: "kb.boom", where: "header.gear", message: "Click failed." },
+    ]));
   });
 });
 

@@ -17,6 +17,7 @@ import { PageView } from "./PageView";
 import { current as currentView } from "./kit/current";
 import { navigation } from "./kit/host";
 import { PluginScreen } from "./kit/PluginScreen";
+import { SlotMenuItems } from "./kit/SlotViews";
 
 const DEFAULT_SETTINGS: UserSettings = { theme: "system", width: "boxed", startPage: "last", codeLanguage: "plaintext", notify: {} };
 type AdminAt = { section: AdminSection; spaceId: string | null };
@@ -43,6 +44,9 @@ function route(): { space?: string; page?: string; admin?: AdminAt; settings?: S
 function store(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* storage blocked */ } }
 function stored(key: string) { try { return localStorage.getItem(key); } catch { return null; } }
 function storedViews(): RecentView[] { try { return JSON.parse(stored("kb.recent") ?? "[]") as RecentView[]; } catch { return []; } }
+
+// What an entry of the gear menu is handed: nothing of the screen. An entry leads somewhere (kb.navigate).
+const GEAR_CTX = {};
 
 export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; brand: Brand; onBrandChanged: () => Promise<void>; onSignedOut: () => void }) {
   const [settings, setSettings] = useState<UserSettings | null>(null);
@@ -435,6 +439,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
                     </button>
                   )}
                   {me.isAdmin && <button role="menuitem" onClick={() => void openAdmin("spaces")}><ShieldCheck className="ic" aria-hidden />Administration</button>}
+                  <SlotMenuItems slot="header.gear" ctx={GEAR_CTX} onPick={() => setShowGear(false)} />
                 </div>
               )}
             </div>

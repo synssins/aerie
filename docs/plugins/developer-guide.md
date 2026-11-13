@@ -443,12 +443,12 @@ export default function (kb) {
 - The app serves only the `ui/` folder of a loaded plugin, to people who are signed in, and only these file types: js, css, json, map, svg, png, jpg, webp, woff2.
 - The browser keeps the script itself for good: its address carries the package's hash. Every other file of the folder (a stylesheet, a module the script imports) is asked for again each time, so a new package is seen at once.
 - The default export may return a promise. The app does not wait for it before it starts the next plugin's script; if it fails later, that is written to the server's log.
-- `kb.slots.add(slot, item)` adds to a named place of a screen. Today's slots: `page.tools` (buttons in the page's tool row: `id`, `label`, `onClick(ctx)`), `page.panel` (parts of the page's right panel: `id`, `title`, `render(ctx)`), both with the context `{ page }`, and `editor.toolbar` (buttons of the editor's toolbar, with the context `{ editor }`). `order` places an item; `when(ctx)` shows it only when it answers true.
+- `kb.slots.add(slot, item)` adds to a named place of a screen. Today's slots: `page.tools` (buttons in the page's tool row: `id`, `label`, `onClick(ctx)`), `page.panel` (parts of the page's right panel: `id`, `title`, `render(ctx)`), both with the context `{ page }`, `editor.toolbar` (buttons of the editor's toolbar, with the context `{ editor }`), and `header.gear` (entries at the end of the gear menu in the header: `id`, `label`, `onClick()`; the way to a screen of the plugin's own). `order` places an item; `when(ctx)` shows it only when it answers true.
 - `kb.api` calls the plugin's own routes (`/api/v1/plugins/<id>/...`); `kb.core` calls the app's API. The server answers what the signed-in person may see.
 - `kb.me()` is the person signed in now. The script is started once per page load, so call `kb.me()` when you need it and do not keep its answer: another person may sign in without a reload.
 - `kb.current.page()` and `kb.current.space()` are what the person is looking at; `kb.current.subscribe(fn)` tells when that changes. Either can be null.
 - `kb.navigate(path)` goes to an address inside the app. Someone in the middle of an edit is asked first, as for a click on a link, and may stay.
-- `kb.screens.add({ path, title, render(rest), panel })` adds a screen of the plugin's own at `/x/<plugin id>/<path>`, inside the app's three panels. `panel` names a slot that fills the right panel.
+- `kb.screens.add({ path, title, render(rest), panel })` adds a screen of the plugin's own at `/x/<plugin id>/<path>`, inside the app's three panels. `panel` names a slot that fills the right panel. Lead to it from the gear menu: `kb.slots.add("header.gear", { id: "reports", label: "Reports", onClick: () => kb.navigate("/x/<plugin id>/reports") })`.
 - `kb.dialogs.confirm(...)` and `kb.dialogs.ask(...)` are the app's own dialogs. Never use a browser popup (`alert`, `confirm`, `prompt`).
 - What a plugin draws sits inside an error boundary. A part that throws is left out and written to the server's log; the screen stays. Script errors are never counted as failures of the plugin.
 - A script runs in every signed-in person's browser with that person's session. It can do in the browser whatever that person can.
@@ -577,7 +577,7 @@ The contract is at 0.2.0 and can still change.
 
 ## Planned, not built
 
-- More slots in the app's screens (today: `page.tools`, `page.panel`, `editor.toolbar`), the screen kit (tables, forms), wrapping or replacing parts of the app's screens.
+- More slots in the app's screens (today: `page.tools`, `page.panel`, `editor.toolbar`, `header.gear`), the screen kit (tables, forms), wrapping or replacing parts of the app's screens.
 - A build preset for scripts written in TypeScript or JSX; scripts on the sign-in screen; calling other hosts from the browser.
 - Data attached to core rows (a count that comes with the page).
 - Sign-in schemes, page kinds of a plugin's own, export formats.
