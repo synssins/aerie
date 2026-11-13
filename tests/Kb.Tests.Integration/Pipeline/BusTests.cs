@@ -213,4 +213,18 @@ public sealed class BusTests : IAsyncLifetime
         Assert.Equal((HttpStatusCode)422, r.StatusCode);
         Assert.Equal("Test probe failed.", await DetailAsync(r));
     }
+
+    /// <summary>A plugin's routes are closed to API tokens in this round: a token reaches only the core routes listed as open.</summary>
+    [Fact]
+    public async Task PluginRoute_Token_403()
+    {
+        var created = await _admin.PostAsJsonAsync("/api/v1/tokens", new { name = "Agent", kind = "Personal", scopes = new[] { new { spaceId = (Guid?)null, access = "Write" } }, days = 30 }, Ct);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var token = _f.NewClient();
+        token.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", (await created.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("token").GetString());
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await token.GetAsync($"{Probe}/counters", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await token.PostAsJsonAsync($"{Probe}/echo", new { target = "t", text = "x" }, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await token.GetAsync("/api/v1/me", Ct)).StatusCode); // the token itself is good
+    }
 }
