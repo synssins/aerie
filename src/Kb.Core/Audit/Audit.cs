@@ -25,6 +25,7 @@ public static class AuditActions
 {
     public const string SignIn = "auth.signin";
     public const string SignInFailed = "auth.signin.failed";
+    public const string SignOut = "auth.signout";
     public const string BreakGlass = "auth.breakglass";
     public const string SetupAdminCreate = "setup.admin.create";
     public const string BrandUpdate = "brand.update";
@@ -60,6 +61,9 @@ public static class AuditActions
     public const string StoragePlaceAdd = "storage.place.add";
     public const string StoragePlaceChange = "storage.place.change";
     public const string StoragePlaceRemove = "storage.place.remove";
+    public const string LogTargetAdd = "logs.target.add";
+    public const string LogTargetChange = "logs.target.change";
+    public const string LogTargetRemove = "logs.target.remove";
     public const string StorageMoveStart = "storage.move.start";
     public const string StorageMoveSwitch = "storage.move.switch";
     public const string StorageMoveCancel = "storage.move.cancel";

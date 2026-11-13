@@ -42,24 +42,37 @@ public static partial class EndpointMappings
         api.MapPost("/auth/local/signin", async (SignInRequest req, SignInManager<KbUser> signIn, UserManager<KbUser> users,
             KbDbContext db, IAuditLog audit, BreakGlassService breakGlass, HttpContext http) =>
         {
-            var user = await users.FindByNameAsync(req.UserName);
-            // Same response for unknown user and wrong password: no account enumeration.
-            if (user is null || user.DeactivatedAt is not null) return Results.Unauthorized();
+            var typed = req.UserName ?? "";
+            var ip = http.Connection.RemoteIpAddress?.ToString() ?? "";
+            var user = typed.Length == 0 ? null : await users.FindByNameAsync(typed);
+            // Same response for unknown user and wrong password: no account enumeration. Both are audited, so a SIEM sees password guessing.
+            if (user is null || user.DeactivatedAt is not null)
+            {
+                await audit.AppendAsync(new AuditEvent(AuditActions.SignInFailed, user?.Id, "user", user?.Id.ToString(), Data: new Dictionary<string, string>
+                    { ["userName"] = typed[..Math.Min(typed.Length, 64)], ["reason"] = user is null ? "unknown user" : "deactivated", ["ip"] = ip }));
+                return Results.Unauthorized();
+            }
             if (!user.IsBreakGlass && await db.GetAsync(RuntimeSettingKeys.LocalSignInDisabled) == "true") return Results.StatusCode(403);
 
             var result = await signIn.PasswordSignInAsync(user, req.Password, isPersistent: false, lockoutOnFailure: true);
             if (!result.Succeeded)
             {
                 await audit.AppendAsync(new AuditEvent(AuditActions.SignInFailed, user.Id, "user", user.Id.ToString(),
-                    Data: new Dictionary<string, string> { ["lockedOut"] = result.IsLockedOut.ToString() }));
+                    Data: new Dictionary<string, string> { ["userName"] = user.UserName ?? "", ["reason"] = result.IsLockedOut ? "locked out" : "wrong password", ["lockedOut"] = result.IsLockedOut.ToString(), ["ip"] = ip }));
                 return Results.Unauthorized();
             }
-            await audit.AppendAsync(new AuditEvent(AuditActions.SignIn, user.Id, "user", user.Id.ToString(), Data: new Dictionary<string, string> { ["method"] = "local" }));
+            await audit.AppendAsync(new AuditEvent(AuditActions.SignIn, user.Id, "user", user.Id.ToString(), Data: new Dictionary<string, string> { ["method"] = "local", ["ip"] = ip }));
             if (user.IsBreakGlass) await breakGlass.OnSignInAsync(user, http.Connection.RemoteIpAddress?.ToString());
             return Results.Ok(new MeResponse(user.Id, user.UserName!, user.DisplayName, user.IsAdmin, user.IsBreakGlass, user.IsAdmin || user.CanAnnounce));
         }).AllowAnonymous();
 
-        api.MapPost("/auth/signout", async (SignInManager<KbUser> signIn) => { await signIn.SignOutAsync(); return Results.NoContent(); });
+        api.MapPost("/auth/signout", async (SignInManager<KbUser> signIn, HttpContext http, IAuditLog audit) =>
+        {
+            var me = http.User.UserId();
+            await signIn.SignOutAsync();
+            await audit.AppendAsync(new AuditEvent(AuditActions.SignOut, me, "user", me.ToString(), Data: new Dictionary<string, string> { ["ip"] = http.Connection.RemoteIpAddress?.ToString() ?? "" }));
+            return Results.NoContent();
+        });
 
         api.MapGet("/me", async (HttpContext http, UserManager<KbUser> users) =>
         {

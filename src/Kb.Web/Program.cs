@@ -67,9 +67,13 @@ services.Configure<Microsoft.AspNetCore.Authentication.AuthenticationOptions>(o 
 services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    o.GlobalLimiter = System.Threading.RateLimiting.PartitionedRateLimiter.Create<HttpContext, Guid>(http => ApiTokenAuth.PresentedId(http) is { } tokenId
-        ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(tokenId, _ => new() { PermitLimit = kb.Tokens.RequestsPerMinute, Window = TimeSpan.FromMinutes(1) })
-        : System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter(Guid.Empty));
+    // A token is counted by itself; sign-in attempts are counted by the address they come from.
+    o.GlobalLimiter = System.Threading.RateLimiting.PartitionedRateLimiter.Create<HttpContext, string>(http =>
+        ApiTokenAuth.PresentedId(http) is { } tokenId
+            ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("token:" + tokenId, _ => new() { PermitLimit = kb.Tokens.RequestsPerMinute, Window = TimeSpan.FromMinutes(1) })
+        : HttpMethods.IsPost(http.Request.Method) && http.Request.Path.Equals("/api/v1/auth/local/signin", StringComparison.OrdinalIgnoreCase)
+            ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("signin:" + http.Connection.RemoteIpAddress, _ => new() { PermitLimit = kb.Auth.SignInsPerMinutePerAddress, Window = TimeSpan.FromMinutes(1) })
+        : System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter(""));
 });
 
 // Shared keys so any instance can read any instance's cookie (A/B patching, load balancing).
@@ -92,6 +96,13 @@ services.AddHttpContextAccessor();
 services.AddSingleton<IFileStoreKind, FolderFileStoreKind>();
 services.AddSingleton<ActiveFileStore>();
 services.AddSingleton<IFileStore>(sp => sp.GetRequiredService<ActiveFileStore>());
+services.AddSingleton<ILogShipperKind, FileLogShipperKind>();
+services.AddSingleton<ILogShipperKind, SyslogShipperKind>();
+services.AddSingleton<ILogShipperKind, HttpsLogShipperKind>();
+services.AddHttpClient(HttpsLogShipperKind.ClientName, c => c.Timeout = TimeSpan.FromSeconds(15));
+services.AddSingleton<LogShipperService>();
+services.AddHostedService(sp => sp.GetRequiredService<LogShipperService>());
+services.AddSingleton<IAuditSink, LogShipSignal>();
 services.AddSingleton<StorageMover>();
 services.AddHostedService(sp => sp.GetRequiredService<StorageMover>());
 services.AddScoped<Kb.Core.Search.ISearchProvider, SqlSearchProvider>();
@@ -130,6 +141,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     await scope.ServiceProvider.GetRequiredService<BreakGlassService>().EnsureAccountAsync();
     await scope.ServiceProvider.GetRequiredService<SetupService>().OnStartupAsync();
     await SearchIndex.BackfillAsync(db); // pages saved before the search index existed
+    await LogShipperService.EnsureFirstTargetAsync(db, kb.Logs.Folder, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow());
     await ActiveFileStore.EnsureFirstPlaceAsync(db, kb.Storage.Folder, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow());
 }
 
@@ -166,6 +178,7 @@ api.MapImageEndpoints();
 api.MapAttachmentEndpoints();
 api.MapStorageEndpoints();
 api.MapTokenEndpoints();
+api.MapLogEndpoints();
 api.MapSearchEndpoints();
 api.MapHomeEndpoints();
 api.MapExportEndpoints();

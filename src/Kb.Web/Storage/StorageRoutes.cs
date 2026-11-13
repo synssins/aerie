@@ -196,7 +196,7 @@ public static class StorageRoutes
             }
         }
         try { kind.Open(settings.Concat(secrets.Select(s => KeyValuePair.Create(s.Key, (string?)s.Value))).ToDictionary()); }
-        catch (FileStoreSettingException e) { return Invalid(e.Field, e.Message); }
+        catch (SettingException e) { return Invalid(e.Field, e.Message); }
         place.Name = name;
         place.SettingsJson = JsonSerializer.Serialize(settings);
         place.SecretsProtected = store.Protect(secrets);

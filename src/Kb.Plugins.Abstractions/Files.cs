@@ -15,8 +15,8 @@ public interface IFileStore
 /// <summary>One setting of a storage kind. Type is "text" or "secret"; a secret is stored protected and never returned.</summary>
 public sealed record FileStoreField(string Key, string Label, string Type = "text");
 
-/// <summary>A setting of a storage place is missing or wrong. The message is shown beside that field.</summary>
-public sealed class FileStoreSettingException(string field, string message) : Exception(message)
+/// <summary>A setting of a storage place or a log target is missing or wrong. The message is shown beside that field.</summary>
+public sealed class SettingException(string field, string message) : Exception(message)
 {
     public string Field { get; } = field;
 }
@@ -29,7 +29,7 @@ public interface IFileStoreKind
     IReadOnlyList<FileStoreField> Fields { get; }
     /// <summary>
     /// Opens a place with its settings, secrets already readable. Must not touch the storage itself.
-    /// Throws <see cref="FileStoreSettingException"/> when a setting is missing or wrong.
+    /// Throws <see cref="SettingException"/> when a setting is missing or wrong.
     /// </summary>
     IFileStore Open(IReadOnlyDictionary<string, string?> settings);
 }

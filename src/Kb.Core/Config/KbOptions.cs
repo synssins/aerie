@@ -16,6 +16,7 @@ public sealed class KbOptions
     public PluginOptions Plugins { get; set; } = new();
     public StorageOptions Storage { get; set; } = new();
     public TokenOptions Tokens { get; set; } = new();
+    public LogOptions Logs { get; set; } = new();
 }
 
 public sealed class BrandOptions
@@ -41,6 +42,8 @@ public sealed class AuthOptions
     public BreakGlassOptions BreakGlass { get; set; } = new();
     public List<string> AllowedGroupIds { get; set; } = [];
     public TimeSpan EmergencyAccessDuration { get; set; } = TimeSpan.FromHours(4);
+    /// <summary>Sign-in attempts one address may make in a minute, on one server. Bounds password guessing and the audit entries it writes.</summary>
+    public int SignInsPerMinutePerAddress { get; set; } = 30;
 }
 
 public sealed class EntraOptions
@@ -97,6 +100,12 @@ public sealed class StorageOptions
 {
     /// <summary>Folder for uploaded files (images); relative paths are under the content root.</summary>
     public string Folder { get; set; } = "App_Data/files";
+}
+
+public sealed class LogOptions
+{
+    /// <summary>Folder of the local audit log file, read once: at first start it becomes the "Local log file" target. Relative paths are under the content root.</summary>
+    public string Folder { get; set; } = "App_Data/logs";
 }
 
 public sealed class TokenOptions

@@ -1,4 +1,5 @@
 using Kb.Core.Access;
+using Kb.Core.Audit;
 using Kb.Core.Content;
 using Kb.Core.Identity;
 using Kb.Core.Notifications;
@@ -80,6 +81,7 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     public DbSet<StoragePlace> StoragePlaces => Set<StoragePlace>();
     public DbSet<StorageMove> StorageMoves => Set<StorageMove>();
     public DbSet<ApiToken> ApiTokens => Set<ApiToken>();
+    public DbSet<LogTarget> LogTargets => Set<LogTarget>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -128,6 +130,10 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
         builder.Entity<StoragePlace>().Property(p => p.Kind).HasMaxLength(40);
         builder.Entity<StorageMove>().Property(m => m.LastError).HasMaxLength(500);
         builder.Entity<StorageMove>().Property(m => m.ClaimedBy).HasMaxLength(100);
+        builder.Entity<LogTarget>().Property(t => t.Name).HasMaxLength(100);
+        builder.Entity<LogTarget>().Property(t => t.Kind).HasMaxLength(40);
+        builder.Entity<LogTarget>().Property(t => t.LastError).HasMaxLength(500);
+        builder.Entity<LogTarget>().Property(t => t.ClaimedBy).HasMaxLength(100);
         builder.Entity<ApiToken>().Property(t => t.Name).HasMaxLength(100);
         builder.Entity<ApiToken>().Property(t => t.Prefix).HasMaxLength(16);
         builder.Entity<ApiToken>().Property(t => t.Hash).HasMaxLength(32);

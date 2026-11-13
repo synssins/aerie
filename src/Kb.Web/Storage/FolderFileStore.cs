@@ -19,9 +19,9 @@ public sealed class FolderFileStoreKind(IWebHostEnvironment env) : IFileStoreKin
     {
         ArgumentNullException.ThrowIfNull(settings);
         var path = settings.GetValueOrDefault("path")?.Trim();
-        if (string.IsNullOrEmpty(path)) throw new FileStoreSettingException("path", "Required.");
+        if (string.IsNullOrEmpty(path)) throw new SettingException("path", "Required.");
         var user = settings.GetValueOrDefault("userName")?.Trim();
-        if (!string.IsNullOrEmpty(user) && !OperatingSystem.IsWindows()) throw new FileStoreSettingException("userName", "Windows only.");
+        if (!string.IsNullOrEmpty(user) && !OperatingSystem.IsWindows()) throw new SettingException("userName", "Windows only.");
         return new FolderFileStore(Path.IsPathRooted(path) ? path : Path.Combine(env.ContentRootPath, path), user, settings.GetValueOrDefault("password"));
     }
 }

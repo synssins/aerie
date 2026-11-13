@@ -59,6 +59,60 @@ namespace Kb.Data.Migrations
                     b.ToTable("AccessRequests");
                 });
 
+            modelBuilder.Entity("Kb.Core.Audit.LogTarget", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ClaimedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset?>("ClaimedUntil")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset?>("LastErrorAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("LastSequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("LastShippedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("SecretsProtected")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SettingsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("LogTargets");
+                });
+
             modelBuilder.Entity("Kb.Core.Content.Announcement", b =>
                 {
                     b.Property<Guid>("Id")
