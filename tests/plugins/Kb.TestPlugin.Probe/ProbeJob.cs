@@ -3,6 +3,13 @@ using Kb.Plugins.Actions;
 
 namespace Kb.TestPlugin.Probe;
 
+/// <summary>A health check that throws, registered when the Register setting is "health".</summary>
+public sealed class ProbeHealth : Microsoft.Extensions.Diagnostics.HealthChecks.IHealthCheck
+{
+    public Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult> CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext context, CancellationToken cancellationToken = default) =>
+        throw new InvalidOperationException("Probe health failed.");
+}
+
 /// <summary>Counts its runs, notes who it ran as, reads a page when JobPage names one, and can wait or throw.</summary>
 public sealed class ProbeJob(ProbeState state, IActorAccessor actors, IActionBus bus) : IKbJob
 {

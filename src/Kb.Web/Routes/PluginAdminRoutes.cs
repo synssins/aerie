@@ -40,6 +40,9 @@ public static class PluginAdminRoutes
             bus.SendAsync(new ListPlugins(), ct).ToHttp()).WithAction<ListPlugins>();
 
         // The package is the raw request body. The web server's own size limit still applies and answers 413.
+        admin.MapGet("/plugins/health", (IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new ReadPluginHealth(), ct).ToHttp()).WithAction<ReadPluginHealth>();
+
         admin.MapPost("/plugins", (HttpContext http, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new InstallPlugin { Package = new PluginUpload(http.Request) }, ct).ToHttp()).WithAction<InstallPlugin>();
 

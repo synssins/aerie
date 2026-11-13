@@ -142,6 +142,24 @@ public sealed class JobTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Health_ACheckThatThrows_IsUnhealthy_AndAFailedJobShowsItsError()
+    {
+        await InstallAsync(new PluginSchedule("tick", 5));
+        await SetAsync("Register", "health");
+        await RestartAsync();
+        await SetAsync("FailOn", "job");
+        await RunAsync();
+
+        var probe = (await _admin.GetFromJsonAsync<JsonElement>($"{Url}/health", Ct)).GetProperty("plugins").EnumerateArray().Single(p => p.GetProperty("id").GetString() == "kb.test.probe");
+
+        var check = Assert.Single(probe.GetProperty("checks").EnumerateArray());
+        Assert.Equal(("remote", "Unhealthy", "Probe health failed."), (check.GetProperty("name").GetString(), check.GetProperty("status").GetString(), check.GetProperty("text").GetString()));
+        Assert.Equal("Probe job failed.", Assert.Single(probe.GetProperty("jobs").EnumerateArray()).GetProperty("lastError").GetString());
+        // Looking at the health of a plugin is not a failure of the plugin.
+        Assert.Equal(PluginState.Enabled, (await StatusAsync()).State);
+    }
+
+    [Fact]
     public async Task Schedule_WithoutAJob_DisablesThePluginAtLoad()
     {
         await InstallAsync(new PluginSchedule("nightly", 60));

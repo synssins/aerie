@@ -148,6 +148,36 @@ describe("Plugins", () => {
     expect(await screen.findByText("Restarting")).toBeTruthy();
   });
 
+  it("shows a plugin's health checks and jobs in the right panel", async () => {
+    server({
+      "GET /plugins": list([probe]), "GET /plugins/kb.test.probe/settings": () => ({ body: { values: {}, secretsSet: [] } }),
+      "GET /plugins/health": () => ({ body: { plugins: [{ id: "kb.test.probe",
+        checks: [{ name: "remote", status: "Unhealthy", text: "The remote system said no." }],
+        jobs: [{ name: "sync", everyMinutes: 15, lastRunAt: "2026-11-12T10:00:00Z", nextRunAt: "2026-11-12T10:15:00Z", lastError: "Timed out." }, { name: "purge", everyMinutes: 1440, lastRunAt: null, nextRunAt: null, lastError: null }] }] } }),
+    });
+    show();
+    await userEvent.click(await screen.findByText("Test probe"));
+    const side = screen.getByLabelText("Details");
+    expect(await within(side).findByText("Health")).toBeTruthy();
+    expect(within(side).getByText("remote: Unhealthy")).toBeTruthy();
+    expect(within(side).getByText("The remote system said no.")).toBeTruthy();
+    expect(within(side).getByText("Jobs")).toBeTruthy();
+    expect(within(side).getByText("sync, every 15 min")).toBeTruthy();
+    expect(within(side).getByText("Timed out.")).toBeTruthy();
+    expect(within(side).getByText("purge, every 1440 min")).toBeTruthy();
+    expect(within(side).getByText("Not run yet")).toBeTruthy();
+  });
+
+  it("shows no Health or Jobs heading for a plugin that has neither", async () => {
+    server({ "GET /plugins": list([plugin({})]), "GET /plugins/health": () => ({ body: { plugins: [] } }) });
+    show();
+    await userEvent.click(await screen.findByText("Email (SMTP)"));
+    const side = screen.getByLabelText("Details");
+    expect(within(side).getByText("Replaces")).toBeTruthy();
+    expect(within(side).queryByText("Health")).toBeNull();
+    expect(within(side).queryByText("Jobs")).toBeNull();
+  });
+
   it("shows Restarting until the server answers, then reloads", async () => {
     vi.useFakeTimers();
     let up = false;

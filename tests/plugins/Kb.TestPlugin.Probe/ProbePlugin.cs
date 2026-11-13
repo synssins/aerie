@@ -43,6 +43,7 @@ public sealed class ProbePlugin : IKbPlugin
             .Routes(ProbeRoutes.Map);
         AnyAction.Register(app);
         if (context.Manifest.Schedules.Any(s => s.Name == "tick") || context.GetSetting("Register") == "job") app.Job<ProbeJob>("tick");
+        if (context.GetSetting("Register") == "health") app.HealthCheck<ProbeHealth>("remote");
         if (context.GetSetting("Register") == "data") app.AddData<ProbeData>().Routes(ProbeDataRoutes.Map);
         if (context.GetSetting("Register") == "baddata") app.AddData<ProbeBrokenData>();
     }

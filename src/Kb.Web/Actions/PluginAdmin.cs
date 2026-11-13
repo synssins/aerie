@@ -168,3 +168,59 @@ internal sealed class SavePluginSettingsHandler(PluginSettingsStore store, IAcce
         return saved.Problem is { } problem ? problem : new PluginSettingsSaved(saved.Value);
     }
 }
+
+/// <summary>Status: Healthy, Degraded or Unhealthy. Text: what the check said, or the error it threw.</summary>
+public sealed record PluginCheckDto(string Name, string Status, string? Text);
+public sealed record PluginJobDto(string Name, int EveryMinutes, DateTimeOffset? LastRunAt, DateTimeOffset? NextRunAt, string? LastError);
+public sealed record PluginHealthEntry(string Id, IReadOnlyList<PluginCheckDto> Checks, IReadOnlyList<PluginJobDto> Jobs);
+public sealed record PluginHealthDto(IReadOnlyList<PluginHealthEntry> Plugins);
+
+/// <summary>The health checks and jobs of the loaded plugins that have any. The checks run when this is asked for.</summary>
+[Action("plugin.health", Read = true)]
+public sealed record ReadPluginHealth : IAction<PluginHealthDto>;
+
+internal sealed class ReadPluginHealthHandler(KbDbContext db, IAccess access, IRegistrations registrations, PluginRegistry registry, IServiceProvider services)
+    : IActionHandler<ReadPluginHealth, PluginHealthDto>
+{
+    private static readonly TimeSpan CheckTimeout = TimeSpan.FromSeconds(5);
+
+    public async Task<Problem?> AuthorizeAsync(ActionContext<ReadPluginHealth> ctx) => await access.IsAdminAsync(ctx.Actor, ctx.Cancel) ? null : Problem.Forbidden;
+
+    public async Task<Outcome<PluginHealthDto>> HandleAsync(ActionContext<ReadPluginHealth> ctx)
+    {
+        var runs = await db.JobRuns.AsNoTracking().ToListAsync(ctx.Cancel);
+        var plugins = new List<PluginHealthEntry>();
+        foreach (var plugin in registry.Loaded)
+        {
+            var id = plugin.Manifest.Id;
+            var checks = new List<PluginCheckDto>();
+            foreach (var check in registrations.All<HealthReg>().Where(r => r.PluginId == id)) checks.Add(await RunAsync(check.Value, ctx.Cancel));
+            var jobs = plugin.Manifest.Schedules.Select(s => (Schedule: s, Run: runs.FirstOrDefault(r => r.PluginId == id && r.Name == s.Name)))
+                .Select(j => new PluginJobDto(j.Schedule.Name, j.Schedule.EveryMinutes, j.Run?.LastRunAt, j.Run?.NextRunAt, j.Run?.LastError)).ToList();
+            if (checks.Count > 0 || jobs.Count > 0) plugins.Add(new PluginHealthEntry(id, checks, jobs));
+        }
+        return new PluginHealthDto(plugins);
+    }
+
+    /// <summary>A check that throws or takes too long is unhealthy. It is not counted as a failure of the plugin: an Admin looking must not turn it off.</summary>
+    private async Task<PluginCheckDto> RunAsync(HealthReg reg, CancellationToken ct)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(CheckTimeout);
+        try
+        {
+            var check = (Microsoft.Extensions.Diagnostics.HealthChecks.IHealthCheck)ActivatorUtilities.CreateInstance(services, reg.Check);
+            var context = new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext
+            {
+                Registration = new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckRegistration(reg.Name, check, null, null),
+            };
+            var result = await check.CheckHealthAsync(context, timeout.Token);
+            return new PluginCheckDto(reg.Name, result.Status.ToString(), result.Description);
+        }
+        catch (Exception e) when (!(e is OperationCanceledException && ct.IsCancellationRequested))
+        {
+            var text = e is OperationCanceledException ? "Timed out." : e.Message.Split('\r', '\n')[0];
+            return new PluginCheckDto(reg.Name, "Unhealthy", text[..Math.Min(text.Length, 300)]);
+        }
+    }
+}

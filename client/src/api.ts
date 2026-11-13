@@ -78,6 +78,13 @@ export type ApiToken = {
   createdAt: string; expiresAt: string; revokedAt: string | null; lastUsedAt: string | null; state: "Active" | "Expired" | "Revoked";
 };
 export type PluginSetting = { key: string; label: string; secret: boolean; required: boolean; type: string; options: string[] | null; restart: boolean };
+export type PluginHealth = {
+  plugins: {
+    id: string;
+    checks: { name: string; status: "Healthy" | "Degraded" | "Unhealthy"; text: string | null }[];
+    jobs: { name: string; everyMinutes: number; lastRunAt: string | null; nextRunAt: string | null; lastError: string | null }[];
+  }[];
+};
 export type PluginInfo = {
   id: string; name: string; version: string; publisher: string; description: string | null; origin: "BuiltIn" | "Uploaded"; state: "Enabled" | "Disabled" | "DisabledByCore";
   reason: string | null; locked: boolean; loaded: boolean; source: string; requires: string[]; requiredBy: string[]; extensionPoints: string[]; outboundHosts: string[];

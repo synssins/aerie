@@ -441,6 +441,10 @@ Write. `DeletePluginData`, answers `Unit`. Core only.
 |---|---|---|
 | Id | `string` | required |
 
+## plugin.health
+
+Read. `ReadPluginHealth`, answers `PluginHealthDto`. Core only.
+
 ## plugin.install
 
 Write. `InstallPlugin`, answers `InstalledDto`. Core only.

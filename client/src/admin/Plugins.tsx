@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ChevronRight, House, Upload } from "lucide-react";
-import { api, ApiError, upload, type PluginInfo, type PluginSetting } from "../api";
+import { api, ApiError, fmtDateTime, upload, type PluginHealth, type PluginInfo, type PluginSetting } from "../api";
 import { useDialogs } from "../Dialogs";
 
 type PluginList = { plugins: PluginInfo[]; safeMode: boolean };
@@ -24,7 +24,13 @@ export function Plugins({ area, onHome }: { area: string; onHome: () => void }) 
   const file = useRef<HTMLInputElement>(null);
   const { confirm } = useDialogs();
 
-  const load = useCallback(async () => { setData(await api.get<PluginList>("/admin/plugins")); }, []);
+  const [health, setHealth] = useState<PluginHealth | null>(null);
+
+  const load = useCallback(async () => {
+    setData(await api.get<PluginList>("/admin/plugins"));
+    // Health is extra: the list is shown also when it cannot be read.
+    setHealth(await api.get<PluginHealth>("/admin/plugins/health").catch(() => null));
+  }, []);
   useEffect(() => { void load(); }, [load]);
 
   // While the app restarts: ask every 2 seconds, and read the list again when it answers.
@@ -41,6 +47,7 @@ export function Plugins({ area, onHome }: { area: string; onHome: () => void }) 
   }, [restarting, load]);
 
   const selected = data?.plugins.find((p) => p.id === selectedId) ?? null;
+  const selectedHealth = health?.plugins.find((p) => p.id === selectedId) ?? null;
 
   async function change(work: () => Promise<unknown>, failed: string) {
     setError(null);
@@ -132,6 +139,30 @@ export function Plugins({ area, onHome }: { area: string; onHome: () => void }) 
             <h3>Permissions</h3>{list(selected.permissions.map((p) => p.label))}
             <h3>Enforcing</h3><div>{selected.enforcing ? "Yes" : "No"}</div>
             <h3>Replaces</h3>{list(selected.replaces)}
+            {selectedHealth && selectedHealth.checks.length > 0 && (
+              <>
+                <h3>Health</h3>
+                {selectedHealth.checks.map((c) => (
+                  <div key={c.name}>
+                    <div className={c.status === "Healthy" ? undefined : "form-error"}>{c.name}: {c.status}</div>
+                    {c.text && <div className="muted">{c.text}</div>}
+                  </div>
+                ))}
+              </>
+            )}
+            {selectedHealth && selectedHealth.jobs.length > 0 && (
+              <>
+                <h3>Jobs</h3>
+                {selectedHealth.jobs.map((j) => (
+                  <div key={j.name}>
+                    <div>{j.name}, every {j.everyMinutes} min</div>
+                    <div className="muted">{j.lastRunAt ? `Last run ${fmtDateTime(j.lastRunAt)}` : "Not run yet"}</div>
+                    {j.nextRunAt && <div className="muted">Next run {fmtDateTime(j.nextRunAt)}</div>}
+                    {j.lastError && <div className="form-error">{j.lastError}</div>}
+                  </div>
+                ))}
+              </>
+            )}
           </>
         ) : data?.safeMode ? (
           <><h3>Safe mode</h3><div>On</div></>

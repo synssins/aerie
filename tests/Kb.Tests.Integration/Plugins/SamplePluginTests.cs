@@ -158,6 +158,22 @@ public sealed class SamplePluginTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Health_ListsItsCheckAndItsJob()
+    {
+        var before = (await _admin.GetFromJsonAsync<JsonElement>($"{Admin}/health", Ct)).GetProperty("plugins").EnumerateArray().Single(p => p.GetProperty("id").GetString() == "kb.sample");
+        var check = Assert.Single(before.GetProperty("checks").EnumerateArray());
+        Assert.Equal(("table", "Healthy"), (check.GetProperty("name").GetString(), check.GetProperty("status").GetString()));
+        var job = Assert.Single(before.GetProperty("jobs").EnumerateArray());
+        Assert.Equal(("purge", 1440, JsonValueKind.Null), (job.GetProperty("name").GetString(), job.GetProperty("everyMinutes").GetInt32(), job.GetProperty("lastRunAt").ValueKind));
+
+        await _f.Services.GetRequiredService<JobRunner>().RunOnceAsync(Ct);
+
+        var after = (await _admin.GetFromJsonAsync<JsonElement>($"{Admin}/health", Ct)).GetProperty("plugins").EnumerateArray().Single().GetProperty("jobs").EnumerateArray().Single();
+        Assert.Equal((JsonValueKind.String, JsonValueKind.String, JsonValueKind.Null), (after.GetProperty("lastRunAt").ValueKind, after.GetProperty("nextRunAt").ValueKind, after.GetProperty("lastError").ValueKind));
+        Assert.Equal(HttpStatusCode.Forbidden, (await (await UserAsync("rita", "Owner")).GetAsync($"{Admin}/health", Ct)).StatusCode);
+    }
+
+    [Fact]
     public async Task Sample_Removed_WithDeleteData_LeavesNothing()
     {
         await AckAsync(_admin);
