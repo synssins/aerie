@@ -1,6 +1,7 @@
 using System.Globalization;
 using Kb.Core.Audit;
 using Kb.Core.Content;
+using Kb.Core.Spaces;
 using Kb.Data;
 using Microsoft.EntityFrameworkCore;
 using static Kb.Web.PageSupport;
@@ -178,8 +179,89 @@ internal sealed class ListAllBinsHandler(KbDbContext db, IAccess access) : IActi
     }
 }
 
+internal sealed class BrowseBinHandler(KbDbContext db, IAccess access) : IActionHandler<BrowseBin, IReadOnlyList<BinNodeDto>>
+{
+    public Task<Problem?> AuthorizeAsync(ActionContext<BrowseBin> ctx) => BinChecks.ManagesAsync(access, ctx.Actor, ctx.Action.SpaceId, ctx.Cancel);
+
+    public async Task<Outcome<IReadOnlyList<BinNodeDto>>> HandleAsync(ActionContext<BrowseBin> ctx)
+    {
+        var id = ctx.Action.SpaceId;
+        var items = await db.Pages.IgnoreQueryFilters().AsNoTracking().Where(p => p.SpaceId == id && p.DeletedAt != null && !p.BinHidden).ToListAsync(ctx.Cancel); // system: the bin's items are deleted pages; the caller manages this space's bin
+        return Outcome.List(BinChecks.Tree(items));
+    }
+}
+
+internal sealed class BrowseAllBinsHandler(KbDbContext db, IAccess access) : IActionHandler<BrowseAllBins, IReadOnlyList<BinNodeDto>>
+{
+    public async Task<Problem?> AuthorizeAsync(ActionContext<BrowseAllBins> ctx) =>
+        await access.IsAdminAsync(ctx.Actor, ctx.Cancel) ? null : Problem.Forbidden;
+
+    public async Task<Outcome<IReadOnlyList<BinNodeDto>>> HandleAsync(ActionContext<BrowseAllBins> ctx)
+    {
+        // The same spaces as the admin bin's list: those whose bin this Admin may manage.
+        var mine = new List<Guid>();
+        foreach (var space in await access.VisibleSpacesAsync(ctx.Actor, ctx.Cancel))
+            if (await access.CanAsync(ctx.Actor, space, SpaceAction.ManageBinAgingComments, ctx.Cancel)) mine.Add(space);
+        var binned = await db.Pages.IgnoreQueryFilters().AsNoTracking().Where(p => p.DeletedAt != null && mine.Contains(p.SpaceId)).ToListAsync(ctx.Cancel); // system: the bins of the spaces above
+        // A deleted space holds what was live in it. A sensitive one shows nothing: an Admin had no reading there, and has none now.
+        var gone = await db.Spaces.IgnoreQueryFilters().Where(s => s.DeletedAt != null && !s.IsSensitive).Select(s => s.Id).ToListAsync(ctx.Cancel); // system: the recycle bin of spaces, an Admin's
+        var held = await db.Pages.AsNoTracking().Where(p => gone.Contains(p.SpaceId)).ToListAsync(ctx.Cancel); // system: the content of deleted spaces that are not sensitive, for an Admin
+        return Outcome.List<BinNodeDto>([.. BinChecks.Tree(binned), .. BinChecks.Tree(held)]);
+    }
+}
+
+internal sealed class ReadBinPageHandler(KbDbContext db, IAccess access) : IActionHandler<ReadBinPage, BinPageDto>
+{
+    private Page? _page;
+    private Space? _space;
+
+    public async Task<Problem?> AuthorizeAsync(ActionContext<ReadBinPage> ctx)
+    {
+        var id = ctx.Action.PageId;
+        _page = await db.Pages.IgnoreQueryFilters().AsNoTracking().FirstOrDefaultAsync(p => p.Id == id, ctx.Cancel); // system: a bin item is a deleted page, or a page of a deleted space; the caller's right to it is checked next
+        if (_page is null) return Problem.NotFound;
+        _space = await db.Spaces.IgnoreQueryFilters().AsNoTracking().FirstOrDefaultAsync(s => s.Id == _page.SpaceId, ctx.Cancel); // system: whether the page's space is deleted decides who may read it
+        if (_space is null) return Problem.NotFound;
+        // In a deleted space: what was live in it, for an Admin, and nothing of a sensitive one. Roles in a deleted space give nothing.
+        if (_space.DeletedAt is not null)
+            return _page.DeletedAt is null && !_space.IsSensitive && await access.IsAdminAsync(ctx.Actor, ctx.Cancel) ? null : Problem.NotFound;
+        if (_page.DeletedAt is null) return Problem.NotFound; // a live page is read as a page
+        if (await BinChecks.ManagesAsync(access, ctx.Actor, _page.SpaceId, ctx.Cancel) is { } denied) return denied;
+        // What was emptied from the space's bin is in the admin bin only.
+        return _page.BinHidden && !await access.IsAdminAsync(ctx.Actor, ctx.Cancel) ? Problem.NotFound : null;
+    }
+
+    public async Task<Outcome<BinPageDto>> HandleAsync(ActionContext<ReadBinPage> ctx)
+    {
+        var (page, space) = (_page!, _space!);
+        var folders = await db.Pages.IgnoreQueryFilters().AsNoTracking().Where(p => p.SpaceId == page.SpaceId && p.Kind == PageKind.Folder) // system: the titles of the folders above the item, for its place; the caller may read the item
+            .Select(p => new { p.Id, p.ParentId, p.Title }).ToDictionaryAsync(p => p.Id, ctx.Cancel);
+        var path = new List<string>();
+        var parent = page.ParentId;
+        for (var i = 0; parent is { } pid && i < 50 && folders.TryGetValue(pid, out var f); i++) { path.Insert(0, f.Title); parent = f.ParentId; }
+        path.Insert(0, space.Name);
+        var (at, by) = space.DeletedAt is { } gone ? (gone, space.DeletedBy) : (page.DeletedAt!.Value, page.DeletedBy);
+        var ids = new[] { page.UpdatedBy, by ?? Guid.Empty };
+        var names = await db.Users.AsNoTracking().Where(u => ids.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.DisplayName, ctx.Cancel);
+        // What a folder holds: in a deleted space what was live under it, in a bin what was deleted with it.
+        var inside = page.Kind != PageKind.Folder ? [] : await db.Pages.IgnoreQueryFilters().AsNoTracking() // system: the folder's own contents; the caller may read the folder
+            .Where(p => p.ParentId == page.Id && (space.DeletedAt != null ? p.DeletedAt == null : p.DeletedAt != null && p.DeleteRootId == page.DeleteRootId))
+            .ToListAsync(ctx.Cancel);
+        return new BinPageDto(page.Id, page.SpaceId, page.Kind.ToString(), page.Title, page.ContentJson, path, page.UpdatedAt, names.GetValueOrDefault(page.UpdatedBy, "Unknown"),
+            at, by is { } who ? names.GetValueOrDefault(who, "Unknown") : "Unknown", space.DeletedAt is null ? page.DeleteRootId : null,
+            [.. inside.OrderBy(p => p.Sort).Select(p => new BinNodeDto(p.Id, page.Id, p.SpaceId, p.Kind.ToString(), p.Title, p.Sort))]);
+    }
+}
+
 internal static class BinChecks
 {
+    /// <summary>The items as a tree of their own: an item whose folder is not among them stands at the top.</summary>
+    public static List<BinNodeDto> Tree(List<Page> items)
+    {
+        var ids = items.Select(p => p.Id).ToHashSet();
+        return [.. items.OrderBy(p => p.Sort).Select(p => new BinNodeDto(p.Id, p.ParentId is { } up && ids.Contains(up) ? up : null, p.SpaceId, p.Kind.ToString(), p.Title, p.Sort))];
+    }
+
     /// <summary>404 without a role in the space, 403 without the right to manage its bin.</summary>
     public static async Task<Problem?> ManagesAsync(IAccess access, Actor actor, Guid spaceId, CancellationToken ct)
     {

@@ -103,7 +103,8 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .node .pg { color: var(--ink2); }
 .node.cur { background: var(--cur-bg); color: var(--accent); font-weight: 500; }
 .node.empty { cursor: default; }
-.node.empty:hover { background: none; }
+.node.empty:hover, .node:disabled:hover { background: none; }
+.node:disabled { cursor: default; }
 .kids { padding-left: 16px; }
 .kids.sub { padding-left: 22px; }
 
@@ -385,6 +386,7 @@ label.inline { display: inline-flex; align-items: center; gap: 8px; font-size: 1
 .note-row span { flex: 1; }
 .draft-at { align-self: center; margin-right: 6px; white-space: nowrap; }
 .cell-ic { display: inline-flex; align-items: center; gap: 8px; }
+.cell-link:hover { color: var(--accent); text-decoration: underline; }
 .form .lbl.top { align-self: start; padding-top: 8px; }
 .form textarea.mono { font: 13px/1.5 Consolas, "Cascadia Mono", monospace; }
 

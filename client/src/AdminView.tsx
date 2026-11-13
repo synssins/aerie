@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { ArrowLeft, ChevronRight, FolderTree, HardDrive, House, KeyRound, Lock, Logs, Palette, Paperclip, Plug, Plus, ScrollText, Search, Trash2, Users } from "lucide-react";
+import { ArrowLeft, ChevronRight, Ellipsis, FolderTree, HardDrive, House, KeyRound, Lock, Logs, Palette, Paperclip, Plug, Plus, ScrollText, Search, Trash2, Users } from "lucide-react";
 import { BinTable } from "./Views";
+import { MenuButton } from "./ui";
+import { BinPageView, BinTree } from "./Bin";
+import { DeletedSpaces, DeleteSpaceDialog } from "./admin/SpaceDelete";
 import { BrandingPanel } from "./Branding";
 import { LogShipping } from "./admin/LogShipping";
 import { Plugins } from "./admin/Plugins";
@@ -46,6 +49,10 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
   const [newSpace, setNewSpace] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [uploads, setUploads] = useState<UploadSettings | null>(null);
+  // The bin item open in the middle, and a count that makes the bin load again after a restore.
+  const [binItem, setBinItem] = useState<string | null>(null);
+  const [binKey, setBinKey] = useState(0);
+  useEffect(() => { setBinItem(null); }, [section]);
 
   const loadSpaces = useCallback(async () => { if (isAdmin) setAllSpaces(await api.get<Space[]>("/admin/spaces")); }, [isAdmin]);
   useEffect(() => { void loadSpaces(); }, [loadSpaces]);
@@ -128,7 +135,14 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
             <button className={`node ${section === "uploads" ? "cur" : ""}`} onClick={() => onNavigate("uploads")}><Paperclip className="ic" aria-hidden /><span className="grow">Uploads</span></button>
             <button className={`node ${section === "storage" ? "cur" : ""}`} onClick={() => onNavigate("storage")}><HardDrive className="ic" aria-hidden /><span className="grow">Storage</span></button>
             <button className={`node ${section === "tokens" ? "cur" : ""}`} onClick={() => onNavigate("tokens")}><KeyRound className="ic" aria-hidden /><span className="grow">API tokens</span></button>
-            <button className={`node ${section === "bin" ? "cur" : ""}`} onClick={() => onNavigate("bin")}><Trash2 className="ic" aria-hidden /><span className="grow">Recycle bin</span></button>
+            <div>
+              <button className={`node ${section === "bin" && !binItem ? "cur" : ""}`} aria-expanded={section === "bin"} onClick={() => { setBinItem(null); onNavigate("bin"); }}>
+                <Trash2 className="ic" aria-hidden /><span className="grow">Recycle bin</span>
+              </button>
+              {section === "bin" && (
+                <div className="kids sub"><BinTree spaceId={null} spaces={allSpaces} selectedId={binItem} reloadKey={binKey} onSelect={setBinItem} /></div>
+              )}
+            </div>
             <button className={`node ${section === "plugins" ? "cur" : ""}`} onClick={() => onNavigate("plugins")}><Plug className="ic" aria-hidden /><span className="grow">Plugins</span></button>
             <button className={`node ${section === "audit" ? "cur" : ""}`} onClick={() => onNavigate("audit")}><ScrollText className="ic" aria-hidden /><span className="grow">Audit log</span></button>
             <button className={`node ${section === "logs" ? "cur" : ""}`} onClick={() => onNavigate("logs")}><Logs className="ic" aria-hidden /><span className="grow">Log shipping</span></button>
@@ -137,7 +151,10 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
       </nav>
 
       {space ? (
-        <SpaceEditor key={space.id} space={space} isAdmin={isAdmin} area={area} onBack={() => onNavigate("spaces")} onSaved={changed} onHome={onHome} />
+        <SpaceEditor key={space.id} space={space} isAdmin={isAdmin} area={area} onBack={() => onNavigate("spaces")} onSaved={changed} onHome={onHome}
+          onDeleted={() => { onNavigate("spaces"); void changed(); }} />
+      ) : section === "bin" && isAdmin && binItem ? (
+        <BinPageView id={binItem} onHome={onHome} onBin={() => setBinItem(null)} onOpen={setBinItem} onRestored={() => { setBinItem(null); setBinKey((k) => k + 1); void onSpacesChanged(); }} />
       ) : section === "plugins" && isAdmin ? (
         <Plugins area={area} onHome={onHome} />
       ) : section === "logs" && isAdmin ? (
@@ -182,7 +199,12 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
               {section === "search" && isAdmin && <SearchPanel />}
               {section === "tokens" && isAdmin && <TokensPanel admin spaces={allSpaces} />}
               {section === "uploads" && isAdmin && uploads && <UploadsPanel key={uploads.attachmentMb} settings={uploads} onSaved={setUploads} />}
-              {section === "bin" && isAdmin && <BinTable spaceId={null} canEmpty={false} onRestored={() => void onSpacesChanged()} />}
+              {section === "bin" && isAdmin && (
+                <>
+                  <DeletedSpaces onRestored={() => { setBinKey((k) => k + 1); void changed(); }} />
+                  <BinTable spaceId={null} canEmpty={false} reloadKey={binKey} onOpen={setBinItem} onRestored={() => { setBinKey((k) => k + 1); void onSpacesChanged(); }} />
+                </>
+              )}
 
               {section === "users" && isAdmin && (
                 <UsersTable users={users} permissions={userPermissions} pickedId={picked?.kind === "user" ? picked.item.id : null}
@@ -291,7 +313,8 @@ function SearchPanel() {
   );
 }
 
-function SpaceEditor({ space, isAdmin, area, onBack, onSaved, onHome }: { space: Space; isAdmin: boolean; area: string; onBack: () => void; onSaved: () => Promise<void>; onHome: () => void }) {
+function SpaceEditor({ space, isAdmin, area, onBack, onSaved, onHome, onDeleted }: { space: Space; isAdmin: boolean; area: string; onBack: () => void; onSaved: () => Promise<void>; onHome: () => void; onDeleted: () => void }) {
+  const [deleting, setDeleting] = useState(false);
   const [tab, setTab] = useState<"details" | "settings">("details");
   const [form, setForm] = useState(space);
   const [busy, setBusy] = useState(false);
@@ -337,7 +360,17 @@ function SpaceEditor({ space, isAdmin, area, onBack, onSaved, onHome }: { space:
             <button className="crumb-home" onClick={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></button><ChevronRight className="ic sm" aria-hidden /><span>{area}</span><ChevronRight className="ic sm" aria-hidden />
             <button className="crumb-link" onClick={onBack}>Spaces</button><ChevronRight className="ic sm" aria-hidden /><b>{space.name}</b>
           </nav>
-          <div className="titlebar"><h1>{space.name}</h1></div>
+          <div className="titlebar">
+            <h1>{space.name}</h1>
+            {isAdmin && (
+              <div className="ptools">
+                <MenuButton label="More" iconOnly icon={<Ellipsis className="ic" aria-hidden />} items={[
+                  { label: "Delete space", icon: <Trash2 className="ic" aria-hidden />, onClick: () => setDeleting(true), danger: true },
+                ]} />
+              </div>
+            )}
+          </div>
+          {deleting && <DeleteSpaceDialog space={space} onClose={() => setDeleting(false)} onDeleted={onDeleted} />}
           <div className="tabs" role="tablist">
             <button role="tab" aria-selected={tab === "details"} className={tab === "details" ? "on" : ""} onClick={() => setTab("details")}>Details</button>
             <button role="tab" aria-selected={tab === "settings"} className={tab === "settings" ? "on" : ""} onClick={() => setTab("settings")}>Space settings</button>

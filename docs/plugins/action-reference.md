@@ -107,6 +107,18 @@ Write. `SignIn`, answers `MeResponse`.
 
 Write. `SignOut`, answers `Unit`.
 
+## bin.browse
+
+Read. `BrowseBin`, answers `IReadOnlyList<BinNodeDto>`.
+
+| Field | Type | |
+|---|---|---|
+| SpaceId | `Guid` | required |
+
+## bin.browse.all
+
+Read. `BrowseAllBins`, answers `IReadOnlyList<BinNodeDto>`.
+
 ## bin.empty
 
 Write. `EmptyBin`, answers `Unit`.
@@ -126,6 +138,14 @@ Read. `ListBin`, answers `IReadOnlyList<BinItemDto>`.
 ## bin.list.all
 
 Read. `ListAllBins`, answers `IReadOnlyList<BinItemDto>`.
+
+## bin.page.read
+
+Read. `ReadBinPage`, answers `BinPageDto`.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
 
 ## brand.logo.read
 
@@ -604,6 +624,15 @@ Write. `CreateSpace`, answers `SpaceDto`.
 | IsSensitive | `bool` |  |
 | IsPublic | `bool` |  |
 
+## space.delete
+
+Write. `DeleteSpace`, answers `Unit`.
+
+| Field | Type | |
+|---|---|---|
+| SpaceId | `Guid` | required |
+| Confirm | `string?` |  |
+
 ## space.list
 
 Read. `ListSpaces`, answers `IReadOnlyList<SpaceDto>`.
@@ -612,9 +641,21 @@ Read. `ListSpaces`, answers `IReadOnlyList<SpaceDto>`.
 
 Read. `ListAllSpaces`, answers `IReadOnlyList<SpaceDto>`.
 
+## space.list.deleted
+
+Read. `ListDeletedSpaces`, answers `IReadOnlyList<DeletedSpaceDto>`.
+
 ## space.read
 
 Read. `ReadSpace`, answers `SpaceDto`.
+
+| Field | Type | |
+|---|---|---|
+| SpaceId | `Guid` | required |
+
+## space.restore
+
+Write. `RestoreSpace`, answers `SpaceDto`.
 
 | Field | Type | |
 |---|---|---|

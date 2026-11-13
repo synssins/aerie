@@ -41,5 +41,26 @@
     "path": "/api/v1/admin/bin",
     "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
     "scope": "server"
+  },
+  {
+    "action": "bin.browse",
+    "method": "GET",
+    "path": "/api/v1/spaces/{space}/bin/tree",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 403, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "bin.browse.all",
+    "method": "GET",
+    "path": "/api/v1/admin/bin/tree",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "bin.page.read",
+    "method": "GET",
+    "path": "/api/v1/bin/pages/{deletedPage}",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 403, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
   }
 ]

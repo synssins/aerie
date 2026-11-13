@@ -99,6 +99,9 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
         builder.Entity<KbGroupMember>().HasKey(m => new { m.GroupId, m.UserId });
         builder.Entity<KbGroupMember>().HasIndex(m => m.UserId);
         builder.Entity<Space>().HasIndex(s => s.Key).IsUnique();
+        // A deleted space is not read by any query that does not ask for deleted ones. Every role, list and page check starts from
+        // the space, so that is what makes a deleted space, and all in it, out of reach.
+        builder.Entity<Space>().HasQueryFilter(s => s.DeletedAt == null);
         builder.Entity<SpaceRoleAssignment>().HasIndex(a => new { a.SpaceId, a.PrincipalType, a.PrincipalId }).IsUnique();
         builder.Entity<SpaceRoleAssignment>().HasIndex(a => a.PrincipalId);
         builder.Entity<SpaceAccessGrant>().HasIndex(g => new { g.UserId, g.SpaceId });

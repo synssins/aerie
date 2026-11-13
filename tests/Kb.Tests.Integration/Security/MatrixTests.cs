@@ -51,6 +51,7 @@ public sealed class MatrixTests : IAsyncLifetime
     private readonly KbAppFactory _f = new(KbAppFactory.NewDbPath());
     private readonly Dictionary<string, HttpClient> _callers = [];
     private HttpClient _owner = null!, _breakGlass = null!;
+    private string _spareKey = "";
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private static List<Entry> Load([CallerFilePath] string here = "")
@@ -167,6 +168,21 @@ public sealed class MatrixTests : IAsyncLifetime
                 var request = new AccessRequest { SpaceId = space, RequesterId = await NewUserAsync("asker" + Guid.NewGuid().ToString("N")[..8]), RequestedRole = SpaceRole.Reader, Status = AccessRequestStatus.Pending, CreatedAt = DateTimeOffset.UtcNow };
                 await _f.WithDbAsync(async db => { db.AccessRequests.Add(request); await db.SaveChangesAsync(Ct); });
                 return request.Id.ToString();
+            }
+            case "spareSpace":
+            {
+                // A space of its own for the one request that may delete it. Its phrase is asked for right after, for the body.
+                _spareKey = "m" + Guid.NewGuid().ToString("N")[..10];
+                var made = await _breakGlass.PostAsJsonAsync("/api/v1/spaces", new { key = _spareKey, name = "Spare" }, Ct);
+                Assert.Equal(HttpStatusCode.Created, made.StatusCode);
+                return (await made.Content.ReadFromJsonAsync<SpaceDto>(Ct))!.Id.ToString();
+            }
+            case "spareSpacePhrase": return "delete " + _spareKey;
+            case "deletedSpace":
+            {
+                var id = await ValueAsync("spareSpace", space);
+                Assert.Equal(HttpStatusCode.NoContent, (await _breakGlass.PostAsJsonAsync($"/api/v1/admin/spaces/{id}/delete", new { confirm = "delete " + _spareKey }, Ct)).StatusCode);
+                return id;
             }
             case "victim": return (await NewUserAsync("victim" + Guid.NewGuid().ToString("N")[..8])).ToString();
             case "token":

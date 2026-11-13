@@ -29,7 +29,7 @@ Products like Confluence cover this scope, but their sprawl makes them slow for 
 | Roles | Per-space roles: Reader, Contributor, Supervisor, Owner. Users without a role in a space cannot see that the space exists. |
 | Sign-in | Microsoft Entra ID SSO, local accounts with passkeys, and one break-glass account for identity outages. |
 | Documents | Folder tree, breadcrumbs, and a rich-text editor (code blocks, tables, images, attachments) with numbered version history and side-by-side diffs. |
-| Recycle bin | Restores deleted documents to their original path. |
+| Recycle bin | Restores deleted documents to their original path. Browsed like the knowledge base: a tree of folders and pages, each opened to read. An Administrator deletes a whole space into the bin (three confirmations, the last a typed phrase) and restores it whole. |
 | Exports | Pages export to PDF or Word with secure links stripped. Tables export to CSV or Excel. Code blocks download with the matching file extension. |
 | API | REST API with scoped, expiring tokens. |
 | Plugins | Core plugin host included in v1. Email delivery ships as the first plugin. |

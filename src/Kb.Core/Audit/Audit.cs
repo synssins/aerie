@@ -47,6 +47,8 @@ public static class AuditActions
     public const string PasswordSetFailed = "auth.password.set.failed";
     public const string SpaceCreate = "space.create";
     public const string SpaceUpdate = "space.update";
+    public const string SpaceDelete = "space.delete";
+    public const string SpaceRestore = "space.restore";
     public const string SpaceSensitiveSet = "space.sensitive.set";
     public const string SpaceRoleGrant = "space.role.grant";
     public const string SpaceRoleRevoke = "space.role.revoke";

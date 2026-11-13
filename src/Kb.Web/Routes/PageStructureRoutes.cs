@@ -24,5 +24,15 @@ public static class PageStructureRoutes
 
         api.MapGroup("/admin").MapGet("/bin", (IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new ListAllBins(), ct).ToHttp()).WithAction<ListAllBins>();
+
+        // The bin, browsed like the knowledge base: a tree, and an item of it opened to read.
+        api.MapGet("/spaces/{id:guid}/bin/tree", (Guid id, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new BrowseBin { SpaceId = id }, ct).ToHttp()).WithAction<BrowseBin>();
+
+        api.MapGroup("/admin").MapGet("/bin/tree", (IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new BrowseAllBins(), ct).ToHttp()).WithAction<BrowseAllBins>();
+
+        api.MapGet("/bin/pages/{id:guid}", (Guid id, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new ReadBinPage { PageId = id }, ct).ToHttp()).WithAction<ReadBinPage>();
     }
 }

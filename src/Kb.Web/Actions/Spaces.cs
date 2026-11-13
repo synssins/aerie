@@ -53,10 +53,11 @@ internal sealed class CreateSpaceHandler(KbDbContext db, IAccess access, TimePro
             var stem = NonKeyChars().Replace(req.Name.Trim().ToLowerInvariant(), "-").Trim('-');
             stem = stem.Length < 2 ? "space" : stem[..Math.Min(stem.Length, 28)].TrimEnd('-');
             key = stem;
-            for (var n = 2; await db.Spaces.AnyAsync(x => x.Key == key, ctx.Cancel); n++) key = $"{stem}-{n}";
+            // A deleted space keeps its key (it can come back), so the keys of deleted spaces count as taken too.
+            for (var n = 2; await db.Spaces.IgnoreQueryFilters().AnyAsync(x => x.Key == key, ctx.Cancel); n++) key = $"{stem}-{n}";
         }
         else if (!SpaceKeyPattern().IsMatch(key)) return Problem.Invalid("key", "2-32 chars: lowercase letters, digits, hyphen.");
-        else if (await db.Spaces.AnyAsync(x => x.Key == key, ctx.Cancel)) return new Problem(409);
+        else if (await db.Spaces.IgnoreQueryFilters().AnyAsync(x => x.Key == key, ctx.Cancel)) return new Problem(409);
         var s = new Space { Key = key, Name = req.Name.Trim(), Description = req.Description, IsSensitive = req.IsSensitive, IsPublic = req.IsPublic, CreatedAt = time.GetUtcNow() };
         db.Spaces.Add(s);
         await db.SaveChangesAsync();
@@ -119,6 +120,83 @@ internal sealed class UpdateSpaceAdminHandler(KbDbContext db, IAccess access, Kb
                 cleared ? $"{s.Name} is no longer a sensitive space" : $"{s.Name}, a sensitive space, was made public",
                 "An administrator changed it.", $"/spaces/{s.Id}", alsoEmail: true, CancellationToken.None);
         return ToDto(s, null);
+    }
+}
+
+// Deleting and restoring a space are an Admin's, whatever role anyone has in it. AuthorizeAsync answers 403 to everyone else
+// before the phrase is looked at.
+
+internal sealed class DeleteSpaceHandler(KbDbContext db, IAccess access, TimeProvider time, Kb.Core.Access.IAccessData owners, Kb.Core.Notifications.INotifier notifier)
+    : IActionHandler<DeleteSpace, Unit>
+{
+    private Space? _space;
+
+    public async Task<Problem?> AuthorizeAsync(ActionContext<DeleteSpace> ctx)
+    {
+        if (!await access.IsAdminAsync(ctx.Actor, ctx.Cancel)) return Problem.Forbidden;
+        var id = ctx.Action.SpaceId;
+        return (_space = await db.Spaces.FirstOrDefaultAsync(x => x.Id == id, ctx.Cancel)) is null ? Problem.NotFound : null; // a deleted space is not there to delete
+    }
+
+    public async Task<Outcome<Unit>> HandleAsync(ActionContext<DeleteSpace> ctx)
+    {
+        var s = _space!;
+        // The phrase is asked for here, on the server. What a screen asked before it sent this is not the control.
+        var phrase = $"delete {s.Key}";
+        if (!string.Equals(ctx.Action.Confirm?.Trim(), phrase, StringComparison.OrdinalIgnoreCase)) return Problem.Invalid("confirm", $"Type: {phrase}");
+
+        var pages = await db.Pages.CountAsync(p => p.SpaceId == s.Id); // system: how much goes with it, for the audit entry
+        var told = await owners.GetOwnerUserIdsAsync(s.Id, CancellationToken.None);
+        (s.DeletedAt, s.DeletedBy) = (time.GetUtcNow(), ctx.Actor.UserId);
+        await db.SaveChangesAsync();
+        ctx.Audit(AuditActions.SpaceDelete, "space", s.Id.ToString(), s.Id,
+            new Dictionary<string, string> { ["key"] = s.Key, ["name"] = s.Name, ["pages"] = pages.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+        // Its Owners lose the space with everyone else: they are told, as for every act of an Admin on their space.
+        await notifier.NotifyAsync(told, Kb.Core.Notifications.NotificationKinds.SecurityAlert, $"{s.Name} was deleted",
+            "An administrator moved the space to the recycle bin. An administrator can restore it.", null, alsoEmail: true, CancellationToken.None);
+        return new Unit();
+    }
+}
+
+internal sealed class RestoreSpaceHandler(KbDbContext db, IAccess access, Kb.Core.Access.IAccessData owners, Kb.Core.Notifications.INotifier notifier) : IActionHandler<RestoreSpace, SpaceDto>
+{
+    private Space? _space;
+
+    public async Task<Problem?> AuthorizeAsync(ActionContext<RestoreSpace> ctx)
+    {
+        if (!await access.IsAdminAsync(ctx.Actor, ctx.Cancel)) return Problem.Forbidden;
+        var id = ctx.Action.SpaceId;
+        _space = await db.Spaces.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == id && x.DeletedAt != null, ctx.Cancel); // system: only a deleted space can be restored, and only an Admin gets here
+        return _space is null ? Problem.NotFound : null;
+    }
+
+    public async Task<Outcome<SpaceDto>> HandleAsync(ActionContext<RestoreSpace> ctx)
+    {
+        var s = _space!;
+        (s.DeletedAt, s.DeletedBy) = (null, null);
+        await db.SaveChangesAsync();
+        ctx.Audit(AuditActions.SpaceRestore, "space", s.Id.ToString(), s.Id, new Dictionary<string, string> { ["key"] = s.Key, ["name"] = s.Name });
+        await notifier.NotifyAsync(await owners.GetOwnerUserIdsAsync(s.Id, CancellationToken.None), Kb.Core.Notifications.NotificationKinds.SecurityAlert,
+            $"{s.Name} was restored", "An administrator took the space out of the recycle bin.", $"/s/{s.Id}", alsoEmail: false, CancellationToken.None);
+        // The space is as it was: the roles in it are again what they were. The Admin's own role is read like anyone's.
+        return ToDto(s, await access.RoleAsync(ctx.Actor, s.Id));
+    }
+}
+
+internal sealed class ListDeletedSpacesHandler(KbDbContext db, IAccess access) : IActionHandler<ListDeletedSpaces, IReadOnlyList<DeletedSpaceDto>>
+{
+    public async Task<Problem?> AuthorizeAsync(ActionContext<ListDeletedSpaces> ctx) => await access.IsAdminAsync(ctx.Actor, ctx.Cancel) ? null : Problem.Forbidden;
+
+    public async Task<Outcome<IReadOnlyList<DeletedSpaceDto>>> HandleAsync(ActionContext<ListDeletedSpaces> ctx)
+    {
+        // system: the recycle bin of spaces. Names only, as an Admin sees the name of every space; nothing of their content.
+        var spaces = await db.Spaces.IgnoreQueryFilters().AsNoTracking().Where(x => x.DeletedAt != null).OrderByDescending(x => x.DeletedAt).ToListAsync(ctx.Cancel);
+        var ids = spaces.Select(x => x.Id).ToList();
+        var counts = await db.Pages.Where(p => ids.Contains(p.SpaceId)).GroupBy(p => p.SpaceId).Select(g => new { g.Key, N = g.Count() }).ToDictionaryAsync(g => g.Key, g => g.N, ctx.Cancel); // system: a count, no content
+        var by = spaces.Where(x => x.DeletedBy != null).Select(x => x.DeletedBy!.Value).Distinct().ToList();
+        var names = await db.Users.AsNoTracking().Where(u => by.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.DisplayName, ctx.Cancel);
+        return Outcome.List<DeletedSpaceDto>([.. spaces.Select(x => new DeletedSpaceDto(x.Id, x.Key, x.Name, x.IsSensitive, x.DeletedAt!.Value,
+            x.DeletedBy is { } u && names.TryGetValue(u, out var name) ? name : "Unknown", counts.GetValueOrDefault(x.Id)))]);
     }
 }
 

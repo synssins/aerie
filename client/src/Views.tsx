@@ -16,7 +16,7 @@ function Crumbs({ onHome, children }: { onHome: () => void; children?: ReactNode
 const Sep = () => <ChevronRight className="ic sm" aria-hidden />;
 
 /** Recycle bin table. spaceId null = every space (administrators). */
-export function BinTable({ spaceId, canEmpty, reloadKey, onRestored }: { spaceId: string | null; canEmpty: boolean; reloadKey?: number; onRestored: (spaceId: string) => void }) {
+export function BinTable({ spaceId, canEmpty, reloadKey, onRestored, onOpen }: { spaceId: string | null; canEmpty: boolean; reloadKey?: number; onRestored: (spaceId: string) => void; onOpen?: (id: string) => void }) {
   const dialogs = useDialogs();
   const [items, setItems] = useState<BinItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +45,7 @@ export function BinTable({ spaceId, canEmpty, reloadKey, onRestored }: { spaceId
         <tbody>
           {items.map((it) => (
             <tr key={it.id}>
-              <td><span className="cell-ic">{it.kind === "Folder" ? <Folder className="ic ft" aria-hidden /> : <FileText className="ic pg" aria-hidden />}{it.title}</span></td>
+              <td><span className="cell-ic">{it.kind === "Folder" ? <Folder className="ic ft" aria-hidden /> : <FileText className="ic pg" aria-hidden />}{onOpen ? <button className="cell-link" onClick={() => onOpen(it.id)}>{it.title}</button> : it.title}</span></td>
               <td className="muted">{it.location}</td>
               <td className="muted">{it.items}</td>
               <td className="muted">{fmtDateTime(it.deletedAt)}</td>
@@ -61,14 +61,14 @@ export function BinTable({ spaceId, canEmpty, reloadKey, onRestored }: { spaceId
   );
 }
 
-export function BinView({ space, onHome, onOpenSpace, onRestored }: { space: Space; onHome: () => void; onOpenSpace: () => void; onRestored: (spaceId: string) => void }) {
+export function BinView({ space, onHome, onOpenSpace, onRestored, onOpen }: { space: Space; onHome: () => void; onOpenSpace: () => void; onRestored: (spaceId: string) => void; onOpen?: (id: string) => void }) {
   return (
     <>
       <main className="doc wide">
         <div className="col">
           <Crumbs onHome={onHome}><Sep /><button className="crumb-link" onClick={onOpenSpace}>{space.name}</button><Sep /><b>Recycle bin</b></Crumbs>
           <div className="titlebar"><h1>Recycle bin</h1></div>
-          <BinTable spaceId={space.id} canEmpty onRestored={onRestored} />
+          <BinTable spaceId={space.id} canEmpty onRestored={onRestored} onOpen={onOpen} />
         </div>
       </main>
       <aside className="side" aria-label="Details"><h3>Space</h3><div>{space.name}</div></aside>

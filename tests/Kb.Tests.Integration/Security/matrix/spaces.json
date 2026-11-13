@@ -65,5 +65,28 @@
     "body": {},
     "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
     "scope": "space"
+  },
+  {
+    "action": "space.delete",
+    "method": "POST",
+    "path": "/api/v1/admin/spaces/{spareSpace}/delete",
+    "body": {"confirm": "{spareSpacePhrase}"},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 204},
+    "scope": "server",
+    "note": "A space made for this one request is deleted. Everyone but an Admin is refused before the phrase is looked at."
+  },
+  {
+    "action": "space.restore",
+    "method": "POST",
+    "path": "/api/v1/admin/spaces/{deletedSpace}/restore",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "space.list.deleted",
+    "method": "GET",
+    "path": "/api/v1/admin/spaces/deleted",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
   }
 ]

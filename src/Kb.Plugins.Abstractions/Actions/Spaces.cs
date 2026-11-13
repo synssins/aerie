@@ -77,6 +77,30 @@ public sealed record RevokeSpaceRole : IAction<Unit>
     public required Guid AssignmentId { get; init; }
 }
 
+/// <summary>
+/// Deletes a space: it goes to the recycle bin with everything in it, and an Admin can restore it. Only an Admin, and only with
+/// the phrase "delete &lt;the space's key&gt;" in <see cref="Confirm"/>: the server asks for it, whatever a screen asked before.
+/// </summary>
+[Action("space.delete")]
+public sealed record DeleteSpace : IAction<Unit>
+{
+    public required Guid SpaceId { get; init; }
+    public string? Confirm { get; init; }
+}
+
+/// <summary>Takes a deleted space out of the recycle bin, as it was. Only an Admin.</summary>
+[Action("space.restore")]
+public sealed record RestoreSpace : IAction<SpaceDto>
+{
+    public required Guid SpaceId { get; init; }
+}
+
+/// <summary>The deleted spaces, for an Admin.</summary>
+[Action("space.list.deleted", Read = true)]
+public sealed record ListDeletedSpaces : IAction<IReadOnlyList<DeletedSpaceDto>>;
+
+public sealed record DeletedSpaceDto(Guid Id, string Key, string Name, bool IsSensitive, DateTimeOffset DeletedAt, string DeletedBy, int Pages);
+
 /// <summary>Every space, by name, for an Admin. No role is named.</summary>
 [Action("space.list.all", Read = true)]
 public sealed record ListAllSpaces : IAction<IReadOnlyList<SpaceDto>>;

@@ -7,6 +7,7 @@ import { AccountDialog } from "./AccountDialogs";
 import { BrandLogo } from "./Branding";
 import { api, BIN_ROLES, byTreeOrder, EDIT_ROLES, reloadIfPending, type Brand, type Me, type Notice, type Page, type Space, type TreeNode, type UserSettings } from "./api";
 import { MenuButton, MoveDialog, useDismiss } from "./ui";
+import { BinPageView, BinTree } from "./Bin";
 import { BinView, HistoryView, HomeView, SearchView, type RecentView } from "./Views";
 import { ADMIN_SECTIONS, AdminView, type AdminSection } from "./AdminView";
 import { SettingsView, type SettingsSection } from "./SettingsView";
@@ -70,6 +71,9 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
   const [q, setQ] = useState("");
   const [historyOf, setHistoryOf] = useState(false);
   const [binOf, setBinOf] = useState(false);
+  // The bin item open in the middle, and a count that makes the bin's tree load again after a restore.
+  const [binItem, setBinItem] = useState<string | null>(null);
+  const [binKey, setBinKey] = useState(0);
   const [pluginAt, setPluginAt] = useState<PluginAt | null>(null);
   // What the person is looking at, for the scripts of plugins.
   useEffect(() => { currentView.set({ page: page?.id ? page : null, space: current }); }, [page, current]);
@@ -114,6 +118,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
     setSearchQ(null);
     setHistoryOf(false);
     setBinOf(false);
+    setBinItem(null);
     setPluginAt(null);
   }, []);
 
@@ -522,9 +527,15 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
                           }}
                         />
                         {s.myRole && BIN_ROLES.includes(s.myRole) && (
-                          <button className={`node ${binOf && current?.id === s.id ? "cur" : ""}`} onClick={() => void openBin(s)}>
-                            <span className="ic tw" /><Trash2 className="ic pg" aria-hidden /><span className="grow">Recycle bin</span>
-                          </button>
+                          <>
+                            <button className={`node ${binOf && !binItem && current?.id === s.id ? "cur" : ""} ${binOf && current?.id === s.id ? "open" : ""}`}
+                              aria-expanded={binOf && current?.id === s.id} onClick={() => void openBin(s)}>
+                              <ChevronRight className="ic tw" aria-hidden /><Trash2 className="ic pg" aria-hidden /><span className="grow">Recycle bin</span>
+                            </button>
+                            {binOf && current?.id === s.id && (
+                              <div className="kids"><BinTree spaceId={s.id} selectedId={binItem} reloadKey={binKey} onSelect={setBinItem} /></div>
+                            )}
+                          </>
                         )}
                       </div>
                     )}
@@ -538,8 +549,10 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
                 <SearchView query={searchQ} onHome={onHome} onOpen={(id) => void openPageById(id)} />
               ) : home || !current ? (
                 <HomeView me={me} spaces={spaces} viewed={viewed} onOpenSpace={(s) => void openSpace(s)} onOpenPage={(id) => void openPageById(id)} />
+              ) : binOf && binItem ? (
+                <BinPageView id={binItem} onHome={onHome} onBin={() => setBinItem(null)} onOpen={setBinItem} onRestored={(id) => { setBinItem(null); setBinKey((k) => k + 1); void loadTree(id); }} />
               ) : binOf ? (
-                <BinView space={current} onHome={onHome} onOpenSpace={() => void openSpace(current)} onRestored={(id) => void loadTree(id)} />
+                <BinView space={current} onHome={onHome} onOpenSpace={() => void openSpace(current)} onOpen={setBinItem} onRestored={(id) => { setBinKey((k) => k + 1); void loadTree(id); }} />
               ) : historyOf && page?.kind === "Page" ? (
                 <HistoryView
                   page={page}

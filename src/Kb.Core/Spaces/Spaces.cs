@@ -35,6 +35,12 @@ public sealed class Space
     public AgingAudience AgingAudience { get; set; } = AgingAudience.Everyone;
     /// <summary>Recycle-bin retention override; null uses Kb:Retention:RecycleDays.</summary>
     public int? RecycleDays { get; set; }
+    /// <summary>
+    /// Set when an Admin deleted the space: it is in the recycle bin, with everything in it. A deleted space is not there for anyone,
+    /// by list or by id; its pages, files and roles stay as they were and give nothing until an Admin restores it.
+    /// </summary>
+    public DateTimeOffset? DeletedAt { get; set; }
+    public Guid? DeletedBy { get; set; }
 }
 
 public sealed class SpaceRoleAssignment
@@ -128,6 +134,8 @@ public sealed class SpacePermissionService(ISpaceAccessData data, TimeProvider t
         if (p.IsAdmin) foreach (var s in spaces.Where(s => !s.IsSensitive)) visible.Add(s.Id);
         foreach (var a in await data.GetAssignmentsForPrincipalsAsync(PrincipalIds(p), ct)) visible.Add(a.SpaceId);
         foreach (var g in await data.GetActiveGrantsAsync(userId, time.GetUtcNow(), ct)) visible.Add(g.SpaceId);
+        // A role or a grant names a space by id. Only a space that is there counts: a deleted space keeps its roles and gives nothing.
+        visible.IntersectWith(spaces.Select(s => s.Id));
         return [.. visible];
     }
 

@@ -43,5 +43,32 @@ public sealed record RestorePage : IAction<RestoredPageDto>
 [Action("bin.list.all", Read = true)]
 public sealed record ListAllBins : IAction<IReadOnlyList<BinItemDto>>;
 
+/// <summary>The recycle bin of a space as a tree: every deleted item, each under its deleted folder. Without what was emptied.</summary>
+[Action("bin.browse", Read = true)]
+public sealed record BrowseBin : IAction<IReadOnlyList<BinNodeDto>>
+{
+    public required Guid SpaceId { get; init; }
+}
+
+/// <summary>
+/// The admin bin as a tree: the bins of every space the Admin manages, with what was emptied, and every deleted space with all
+/// that is in it. A deleted sensitive space is left out: its content is nobody's to read while it is deleted.
+/// </summary>
+[Action("bin.browse.all", Read = true)]
+public sealed record BrowseAllBins : IAction<IReadOnlyList<BinNodeDto>>;
+
+/// <summary>One item of a recycle bin, to read. For whoever manages that bin; in a deleted space, for an Admin.</summary>
+[Action("bin.page.read", Read = true)]
+public sealed record ReadBinPage : IAction<BinPageDto>
+{
+    public required Guid PageId { get; init; }
+}
+
+public sealed record BinNodeDto(Guid Id, Guid? ParentId, Guid SpaceId, string Kind, string Title, int Sort);
+/// <param name="Path">The space's name, then the folders down to the item.</param>
+/// <param name="Children">What a folder holds in this bin, to open next.</param>
+/// <param name="RestoreId">The bin item that brings this one back (<c>page.restore</c>). Null in a deleted space: the space is restored whole.</param>
+public sealed record BinPageDto(Guid Id, Guid SpaceId, string Kind, string Title, string ContentJson, IReadOnlyList<string> Path,
+    DateTimeOffset UpdatedAt, string UpdatedBy, DateTimeOffset DeletedAt, string DeletedBy, Guid? RestoreId, IReadOnlyList<BinNodeDto> Children);
 public sealed record BinItemDto(Guid Id, Guid SpaceId, string SpaceName, string Kind, string Title, string Location, int Items, DateTimeOffset DeletedAt, string DeletedBy, bool Hidden);
 public sealed record RestoredPageDto(Guid Id, Guid SpaceId);
