@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ChevronRight, House, Upload } from "lucide-react";
 import { api, ApiError, upload, type PluginInfo, type PluginSetting } from "../api";
+import { useDialogs } from "../Dialogs";
 
 type PluginList = { plugins: PluginInfo[]; safeMode: boolean };
 type SettingsData = { values: Record<string, string | null>; secretsSet: string[] };
 
 /** The server's own words for a refusal; otherwise the short fallback. */
 const problem = (e: unknown, fallback: string) => (e instanceof ApiError && (e.body?.detail || e.body?.error)) || fallback;
-const stateText = (p: PluginInfo) => p.state === "DisabledByCore" ? "Disabled by core" : p.state;
+const stateText = (p: PluginInfo) => p.removed ? "Removed, data kept" : p.state === "DisabledByCore" ? "Disabled by core" : p.state;
 const isSecret = (s: PluginSetting) => s.secret || s.type === "secret";
 
 /**
@@ -21,6 +22,7 @@ export function Plugins({ area, onHome }: { area: string; onHome: () => void }) 
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
   const file = useRef<HTMLInputElement>(null);
+  const { confirm } = useDialogs();
 
   const load = useCallback(async () => { setData(await api.get<PluginList>("/admin/plugins")); }, []);
   useEffect(() => { void load(); }, [load]);
@@ -43,6 +45,12 @@ export function Plugins({ area, onHome }: { area: string; onHome: () => void }) 
   async function change(work: () => Promise<unknown>, failed: string) {
     setError(null);
     try { await work(); setRestarting(true); } catch (e) { setError(problem(e, failed)); }
+  }
+
+  /** The tables of a removed plugin are dropped. It cannot be undone, so it asks first. */
+  async function deleteData(p: PluginInfo) {
+    if (!await confirm({ title: `Delete the data of ${p.name}?`, ok: "Delete data", danger: true })) return;
+    await change(async () => { await api.del(`/admin/plugins/${p.id}/data`); setSelectedId(null); }, "Not deleted.");
   }
 
   async function install(f: File) {
@@ -91,14 +99,19 @@ export function Plugins({ area, onHome }: { area: string; onHome: () => void }) 
 
           {selected && (
             <>
-              <p className="state-line">{selected.state === "DisabledByCore" ? `Disabled by core: ${selected.reason ?? ""}` : selected.state}</p>
-              <div className="ptools row">
+              <p className="state-line">{selected.state === "DisabledByCore" ? `Disabled by core: ${selected.reason ?? ""}` : stateText(selected)}</p>
+              {selected.removed && (
+                <div className="ptools row">
+                  <button type="button" className="tb danger" disabled={restarting} onClick={() => void deleteData(selected)}>Delete data</button>
+                </div>
+              )}
+              {!selected.removed && <div className="ptools row">
                 {selected.state === "Enabled"
                   ? <button type="button" className="tb" disabled={restarting} onClick={() => void change(() => api.put(`/admin/plugins/${selected.id}/state`, { enabled: false }), "Not disabled.")}>Disable</button>
                   : <button type="button" className="tb" disabled={restarting} onClick={() => void change(() => api.put(`/admin/plugins/${selected.id}/state`, { enabled: true }), "Not enabled.")}>Enable</button>}
                 {selected.origin !== "BuiltIn" && <button type="button" className="tb" disabled={restarting} onClick={() => setRemoving(true)}>Remove</button>}
                 {selected.locked && <button type="button" className="tb" disabled={restarting} onClick={() => void change(() => api.post(`/admin/plugins/${selected.id}/release-lock`), "Not released.")}>Release lock</button>}
-              </div>
+              </div>}
               {selected.settings.length > 0 && <SettingsForm key={selected.id} plugin={selected} onRestart={() => setRestarting(true)} />}
             </>
           )}

@@ -130,6 +130,24 @@ describe("Plugins", () => {
     expect(native).not.toHaveBeenCalled();
   });
 
+  it("a removed plugin shows \"Removed, data kept\" and offers only Delete data, which asks first", async () => {
+    const gone = plugin({ id: "kb.test.probe", name: "kb.test.probe", origin: "Uploaded", source: "upload", publisher: "", state: "Disabled", loaded: false, extensionPoints: [], removed: true });
+    const calls = server({ "GET /plugins": list([gone]), "DELETE /plugins/kb.test.probe/data": () => ({ status: 204 }) });
+    show();
+    const row = (await screen.findAllByRole("row"))[1];
+    expect(within(row).getAllByRole("cell").map((c) => c.textContent)).toEqual(["kb.test.probe", "1.0.0", "", "Removed, data kept"]);
+    await userEvent.click(within(row).getByText("kb.test.probe"));
+    expect(screen.getByText("Removed, data kept")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Enable" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Delete data" }));
+    const dialog = screen.getByRole("dialog");
+    expect(calls.some((c) => c.key.startsWith("DELETE"))).toBe(false);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Delete data" }));
+    expect(calls.some((c) => c.key === "DELETE /plugins/kb.test.probe/data")).toBe(true);
+    expect(await screen.findByText("Restarting")).toBeTruthy();
+  });
+
   it("shows Restarting until the server answers, then reloads", async () => {
     vi.useFakeTimers();
     let up = false;
