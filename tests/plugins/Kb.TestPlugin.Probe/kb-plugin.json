@@ -21,7 +21,8 @@
         "sink",
         "before",
         "filter",
-        "after"
+        "after",
+        "job"
       ]
     },
     {
@@ -86,6 +87,14 @@
     {
       "key": "FailFilter",
       "label": "FailFilter"
+    },
+    {
+      "key": "JobDelay",
+      "label": "JobDelay"
+    },
+    {
+      "key": "JobPage",
+      "label": "JobPage"
     }
   ]
 }

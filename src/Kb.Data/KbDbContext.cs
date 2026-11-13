@@ -87,6 +87,7 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     public DbSet<PluginPackage> PluginPackages => Set<PluginPackage>();
     public DbSet<PluginStatus> PluginStatuses => Set<PluginStatus>();
     public DbSet<PluginSettingValue> PluginSettingValues => Set<PluginSettingValue>();
+    public DbSet<JobRun> JobRuns => Set<JobRun>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -147,6 +148,11 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
         builder.Entity<PluginSettingValue>().HasKey(v => new { v.PluginId, v.Key });
         builder.Entity<PluginSettingValue>().Property(v => v.PluginId).HasMaxLength(64);
         builder.Entity<PluginSettingValue>().Property(v => v.Key).HasMaxLength(100);
+        builder.Entity<JobRun>().HasKey(r => new { r.PluginId, r.Name });
+        builder.Entity<JobRun>().Property(r => r.PluginId).HasMaxLength(64);
+        builder.Entity<JobRun>().Property(r => r.Name).HasMaxLength(100);
+        builder.Entity<JobRun>().Property(r => r.LastError).HasMaxLength(500);
+        builder.Entity<JobRun>().Property(r => r.ClaimedBy).HasMaxLength(100);
         builder.Entity<LogTarget>().Property(t => t.Name).HasMaxLength(100);
         builder.Entity<LogTarget>().Property(t => t.Kind).HasMaxLength(40);
         builder.Entity<LogTarget>().Property(t => t.LastError).HasMaxLength(500);

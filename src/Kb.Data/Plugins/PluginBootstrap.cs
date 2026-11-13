@@ -144,6 +144,11 @@ public static class PluginBootstrap
                     contexts[id] = context;
                 }
                 var configured = PluginRuntime.Configure(assembly, c.Manifest, settings);
+                // Every schedule of the manifest names a job the plugin registered, and every job has a schedule.
+                var jobs = configured.Registrations.OfType<JobReg>().Select(j => j.Name).ToList();
+                if (c.Manifest.Schedules.FirstOrDefault(s => !jobs.Contains(s.Name, StringComparer.Ordinal)) is { } noJob) throw new InvalidOperationException($"No job named {noJob.Name}.");
+                if (jobs.FirstOrDefault(j => c.Manifest.Schedules.All(s => s.Name != j)) is { } noSchedule) throw new InvalidOperationException($"No schedule named {noSchedule}.");
+                if (c.Manifest.Schedules.FirstOrDefault(s => s.EveryMinutes < 1) is { } tooOften) throw new InvalidOperationException($"Schedule {tooOften.Name}: everyMinutes must be 1 or more.");
                 // Its tables are made ready before anything of it is kept: a plugin whose tables cannot be made is not loaded.
                 foreach (var data in configured.Registrations.OfType<Kb.Plugins.Data.PluginData>())
                 {

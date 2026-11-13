@@ -130,6 +130,8 @@ services.AddScoped<IActorAccessor>(sp => sp.GetRequiredService<ActorAccessor>())
 services.AddScoped<IActionBus, ActionBus>();
 services.AddSingleton<ActionQueueWorker>();
 services.AddHostedService(sp => sp.GetRequiredService<ActionQueueWorker>());
+services.AddSingleton<JobRunner>();
+services.AddHostedService(sp => sp.GetRequiredService<JobRunner>());
 services.AddScoped<IAccessData, AccessData>();
 services.AddScoped<INotificationStore, NotificationStore>();
 services.AddScoped<IUserDirectory, UserDirectory>();

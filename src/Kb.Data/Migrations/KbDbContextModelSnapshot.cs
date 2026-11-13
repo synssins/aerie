@@ -728,6 +728,38 @@ namespace Kb.Data.Migrations
                     b.ToTable("Notifications");
                 });
 
+            modelBuilder.Entity("Kb.Core.Plugins.JobRun", b =>
+                {
+                    b.Property<string>("PluginId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ClaimedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset?>("ClaimedUntil")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset?>("LastRunAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("NextRunAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("PluginId", "Name");
+
+                    b.ToTable("JobRuns");
+                });
+
             modelBuilder.Entity("Kb.Core.Plugins.PluginPackage", b =>
                 {
                     b.Property<string>("PluginId")

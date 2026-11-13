@@ -47,6 +47,8 @@ public sealed class ProbeState(IPluginContext context)
     public ConcurrentDictionary<string, int> ByAction { get; } = new();
     /// <summary>The last core action an after handler saw, with the id of its result: "page.create|&lt;id&gt;".</summary>
     public string? LastAfterAny { get; set; }
+    public string? LastJob { get; set; }
+    public string? LastJobRead { get; set; }
 
     public void Count(string kind, string action) => ByAction.AddOrUpdate($"{kind}:{action}", 1, (_, n) => n + 1);
 
@@ -212,7 +214,7 @@ public static class ProbeRoutes
     {
         group.MapPost("/echo", (EchoBody body, IActionBus bus, CancellationToken ct) => bus.SendAsync(new ProbeEcho { Target = body.Target, Text = body.Text }, ct).ToHttp());
         group.MapGet("/peek/{target}", (string target, IActionBus bus, CancellationToken ct) => bus.SendAsync(new ProbePeek { Target = target }, ct).ToHttp());
-        group.MapGet("/counters", (ProbeState state) => Results.Ok(new { hooks = state.Hooks, handled = state.Handled, filters = state.Filters, after = state.After, afterReads = state.AfterReads, lastAfter = state.LastAfter, lastActor = state.LastActor, written = state.Written, byAction = state.ByAction, lastAfterAny = state.LastAfterAny }));
+        group.MapGet("/counters", (ProbeState state) => Results.Ok(new { hooks = state.Hooks, handled = state.Handled, filters = state.Filters, after = state.After, afterReads = state.AfterReads, lastAfter = state.LastAfter, lastActor = state.LastActor, written = state.Written, byAction = state.ByAction, lastAfterAny = state.LastAfterAny, lastJob = state.LastJob, lastJobRead = state.LastJobRead }));
         // A route that names one action and sends another: the bus must refuse it.
         group.MapGet("/mismatch", (IActionBus bus, CancellationToken ct) => bus.SendAsync(new ProbeEcho { Target = "mismatch", Text = "x" }, ct).ToHttp()).WithAction<ProbePeek>();
         group.MapGet("/hello", () => Results.Ok(new { hello = "anonymous" })).AllowAnonymous();

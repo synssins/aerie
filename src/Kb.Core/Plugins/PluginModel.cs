@@ -35,6 +35,18 @@ public sealed class PluginStatus
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+/// <summary>When a plugin's job ran, when it runs next, and which server is running it now. Key: (PluginId, Name).</summary>
+public sealed class JobRun
+{
+    public required string PluginId { get; set; }
+    public required string Name { get; set; }
+    public DateTimeOffset NextRunAt { get; set; }
+    public DateTimeOffset? LastRunAt { get; set; }
+    public string? LastError { get; set; }
+    public string? ClaimedBy { get; set; }
+    public DateTimeOffset? ClaimedUntil { get; set; }
+}
+
 /// <summary>One setting of a plugin, set in the app. Key: (PluginId, Key).</summary>
 public sealed class PluginSettingValue
 {
