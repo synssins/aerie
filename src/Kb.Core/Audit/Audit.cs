@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Kb.Plugins;
 
 namespace Kb.Core.Audit;
 
@@ -12,8 +13,6 @@ public sealed record AuditEvent(
     string? TargetId = null,
     Guid? SpaceId = null,
     IReadOnlyDictionary<string, string>? Data = null);
-
-public sealed record AuditVerifyResult(bool Valid, long? FirstBrokenSequence);
 
 public interface IAuditLog
 {

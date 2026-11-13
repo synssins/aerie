@@ -1,7 +1,7 @@
 using Kb.Core.Plugins;
 using Kb.Data;
 using Kb.Plugins;
-using Kb.Web.Pipeline;
+using Kb.Plugins.Actions;
 using Microsoft.EntityFrameworkCore;
 
 namespace Kb.Web.Plugins;

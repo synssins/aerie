@@ -4,6 +4,7 @@ using Kb.Core.Audit;
 using Kb.Core.Content;
 using Kb.Core.Spaces;
 using Kb.Data;
+using Kb.Plugins;
 using Microsoft.EntityFrameworkCore;
 
 namespace Kb.Web;

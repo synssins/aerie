@@ -25,9 +25,6 @@ public static class NotificationKinds
     public const string SecurityAlert = "security.alert";
 }
 
-/// <summary>A user's choice for one notification kind.</summary>
-public sealed record NotifyPref(bool InApp, bool Email);
-
 public interface INotificationStore
 {
     Task AddAsync(IEnumerable<Notification> items, CancellationToken ct);

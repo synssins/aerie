@@ -5,6 +5,7 @@ using Kb.Core.Identity;
 using Kb.Core.Notifications;
 using Kb.Core.Plugins;
 using Kb.Core.Spaces;
+using Kb.Plugins;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;

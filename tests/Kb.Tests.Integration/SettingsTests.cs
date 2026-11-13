@@ -4,6 +4,7 @@ using Kb.Core.Audit;
 using Kb.Core.Identity;
 using Kb.Core.Spaces;
 using Kb.Web;
+using Kb.Plugins;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

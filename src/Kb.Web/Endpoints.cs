@@ -6,6 +6,7 @@ using Kb.Core.Identity;
 using Kb.Core.Plugins;
 using Kb.Core.Spaces;
 using Kb.Data;
+using Kb.Plugins;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;

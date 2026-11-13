@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Kb.Plugins;
 
 namespace Kb.Core.Content;
 
@@ -303,10 +304,6 @@ public static class DocText
             .Where(id => id != Guid.Empty).Distinct().ToList();
     }
 }
-
-public enum DiffOp { Same, Add, Del }
-
-public sealed record DiffLine(DiffOp Op, string Text);
 
 /// <summary>Line diff (longest common subsequence), the same shape Git shows.</summary>
 public static class LineDiff

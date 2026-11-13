@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Kb.Core.Identity;
 using Kb.Core.Notifications;
+using Kb.Plugins;
 using Microsoft.AspNetCore.Identity;
 
 namespace Kb.Web;

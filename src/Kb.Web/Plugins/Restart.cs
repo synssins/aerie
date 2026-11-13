@@ -43,6 +43,9 @@ public static class PluginGeneration
 public sealed class PluginWatcher(IServiceScopeFactory scopes, PluginRegistry registry, IAppRestarter restarter, TimeProvider time, ILogger<PluginWatcher> log) : BackgroundService
 {
     private long _known = registry.Generation;
+
+    /// <summary>True once the plugins changed since this server started: it runs an old set until it has restarted.</summary>
+    public bool Stale => Interlocked.Read(ref _known) != registry.Generation;
     private volatile string? _stamp;
 
     /// <summary>Called by this server after it made a change itself: it already asked for its restart.</summary>

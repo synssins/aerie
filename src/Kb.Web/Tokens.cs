@@ -5,6 +5,7 @@ using Kb.Core.Audit;
 using Kb.Core.Identity;
 using Kb.Core.Spaces;
 using Kb.Data;
+using Kb.Plugins;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;

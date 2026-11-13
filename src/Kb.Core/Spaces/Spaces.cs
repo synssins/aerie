@@ -1,20 +1,6 @@
+using Kb.Plugins;
+
 namespace Kb.Core.Spaces;
-
-public enum SpaceRole { Reader = 1, Contributor = 2, Supervisor = 3, Owner = 4 }
-
-public enum SpaceAction
-{
-    Read,
-    CreateEdit,
-    MoveDeleteOwn,
-    MoveDeleteOthers,
-    SeeOthersDrafts,
-    ReviewTeamHistory,
-    ManageBinAgingComments,
-    RemoveAttribution,
-    ManageRolesSettingsSensitive,
-    ApproveAccessRequests,
-}
 
 /// <summary>Spec §7 role matrix: minimum role for each action.</summary>
 public static class RoleMatrix
@@ -50,10 +36,6 @@ public sealed class Space
     /// <summary>Recycle-bin retention override; null uses Kb:Retention:RecycleDays.</summary>
     public int? RecycleDays { get; set; }
 }
-
-public enum AgingAudience { Everyone, Supervisors }
-
-public enum PrincipalType { User, Group }
 
 public sealed class SpaceRoleAssignment
 {

@@ -8,7 +8,9 @@ using Kb.Core.Spaces;
 using Kb.Data;
 using Kb.Data.Plugins;
 using Kb.Plugins;
+using Kb.Plugins.Actions;
 using Kb.Web;
+using Kb.Web.Pipeline;
 using Kb.Web.Plugins;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
@@ -120,6 +122,12 @@ services.AddScoped<IAuditLog, SqlAuditLog>();
 services.AddScoped<ISpaceAccessData, SpaceAccessData>();
 services.AddScoped<SpacePermissionService>();
 services.AddScoped<ISpacePermissionService, TokenScopedPermissions>();
+services.AddScoped<IAccess, SpaceAccess>();
+// ---- the action pipeline ----
+services.AddSingleton<ActionCatalog>();
+services.AddScoped<ActorAccessor>();
+services.AddScoped<IActorAccessor>(sp => sp.GetRequiredService<ActorAccessor>());
+services.AddScoped<IActionBus, ActionBus>();
 services.AddScoped<IAccessData, AccessData>();
 services.AddScoped<INotificationStore, NotificationStore>();
 services.AddScoped<IUserDirectory, UserDirectory>();
@@ -188,6 +196,11 @@ api.MapPluginAdminEndpoints();
 api.MapSearchEndpoints();
 api.MapHomeEndpoints();
 api.MapExportEndpoints();
+// Each loaded plugin's own routes, under /api/v1/plugins/<id>/. They need sign-in unless a route says AllowAnonymous, and are closed to API tokens.
+// A server that runs an old set of plugins answers 503 there until it has restarted.
+foreach (var routes in boot.Registrations.All<RouteMap>())
+    routes.Value.Map(api.MapGroup($"/plugins/{routes.PluginId}").AddEndpointFilter(async (ctx, next) =>
+        ctx.HttpContext.RequestServices.GetRequiredService<PluginWatcher>().Stale ? Results.StatusCode(StatusCodes.Status503ServiceUnavailable) : await next(ctx)));
 // Unknown API routes: authenticated callers get 404, anonymous get 401 (fallback policy).
 api.MapFallback(() => Results.NotFound());
 

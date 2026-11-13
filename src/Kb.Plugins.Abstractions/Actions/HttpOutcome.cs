@@ -1,11 +1,18 @@
-using Kb.Plugins;
+using Microsoft.AspNetCore.Http;
 
-namespace Kb.Web.Pipeline;
+namespace Kb.Plugins.Actions;
 
-/// <summary>Turns an <see cref="Outcome{T}"/> into the HTTP answer. One place, so every route answers a problem the same way.</summary>
+/// <summary>
+/// Turns an <see cref="Outcome{T}"/> into the HTTP answer. One place, so every route, the core's and a plugin's, answers a problem the same way.
+/// </summary>
 public static class HttpOutcome
 {
-    public static IResult ToHttp<T>(this Outcome<T> outcome) => outcome.ToHttp(value => value is Unit ? Results.NoContent() : Results.Ok(value));
+    public static IResult ToHttp<T>(this Outcome<T> outcome) => outcome.ToHttp(value => value switch
+    {
+        Unit => Results.NoContent(),
+        FileOut file => new FileOutResult(file),
+        _ => Results.Ok(value),
+    });
 
     public static IResult ToHttp<T>(this Outcome<T> outcome, Func<T, IResult> ok)
     {
@@ -41,5 +48,16 @@ public static class HttpOutcome
             { Message: { } message } => Results.Problem(detail: message, statusCode: problem.Status),
             _ => Results.StatusCode(problem.Status),
         };
+    }
+
+    /// <summary>Streams a file with the headers the action gave it. A file name makes it a download.</summary>
+    private sealed class FileOutResult(FileOut file) : IResult
+    {
+        public async Task ExecuteAsync(HttpContext httpContext)
+        {
+            foreach (var (name, value) in file.Headers) httpContext.Response.Headers[name] = value;
+            var stream = await file.Open(httpContext.RequestAborted);
+            await Results.Stream(stream, file.ContentType, file.FileName).ExecuteAsync(httpContext);
+        }
     }
 }

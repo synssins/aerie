@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Kb.Plugins;
-using Kb.Web.Pipeline;
+using Kb.Plugins.Actions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -52,5 +52,24 @@ public sealed class HttpOutcomeTests
 
         var later = await RunAsync(await Task.FromResult<Outcome<Thing>>(new Thing("b")).ToHttp());
         Assert.Equal(200, later.Status);
+    }
+
+    [Fact]
+    public async Task ToHttp_FileOut_StreamsWithItsHeaders()
+    {
+        var http = new DefaultHttpContext { RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider() };
+        http.Response.Body = new MemoryStream();
+        Outcome<FileOut> file = new FileOut
+        {
+            ContentType = "text/plain", FileName = "notes.txt", Headers = new Dictionary<string, string> { ["Content-Security-Policy"] = "default-src 'none'; sandbox" },
+            Open = _ => Task.FromResult<Stream>(new MemoryStream("the file"u8.ToArray())),
+        };
+        await file.ToHttp().ExecuteAsync(http);
+
+        http.Response.Body.Position = 0;
+        Assert.Equal("the file", await new StreamReader(http.Response.Body).ReadToEndAsync(TestContext.Current.CancellationToken));
+        Assert.Equal((200, "text/plain"), (http.Response.StatusCode, http.Response.ContentType));
+        Assert.Equal("default-src 'none'; sandbox", http.Response.Headers.ContentSecurityPolicy.ToString());
+        Assert.Contains("notes.txt", http.Response.Headers.ContentDisposition.ToString());
     }
 }

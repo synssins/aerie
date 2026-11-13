@@ -2,6 +2,7 @@ using Kb.Core.Audit;
 using Kb.Core.Config;
 using Kb.Core.Notifications;
 using Kb.Core.Spaces;
+using Kb.Plugins;
 using Microsoft.Extensions.Options;
 
 namespace Kb.Core.Access;

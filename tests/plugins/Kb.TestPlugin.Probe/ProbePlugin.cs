@@ -1,4 +1,5 @@
 using Kb.Plugins;
+using Kb.Plugins.Actions;
 using Microsoft.Extensions.DependencyInjection;
 
 [assembly: KbPlugin(typeof(Kb.TestPlugin.Probe.ProbePlugin))]
@@ -13,6 +14,7 @@ public sealed class ProbePlugin : IKbPlugin
 {
     public void ConfigureServices(IServiceCollection services, IPluginContext context)
     {
+        services.AddSingleton(new ProbeState(context));
         // A test proves the plugin is loaded by finding this sink in the container.
         services.AddSingleton<IAuditSink>(new ProbeSink(context));
         if (context.GetSetting("FailOn") == "services") throw new InvalidOperationException("Probe failed in ConfigureServices.");
@@ -28,6 +30,13 @@ public sealed class ProbePlugin : IKbPlugin
     public void Configure(IPluginApp app, IPluginContext context)
     {
         if (context.GetSetting("FailOn") == "configure") throw new InvalidOperationException("Probe failed in Configure.\nSecond line of the error.");
+        // How a hook is registered is fixed here; what it does is read from the settings each time it runs.
+        var optional = context.GetSetting("Optional") == "true";
+        app.Handle<ProbeEcho, ProbeEchoResult, EchoHandler>()
+            .Handle<ProbePeek, ProbePeekResult, PeekHandler>()
+            .Before<ProbeEcho, EchoHook>(optional)
+            .Filter<ProbePeek, ProbePeekResult, PeekFilter>(optional)
+            .Routes(ProbeRoutes.Map);
     }
 }
 

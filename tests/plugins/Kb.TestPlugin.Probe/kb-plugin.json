@@ -18,7 +18,9 @@
         "",
         "services",
         "configure",
-        "sink"
+        "sink",
+        "before",
+        "filter"
       ]
     },
     {
@@ -39,6 +41,30 @@
       "key": "Mode",
       "label": "Mode",
       "restart": true
+    },
+    {
+      "key": "Deny",
+      "label": "Deny"
+    },
+    {
+      "key": "Refuse",
+      "label": "Refuse"
+    },
+    {
+      "key": "Rewrite",
+      "label": "Rewrite"
+    },
+    {
+      "key": "SwapTarget",
+      "label": "SwapTarget"
+    },
+    {
+      "key": "Optional",
+      "label": "Optional"
+    },
+    {
+      "key": "Nested",
+      "label": "Nested"
     }
   ]
 }

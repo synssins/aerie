@@ -2,4 +2,11 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The host makes actors and action contexts; a plugin cannot. -->
+    <InternalsVisibleTo Include="Kb.Core" />
+    <InternalsVisibleTo Include="Kb.Web" />
+    <InternalsVisibleTo Include="Kb.Tests.Unit" />
+    <InternalsVisibleTo Include="Kb.Tests.Integration" />
+  </ItemGroup>
 </Project>
