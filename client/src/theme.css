@@ -250,6 +250,7 @@ textarea { resize: both; max-width: 100%; }
 .dlg h2 { font-size: 17px; margin: 0 0 14px; }
 .dlg form, .dlg { display: flex; flex-direction: column; gap: 12px; }
 .dlg label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 500; }
+.dlg label.check { flex-direction: row; align-items: center; gap: 8px; margin: 0; }
 .dlg input:not([type="checkbox"]), .admin-form input { height: 36px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; font: inherit; background: var(--paper); color: var(--ink); }
 .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .tb.danger { background: var(--danger); color: #fff; border-color: var(--danger); }

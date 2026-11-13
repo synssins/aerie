@@ -41,6 +41,10 @@ public static class AuditActions
     public const string AnnouncerSet = "user.announcer.set";
     public const string LocalDisabled = "auth.local.disable";
     public const string UserInvite = "user.invite";
+    public const string UserDelete = "user.delete";
+    public const string UserPasswordLink = "user.password.link";
+    public const string PasswordSet = "auth.password.set";
+    public const string PasswordSetFailed = "auth.password.set.failed";
     public const string SpaceCreate = "space.create";
     public const string SpaceUpdate = "space.update";
     public const string SpaceSensitiveSet = "space.sensitive.set";

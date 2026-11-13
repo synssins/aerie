@@ -25,6 +25,23 @@ public sealed record InvitedUser(Guid Id, string SetPasswordToken)
     public override string ToString() => $"InvitedUser {{ Id = {Id} }}";
 }
 
+/// <summary>Makes a new link with which a local account's password is set. Core only: the answer carries the token.</summary>
+[Action("user.password.link")]
+public sealed record NewPasswordLink : IAction<InvitedUser>
+{
+    public required Guid UserId { get; init; }
+}
+
+/// <summary>
+/// Deletes a local account. Core only. The account is closed at once (sessions, API tokens, sign-in) and holds nothing afterwards;
+/// its row stays, so history still names the person.
+/// </summary>
+[Action("user.delete")]
+public sealed record DeleteUser : IAction<Unit>
+{
+    public required Guid UserId { get; init; }
+}
+
 // Every action here is an Admin's: AuthorizeAsync answers 403 to anyone else. An Admin is always a signed-in person, so ctx.Actor.UserId is set in HandleAsync.
 
 internal sealed class VerifyAuditHandler(IAuditLog audit, IAccess access) : IActionHandler<VerifyAudit, AuditVerifyResult>
@@ -56,7 +73,7 @@ internal sealed class ListUsersHandler(KbDbContext db, IAccess access, Kb.Core.P
 
     public async Task<Outcome<IReadOnlyList<AdminUserDto>>> HandleAsync(ActionContext<ListUsers> ctx)
     {
-        var users = await db.Users.AsNoTracking().OrderBy(u => u.DisplayName)
+        var users = await db.Users.AsNoTracking().Where(u => u.DeletedAt == null).OrderBy(u => u.DisplayName)
             .Select(u => new AdminUserDto(u.Id, u.UserName!, u.DisplayName, u.Source.ToString(), u.IsAdmin, u.IsBreakGlass, u.CreatedAt, u.DeactivatedAt, u.CanAnnounce, null))
             .ToListAsync(ctx.Cancel);
         // The global plugin permissions each person holds: an Admin every one, anyone else those they were given.
@@ -105,7 +122,9 @@ internal sealed class InviteUserHandler(UserManager<KbUser> users, IAccess acces
     {
         var req = ctx.Action;
         if (string.IsNullOrWhiteSpace(req.UserName)) return Problem.Invalid("userName", "Required.");
-        var u = new KbUser { UserName = req.UserName.Trim(), DisplayName = req.DisplayName, Email = req.Email, Source = UserSource.Local, IsAdmin = req.IsAdmin, CreatedAt = time.GetUtcNow(), LockoutEnabled = true };
+        if (string.IsNullOrWhiteSpace(req.DisplayName)) return Problem.Invalid("displayName", "Required.");
+        if (req.UserName.Trim().Length > 64 || req.DisplayName.Trim().Length > 100) return Problem.Invalid("userName", "Too long.");
+        var u = new KbUser { UserName = req.UserName.Trim(), DisplayName = req.DisplayName.Trim(), Email = string.IsNullOrWhiteSpace(req.Email) ? null : req.Email.Trim(), Source = UserSource.Local, IsAdmin = req.IsAdmin, CreatedAt = time.GetUtcNow(), LockoutEnabled = true };
         var result = await users.CreateAsync(u);
         if (!result.Succeeded) return new Problem(400, Fields: new Dictionary<string, string[]> { ["user"] = [.. result.Errors.Select(e => e.Description)] });
         var token = await users.GeneratePasswordResetTokenAsync(u);
@@ -138,6 +157,74 @@ internal sealed class SetPublicSpaceHandler(KbDbContext db, IAccess access, Time
         var enabled = ctx.Action.Enabled;
         await db.SetAsync(RuntimeSettingKeys.PublicSpaceEnabled, enabled ? "true" : "false", ctx.Actor.UserId, time.GetUtcNow());
         ctx.Audit(AuditActions.SettingsChange, "setting", RuntimeSettingKeys.PublicSpaceEnabled, data: new Dictionary<string, string> { ["value"] = enabled.ToString() });
+        return new Unit();
+    }
+}
+
+internal sealed class NewPasswordLinkHandler(KbDbContext db, UserManager<KbUser> users, IAccess access) : IActionHandler<NewPasswordLink, InvitedUser>
+{
+    private KbUser? _user;
+
+    public async Task<Problem?> AuthorizeAsync(ActionContext<NewPasswordLink> ctx)
+    {
+        if (!await access.IsAdminAsync(ctx.Actor, ctx.Cancel)) return Problem.Forbidden;
+        var id = ctx.Action.UserId;
+        return (_user = await db.Users.FirstOrDefaultAsync(u => u.Id == id && u.DeletedAt == null, ctx.Cancel)) is null ? Problem.NotFound : null;
+    }
+
+    public async Task<Outcome<InvitedUser>> HandleAsync(ActionContext<NewPasswordLink> ctx)
+    {
+        var u = _user!;
+        // The break-glass password is the server's secret, and an account of a directory has its password there.
+        if (u.IsBreakGlass) return Problem.Conflict("The break-glass account has no password link.");
+        if (u.Source != UserSource.Local || u.DeactivatedAt is not null) return Problem.Conflict("Only an active local user has a password.");
+        var token = await users.GeneratePasswordResetTokenAsync(u);
+        ctx.Audit(AuditActions.UserPasswordLink, "user", u.Id.ToString());
+        return new InvitedUser(u.Id, token);
+    }
+}
+
+internal sealed class DeleteUserHandler(KbDbContext db, IAccess access, TimeProvider time) : IActionHandler<DeleteUser, Unit>
+{
+    private KbUser? _user;
+
+    public async Task<Problem?> AuthorizeAsync(ActionContext<DeleteUser> ctx)
+    {
+        if (!await access.IsAdminAsync(ctx.Actor, ctx.Cancel)) return Problem.Forbidden;
+        var id = ctx.Action.UserId;
+        return (_user = await db.Users.FirstOrDefaultAsync(u => u.Id == id && u.DeletedAt == null, ctx.Cancel)) is null ? Problem.NotFound : null;
+    }
+
+    public async Task<Outcome<Unit>> HandleAsync(ActionContext<DeleteUser> ctx)
+    {
+        var u = _user!;
+        if (u.Id == ctx.Actor.UserId) return Problem.Conflict("You can't delete your own account.");
+        if (u.IsBreakGlass) return Problem.Conflict("The break-glass account can't be deleted.");
+        if (u.Source != UserSource.Local) return Problem.Conflict("Only local users can be deleted.");
+        // Without an Administrator besides the break-glass account the app would ask to be set up again.
+        if (u.IsAdmin && u.DeactivatedAt is null && !await db.Users.AnyAsync(x => x.Id != u.Id && x.IsAdmin && !x.IsBreakGlass && x.DeactivatedAt == null))
+            return Problem.Conflict("The last administrator can't be deleted.");
+
+        var (now, name, id) = (time.GetUtcNow(), u.UserName ?? "", u.Id.ToString("D"));
+        // The account is closed: nothing to sign in with, a new stamp (every open session ends at its next request), no rights.
+        // The row and the display name stay, so pages and audit entries still name their author.
+        (u.DeletedAt, u.DeactivatedAt) = (now, u.DeactivatedAt ?? now);
+        (u.PasswordHash, u.SecurityStamp, u.IsAdmin, u.CanAnnounce) = (null, Guid.NewGuid().ToString("N"), false, false);
+        (u.Email, u.NormalizedEmail, u.PhoneNumber) = (null, null, null);
+        // Its user name is free for a new account; this one keeps a name nobody can type at the sign-in.
+        u.UserName = $"deleted-{u.Id:N}";
+        u.NormalizedUserName = u.UserName.ToUpperInvariant();
+        // What the account held goes with it. API tokens are revoked, not removed: their use is in the audit log.
+        db.SpaceRoleAssignments.RemoveRange(await db.SpaceRoleAssignments.Where(a => a.PrincipalType == PrincipalType.User && a.PrincipalId == id).ToListAsync());
+        db.SpaceAccessGrants.RemoveRange(await db.SpaceAccessGrants.Where(g => g.UserId == u.Id).ToListAsync());
+        db.AccessRequests.RemoveRange(await db.AccessRequests.Where(r => r.RequesterId == u.Id && r.Status == Kb.Core.Access.AccessRequestStatus.Pending).ToListAsync());
+        db.UserPermissions.RemoveRange(await db.UserPermissions.Where(p => p.UserId == u.Id).ToListAsync());
+        db.KbGroupMembers.RemoveRange(await db.KbGroupMembers.Where(m => m.UserId == u.Id).ToListAsync());
+        db.PageDrafts.RemoveRange(await db.PageDrafts.Where(d => d.UserId == u.Id).ToListAsync());
+        db.Notifications.RemoveRange(await db.Notifications.Where(n => n.UserId == u.Id).ToListAsync());
+        foreach (var token in await db.ApiTokens.Where(t => t.OwnerUserId == u.Id && t.RevokedAt == null).ToListAsync()) token.RevokedAt = now;
+        await db.SaveChangesAsync();
+        ctx.Audit(AuditActions.UserDelete, "user", u.Id.ToString(), data: new Dictionary<string, string> { ["userName"] = name });
         return new Unit();
     }
 }

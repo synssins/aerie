@@ -84,6 +84,16 @@ Read. `VerifyAudit`, answers `AuditVerifyResult`.
 
 Write. `DisableLocalSignIn`, answers `Unit`.
 
+## auth.password.set
+
+Write. `SetPassword`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| UserId | `Guid` | required |
+| Token | `string` | required |
+| Password | `string` | required |
+
 ## auth.signin
 
 Write. `SignIn`, answers `MeResponse`.
@@ -820,6 +830,14 @@ Write. `SetAnnouncer`, answers `Unit`.
 | UserId | `Guid` | required |
 | Enabled | `bool` | required |
 
+## user.delete
+
+Write. `DeleteUser`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| UserId | `Guid` | required |
+
 ## user.invite
 
 Write. `InviteUser`, answers `InvitedUser`. Core only.
@@ -834,6 +852,14 @@ Write. `InviteUser`, answers `InvitedUser`. Core only.
 ## user.list
 
 Read. `ListUsers`, answers `IReadOnlyList<AdminUserDto>`.
+
+## user.password.link
+
+Write. `NewPasswordLink`, answers `InvitedUser`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| UserId | `Guid` | required |
 
 ## user.permissions.set
 

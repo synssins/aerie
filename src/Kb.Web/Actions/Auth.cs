@@ -6,6 +6,49 @@ using System.Text.Json;
 
 namespace Kb.Web.Actions;
 
+/// <summary>
+/// Sets a local account's password with the link an Admin handed over. Core only: it carries the token and the new password.
+/// Nobody is signed in when it is sent.
+/// </summary>
+[Action("auth.password.set")]
+public sealed record SetPassword : IAction<Unit>
+{
+    public required Guid UserId { get; init; }
+    public required string Token { get; init; }
+    public required string Password { get; init; }
+
+    public override string ToString() => $"SetPassword {{ UserId = {UserId} }}";
+}
+
+internal sealed class SetPasswordHandler(UserManager<KbUser> users, IAuditLog audit) : IActionHandler<SetPassword, Unit>
+{
+    // The link is the right to do this; it is checked as the work, as a password is at sign-in.
+    public Task<Problem?> AuthorizeAsync(ActionContext<SetPassword> ctx) => Task.FromResult<Problem?>(null);
+
+    public async Task<Outcome<Unit>> HandleAsync(ActionContext<SetPassword> ctx)
+    {
+        var (req, ip) = (ctx.Action, ctx.Actor.RemoteIp ?? "");
+        var user = await users.FindByIdAsync(req.UserId.ToString());
+        // One answer for every reason, so it does not tell which accounts exist. The break-glass password is the server's secret.
+        async Task<Outcome<Unit>> RefusedAsync(string reason)
+        {
+            await audit.AppendAsync(new AuditEvent(AuditActions.PasswordSetFailed, user?.Id, "user", user?.Id.ToString(), Data: new Dictionary<string, string> { ["reason"] = reason, ["ip"] = ip }));
+            return new Problem(400, "The link is not valid.");
+        }
+        if (user is null || user.DeactivatedAt is not null || user.IsBreakGlass || user.Source != UserSource.Local) return await RefusedAsync("no such account");
+        if (string.IsNullOrEmpty(req.Token) || !await users.VerifyUserTokenAsync(user, users.Options.Tokens.PasswordResetTokenProvider, UserManager<KbUser>.ResetPasswordTokenPurpose, req.Token))
+            return await RefusedAsync("wrong or used link");
+
+        var result = await users.ResetPasswordAsync(user, req.Token, req.Password ?? "");
+        if (!result.Succeeded) return new Problem(400, Fields: new Dictionary<string, string[]> { ["password"] = [.. result.Errors.Select(e => e.Description)] });
+        // A fresh start: earlier failed sign-ins do not keep the account locked. The new stamp ends every open session.
+        await users.SetLockoutEndDateAsync(user, null);
+        await users.ResetAccessFailedCountAsync(user);
+        await audit.AppendAsync(new AuditEvent(AuditActions.PasswordSet, user.Id, "user", user.Id.ToString(), Data: new Dictionary<string, string> { ["method"] = "link" }));
+        return new Unit();
+    }
+}
+
 internal sealed class SignInHandler(SignInManager<KbUser> signIn, UserManager<KbUser> users, KbDbContext db, IAuditLog audit, BreakGlassService breakGlass, Kb.Core.Plugins.PluginRegistry plugins)
     : IActionHandler<SignIn, MeResponse>
 {

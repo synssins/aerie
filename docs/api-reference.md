@@ -55,12 +55,15 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | PUT | `/api/v1/admin/uploads` | `settings.uploads.save` | Yes | Needed | No |
 | GET | `/api/v1/admin/users` | `user.list` | No | Needed | No |
 | POST | `/api/v1/admin/users/invite` | `user.invite` | Yes | Needed | No |
+| DELETE | `/api/v1/admin/users/{id:guid}` | `user.delete` | Yes | Needed | No |
 | PUT | `/api/v1/admin/users/{id:guid}/announcer` | `user.announcer.set` | Yes | Needed | No |
+| POST | `/api/v1/admin/users/{id:guid}/password-link` | `user.password.link` | Yes | Needed | No |
 | PUT | `/api/v1/admin/users/{id:guid}/permissions` | `user.permissions.set` | Yes | Needed | No |
 | POST | `/api/v1/announcements` | `announcement.post` | Yes | Needed | No |
 | DELETE | `/api/v1/announcements/{id:guid}` | `announcement.remove` | Yes | Needed | No |
 | DELETE | `/api/v1/attachments/{id:guid}` | `attachment.remove` | Yes | Needed | Write |
 | GET | `/api/v1/attachments/{id:guid}` | `attachment.read` | No | Needed | Read |
+| POST | `/api/v1/auth/local/password` | `auth.password.set` | Yes | Not needed | No |
 | POST | `/api/v1/auth/local/signin` | `auth.signin` | Yes | Not needed | No |
 | POST | `/api/v1/auth/signout` | `auth.signout` | Yes | Needed | No |
 | GET | `/api/v1/brand` | `brand.read` | No | Not needed | Read |

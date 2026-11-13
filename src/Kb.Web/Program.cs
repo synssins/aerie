@@ -59,6 +59,20 @@ services.ConfigureApplicationCookie(o =>
     // API callers get status codes, never login redirects.
     o.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
     o.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
+    // A session ends at once when its account is deleted or deactivated, or its password is set anew: each request reads the
+    // account's stamp and compares it with the one the session was opened with. (The framework's own check runs every 30 minutes.)
+    o.Events.OnValidatePrincipal = async ctx =>
+    {
+        var stamp = Guid.TryParse(ctx.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var id)
+            ? await ctx.HttpContext.RequestServices.GetRequiredService<KbDbContext>().Users.AsNoTracking()
+                .Where(u => u.Id == id && u.DeactivatedAt == null).Select(u => u.SecurityStamp).FirstOrDefaultAsync(ctx.HttpContext.RequestAborted)
+            : null;
+        if (stamp is null || stamp != ctx.Principal!.FindFirst(ctx.HttpContext.RequestServices.GetRequiredService<IOptions<IdentityOptions>>().Value.ClaimsIdentity.SecurityStampClaimType)?.Value)
+        {
+            ctx.RejectPrincipal();
+            await Microsoft.AspNetCore.Authentication.AuthenticationHttpContextExtensions.SignOutAsync(ctx.HttpContext, IdentityConstants.ApplicationScheme);
+        }
+    };
 });
 
 // API tokens beside the sign-in cookie: a request with a Bearer header goes to the token handler, every other one to the cookie.
@@ -75,7 +89,8 @@ services.AddRateLimiter(o =>
     o.GlobalLimiter = System.Threading.RateLimiting.PartitionedRateLimiter.Create<HttpContext, string>(http =>
         ApiTokenAuth.PresentedId(http) is { } tokenId
             ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("token:" + tokenId, _ => new() { PermitLimit = kb.Tokens.RequestsPerMinute, Window = TimeSpan.FromMinutes(1) })
-        : HttpMethods.IsPost(http.Request.Method) && http.Request.Path.Equals("/api/v1/auth/local/signin", StringComparison.OrdinalIgnoreCase)
+        : HttpMethods.IsPost(http.Request.Method) && (http.Request.Path.Equals("/api/v1/auth/local/signin", StringComparison.OrdinalIgnoreCase)
+            || http.Request.Path.Equals("/api/v1/auth/local/password", StringComparison.OrdinalIgnoreCase)) // guessing a link is counted like guessing a password
             ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("signin:" + http.Connection.RemoteIpAddress, _ => new() { PermitLimit = kb.Auth.SignInsPerMinutePerAddress, Window = TimeSpan.FromMinutes(1) })
         : System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter(""));
 });

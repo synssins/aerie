@@ -5,12 +5,15 @@ import { SignIn } from "./SignIn";
 import { Setup, type SetupStatus } from "./Setup";
 import { session } from "./kit/host";
 import { loadPluginsOnce } from "./kit/loader";
+import { passwordLinkAt, SetPassword } from "./SetPassword";
 
 export function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [brand, setBrand] = useState<Brand | null>(null);
   const loadBrand = () => api.get<Brand>("/brand").then((b) => { setBrand(b); document.title = b.productName; }).catch(() => undefined);
   const [setup, setSetup] = useState<SetupStatus | null>(null);
+  // A password link opens its own screen, whoever is or is not signed in in this browser.
+  const [link, setLink] = useState(() => passwordLinkAt(location.pathname, location.hash));
 
   useEffect(() => {
     void loadBrand();
@@ -23,6 +26,7 @@ export function App() {
   useEffect(() => { session.me = me ?? null; if (me) void loadPluginsOnce(me); }, [me]);
 
   if (me === undefined || !brand || !setup) return null;
+  if (link) return <SetPassword brand={brand} userId={link.userId} token={link.token} onDone={() => { history.replaceState(history.state, "", "/"); setLink(null); }} />;
   if (me === null && setup.required)
     return <Setup brand={brand} codeRequired={setup.codeRequired} onDone={(m) => { setSetup({ required: false, codeRequired: false }); setMe(m); }} />;
   if (me === null) return <SignIn brand={brand} onSignedIn={setMe} />;

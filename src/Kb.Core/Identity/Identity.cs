@@ -18,6 +18,11 @@ public sealed class KbUser : IdentityUser<Guid>
     public DateTimeOffset CreatedAt { get; set; }
     /// <summary>Set when the user leaves every allowed group or is removed. Attribution greys out but stays.</summary>
     public DateTimeOffset? DeactivatedAt { get; set; }
+    /// <summary>
+    /// Set when an Admin deleted the account. The row stays so that history (authors, audit entries) still names a person; the
+    /// account holds nothing, cannot sign in, and its user name is free for a new account. Always deactivated as well.
+    /// </summary>
+    public DateTimeOffset? DeletedAt { get; set; }
     /// <summary>Per-user app settings (theme, layout, notifications) as JSON. See Kb.Web UserSettings.</summary>
     public string SettingsJson { get; set; } = "{}";
 }

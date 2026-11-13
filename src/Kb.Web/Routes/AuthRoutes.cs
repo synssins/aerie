@@ -1,7 +1,14 @@
+using Kb.Web.Actions;
 namespace Kb.Web;
 
 public sealed record SignInRequest(string UserName, string Password);
 public sealed record SetupRequest(string UserName, string DisplayName, string Password, string? Code);
+
+/// <summary>The body of the set-password request. Its text form leaves out the token and the password.</summary>
+public sealed record SetPasswordRequest(Guid UserId, string? Token, string? Password)
+{
+    public override string ToString() => $"SetPasswordRequest {{ UserId = {UserId} }}";
+}
 
 public static class AuthRoutes
 {
@@ -9,6 +16,10 @@ public static class AuthRoutes
     {
         api.MapPost("/auth/local/signin", (SignInRequest req, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new SignIn { UserName = req.UserName, Password = req.Password }, ct).ToHttp()).AllowAnonymous().WithAction<SignIn>();
+
+        // With the link an Admin handed over. Nobody is signed in; the link is the right to do it.
+        api.MapPost("/auth/local/password", (SetPasswordRequest req, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new SetPassword { UserId = req.UserId, Token = req.Token ?? "", Password = req.Password ?? "" }, ct).ToHttp()).AllowAnonymous().WithAction<SetPassword>();
 
         api.MapPost("/auth/signout", (IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new SignOut(), ct).ToHttp()).WithAction<SignOut>();

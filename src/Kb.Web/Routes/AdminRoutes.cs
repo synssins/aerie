@@ -26,6 +26,12 @@ public static class AdminRoutes
         admin.MapPost("/users/invite", (InviteRequest req, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new InviteUser { UserName = req.UserName, DisplayName = req.DisplayName, Email = req.Email, IsAdmin = req.IsAdmin }, ct).ToHttp()).WithAction<InviteUser>();
 
+        admin.MapPost("/users/{id:guid}/password-link", (Guid id, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new NewPasswordLink { UserId = id }, ct).ToHttp()).WithAction<NewPasswordLink>();
+
+        admin.MapDelete("/users/{id:guid}", (Guid id, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new DeleteUser { UserId = id }, ct).ToHttp()).WithAction<DeleteUser>();
+
         admin.MapPost("/auth/local/disable", (IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new DisableLocalSignIn(), ct).ToHttp()).WithAction<DisableLocalSignIn>();
 

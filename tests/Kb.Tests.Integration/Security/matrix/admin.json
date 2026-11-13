@@ -57,5 +57,19 @@
     "body": {},
     "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
     "scope": "server"
+  },
+  {
+    "action": "user.password.link",
+    "method": "POST",
+    "path": "/api/v1/admin/users/{victim}/password-link",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "user.delete",
+    "method": "DELETE",
+    "path": "/api/v1/admin/users/{victim}",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 204},
+    "scope": "server"
   }
 ]

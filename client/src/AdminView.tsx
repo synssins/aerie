@@ -6,6 +6,7 @@ import { LogShipping } from "./admin/LogShipping";
 import { Plugins } from "./admin/Plugins";
 import { Storage } from "./admin/Storage";
 import { UsersTable, type PermissionColumn } from "./admin/Users";
+import { UserTools } from "./admin/UserTools";
 import { TokensPanel } from "./Tokens";
 import { api, ApiError, fmtSize, type AdminUser, type Brand, type PluginInfo, type Space, type TreeNode } from "./api";
 
@@ -43,6 +44,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
   const [verify, setVerify] = useState<string | null>(null);
   const [picked, setPicked] = useState<Picked>(null);
   const [newSpace, setNewSpace] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [uploads, setUploads] = useState<UploadSettings | null>(null);
 
   const loadSpaces = useCallback(async () => { if (isAdmin) setAllSpaces(await api.get<Space[]>("/admin/spaces")); }, [isAdmin]);
@@ -51,18 +53,20 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
   const spaces = isAdmin ? allSpaces : mySpaces.filter((s) => s.myRole === "Owner");
   const space = spaceId ? spaces.find((s) => s.id === spaceId) ?? null : null;
 
+  const loadUsers = useCallback(async () => { setUsers(await api.get<AdminUser[]>("/admin/users")); }, []);
   useEffect(() => {
     setPicked(null);
+    setNotice(null);
     if (!isAdmin) return;
     if (section === "users") {
-      void api.get<AdminUser[]>("/admin/users").then(setUsers);
+      void loadUsers();
       // One column per global permission of a loaded plugin.
       void api.get<{ plugins: PluginInfo[] }>("/admin/plugins").then((r) => setUserPermissions(r.plugins.filter((p) => p.loaded)
         .flatMap((p) => p.permissions.filter((x) => x.scope === "global").map((x) => ({ name: `${p.id}:${x.key}`, label: x.label })))));
     }
     if (section === "uploads") void api.get<UploadSettings>("/admin/uploads").then(setUploads);
     if (section === "audit") { setVerify(null); void api.get<AuditRow[]>("/admin/audit?take=200").then(setAudit); }
-  }, [section, isAdmin]);
+  }, [section, isAdmin, loadUsers]);
 
   async function changed() { await loadSpaces(); await onSpacesChanged(); }
 
@@ -150,9 +154,13 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
                 <div className="ptools">
                   {section === "spaces" && isAdmin && <button className="tb primary" onClick={() => setNewSpace(true)}><Plus className="ic" aria-hidden />New space</button>}
                   {section === "audit" && <button className="tb" onClick={() => void runVerify()}>Verify chain</button>}
+                  {section === "users" && isAdmin && (
+                    <UserTools picked={picked?.kind === "user" ? picked.item : null} onError={setNotice} onChanged={() => { setPicked(null); void loadUsers(); }} />
+                  )}
                 </div>
               </div>
               {verify && <p className="muted" role="status">{verify}</p>}
+              {notice && <p className="form-error" role="alert">{notice}</p>}
 
               {section === "spaces" && (
                 <table className="grid-table">
