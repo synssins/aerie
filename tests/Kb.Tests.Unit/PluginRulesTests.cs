@@ -125,10 +125,15 @@ public class PluginRulesTests
     [Fact]
     public void Manifest_OldFilesStillLoad()
     {
-        var asm = typeof(SmtpPlugin).Assembly;
-        using var stream = asm.GetManifestResourceStream(asm.GetManifestResourceNames().Single(n => n.EndsWith("kb-plugin.json", StringComparison.Ordinal)))!;
-        using var reader = new StreamReader(stream);
-        var m = PluginManifests.Parse(reader.ReadToEnd())!;
+        // A manifest as plugins shipped it before the lifecycle fields existed.
+        var m = PluginManifests.Parse("""
+            {
+              "id": "kb.email.smtp", "version": "1.0.0", "publisher": "Kb first-party", "minKbVersion": "0.1.0",
+              "extensionPoints": ["email-sender"], "outboundHosts": [],
+              "settings": [ { "key": "Host", "label": "SMTP host", "required": true }, { "key": "Password", "label": "Password", "secret": true } ],
+              "schedules": []
+            }
+            """)!;
 
         Assert.Equal(("kb.email.smtp", "1.0.0"), (m.Id, m.Version));
         Assert.Contains(m.Settings, s => s.Key == "Password" && s.Secret && s.Type == "text" && !s.Restart);
@@ -136,6 +141,18 @@ public class PluginRulesTests
         Assert.Empty(m.Permissions);
         Assert.False(m.Enforcing);
         Assert.Null(m.Ui);
+        Assert.Null(m.Name);
+        Assert.Null(PluginVersions.Refusal(m));
+    }
+
+    [Fact]
+    public void Manifest_Shipped_ParsesAndFitsThisHost()
+    {
+        var asm = typeof(SmtpPlugin).Assembly;
+        using var stream = asm.GetManifestResourceStream(asm.GetManifestResourceNames().Single(n => n.EndsWith("kb-plugin.json", StringComparison.Ordinal)))!;
+        using var reader = new StreamReader(stream);
+        var m = PluginManifests.Parse(reader.ReadToEnd())!;
+        Assert.Equal(("kb.email.smtp", "Email (SMTP)"), (m.Id, m.Name));
         Assert.Null(PluginVersions.Refusal(m));
     }
 
