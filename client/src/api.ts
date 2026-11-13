@@ -72,6 +72,11 @@ export type DiffLine = { op: "Same" | "Add" | "Del"; text: string };
 export type Announcement = { id: string; title: string; body: string; by: string; createdAt: string; expiresAt: string | null };
 export type Home = { announcements: Announcement[]; recent: { id: string; title: string; spaceId: string; spaceName: string; updatedAt: string; updatedBy: string }[] };
 
+export type TokenScope = { spaceId: string | null; access: "Read" | "Write" };
+export type ApiToken = {
+  id: string; name: string; kind: "Personal" | "Service"; prefix: string; scopes: TokenScope[]; ownerId: string; owner: string;
+  createdAt: string; expiresAt: string; revokedAt: string | null; lastUsedAt: string | null; state: "Active" | "Expired" | "Revoked";
+};
 export type StorageField = { key: string; label: string; type: "text" | "secret" };
 export type StorageKind = { kind: string; label: string; fields: StorageField[] };
 export type StoragePlace = { id: string; name: string; kind: string; settings: Record<string, string | null>; secretsSet: string[]; role: "Active" | "Target" | "Old"; createdAt: string };

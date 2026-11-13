@@ -2,7 +2,17 @@
 
 The calls an LLM agent uses to find, read and change documentation. Every call is authenticated and trimmed to what the caller may read. All paths are under `/api/v1`.
 
-Agents sign in the same way people do today (session cookie). API tokens are not built yet.
+## Sign in with a token
+
+Send `Authorization: Bearer <token>` with every call. A token looks like `kbt_...` and is shown once, when it is made.
+
+- **Personal token:** made in Settings > API tokens. It acts as the person who made it.
+- **Service token:** made by an Admin in Administration > API tokens, for another system. It acts as a service account that cannot sign in; pages it changes carry the account's name.
+- **Scopes:** each scope is Read or Write, for one space or for all spaces. Read gives the Reader role and Write gives the Contributor role, never more, and never more than the owner of a personal token has. A service token's all-spaces scope does not reach a sensitive space; name the space to include it.
+- **Expiry:** every token has one. The Admin sets the longest life (default 365 days).
+- **Limits:** 600 calls a minute per token, then `429`. A revoked, expired or mistyped token gets `401`.
+- **Closed routes:** a token reaches the calls on this page and nothing else. Administration, token management, sign-in, notifications and settings answer `403`.
+- Every call made with a token is written to the audit log with its method and route.
 
 ## Find
 

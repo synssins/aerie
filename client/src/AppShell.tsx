@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
-  Bell, ChevronDown, ChevronRight, Ellipsis, House, FilePlus, FileText, Folder, FolderCog, FolderInput, FolderPlus, Link as LinkIcon, Plus, Search, Settings,
+  Bell, ChevronDown, ChevronRight, Ellipsis, House, KeyRound, FilePlus, FileText, Folder, FolderCog, FolderInput, FolderPlus, Link as LinkIcon, Plus, Search, Settings,
   ShieldCheck, SlidersHorizontal, Lock, Moon, Sun, Maximize2, Minimize2, ShieldAlert, LogOut, Trash2, UserRound,
 } from "lucide-react";
 import { AccountDialog } from "./AccountDialogs";
@@ -27,7 +27,7 @@ function route(): { space?: string; page?: string; admin?: AdminAt; settings?: S
   if (b) return { space: b[1], bin: true };
   const a = /^\/admin(?:\/([a-z]+))?(?:\/([0-9a-f-]{36}))?$/i.exec(location.pathname);
   if (a) return { admin: { section: ADMIN_SECTIONS.includes(a[1] as AdminSection) ? a[1] as AdminSection : "spaces", spaceId: a[2] ?? null } };
-  const st = /^\/settings(?:\/(preferences|notifications))?$/.exec(location.pathname);
+  const st = /^\/settings(?:\/(preferences|notifications|tokens))?$/.exec(location.pathname);
   if (st) return { settings: (st[1] as SettingsSection | undefined) ?? "preferences" };
   const m = /^\/(s|p)\/([0-9a-f-]{36})$/i.exec(location.pathname);
   return m ? (m[1] === "s" ? { space: m[2] } : { page: m[2] }) : {};
@@ -405,6 +405,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
                   <div className="menu-grp">Settings</div>
                   <button role="menuitem" onClick={() => void openSettings("preferences")}><SlidersHorizontal className="ic" aria-hidden />Preferences</button>
                   <button role="menuitem" onClick={() => void openSettings("notifications")}><Bell className="ic" aria-hidden />Notifications</button>
+                  <button role="menuitem" onClick={() => void openSettings("tokens")}><KeyRound className="ic" aria-hidden />API tokens</button>
                   {(canManageCurrent || me.isAdmin) && <div className="menu-sep" />}
                   {canManageCurrent && (
                     <button role="menuitem" onClick={() => void openAdmin("spaces", current!.id)}>
@@ -453,6 +454,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
               settings={prefs}
               isAdmin={me.isAdmin}
               ownsSpaces={ownsSpaces}
+              spaces={spaces}
               onSection={(x) => void openSettings(x)}
               onChange={saveSettings}
               onExit={backToSpaces}

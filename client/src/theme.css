@@ -418,6 +418,14 @@ label.inline { display: inline-flex; align-items: center; gap: 8px; font-size: 1
 .form .unit input { width: 110px; }
 .form .form-error.wide { grid-column: 2; }
 
+/* API tokens */
+.form.made { margin: 0 0 18px; }
+.form.below { margin-top: 24px; }
+.form .unit.grow input { flex: 1; width: auto; }
+.ptools.row { margin: 0 0 8px; }
+.scopes { display: grid; gap: 8px; justify-items: start; }
+.scope { display: flex; align-items: center; gap: 8px; }
+
 /* Administration > Storage: the move, above the places */
 .move { display: grid; gap: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 14px 0 18px; font-size: 13.5px; }
 .move-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

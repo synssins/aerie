@@ -1,7 +1,8 @@
-import { ArrowLeft, Bell, ChevronRight, House, SlidersHorizontal } from "lucide-react";
-import type { NotifyPref, UserSettings } from "./api";
+import { ArrowLeft, Bell, ChevronRight, House, KeyRound, SlidersHorizontal } from "lucide-react";
+import type { NotifyPref, Space, UserSettings } from "./api";
+import { TokensPanel } from "./Tokens";
 
-export type SettingsSection = "preferences" | "notifications";
+export type SettingsSection = "preferences" | "notifications" | "tokens";
 
 type Event = { kind: string; label: string; locked?: boolean };
 
@@ -20,11 +21,12 @@ function Check({ on, label, disabled, onChange }: { on: boolean; label: string; 
 }
 
 /** User app settings in the three-panel shell. Changes save as they are made. */
-export function SettingsView({ section, settings, isAdmin, ownsSpaces, onSection, onChange, onExit, onHome }: {
+export function SettingsView({ section, settings, isAdmin, ownsSpaces, spaces, onSection, onChange, onExit, onHome }: {
   section: SettingsSection;
   settings: UserSettings;
   isAdmin: boolean;
   ownsSpaces: boolean;
+  spaces: Space[];
   onSection: (s: SettingsSection) => void;
   onChange: (s: UserSettings) => void;
   onExit: () => void;
@@ -52,14 +54,17 @@ export function SettingsView({ section, settings, isAdmin, ownsSpaces, onSection
         <button className={`node ${section === "notifications" ? "cur" : ""}`} onClick={() => onSection("notifications")} aria-current={section === "notifications" ? "page" : undefined}>
           <Bell className="ic" aria-hidden /><span className="grow">Notifications</span>
         </button>
+        <button className={`node ${section === "tokens" ? "cur" : ""}`} onClick={() => onSection("tokens")} aria-current={section === "tokens" ? "page" : undefined}>
+          <KeyRound className="ic" aria-hidden /><span className="grow">API tokens</span>
+        </button>
       </nav>
 
       <main className="doc wide">
         <div className="col">
           <nav className="crumb" aria-label="Breadcrumb"><button className="crumb-home" onClick={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></button><ChevronRight className="ic sm" aria-hidden /><span>Settings</span></nav>
-          <div className="titlebar"><h1>{section === "preferences" ? "Preferences" : "Notifications"}</h1></div>
+          <div className="titlebar"><h1>{section === "preferences" ? "Preferences" : section === "tokens" ? "API tokens" : "Notifications"}</h1></div>
 
-          {section === "preferences" ? (
+          {section === "tokens" ? <TokensPanel admin={false} spaces={spaces} /> : section === "preferences" ? (
             <div className="form">
               <span className="lbl">Theme</span>
               <Seg label="Theme" value={settings.theme} onChange={(v) => set("theme", v)} options={[["light", "Light"], ["dark", "Dark"], ["system", "Match system"]]} />
