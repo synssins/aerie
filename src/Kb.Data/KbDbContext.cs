@@ -77,6 +77,8 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     public DbSet<SearchTerm> SearchTerms => Set<SearchTerm>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<Announcement> Announcements => Set<Announcement>();
+    public DbSet<StoragePlace> StoragePlaces => Set<StoragePlace>();
+    public DbSet<StorageMove> StorageMoves => Set<StorageMove>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -121,6 +123,10 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
         builder.Entity<Attachment>().HasIndex(a => a.PageId);
         builder.Entity<Announcement>().Property(a => a.Title).HasMaxLength(120);
         builder.Entity<Announcement>().Property(a => a.Body).HasMaxLength(2000);
+        builder.Entity<StoragePlace>().Property(p => p.Name).HasMaxLength(100);
+        builder.Entity<StoragePlace>().Property(p => p.Kind).HasMaxLength(40);
+        builder.Entity<StorageMove>().Property(m => m.LastError).HasMaxLength(500);
+        builder.Entity<StorageMove>().Property(m => m.ClaimedBy).HasMaxLength(100);
     }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)

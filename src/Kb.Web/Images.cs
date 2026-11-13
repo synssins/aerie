@@ -2,75 +2,16 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using Kb.Core.Audit;
-using Kb.Core.Config;
 using Kb.Core.Content;
 using Kb.Core.Spaces;
 using Kb.Data;
+using Kb.Plugins;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 namespace Kb.Web;
 
 public sealed record ImageDto(Guid Id, string Url);
 public sealed record ImportImageRequest(string Url);
-
-/// <summary>Where uploaded bytes live. IIS: a local folder. Azure: Blob Storage (a second implementation, same interface).</summary>
-public interface IFileStore
-{
-    Task SaveAsync(string key, byte[] data, CancellationToken ct);
-    /// <summary>Streams to storage without holding the file in memory. Returns the bytes stored, or -1 (and stores nothing) when the source is over maxBytes.</summary>
-    Task<long> SaveAsync(string key, Stream source, long maxBytes, CancellationToken ct);
-    Task<Stream?> OpenAsync(string key, CancellationToken ct);
-    Task DeleteAsync(string key, CancellationToken ct);
-}
-
-public sealed class LocalFileStore(IOptions<KbOptions> o, IWebHostEnvironment env) : IFileStore
-{
-    private string Root => Path.IsPathRooted(o.Value.Storage.Folder) ? o.Value.Storage.Folder : Path.Combine(env.ContentRootPath, o.Value.Storage.Folder);
-
-    // Keys are generated GUIDs ("N" format), never user input, so they cannot escape the folder.
-    private string PathOf(string key) => Path.Combine(Root, key[..2], key);
-
-    public async Task SaveAsync(string key, byte[] data, CancellationToken ct)
-    {
-        var p = PathOf(key);
-        Directory.CreateDirectory(Path.GetDirectoryName(p)!);
-        await File.WriteAllBytesAsync(p, data, ct);
-    }
-
-    public async Task<long> SaveAsync(string key, Stream source, long maxBytes, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(source);
-        var p = PathOf(key);
-        Directory.CreateDirectory(Path.GetDirectoryName(p)!);
-        long total = 0;
-        try
-        {
-            await using var file = File.Create(p);
-            var buffer = new byte[81920];
-            int n;
-            while ((n = await source.ReadAsync(buffer, ct)) > 0)
-            {
-                total += n;
-                if (total > maxBytes) break;
-                await file.WriteAsync(buffer.AsMemory(0, n), ct);
-            }
-        }
-        catch { File.Delete(p); throw; }
-        if (total <= maxBytes) return total;
-        File.Delete(p);
-        return -1;
-    }
-
-    public Task<Stream?> OpenAsync(string key, CancellationToken ct) =>
-        Task.FromResult<Stream?>(File.Exists(PathOf(key)) ? File.OpenRead(PathOf(key)) : null);
-
-    public Task DeleteAsync(string key, CancellationToken ct)
-    {
-        File.Delete(PathOf(key));
-        return Task.CompletedTask;
-    }
-}
 
 /// <summary>Fetching a URL a user supplied: only public internet addresses, so the server can't be aimed at the internal network.</summary>
 public static class NetGuard

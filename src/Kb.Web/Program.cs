@@ -73,7 +73,12 @@ services.AddSingleton(typeof(ProviderSelector<>));
 
 // ---- core services ----
 services.AddSingleton(TimeProvider.System);
-services.AddSingleton<IFileStore, LocalFileStore>();
+services.AddHttpContextAccessor();
+services.AddSingleton<IFileStoreKind, FolderFileStoreKind>();
+services.AddSingleton<ActiveFileStore>();
+services.AddSingleton<IFileStore>(sp => sp.GetRequiredService<ActiveFileStore>());
+services.AddSingleton<StorageMover>();
+services.AddHostedService(sp => sp.GetRequiredService<StorageMover>());
 services.AddScoped<Kb.Core.Search.ISearchProvider, SqlSearchProvider>();
 services.AddHttpClient(NetGuard.ClientName, c => { c.Timeout = TimeSpan.FromSeconds(15); c.MaxResponseContentBufferSize = ImageEndpoints.MaxImageBytes; })
     .ConfigurePrimaryHttpMessageHandler(NetGuard.Handler);
@@ -109,6 +114,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     await scope.ServiceProvider.GetRequiredService<BreakGlassService>().EnsureAccountAsync();
     await scope.ServiceProvider.GetRequiredService<SetupService>().OnStartupAsync();
     await SearchIndex.BackfillAsync(db); // pages saved before the search index existed
+    await ActiveFileStore.EnsureFirstPlaceAsync(db, kb.Storage.Folder, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow());
 }
 
 app.UseExceptionHandler();
@@ -140,6 +146,7 @@ api.MapAdminEndpoints();
 api.MapBrandingEndpoints();
 api.MapImageEndpoints();
 api.MapAttachmentEndpoints();
+api.MapStorageEndpoints();
 api.MapSearchEndpoints();
 api.MapHomeEndpoints();
 api.MapExportEndpoints();

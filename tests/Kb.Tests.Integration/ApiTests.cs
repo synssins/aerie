@@ -13,7 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Kb.Tests.Integration;
 
 /// <summary>App on a throwaway SQLite file. Two factories given the same path behave like two load-balanced instances.</summary>
-public sealed class KbAppFactory(string dbPath, bool breakGlass = true, bool loopback = false, IDictionary<string, string>? settings = null)
+public sealed class KbAppFactory(string dbPath, bool breakGlass = true, bool loopback = false, IDictionary<string, string>? settings = null, Action<IServiceCollection>? services = null)
     : WebApplicationFactory<Program>
 {
     public const string BreakGlassPassword = "test-breakglass-password-0123456789";
@@ -32,6 +32,7 @@ public sealed class KbAppFactory(string dbPath, bool breakGlass = true, bool loo
         foreach (var (k, v) in settings ?? new Dictionary<string, string>()) builder.UseSetting(k, v);
         // TestServer has no remote address; loopback=true makes requests look like they come from the server itself.
         if (loopback) builder.ConfigureServices(s => s.AddSingleton<IStartupFilter, LoopbackFilter>());
+        if (services is not null) builder.ConfigureServices(services);
     }
 
     private sealed class LoopbackFilter : IStartupFilter

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { ArrowLeft, ChevronRight, FolderTree, House, Lock, Palette, Paperclip, Plug, Plus, ScrollText, Search, Trash2, Users } from "lucide-react";
+import { ArrowLeft, ChevronRight, FolderTree, HardDrive, House, Lock, Palette, Paperclip, Plug, Plus, ScrollText, Search, Trash2, Users } from "lucide-react";
 import { BinTable } from "./Views";
 import { BrandingPanel } from "./Branding";
+import { Storage } from "./admin/Storage";
 import { api, ApiError, fmtSize, type Brand, type Space, type TreeNode } from "./api";
 
-export type AdminSection = "spaces" | "users" | "branding" | "search" | "uploads" | "bin" | "plugins" | "audit";
-export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "branding", "search", "uploads", "bin", "plugins", "audit"];
+export type AdminSection = "spaces" | "users" | "branding" | "search" | "uploads" | "storage" | "bin" | "plugins" | "audit";
+export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "branding", "search", "uploads", "storage", "bin", "plugins", "audit"];
 type UploadSettings = { attachmentMb: number; serverLimitBytes: number | null };
 
 type AdminUser = { id: string; userName: string; displayName: string; source: string; isAdmin: boolean; isBreakGlass: boolean; createdAt: string; deactivatedAt: string | null; canAnnounce: boolean };
@@ -65,7 +66,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
     setVerify(r.valid ? "Chain intact." : `Chain broken at entry ${r.firstBrokenSequence}.`);
   }
 
-  const title = space?.name ?? ({ spaces: "Spaces", users: "Users", branding: "Branding", search: "Search", uploads: "Uploads", bin: "Recycle bin", plugins: "Plugins", audit: "Audit log" } as const)[section];
+  const title = space?.name ?? ({ spaces: "Spaces", users: "Users", branding: "Branding", search: "Search", uploads: "Uploads", storage: "Storage", bin: "Recycle bin", plugins: "Plugins", audit: "Audit log" } as const)[section];
 
   async function setAnnouncer(u: AdminUser, enabled: boolean) {
     await api.put(`/admin/users/${u.id}/announcer`, { enabled });
@@ -112,6 +113,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
             </div>
             <button className={`node ${section === "search" ? "cur" : ""}`} onClick={() => onNavigate("search")}><Search className="ic" aria-hidden /><span className="grow">Search</span></button>
             <button className={`node ${section === "uploads" ? "cur" : ""}`} onClick={() => onNavigate("uploads")}><Paperclip className="ic" aria-hidden /><span className="grow">Uploads</span></button>
+            <button className={`node ${section === "storage" ? "cur" : ""}`} onClick={() => onNavigate("storage")}><HardDrive className="ic" aria-hidden /><span className="grow">Storage</span></button>
             <button className={`node ${section === "bin" ? "cur" : ""}`} onClick={() => onNavigate("bin")}><Trash2 className="ic" aria-hidden /><span className="grow">Recycle bin</span></button>
             <button className={`node ${section === "plugins" ? "cur" : ""}`} onClick={() => onNavigate("plugins")}><Plug className="ic" aria-hidden /><span className="grow">Plugins</span></button>
             <button className={`node ${section === "audit" ? "cur" : ""}`} onClick={() => onNavigate("audit")}><ScrollText className="ic" aria-hidden /><span className="grow">Audit log</span></button>
@@ -121,6 +123,8 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
 
       {space ? (
         <SpaceEditor key={space.id} space={space} isAdmin={isAdmin} area={area} onBack={() => onNavigate("spaces")} onSaved={changed} onHome={onHome} />
+      ) : section === "storage" && isAdmin ? (
+        <Storage area={area} placeId={spaceId} onSelect={(id) => onNavigate("storage", id ?? undefined)} onHome={onHome} />
       ) : (
         <>
           <main className="doc wide">

@@ -6,7 +6,8 @@ let serverVersion: string | null = null;
 export let reloadPending = false;
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  /** The answer's JSON, when it had one: `{ error }` for a refusal, `{ errors }` for fields. */
+  constructor(public status: number, message: string, public body: { error?: string; errors?: Record<string, string[]> } | null = null) {
     super(message);
   }
 }
@@ -23,7 +24,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     if (serverVersion && serverVersion !== v) reloadPending = true;
     serverVersion ??= v;
   }
-  if (!res.ok) throw new ApiError(res.status, res.statusText);
+  if (!res.ok) throw new ApiError(res.status, res.statusText, await res.json().catch(() => null));
   if (res.status === 204 || res.headers.get("content-length") === "0") return undefined as T;
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
@@ -71,7 +72,16 @@ export type DiffLine = { op: "Same" | "Add" | "Del"; text: string };
 export type Announcement = { id: string; title: string; body: string; by: string; createdAt: string; expiresAt: string | null };
 export type Home = { announcements: Announcement[]; recent: { id: string; title: string; spaceId: string; spaceName: string; updatedAt: string; updatedBy: string }[] };
 
-export const EDIT_ROLES = ["Contributor", "Supervisor", "Owner"];
+export type StorageField = { key: string; label: string; type: "text" | "secret" };
+export type StorageKind = { kind: string; label: string; fields: StorageField[] };
+export type StoragePlace = { id: string; name: string; kind: string; settings: Record<string, string | null>; secretsSet: string[]; role: "Active" | "Target" | "Old"; createdAt: string };
+export type StorageMove = {
+  id: string; fromId: string; toId: string; state: "Copying" | "Copied" | "Switched" | "Cancelled"; total: number; copied: number; checked: number; failed: number;
+  lastError: string | null; preview: boolean; startedAt: string; finishedAt: string | null;
+};
+export type StorageInfo = { kinds: StorageKind[]; places: StoragePlace[]; move: StorageMove | null };
+
+export const EDIT_ROLES =["Contributor", "Supervisor", "Owner"];
 export const BIN_ROLES = ["Supervisor", "Owner"];
 export const fmtDateTime = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 export const fmtSize = (n: number) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`;

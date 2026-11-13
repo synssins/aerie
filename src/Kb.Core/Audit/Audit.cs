@@ -56,6 +56,12 @@ public static class AuditActions
     public const string PluginEnable = "plugin.enable";
     public const string PluginDisable = "plugin.disable";
     public const string PluginRefused = "plugin.refused";
+    public const string StoragePlaceAdd = "storage.place.add";
+    public const string StoragePlaceChange = "storage.place.change";
+    public const string StoragePlaceRemove = "storage.place.remove";
+    public const string StorageMoveStart = "storage.move.start";
+    public const string StorageMoveSwitch = "storage.move.switch";
+    public const string StorageMoveCancel = "storage.move.cancel";
 }
 
 public static class AuditHasher
