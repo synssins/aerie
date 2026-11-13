@@ -27,8 +27,11 @@ export function BinTree({ spaceId, spaces = [], selectedId, reloadKey, onSelect 
   const [open, setOpen] = useState<Record<string, boolean>>({});
   useEffect(() => {
     let live = true;
-    void api.get<BinNode[]>(spaceId ? `/spaces/${spaceId}/bin/tree` : "/admin/bin/tree").then((n) => { if (live) setNodes(n); }).catch(() => { if (live) setNodes([]); });
-    if (!spaceId) void api.get<DeletedSpace[]>("/admin/spaces/deleted").then((g) => { if (live) setGone(g); }).catch(() => { if (live) setGone([]); });
+    // Both lists are taken together and shown together: the tree is never drawn from one new list and one old one.
+    void Promise.all([
+      api.get<BinNode[]>(spaceId ? `/spaces/${spaceId}/bin/tree` : "/admin/bin/tree"),
+      spaceId ? Promise.resolve<DeletedSpace[]>([]) : api.get<DeletedSpace[]>("/admin/spaces/deleted"),
+    ]).then(([n, g]) => { if (live) { setNodes(n); setGone(g); } }).catch(() => { if (live) { setNodes([]); setGone([]); } });
     return () => { live = false; };
   }, [spaceId, reloadKey]);
 
@@ -39,7 +42,8 @@ export function BinTree({ spaceId, spaces = [], selectedId, reloadKey, onSelect 
 
   const groups = [
     ...gone.map((g) => ({ ...g, deleted: true })),
-    ...spaces.filter((s) => nodes.some((n) => n.spaceId === s.id)).map((s) => ({ id: s.id, name: s.name, isSensitive: !!s.isSensitive, deleted: false })),
+    // A space the caller's own list still (or already) has as live is shown once: as deleted, which is what the server just said.
+    ...spaces.filter((s) => !gone.some((g) => g.id === s.id) && nodes.some((n) => n.spaceId === s.id)).map((s) => ({ id: s.id, name: s.name, isSensitive: !!s.isSensitive, deleted: false })),
   ];
   if (groups.length === 0) return <Empty />;
   return (

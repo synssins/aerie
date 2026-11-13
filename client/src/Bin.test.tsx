@@ -74,6 +74,15 @@ describe("BinTree", () => {
     expect(screen.queryByRole("button", { name: "Nothing deleted here" })).toBeNull();
   });
 
+  it("shows a space once, also while it is in both lists (just restored, the lists not yet both loaded again)", async () => {
+    server({
+      "GET /admin/bin/tree": () => ({ body: [node("f1", null, "s1", "Folder", "Printers")] }),
+      "GET /admin/spaces/deleted": () => ({ body: [{ id: "s1", key: "desk", name: "Service Desk", isSensitive: false }] }),
+    });
+    render(<BinTree spaceId={null} spaces={[{ id: "s1", name: "Service Desk" }]} selectedId={null} onSelect={() => {}} />);
+    expect(await screen.findAllByRole("button", { name: /^Service Desk/ })).toHaveLength(1);
+  });
+
   it("loads again when told to", async () => {
     const calls = server({ "GET /spaces/s1/bin/tree": () => ({ body: [] }) });
     const { rerender } = render(<BinTree spaceId="s1" selectedId={null} reloadKey={0} onSelect={() => {}} />);
