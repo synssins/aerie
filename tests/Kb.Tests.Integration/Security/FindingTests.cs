@@ -15,7 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Kb.Tests.Integration.Security;
 
 /// <summary>
-/// The findings of docs/security/2026-plugin-model-findings.md that are not a row of the authorization matrix, one test each:
+/// Security findings that are not a row of the authorization matrix, one test each:
 /// an image of another space in an export and in a move, the admin bin and a sensitive space, a draft after its author lost the role.
 /// </summary>
 public sealed class FindingTests : IAsyncLifetime
