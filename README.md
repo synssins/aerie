@@ -21,12 +21,13 @@ Not built yet: sign-in through Entra ID, AD/LDAP or passkeys, AD and Entra group
 
 ## Running it in Docker
 
-The image runs on any Linux Docker host and keeps its data in a SQLite file on a volume.
+The image runs on any Linux Docker host and keeps its data in a SQLite file on a volume. Each push to `main` publishes it as `ghcr.io/synssins/aerie:latest`, so a host only needs [`docker-compose.yml`](docker-compose.yml):
 
 ```bash
-docker build -t aerie .
 docker compose up -d
 ```
+
+To build it yourself instead, run `docker build -t aerie .` and change the image name in the compose file.
 
 It listens on port 8080 over plain HTTP. Put it behind a reverse proxy that serves HTTPS, because the sign-in cookie is only sent over HTTPS. Open the site and the setup page asks for the first admin account, or set one up front in `docker-compose.yml`, which also shows how to point it at SQL Server instead.
 
