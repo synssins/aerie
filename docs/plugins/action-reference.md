@@ -638,6 +638,37 @@ Read. `ListPrincipals`, answers `IReadOnlyList<PrincipalDto>`. Core only.
 |---|---|---|
 | Query | `string?` |  |
 
+## role.create
+
+Write. `CreateRole`, answers `RoleDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Name | `string` | required |
+| Permissions | `IReadOnlyList<string>` | required |
+
+## role.delete
+
+Write. `DeleteRole`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| RoleId | `Guid` | required |
+
+## role.list
+
+Read. `ListRoles`, answers `IReadOnlyList<RoleDto>`. Core only.
+
+## role.update
+
+Write. `UpdateRole`, answers `RoleDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| RoleId | `Guid` | required |
+| Name | `string` | required |
+| Permissions | `IReadOnlyList<string>` | required |
+
 ## search.query
 
 Read. `SearchPages`, answers `SearchResponse`.
@@ -765,7 +796,8 @@ Write. `GrantSpaceRole`, answers `Unit`.
 | SpaceId | `Guid` | required |
 | PrincipalType | `PrincipalType` | required |
 | PrincipalId | `string` | required |
-| Role | `SpaceRole` | required |
+| RoleId | `Guid?` |  |
+| Role | `SpaceRole?` |  |
 
 ## space.role.list
 

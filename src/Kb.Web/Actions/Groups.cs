@@ -222,7 +222,8 @@ internal sealed class ListPrincipalsHandler(KbDbContext db, IAccess access) : IA
         // An Owner of any space, directly or through a group, picks who gets a role there.
         var ids = await db.KbGroupMembers.Where(m => m.UserId == me).Join(db.KbGroups, m => m.GroupId, g => g.Id, (m, g) => g.Key).ToListAsync(ctx.Cancel);
         ids.Add(me.ToString("D"));
-        return await db.SpaceRoleAssignments.AnyAsync(a => a.Role == Kb.Plugins.SpaceRole.Owner && ids.Contains(a.PrincipalId), ctx.Cancel) ? null : Problem.Forbidden;
+        var ownerRoles = (await db.SpaceRoleDefs.AsNoTracking().ToListAsync(ctx.Cancel)).Where(r => Kb.Core.Spaces.SpacePerms.IsOwnerGrade(r.Permissions)).Select(r => r.Id).ToList();
+        return await db.SpaceRoleAssignments.AnyAsync(a => ownerRoles.Contains(a.RoleId) && ids.Contains(a.PrincipalId), ctx.Cancel) ? null : Problem.Forbidden;
     }
 
     public async Task<Outcome<IReadOnlyList<PrincipalDto>>> HandleAsync(ActionContext<ListPrincipals> ctx)

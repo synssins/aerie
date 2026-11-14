@@ -106,6 +106,8 @@ public sealed class SpaceAccessData(KbDbContext db, Microsoft.Extensions.Options
 
     public async Task<IReadOnlyList<Space>> GetAllSpacesAsync(CancellationToken ct) => await db.Spaces.AsNoTracking().ToListAsync(ct);
 
+    public async Task<IReadOnlyList<SpaceRoleDef>> GetRoleDefsAsync(CancellationToken ct) => await db.SpaceRoleDefs.AsNoTracking().ToListAsync(ct);
+
     public async Task<IReadOnlyList<SpaceRoleAssignment>> GetAssignmentsAsync(Guid spaceId, CancellationToken ct) =>
         await db.SpaceRoleAssignments.AsNoTracking().Where(a => a.SpaceId == spaceId).ToListAsync(ct);
 
@@ -132,14 +134,21 @@ public sealed class AccessData(KbDbContext db) : IAccessData
     {
         var existing = await db.SpaceRoleAssignments.FirstOrDefaultAsync(x => x.SpaceId == a.SpaceId && x.PrincipalType == a.PrincipalType && x.PrincipalId == a.PrincipalId, ct);
         if (existing is null) db.SpaceRoleAssignments.Add(a);
-        else if (a.Role > existing.Role) existing.Role = a.Role;
+        else
+        {
+            // An approved request only adds: the row changes when the new role holds everything the old one did.
+            var masks = await db.SpaceRoleDefs.AsNoTracking().Where(r => r.Id == a.RoleId || r.Id == existing.RoleId).ToDictionaryAsync(r => r.Id, r => r.Permissions, ct);
+            if ((masks.GetValueOrDefault(existing.RoleId) & ~masks.GetValueOrDefault(a.RoleId)) == 0) existing.RoleId = a.RoleId;
+        }
         await db.SaveChangesAsync(ct);
     }
 
     public async Task<IReadOnlyList<Guid>> GetOwnerUserIdsAsync(Guid spaceId, CancellationToken ct)
     {
+        // An Owner is anyone whose role manages members and settings.
+        var ownerRoles = (await db.SpaceRoleDefs.AsNoTracking().ToListAsync(ct)).Where(r => SpacePerms.IsOwnerGrade(r.Permissions)).Select(r => r.Id).ToList();
         var ids = await db.SpaceRoleAssignments.AsNoTracking()
-            .Where(a => a.SpaceId == spaceId && a.Role == SpaceRole.Owner && a.PrincipalType == PrincipalType.User)
+            .Where(a => a.SpaceId == spaceId && ownerRoles.Contains(a.RoleId) && a.PrincipalType == PrincipalType.User)
             .Select(a => a.PrincipalId).ToListAsync(ct);
         // A row that names no user id (written before the role action checked it) is skipped: the real Owners are still found.
         return [.. ids.Where(s => Guid.TryParse(s, out _)).Select(Guid.Parse)];

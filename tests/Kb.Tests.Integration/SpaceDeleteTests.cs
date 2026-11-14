@@ -169,7 +169,7 @@ public sealed class SpaceDeleteTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode);
         await _f.WithDbAsync(async db =>
         {
-            db.SpaceRoleAssignments.Add(new SpaceRoleAssignment { SpaceId = _space, PrincipalType = PrincipalType.User, PrincipalId = "the-service-desk", Role = SpaceRole.Owner });
+            db.SpaceRoleAssignments.Add(new SpaceRoleAssignment { SpaceId = _space, PrincipalType = PrincipalType.User, PrincipalId = "the-service-desk", RoleId = Kb.Core.Spaces.SpacePerms.IdOf(SpaceRole.Owner) });
             await db.SaveChangesAsync(Ct);
         });
 

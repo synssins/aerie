@@ -67,6 +67,7 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     public DbSet<KbGroupMember> KbGroupMembers => Set<KbGroupMember>();
     public DbSet<Space> Spaces => Set<Space>();
     public DbSet<SpaceRoleAssignment> SpaceRoleAssignments => Set<SpaceRoleAssignment>();
+    public DbSet<SpaceRoleDef> SpaceRoleDefs => Set<SpaceRoleDef>();
     public DbSet<SpaceAccessGrant> SpaceAccessGrants => Set<SpaceAccessGrant>();
     public DbSet<AccessRequest> AccessRequests => Set<AccessRequest>();
     public DbSet<Notification> Notifications => Set<Notification>();
@@ -107,6 +108,12 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
         builder.Entity<Space>().HasQueryFilter(s => s.DeletedAt == null);
         builder.Entity<SpaceRoleAssignment>().HasIndex(a => new { a.SpaceId, a.PrincipalType, a.PrincipalId }).IsUnique();
         builder.Entity<SpaceRoleAssignment>().HasIndex(a => a.PrincipalId);
+        builder.Entity<SpaceRoleAssignment>().HasIndex(a => a.RoleId);
+        builder.Entity<SpaceRoleDef>().ToTable("SpaceRoles");
+        builder.Entity<SpaceRoleDef>().Property(r => r.Name).HasMaxLength(50);
+        builder.Entity<SpaceRoleDef>().HasIndex(r => r.Name).IsUnique();
+        // The four built-in roles, with the permissions they always had. Their ids are fixed (SpacePerms.IdOf).
+        builder.Entity<SpaceRoleDef>().HasData(Enum.GetValues<SpaceRole>().Select(r => new SpaceRoleDef { Id = SpacePerms.IdOf(r), Name = r.ToString(), Permissions = SpacePerms.Default(r), BuiltIn = r }));
         builder.Entity<SpaceAccessGrant>().HasIndex(g => new { g.UserId, g.SpaceId });
         builder.Entity<AccessRequest>().HasIndex(r => new { r.SpaceId, r.Status });
         builder.Entity<Notification>().HasIndex(n => new { n.UserId, n.ReadAt });

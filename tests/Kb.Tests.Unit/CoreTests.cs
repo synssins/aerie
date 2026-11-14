@@ -106,6 +106,8 @@ public class SpacePermissionServiceTests
         public List<Space> Spaces { get; } = [];
         public List<SpaceRoleAssignment> Assignments { get; } = [];
         public List<SpaceAccessGrant> Grants { get; } = [];
+        public List<SpaceRoleDef> Roles { get; } = [.. Enum.GetValues<SpaceRole>().Select(r => new SpaceRoleDef { Id = SpacePerms.IdOf(r), Name = r.ToString(), Permissions = SpacePerms.Default(r), BuiltIn = r })];
+        public Task<IReadOnlyList<SpaceRoleDef>> GetRoleDefsAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<SpaceRoleDef>>(Roles);
         public Task<PrincipalInfo?> GetPrincipalAsync(Guid u, CancellationToken ct) => Task.FromResult(Users.GetValueOrDefault(u));
         public Task<Space?> GetSpaceAsync(Guid s, CancellationToken ct) => Task.FromResult(Spaces.FirstOrDefault(x => x.Id == s));
         public Task<IReadOnlyList<Space>> GetAllSpacesAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<Space>>(Spaces);
@@ -128,7 +130,7 @@ public class SpacePermissionServiceTests
         _d.Users[_admin] = new(_admin, true, true, []);
         _d.Users[_user] = new(_user, false, true, ["grp-sd"]);
         _d.Users[_outsider] = new(_outsider, false, false, []);
-        _d.Assignments.Add(new() { SpaceId = _normal.Id, PrincipalType = PrincipalType.Group, PrincipalId = "grp-sd", Role = SpaceRole.Contributor });
+        _d.Assignments.Add(new() { SpaceId = _normal.Id, PrincipalType = PrincipalType.Group, PrincipalId = "grp-sd", RoleId = SpacePerms.IdOf(SpaceRole.Contributor) });
     }
 
     [Fact] public async Task GroupAssignment_GivesRole() => Assert.Equal(SpaceRole.Contributor, await Svc.GetRoleAsync(_user, _normal.Id));
@@ -171,6 +173,31 @@ public class SpacePermissionServiceTests
         _sensitive.Visibility = SpaceVisibility.Anyone;
         Assert.Null(await Svc.GetRoleAsync(_user, _sensitive.Id));
         Assert.DoesNotContain(_sensitive.Id, await Svc.VisibleSpaceIdsAsync(_outsider));
+    }
+
+    [Fact]
+    public async Task Roles_AddUp_AndTheLevelIsTheStrongestBuiltInHeldInFull()
+    {
+        var mover = new SpaceRoleDef { Name = "Mover", Permissions = SpacePerms.Read | SpacePerms.Of(SpaceAction.MoveDeleteOthers) };
+        _d.Roles.Add(mover);
+        _d.Assignments.Add(new() { SpaceId = _normal.Id, PrincipalType = PrincipalType.User, PrincipalId = _user.ToString("D"), RoleId = mover.Id });
+        // Contributor through the group, Mover directly: both sets.
+        Assert.True(await Svc.CanAsync(_user, _normal.Id, SpaceAction.CreateEdit));
+        Assert.True(await Svc.CanAsync(_user, _normal.Id, SpaceAction.MoveDeleteOthers));
+        Assert.False(await Svc.CanAsync(_user, _normal.Id, SpaceAction.SeeOthersDrafts));
+        Assert.Equal(SpaceRole.Contributor, await Svc.GetRoleAsync(_user, _normal.Id));
+        Assert.Equal(SpacePerms.All, await Svc.GetPermissionsAsync(_admin, _normal.Id));
+    }
+
+    [Fact]
+    public void BuiltIns_KeepThePermissionsTheyHad()
+    {
+        Assert.Equal(1, SpacePerms.Default(SpaceRole.Reader));
+        Assert.Equal(7, SpacePerms.Default(SpaceRole.Contributor));
+        Assert.Equal(255, SpacePerms.Default(SpaceRole.Supervisor));
+        Assert.Equal(1023, SpacePerms.Default(SpaceRole.Owner));
+        Assert.True(SpacePerms.IsOwnerGrade(SpacePerms.Default(SpaceRole.Owner)));
+        Assert.False(SpacePerms.IsOwnerGrade(SpacePerms.Default(SpaceRole.Supervisor)));
     }
 
     [Fact]

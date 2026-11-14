@@ -208,23 +208,32 @@ internal sealed class ListSpaceRolesHandler(KbDbContext db, IAccess access) : IA
         var groupKeys = rows.Where(a => a.PrincipalType == PrincipalType.Group).Select(a => a.PrincipalId).ToList();
         var users = await db.Users.AsNoTracking().Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id.ToString("D"), u => u.DisplayName, ctx.Cancel);
         var groups = await db.KbGroups.AsNoTracking().Where(g => groupKeys.Contains(g.Key)).ToDictionaryAsync(g => g.Key, g => g.Name, ctx.Cancel);
-        return Outcome.List<RoleAssignmentDto>([.. rows.OrderByDescending(a => a.Role).Select(a => new RoleAssignmentDto(a.Id, a.PrincipalType, a.PrincipalId, a.Role,
-            (a.PrincipalType == PrincipalType.User ? users : groups).GetValueOrDefault(a.PrincipalId)))]);
+        var roles = await db.SpaceRoleDefs.AsNoTracking().ToListAsync(ctx.Cancel);
+        var byId = roles.ToDictionary(r => r.Id);
+        SpaceRole Level(SpaceRoleAssignment a) => SpacePerms.Rank(byId.TryGetValue(a.RoleId, out var r) ? r.Permissions : 0, roles) ?? SpaceRole.Reader;
+        return Outcome.List<RoleAssignmentDto>([.. rows.OrderByDescending(Level).ThenBy(a => byId.GetValueOrDefault(a.RoleId)?.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(a => new RoleAssignmentDto(a.Id, a.PrincipalType, a.PrincipalId, Level(a),
+                (a.PrincipalType == PrincipalType.User ? users : groups).GetValueOrDefault(a.PrincipalId), a.RoleId, byId.GetValueOrDefault(a.RoleId)?.Name))]);
     }
 }
 
 internal sealed class GrantSpaceRoleHandler(KbDbContext db, IAccess access) : IActionHandler<GrantSpaceRole, Unit>
 {
     private SpaceRoleAssignment? _existing;
+    private SpaceRoleDef? _role;
 
     public async Task<Problem?> AuthorizeAsync(ActionContext<GrantSpaceRole> ctx)
     {
         var req = ctx.Action;
         if (await ManagesAsync(access, ctx.Actor, req.SpaceId, ctx.Cancel) is { } denied) return denied;
         _existing = await db.SpaceRoleAssignments.FirstOrDefaultAsync(a => a.SpaceId == req.SpaceId && a.PrincipalType == req.PrincipalType && a.PrincipalId == req.PrincipalId, ctx.Cancel);
+        var roleId = req.RoleId ?? (req.Role is { } level && Enum.IsDefined(level) ? SpacePerms.IdOf(level) : Guid.Empty);
+        _role = await db.SpaceRoleDefs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == roleId, ctx.Cancel);
+        var before = _existing is null ? null : await db.SpaceRoleDefs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == _existing.RoleId, ctx.Cancel);
         // An Admin makes Owners, and only an Admin changes an Owner row: an Owner cannot take its own role or another Owner's.
+        // An Owner is anyone whose role manages members and settings, whatever the role is called.
         // A sensitive space is the exception for making one: Admins have no access there, so its Owners add an Owner themselves.
-        if ((req.Role == SpaceRole.Owner || _existing?.Role == SpaceRole.Owner) && !await access.IsAdminAsync(ctx.Actor, ctx.Cancel)
+        if ((SpacePerms.IsOwnerGrade(_role?.Permissions ?? 0) || SpacePerms.IsOwnerGrade(before?.Permissions ?? 0)) && !await access.IsAdminAsync(ctx.Actor, ctx.Cancel)
             && !(_existing is null && await db.Spaces.AnyAsync(s => s.Id == req.SpaceId && s.IsSensitive, ctx.Cancel)))
             return Problem.Forbidden;
         return ctx.Actor.UserId is null ? Problem.Unauthorized : null; // the audit entry names who granted the role
@@ -233,16 +242,17 @@ internal sealed class GrantSpaceRoleHandler(KbDbContext db, IAccess access) : IA
     public async Task<Outcome<Unit>> HandleAsync(ActionContext<GrantSpaceRole> ctx)
     {
         var req = ctx.Action;
+        if (_role is null) return Problem.Invalid("role", "No such role.");
         // A user is named by id. A name there would be a role nobody holds, and a row the Owners' list cannot read.
-        if (string.IsNullOrWhiteSpace(req.PrincipalId) || !Enum.IsDefined(req.Role) || (req.PrincipalType == PrincipalType.User && !Guid.TryParse(req.PrincipalId, out _)))
+        if (string.IsNullOrWhiteSpace(req.PrincipalId) || (req.PrincipalType == PrincipalType.User && !Guid.TryParse(req.PrincipalId, out _)))
             return Problem.Invalid("principal", "Invalid.");
         if (req.PrincipalType == PrincipalType.Group && !await db.KbGroups.AnyAsync(g => g.Key == req.PrincipalId, ctx.Cancel))
             return Problem.Invalid("principal", "No such group.");
         // A grant sets the role, so lowering one is a grant too. One row per person or group in a space.
-        if (_existing is null) db.SpaceRoleAssignments.Add(new SpaceRoleAssignment { SpaceId = req.SpaceId, PrincipalType = req.PrincipalType, PrincipalId = req.PrincipalId, Role = req.Role });
-        else _existing.Role = req.Role;
+        if (_existing is null) db.SpaceRoleAssignments.Add(new SpaceRoleAssignment { SpaceId = req.SpaceId, PrincipalType = req.PrincipalType, PrincipalId = req.PrincipalId, RoleId = _role.Id });
+        else _existing.RoleId = _role.Id;
         await db.SaveChangesAsync();
-        ctx.Audit(AuditActions.SpaceRoleGrant, req.PrincipalType.ToString(), req.PrincipalId, req.SpaceId, new Dictionary<string, string> { ["role"] = req.Role.ToString() });
+        ctx.Audit(AuditActions.SpaceRoleGrant, req.PrincipalType.ToString(), req.PrincipalId, req.SpaceId, new Dictionary<string, string> { ["role"] = _role.Name, ["roleId"] = _role.Id.ToString() });
         return new Unit();
     }
 }
@@ -256,7 +266,10 @@ internal sealed class RevokeSpaceRoleHandler(KbDbContext db, IAccess access) : I
         var (id, assignmentId) = (ctx.Action.SpaceId, ctx.Action.AssignmentId);
         if (await ManagesAsync(access, ctx.Actor, id, ctx.Cancel) is { } denied) return denied;
         if ((_assignment = await db.SpaceRoleAssignments.FirstOrDefaultAsync(x => x.Id == assignmentId && x.SpaceId == id, ctx.Cancel)) is null) return Problem.NotFound;
-        if (_assignment.Role == SpaceRole.Owner && !await access.IsAdminAsync(ctx.Actor, ctx.Cancel)) return Problem.Forbidden; // Owners are removed by an Admin
+        var roleId = _assignment.RoleId;
+        // Owners (anyone whose role manages members and settings) are removed by an Admin.
+        if (SpacePerms.IsOwnerGrade(await db.SpaceRoleDefs.Where(r => r.Id == roleId).Select(r => r.Permissions).FirstOrDefaultAsync(ctx.Cancel))
+            && !await access.IsAdminAsync(ctx.Actor, ctx.Cancel)) return Problem.Forbidden;
         return ctx.Actor.UserId is null ? Problem.Unauthorized : null; // the audit entry names who revoked the role
     }
 

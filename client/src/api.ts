@@ -83,7 +83,18 @@ export type Group = { id: string; key: string; name: string; isLocal: boolean; m
 export type GroupMember = { userId: string; userName: string; displayName: string; source: string };
 export type Principal = { type: "User" | "Group"; id: string; name: string; detail: string };
 export type SpaceRoleName = "Reader" | "Contributor" | "Supervisor" | "Owner";
-export type RoleAssignment = { id: string; principalType: "User" | "Group"; principalId: string; role: SpaceRoleName; name: string | null };
+export type RoleAssignment = { id: string; principalType: "User" | "Group"; principalId: string; role: SpaceRoleName; name: string | null; roleId: string; roleName: string | null };
+/** The ten space permissions, by name. */
+export const PERMISSIONS = [
+  ["Read", "Read"], ["CreateEdit", "Create and edit"], ["MoveDeleteOwn", "Move and delete own"], ["MoveDeleteOthers", "Move and delete others'"],
+  ["SeeOthersDrafts", "See others' drafts"], ["ReviewTeamHistory", "Review team history"], ["ManageBinAgingComments", "Manage bin, aging and comments"],
+  ["RemoveAttribution", "Remove attribution"], ["ManageRolesSettingsSensitive", "Manage members and settings"], ["ApproveAccessRequests", "Approve access requests"],
+] as const;
+export type Permission = (typeof PERMISSIONS)[number][0];
+/** A role of the global list. builtIn: the level of a built-in role; null for one an Admin added. inUse: how many assignments name it. */
+export type RoleDef = { id: string; name: string; permissions: Permission[]; builtIn: SpaceRoleName | null; inUse: number };
+/** A role that manages members and settings counts as Owner: only an Admin gives, changes or removes it. */
+export const ownerGrade = (r: RoleDef | undefined) => !!r?.permissions.includes("ManageRolesSettingsSensitive");
 export type PluginPermissions = { permissions: { key: string; label: string; scope: string; defaultRole: string; role: string | null }[] };
 export type PluginHealth = {
   plugins: {

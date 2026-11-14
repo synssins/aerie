@@ -1,9 +1,10 @@
+using Kb.Web.Actions;
 namespace Kb.Web;
 
 public sealed record CreateSpaceRequest(string Name, string? Key, string? Description, bool IsSensitive = false, SpaceVisibility Visibility = SpaceVisibility.Private);
 public sealed record UpdateSpaceRequest(string? Name, string? Description, bool? IsSensitive, SpaceVisibility? Visibility,
     bool? CommentsEnabled = null, int? AgingDays = null, AgingAudience? AgingAudience = null, int? RecycleDays = null);
-public sealed record GrantRoleRequest(PrincipalType PrincipalType, string PrincipalId, SpaceRole Role);
+public sealed record GrantRoleRequest(PrincipalType PrincipalType, string PrincipalId, SpaceRole? Role = null, Guid? RoleId = null);
 public sealed record DeleteSpaceRequest(string? Confirm);
 
 public static class SpaceRoutes
@@ -28,12 +29,24 @@ public static class SpaceRoutes
             bus.SendAsync(new ListSpaceRoles { SpaceId = id }, ct).ToHttp()).WithAction<ListSpaceRoles>();
 
         api.MapPut("/spaces/{id:guid}/roles", (Guid id, GrantRoleRequest req, IActionBus bus, CancellationToken ct) =>
-            bus.SendAsync(new GrantSpaceRole { SpaceId = id, PrincipalType = req.PrincipalType, PrincipalId = req.PrincipalId, Role = req.Role }, ct).ToHttp()).WithAction<GrantSpaceRole>();
+            bus.SendAsync(new GrantSpaceRole { SpaceId = id, PrincipalType = req.PrincipalType, PrincipalId = req.PrincipalId, Role = req.Role, RoleId = req.RoleId }, ct).ToHttp()).WithAction<GrantSpaceRole>();
 
         api.MapDelete("/spaces/{id:guid}/roles/{assignmentId:guid}", (Guid id, Guid assignmentId, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new RevokeSpaceRole { SpaceId = id, AssignmentId = assignmentId }, ct).ToHttp()).WithAction<RevokeSpaceRole>();
 
         var admin = api.MapGroup("/admin");
+        api.MapGet("/roles", (IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new ListRoles(), ct).ToHttp()).WithAction<ListRoles>();
+
+        admin.MapPost("/roles", (RoleRequest req, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new CreateRole { Name = req.Name ?? "", Permissions = req.Permissions ?? [] }, ct).ToHttp(r => Results.Created($"/api/v1/roles/{r.Id}", r))).WithAction<CreateRole>();
+
+        admin.MapPut("/roles/{id:guid}", (Guid id, RoleRequest req, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new UpdateRole { RoleId = id, Name = req.Name ?? "", Permissions = req.Permissions ?? [] }, ct).ToHttp()).WithAction<UpdateRole>();
+
+        admin.MapDelete("/roles/{id:guid}", (Guid id, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new DeleteRole { RoleId = id }, ct).ToHttp()).WithAction<DeleteRole>();
+
         admin.MapGet("/spaces", (IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new ListAllSpaces(), ct).ToHttp()).WithAction<ListAllSpaces>();
 

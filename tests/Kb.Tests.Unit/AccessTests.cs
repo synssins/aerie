@@ -19,6 +19,8 @@ public class AccessTests
         _data.GetAllSpacesAsync(Arg.Any<CancellationToken>()).Returns(spaces);
         _data.GetPrincipalAsync(_user, Arg.Any<CancellationToken>()).Returns(new PrincipalInfo(_user, IsAdmin: true, HasFullAccess: true, []));
         _perms.GetRoleAsync(_user, _normal, Arg.Any<CancellationToken>()).Returns(SpaceRole.Supervisor);
+        // A person's permissions come from the service too: here a Supervisor's.
+        _perms.CanAsync(_user, _normal, Arg.Any<SpaceAction>(), Arg.Any<CancellationToken>()).Returns(c => RoleMatrix.MinimumRole(c.ArgAt<SpaceAction>(2)) <= SpaceRole.Supervisor);
         _perms.VisibleSpaceIdsAsync(_user, Arg.Any<CancellationToken>()).Returns([_normal]);
         _access = new SpaceAccess(_perms, _data, Substitute.For<IPluginPermissionData>(), new Kb.Core.Plugins.PluginRegistry([], false, 0));
     }

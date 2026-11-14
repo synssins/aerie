@@ -23,6 +23,53 @@ public static class RoleMatrix
     };
 }
 
+/// <summary>
+/// The ten space permissions as a bit set (bit n is <see cref="SpaceAction"/> n), and the four built-in roles.
+/// A role is a named set of them; a person holds the union of the sets of all their roles in a space.
+/// </summary>
+public static class SpacePerms
+{
+    public static int Of(SpaceAction a) => 1 << (int)a;
+    public static bool Has(int mask, SpaceAction a) => (mask & Of(a)) != 0;
+    public static readonly int All = Enum.GetValues<SpaceAction>().Aggregate(0, (m, a) => m | Of(a));
+    public static readonly int Read = Of(SpaceAction.Read);
+    /// <summary>What a Write token may do at most: read, create and edit, move and delete its owner's own pages.</summary>
+    public static readonly int WriteToken = Read | Of(SpaceAction.CreateEdit) | Of(SpaceAction.MoveDeleteOwn);
+
+    /// <summary>The permissions a built-in role starts with: every action whose minimum role it reaches.</summary>
+    public static int Default(SpaceRole r) => Enum.GetValues<SpaceAction>().Where(a => RoleMatrix.MinimumRole(a) <= r).Aggregate(0, (m, a) => m | Of(a));
+
+    /// <summary>A role that manages members and settings counts as Owner: only an Admin grants, changes or removes it.</summary>
+    public static bool IsOwnerGrade(int mask) => Has(mask, SpaceAction.ManageRolesSettingsSensitive);
+
+    public static IReadOnlyList<SpaceAction> Actions(int mask) => [.. Enum.GetValues<SpaceAction>().Where(a => Has(mask, a))];
+
+    /// <summary>The fixed ids of the built-in roles, so a migration and the code name the same rows.</summary>
+    public static Guid IdOf(SpaceRole r) => new($"00000000-0000-0000-0000-00000000000{(int)r}");
+
+    /// <summary>
+    /// The level a set of permissions reaches, for what still speaks in levels (plugin permissions, the "my role" label):
+    /// the strongest built-in role whose permissions are all held. Any access at all is at least Reader.
+    /// </summary>
+    public static SpaceRole? Rank(int mask, IEnumerable<SpaceRoleDef> roles)
+    {
+        if (mask == 0) return null;
+        var best = SpaceRole.Reader;
+        foreach (var r in roles)
+            if (r.BuiltIn is { } level && level > best && (r.Permissions & ~mask) == 0) best = level;
+        return best;
+    }
+}
+
+/// <summary>A role: a name and a set of space permissions. BuiltIn: one of the four the product starts with (never deleted).</summary>
+public sealed class SpaceRoleDef
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required string Name { get; set; }
+    public int Permissions { get; set; }
+    public SpaceRole? BuiltIn { get; set; }
+}
+
 public sealed class Space
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -52,7 +99,7 @@ public sealed class SpaceRoleAssignment
     public PrincipalType PrincipalType { get; set; }
     /// <summary>User id (Guid as string) or group id (directory group object id / local group id).</summary>
     public required string PrincipalId { get; set; }
-    public SpaceRole Role { get; set; }
+    public Guid RoleId { get; set; }
 }
 
 /// <summary>Time-boxed or approved access that bypasses the "admins have no silent access to sensitive spaces" rule.</summary>
@@ -77,13 +124,17 @@ public interface ISpaceAccessData
     Task<Space?> GetSpaceAsync(Guid spaceId, CancellationToken ct);
     Task<IReadOnlyList<Space>> GetAllSpacesAsync(CancellationToken ct);
     Task<IReadOnlyList<SpaceRoleAssignment>> GetAssignmentsAsync(Guid spaceId, CancellationToken ct);
+    Task<IReadOnlyList<SpaceRoleDef>> GetRoleDefsAsync(CancellationToken ct);
     Task<IReadOnlyList<SpaceRoleAssignment>> GetAssignmentsForPrincipalsAsync(IReadOnlyCollection<string> userAndGroupIds, CancellationToken ct);
     Task<IReadOnlyList<SpaceAccessGrant>> GetActiveGrantsAsync(Guid userId, DateTimeOffset now, CancellationToken ct);
 }
 
 public interface ISpacePermissionService
 {
+    /// <summary>The level the person's permissions reach (see <see cref="SpacePerms.Rank"/>); null for no access.</summary>
     Task<SpaceRole?> GetRoleAsync(Guid userId, Guid spaceId, CancellationToken ct = default);
+    /// <summary>The person's permissions in the space as a bit set (<see cref="SpacePerms"/>); 0 for no access.</summary>
+    Task<int> GetPermissionsAsync(Guid userId, Guid spaceId, CancellationToken ct = default);
     Task<bool> CanAsync(Guid userId, Guid spaceId, SpaceAction action, CancellationToken ct = default);
     Task<IReadOnlyList<Guid>> VisibleSpaceIdsAsync(Guid userId, CancellationToken ct = default);
 }
@@ -95,34 +146,35 @@ public interface ISpacePermissionService
 /// </summary>
 public sealed class SpacePermissionService(ISpaceAccessData data, TimeProvider time) : ISpacePermissionService
 {
-    public async Task<SpaceRole?> GetRoleAsync(Guid userId, Guid spaceId, CancellationToken ct = default)
+    public async Task<SpaceRole?> GetRoleAsync(Guid userId, Guid spaceId, CancellationToken ct = default) =>
+        SpacePerms.Rank(await GetPermissionsAsync(userId, spaceId, ct), await data.GetRoleDefsAsync(ct));
+
+    public async Task<int> GetPermissionsAsync(Guid userId, Guid spaceId, CancellationToken ct = default)
     {
         var p = await data.GetPrincipalAsync(userId, ct);
         var space = await data.GetSpaceAsync(spaceId, ct);
-        if (p is null || space is null) return null;
+        if (p is null || space is null) return 0;
         // A sensitive space is always Private; the check here holds even if a row says otherwise.
-        var publicOn = space.Visibility != SpaceVisibility.Private && !space.IsSensitive;
+        var mask = space.Visibility != SpaceVisibility.Private && !space.IsSensitive ? SpacePerms.Read : 0;
+        if (!p.HasFullAccess) return mask;
 
-        if (!p.HasFullAccess) return publicOn ? SpaceRole.Reader : null;
-
-        SpaceRole? best = publicOn ? SpaceRole.Reader : null;
+        // The union of every role the person holds there, directly and through groups. A role that is gone gives nothing.
+        var roles = (await data.GetRoleDefsAsync(ct)).ToDictionary(r => r.Id);
         var ids = PrincipalIds(p);
         foreach (var a in await data.GetAssignmentsAsync(spaceId, ct))
-            if (ids.Contains(a.PrincipalId)) best = Max(best, a.Role);
+            if (ids.Contains(a.PrincipalId) && roles.TryGetValue(a.RoleId, out var role)) mask |= role.Permissions;
 
-        if (p.IsAdmin && !space.IsSensitive) best = SpaceRole.Owner;
+        if (p.IsAdmin && !space.IsSensitive) mask = SpacePerms.All;
 
+        // Emergency access and approved requests are at a built-in level: that role's permissions as they are now.
         foreach (var g in await data.GetActiveGrantsAsync(userId, time.GetUtcNow(), ct))
-            if (g.SpaceId == spaceId) best = Max(best, g.Role);
+            if (g.SpaceId == spaceId) mask |= roles.TryGetValue(SpacePerms.IdOf(g.Role), out var builtIn) ? builtIn.Permissions : SpacePerms.Default(g.Role);
 
-        return best;
+        return mask;
     }
 
-    public async Task<bool> CanAsync(Guid userId, Guid spaceId, SpaceAction action, CancellationToken ct = default)
-    {
-        var role = await GetRoleAsync(userId, spaceId, ct);
-        return role is { } r && r >= RoleMatrix.MinimumRole(action);
-    }
+    public async Task<bool> CanAsync(Guid userId, Guid spaceId, SpaceAction action, CancellationToken ct = default) =>
+        SpacePerms.Has(await GetPermissionsAsync(userId, spaceId, ct), action);
 
     public async Task<IReadOnlyList<Guid>> VisibleSpaceIdsAsync(Guid userId, CancellationToken ct = default)
     {
@@ -146,5 +198,4 @@ public sealed class SpacePermissionService(ISpaceAccessData data, TimeProvider t
         return ids;
     }
 
-    private static SpaceRole? Max(SpaceRole? a, SpaceRole b) => a is null || b > a ? b : a;
 }

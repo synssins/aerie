@@ -1,5 +1,36 @@
 [
   {
+    "action": "role.list",
+    "method": "GET",
+    "path": "/api/v1/roles",
+    "expect": {"anonymous": 401, "outsider": 200, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "scope": "server",
+    "note": "Everyone signed in reads the list of roles: an Owner picks from it on a space's Members tab."
+  },
+  {
+    "action": "role.create",
+    "method": "POST",
+    "path": "/api/v1/admin/roles",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 400},
+    "scope": "server"
+  },
+  {
+    "action": "role.update",
+    "method": "PUT",
+    "path": "/api/v1/admin/roles/{newGuid}",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 404},
+    "scope": "server"
+  },
+  {
+    "action": "role.delete",
+    "method": "DELETE",
+    "path": "/api/v1/admin/roles/{newGuid}",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 404},
+    "scope": "server"
+  },
+  {
     "action": "user.list",
     "method": "GET",
     "path": "/api/v1/admin/users",

@@ -155,29 +155,32 @@ public sealed class ApiTokenAuthHandler(IOptionsMonitor<AuthenticationSchemeOpti
 
 /// <summary>
 /// The permission service every route uses. For a signed-in person it is the plain service.
-/// For a token it narrows the answer: no scope for a space means no role there; Read caps the role at Reader and Write at Contributor.
+/// For a token it narrows the answer: no scope for a space means no permission there; Read caps it at Read, and Write at Read, Create and
+/// edit, and Move and delete own (<see cref="SpacePerms.WriteToken"/>).
 /// A service token has no person behind it, so its role is what its scopes say, and a scope for every space never reaches a sensitive one.
 /// </summary>
 public sealed class TokenScopedPermissions(SpacePermissionService inner, ISpaceAccessData data, IHttpContextAccessor http) : ISpacePermissionService
 {
     private ApiToken? TokenOf(Guid userId) => ApiTokenAuth.Current(http.HttpContext) is { } t && t.OwnerUserId == userId ? t : null;
 
-    private static SpaceRole Cap(TokenAccess access) => access == TokenAccess.Write ? SpaceRole.Contributor : SpaceRole.Reader;
+    private static int Cap(TokenAccess access) => access == TokenAccess.Write ? SpacePerms.WriteToken : SpacePerms.Read;
 
-    public async Task<SpaceRole?> GetRoleAsync(Guid userId, Guid spaceId, CancellationToken ct = default)
+    public async Task<int> GetPermissionsAsync(Guid userId, Guid spaceId, CancellationToken ct = default)
     {
-        if (TokenOf(userId) is not { } token) return await inner.GetRoleAsync(userId, spaceId, ct);
+        if (TokenOf(userId) is not { } token) return await inner.GetPermissionsAsync(userId, spaceId, ct);
         if (token.Kind == TokenKind.Service)
         {
-            if (await data.GetSpaceAsync(spaceId, ct) is not { } space) return null;
-            return token.AccessTo(spaceId, includeGlobal: !space.IsSensitive) is { } granted ? Cap(granted) : null;
+            if (await data.GetSpaceAsync(spaceId, ct) is not { } space) return 0;
+            return token.AccessTo(spaceId, includeGlobal: !space.IsSensitive) is { } granted ? Cap(granted) : 0;
         }
-        if (token.AccessTo(spaceId) is not { } access || await inner.GetRoleAsync(userId, spaceId, ct) is not { } role) return null;
-        return role < Cap(access) ? role : Cap(access);
+        return token.AccessTo(spaceId) is { } access ? await inner.GetPermissionsAsync(userId, spaceId, ct) & Cap(access) : 0;
     }
 
+    public async Task<SpaceRole?> GetRoleAsync(Guid userId, Guid spaceId, CancellationToken ct = default) =>
+        SpacePerms.Rank(await GetPermissionsAsync(userId, spaceId, ct), await data.GetRoleDefsAsync(ct));
+
     public async Task<bool> CanAsync(Guid userId, Guid spaceId, SpaceAction action, CancellationToken ct = default) =>
-        await GetRoleAsync(userId, spaceId, ct) is { } role && role >= RoleMatrix.MinimumRole(action);
+        SpacePerms.Has(await GetPermissionsAsync(userId, spaceId, ct), action);
 
     public async Task<IReadOnlyList<Guid>> VisibleSpaceIdsAsync(Guid userId, CancellationToken ct = default)
     {

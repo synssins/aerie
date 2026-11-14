@@ -74,7 +74,7 @@ public sealed class AccessService(
         r.DecidedAt = time.GetUtcNow();
         await data.SaveRequestAsync(r, ct);
         if (approve)
-            await data.AddAssignmentAsync(new SpaceRoleAssignment { SpaceId = r.SpaceId, PrincipalType = PrincipalType.User, PrincipalId = r.RequesterId.ToString("D"), Role = r.RequestedRole }, ct);
+            await data.AddAssignmentAsync(new SpaceRoleAssignment { SpaceId = r.SpaceId, PrincipalType = PrincipalType.User, PrincipalId = r.RequesterId.ToString("D"), RoleId = SpacePerms.IdOf(r.RequestedRole) }, ct);
 
         await audit.AppendAsync(new(AuditActions.AccessDecide, deciderId, "accessRequest", r.Id.ToString(), r.SpaceId,
             new Dictionary<string, string> { ["approved"] = approve.ToString(), ["requester"] = r.RequesterId.ToString() }), ct);

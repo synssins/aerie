@@ -985,8 +985,8 @@ namespace Kb.Data.Sqlite.Migrations
                     b.Property<int>("PrincipalType")
                         .HasColumnType("INTEGER");
 
-                    b.Property<int>("Role")
-                        .HasColumnType("INTEGER");
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("TEXT");
 
                     b.Property<Guid>("SpaceId")
                         .HasColumnType("TEXT");
@@ -995,10 +995,67 @@ namespace Kb.Data.Sqlite.Migrations
 
                     b.HasIndex("PrincipalId");
 
+                    b.HasIndex("RoleId");
+
                     b.HasIndex("SpaceId", "PrincipalType", "PrincipalId")
                         .IsUnique();
 
                     b.ToTable("SpaceRoleAssignments");
+                });
+
+            modelBuilder.Entity("Kb.Core.Spaces.SpaceRoleDef", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("BuiltIn")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Permissions")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("SpaceRoles", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000001"),
+                            BuiltIn = 1,
+                            Name = "Reader",
+                            Permissions = 1
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000002"),
+                            BuiltIn = 2,
+                            Name = "Contributor",
+                            Permissions = 7
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000003"),
+                            BuiltIn = 3,
+                            Name = "Supervisor",
+                            Permissions = 255
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000004"),
+                            BuiltIn = 4,
+                            Name = "Owner",
+                            Permissions = 1023
+                        });
                 });
 
             modelBuilder.Entity("Kb.Data.AuditEntry", b =>

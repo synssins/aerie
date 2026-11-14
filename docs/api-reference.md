@@ -40,6 +40,9 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | GET | `/api/v1/admin/plugins/{id}/settings` | `plugin.settings.read` | No | Needed | No |
 | PUT | `/api/v1/admin/plugins/{id}/settings` | `plugin.settings.save` | Yes | Needed | No |
 | PUT | `/api/v1/admin/plugins/{id}/state` | `plugin.state.set` | Yes | Needed | No |
+| POST | `/api/v1/admin/roles` | `role.create` | Yes | Needed | No |
+| DELETE | `/api/v1/admin/roles/{id:guid}` | `role.delete` | Yes | Needed | No |
+| PUT | `/api/v1/admin/roles/{id:guid}` | `role.update` | Yes | Needed | No |
 | POST | `/api/v1/admin/search/reindex` | `search.reindex` | Yes | Needed | No |
 | GET | `/api/v1/admin/search/synonyms` | `search.synonyms.read` | No | Needed | No |
 | PUT | `/api/v1/admin/search/synonyms` | `search.synonyms.save` | Yes | Needed | No |
@@ -115,6 +118,7 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | GET | `/api/v1/pages/{id:guid}/versions/{version}` | `page.version.read` | No | Needed | Read |
 | POST | `/api/v1/pages/{id:guid}/versions/{version}/restore` | `page.version.restore` | Yes | Needed | Write |
 | GET | `/api/v1/principals` | `principal.list` | No | Needed | No |
+| GET | `/api/v1/roles` | `role.list` | No | Needed | No |
 | GET | `/api/v1/search` | `search.query` | No | Not needed | Read |
 | POST | `/api/v1/setup` | `setup.run` | Yes | Not needed | No |
 | GET | `/api/v1/setup/status` | `setup.status` | No | Not needed | No |

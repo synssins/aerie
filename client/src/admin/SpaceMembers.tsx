@@ -1,22 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, type Principal, type RoleAssignment, type SpaceRoleName } from "../api";
-
-const ROLES: SpaceRoleName[] = ["Owner", "Supervisor", "Contributor", "Reader"];
+import { api, ApiError, ownerGrade, type Principal, type RoleAssignment, type RoleDef } from "../api";
 const problem = (e: unknown, fallback: string) => (e instanceof ApiError && e.status === 403 ? "Not allowed." : (e instanceof ApiError && (e.body?.detail || e.body?.error)) || fallback);
 
 /**
  * A space's Members tab: who holds which role, people and groups. An Admin gives and changes every role; an Owner gives the
- * roles below Owner, and an Owner row (its own too) is an Admin's to change.
+ * roles that do not manage members and settings, and a row with such a role (its own too) is an Admin's to change.
  */
 export function SpaceMembers({ spaceId, isAdmin }: { spaceId: string; isAdmin: boolean }) {
   const [rows, setRows] = useState<RoleAssignment[]>([]);
   const [query, setQuery] = useState("");
   const [found, setFound] = useState<Principal[]>([]);
   const [pick, setPick] = useState<Principal | null>(null);
-  const [role, setRole] = useState<SpaceRoleName>("Reader");
+  const [all, setAll] = useState<RoleDef[]>([]);
+  const [role, setRole] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const roles = isAdmin ? ROLES : ROLES.filter((r) => r !== "Owner");
-  const locked = (r: RoleAssignment) => r.role === "Owner" && !isAdmin;
+  const roles = isAdmin ? all : all.filter((r) => !ownerGrade(r));
+  const locked = (r: RoleAssignment) => !isAdmin && ownerGrade(all.find((x) => x.id === r.roleId));
+  useEffect(() => { void api.get<RoleDef[]>("/roles").then((list) => { setAll(list); setRole((cur) => cur || list[0]?.id || ""); }).catch(() => setAll([])); }, []);
 
   const load = useCallback(async () => { setRows(await api.get<RoleAssignment[]>(`/spaces/${spaceId}/roles`)); }, [spaceId]);
   useEffect(() => { void load(); }, [load]);
@@ -28,13 +28,13 @@ export function SpaceMembers({ spaceId, isAdmin }: { spaceId: string; isAdmin: b
     return () => clearTimeout(t);
   }, [query, pick]);
 
-  async function grant(type: "User" | "Group", id: string, r: SpaceRoleName) {
+  async function grant(type: "User" | "Group", id: string, roleId: string) {
     setError(null);
-    try { await api.put(`/spaces/${spaceId}/roles`, { principalType: type, principalId: id, role: r }); await load(); return true; }
+    try { await api.put(`/spaces/${spaceId}/roles`, { principalType: type, principalId: id, roleId }); await load(); return true; }
     catch (e) { setError(problem(e, "Not saved.")); return false; }
   }
   async function add() {
-    if (pick && await grant(pick.type, pick.id, role)) { setPick(null); setQuery(""); }
+    if (pick && role && await grant(pick.type, pick.id, role)) { setPick(null); setQuery(""); }
   }
   async function remove(r: RoleAssignment) {
     setError(null);
@@ -58,8 +58,8 @@ export function SpaceMembers({ spaceId, isAdmin }: { spaceId: string; isAdmin: b
             </div>
           )}
         </div>
-        <select className="sel" aria-label="Role" value={role} onChange={(e) => setRole(e.target.value as SpaceRoleName)}>
-          {roles.map((r) => <option key={r} value={r}>{r}</option>)}
+        <select className="sel" aria-label="Role" value={role} onChange={(e) => setRole(e.target.value)}>
+          {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
         </select>
         <button type="button" className="tb primary" disabled={!pick} onClick={() => void add()}>Add</button>
       </div>
@@ -72,9 +72,9 @@ export function SpaceMembers({ spaceId, isAdmin }: { spaceId: string; isAdmin: b
               <td>{r.name ?? r.principalId}</td>
               <td className="muted">{r.principalType === "Group" ? "Group" : "Person"}</td>
               <td>
-                {locked(r) ? r.role : (
-                  <select className="sel" aria-label={`Role of ${r.name ?? r.principalId}`} value={r.role} onChange={(e) => void grant(r.principalType, r.principalId, e.target.value as SpaceRoleName)}>
-                    {roles.map((x) => <option key={x} value={x}>{x}</option>)}
+                {locked(r) ? r.roleName ?? r.role : (
+                  <select className="sel" aria-label={`Role of ${r.name ?? r.principalId}`} value={r.roleId} onChange={(e) => void grant(r.principalType, r.principalId, e.target.value)}>
+                    {roles.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
                   </select>
                 )}
               </td>

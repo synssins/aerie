@@ -149,6 +149,7 @@ h2.s { font-size: 17px; margin: 22px 0 8px; }
 .code-key code, .recovery-codes code { font: 14px/1.5 Consolas, "Cascadia Mono", monospace; user-select: all; }
 .recovery-codes { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, max-content); gap: 6px 24px; }
 .code-actions { display: flex; gap: 8px; }
+.role-head { display: inline-flex; align-items: center; gap: 2px; }
 .signin-card label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 500; }
 .signin-card input { height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 0 12px; font: inherit; background: var(--paper); color: var(--ink); }
 .btn { height: 38px; border-radius: 8px; font-weight: 600; }

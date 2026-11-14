@@ -288,7 +288,7 @@ public sealed class ApiTests : IAsyncLifetime
 
         await _f.WithDbAsync(async db =>
         {
-            Assert.True(await db.SpaceRoleAssignments.AnyAsync(a => a.PrincipalId == techId && a.Role == SpaceRole.Contributor));
+            Assert.True(await db.SpaceRoleAssignments.AnyAsync(a => a.PrincipalId == techId && a.RoleId == Kb.Core.Spaces.SpacePerms.IdOf(SpaceRole.Contributor)));
             Assert.True(await db.AuditEntries.AnyAsync(a => a.Action == AuditActions.SpaceRoleGrant));
         });
     }

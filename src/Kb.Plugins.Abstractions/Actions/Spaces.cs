@@ -67,7 +67,9 @@ public sealed record GrantSpaceRole : IAction<Unit>
     public required Guid SpaceId { get; init; }
     public required PrincipalType PrincipalType { get; init; }
     public required string PrincipalId { get; init; }
-    public required SpaceRole Role { get; init; }
+    /// <summary>The role, by id (any role of the list). Or a built-in one by its level, as before roles could be added.</summary>
+    public Guid? RoleId { get; init; }
+    public SpaceRole? Role { get; init; }
 }
 
 [Action("space.role.revoke")]
@@ -108,4 +110,5 @@ public sealed record ListAllSpaces : IAction<IReadOnlyList<SpaceDto>>;
 public sealed record SpaceDto(Guid Id, string Key, string Name, string? Description, bool IsSensitive, string Visibility, string? MyRole,
     bool CommentsEnabled, int AgingDays, string AgingAudience, int? RecycleDays, DateTimeOffset CreatedAt);
 /// <summary>Name: the person's display name or the group's name, for showing the row.</summary>
-public sealed record RoleAssignmentDto(Guid Id, PrincipalType PrincipalType, string PrincipalId, SpaceRole Role, string? Name = null);
+/// <summary>Role: the level the row's role reaches (its strongest built-in role held in full). RoleId and RoleName: the role itself.</summary>
+public sealed record RoleAssignmentDto(Guid Id, PrincipalType PrincipalType, string PrincipalId, SpaceRole Role, string? Name = null, Guid RoleId = default, string? RoleName = null);

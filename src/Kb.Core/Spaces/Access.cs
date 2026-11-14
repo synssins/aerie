@@ -30,8 +30,14 @@ public sealed class SpaceAccess(ISpacePermissionService permissions, ISpaceAcces
         };
     }
 
-    public async Task<bool> CanAsync(Actor actor, Guid spaceId, SpaceAction action, CancellationToken ct = default) =>
-        await RoleAsync(actor, spaceId, ct) is { } role && role >= RoleMatrix.MinimumRole(action);
+    public async Task<bool> CanAsync(Actor actor, Guid spaceId, SpaceAction action, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        // A person holds the permissions of their roles; a plugin and nobody hold a level (Owner, Reader).
+        return actor is { Kind: ActorKind.User, UserId: { } user }
+            ? await permissions.CanAsync(user, spaceId, action, ct)
+            : await RoleAsync(actor, spaceId, ct) is { } role && role >= RoleMatrix.MinimumRole(action);
+    }
 
     public async Task<bool> CanAsync(Actor actor, string permission, Guid? spaceId = null, CancellationToken ct = default)
     {
