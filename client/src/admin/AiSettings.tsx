@@ -26,7 +26,20 @@ export function AiPanel() {
   const [status, setStatus] = useState<string | null>(null);
   const [test, setTest] = useState<TestResult | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { void api.get<Dto>("/admin/ai").then((d) => { setDto(d); setForm(d.settings); }); }, []);
+  // The models the server at the address lists (GET {address}/v1/models, fetched by the server): null until asked.
+  const [models, setModels] = useState<{ ids: string[] | null; error: string | null; loading: boolean; url: string }>({ ids: null, error: null, loading: false, url: "" });
+  async function loadModels(url: string, apiKey: string | null) {
+    if (!url.trim()) { setModels({ ids: null, error: null, loading: false, url: "" }); return; }
+    setModels((m) => ({ ...m, loading: true, error: null, url }));
+    try { setModels({ ids: await api.post<string[]>("/admin/ai/models", { baseUrl: url, apiKey: apiKey || null }), error: null, loading: false, url }); }
+    catch (err) {
+      const detail = err instanceof ApiError ? err.body?.detail ?? (err.body?.errors ? Object.values(err.body.errors).flat()[0] : null) : null;
+      setModels({ ids: null, error: `Models could not be listed: ${detail ?? "no answer from the server."}`, loading: false, url });
+    }
+  }
+  useEffect(() => {
+    void api.get<Dto>("/admin/ai").then((d) => { setDto(d); setForm(d.settings); void loadModels(d.settings.baseUrl, null); });
+  }, []);
   if (!dto || !form) return null;
 
   const set = <K extends keyof AiSettings>(k: K, v: AiSettings[K]) => { setForm({ ...form, [k]: v }); setStatus(null); };
@@ -70,9 +83,20 @@ export function AiPanel() {
       <form className="form" onSubmit={save}>
         <span className="lbl">AI</span><Switch on={form.enabled} label="AI" onChange={(v) => set("enabled", v)} />
         <label className="lbl" htmlFor="ai-url">Server address</label>
-        <input id="ai-url" type="text" value={form.baseUrl} maxLength={500} onChange={(e) => set("baseUrl", e.target.value)} />
+        <input id="ai-url" type="text" value={form.baseUrl} maxLength={500} onChange={(e) => set("baseUrl", e.target.value)}
+          onBlur={() => { if (form.baseUrl.trim() !== models.url) void loadModels(form.baseUrl, key); }} />
         <label className="lbl" htmlFor="ai-model">Model</label>
-        <input id="ai-model" type="text" value={form.model} maxLength={200} onChange={(e) => set("model", e.target.value)} />
+        <span className="unit">
+          <select id="ai-model" value={form.model} onChange={(e) => set("model", e.target.value)} disabled={models.loading}>
+            {!form.model && <option value="">{models.ids ? "Choose a model" : "No models listed"}</option>}
+            {form.model && !models.ids?.includes(form.model) && <option value={form.model}>{form.model} (not currently listed)</option>}
+            {models.ids?.map((id) => <option key={id} value={id}>{id}</option>)}
+          </select>
+          <button type="button" className="tb" disabled={models.loading || !form.baseUrl.trim()} onClick={() => void loadModels(form.baseUrl, key)}>
+            {models.loading ? "Refreshing…" : "Refresh"}
+          </button>
+        </span>
+        {models.error && <><span /><p className="form-error" role="alert">{models.error}</p></>}
         <label className="lbl" htmlFor="ai-key">API key</label>
         <span className="unit">
           <input id="ai-key" type="password" autoComplete="new-password" value={key ?? ""} maxLength={2000} onChange={(e) => setKey(e.target.value)} />

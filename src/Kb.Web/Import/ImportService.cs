@@ -416,7 +416,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             ["appliesTo"] = appliesTo,
             ["owner"] = owner,
             ["reviewMonths"] = review > 0 ? review : null,
-            ["destination"] = chosen ?? suggestion,
+            ["destination"] = (chosen ?? suggestion)?.DeepClone(), // a node has one parent: the suggestion is also below
             ["suggestedDestination"] = suggestion,
             ["sensitive"] = new JsonArray([.. findings.Select(f => (JsonNode)new JsonObject { ["kind"] = f.Kind, ["sample"] = f.Sample })]),
             ["duplicates"] = duplicates,

@@ -21,5 +21,14 @@
     "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
     "scope": "server",
     "note": "AI is off in the test server, so the admin's test answers ok false without calling anything."
+  },
+  {
+    "action": "ai.models",
+    "method": "POST",
+    "path": "/api/v1/admin/ai/models",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 400},
+    "scope": "server",
+    "note": "Admins only; with no address the admin hears that one is needed, and nothing is called."
   }
 ]

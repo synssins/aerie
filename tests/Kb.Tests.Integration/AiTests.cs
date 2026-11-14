@@ -27,8 +27,15 @@ public sealed class AiTests : IAsyncLifetime
         public List<(string Url, JsonNode Body, string? Auth, string? Extra)> Seen { get; } = [];
         public string Content { get; set; } = """{"ok":true}""";
         public string Reasoning { get; set; } = "";
+        public bool ModelsDown { get; set; }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
+            if (request.Method == HttpMethod.Get)
+            {
+                Seen.Add((request.RequestUri!.ToString(), new JsonObject(), request.Headers.Authorization?.ToString(), request.Headers.TryGetValues("X-Gateway", out var g) ? g.Single() : null));
+                return ModelsDown ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                    : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"object":"list","data":[{"id":"qwen-9b"},{"id":"phi-4b"},{"id":"qwen-9b"}]}""", Encoding.UTF8, "application/json") };
+            }
             Seen.Add((request.RequestUri!.ToString(), JsonNode.Parse(await request.Content!.ReadAsStringAsync(ct))!, request.Headers.Authorization?.ToString(),
                 request.Headers.TryGetValues("X-Gateway", out var v) ? v.Single() : null));
             var answer = new JsonObject
@@ -199,5 +206,25 @@ public sealed class AiTests : IAsyncLifetime
         Assert.Equal(429, (await RunAsync(bo, AiFeatures.Search, new() { ["q"] = "vpn" })).Problem!.Status);
         Assert.Equal(["too-large", "refused", "invalid-output", "ok", "ok", "limited"], (await AuditAsync()).Select(a => a.Outcome));
         Assert.Contains(("ai.refused", "refused"), await AuditAsync());
+    }
+
+    [Fact]
+    public async Task Models_AreListedFromTheTypedAddress_ThroughTheHook_WithTheSavedKey()
+    {
+        (await SaveAsync(On(), "sk-secret-123")).EnsureSuccessStatusCode();
+        var r = await _admin.PostAsJsonAsync("/api/v1/admin/ai/models", new { baseUrl = "http://other.local:8093/" }, Ct);
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        Assert.Equal(["phi-4b", "qwen-9b"], (await r.Content.ReadFromJsonAsync<string[]>(Ct))!);
+        var seen = _model.Seen.Single();
+        Assert.Equal("http://other.local:8093/v1/models", seen.Url);
+        Assert.Equal("Bearer sk-secret-123", seen.Auth);
+        Assert.Equal("pass", seen.Extra);
+
+        _model.ModelsDown = true;
+        var down = await _admin.PostAsJsonAsync("/api/v1/admin/ai/models", new { baseUrl = "http://other.local:8093/v1", apiKey = "typed" }, Ct);
+        Assert.Equal(HttpStatusCode.BadGateway, down.StatusCode);
+        Assert.Contains("503", await down.Content.ReadAsStringAsync(Ct), StringComparison.Ordinal);
+        Assert.Equal("Bearer typed", _model.Seen[^1].Auth);
+        Assert.Equal(HttpStatusCode.BadRequest, (await _admin.PostAsJsonAsync("/api/v1/admin/ai/models", new { baseUrl = "file:///etc" }, Ct)).StatusCode);
     }
 }

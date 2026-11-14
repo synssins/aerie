@@ -25,6 +25,14 @@ Write. `RequestAccess`, answers `AccessRequestedDto`.
 | Role | `SpaceRole` | required |
 | Reason | `string?` |  |
 
+## ai.models
+
+Write. `ListAiModels`, answers `string[]`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Request | `AiModelsRequest` | required |
+
 ## ai.settings.read
 
 Read. `ReadAiSettings`, answers `AiSettingsDto`. Core only.

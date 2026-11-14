@@ -11,6 +11,7 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | POST | `/api/v1/access-requests/{id:guid}/decision` | `access.decide` | Yes | Needed | No |
 | GET | `/api/v1/admin/ai/` | `ai.settings.read` | No | Needed | No |
 | PUT | `/api/v1/admin/ai/` | `ai.settings.save` | Yes | Needed | No |
+| POST | `/api/v1/admin/ai/models` | `ai.models` | Yes | Needed | No |
 | POST | `/api/v1/admin/ai/test` | `ai.test` | Yes | Needed | No |
 | GET | `/api/v1/admin/audit` | `audit.list` | No | Needed | No |
 | GET | `/api/v1/admin/audit/verify` | `audit.verify` | No | Needed | No |

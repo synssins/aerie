@@ -71,6 +71,37 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
     public async Task SetKeyAsync(string? key, Guid? by, CancellationToken ct) =>
         await db.SetAsync(KeyKey, string.IsNullOrEmpty(key) ? null : _key.Protect(key), by, time.GetUtcNow(), ct);
 
+    /// <summary>
+    /// The model ids a server lists at {base}/v1/models, through the outbound hook like every AI call. The key is the one
+    /// typed (not yet saved) or else the saved one. Only ids come back, never the server's text.
+    /// </summary>
+    public async Task<Outcome<string[]>> ListModelsAsync(string baseUrl, string? typedKey, CancellationToken ct)
+    {
+        if (!Uri.TryCreate(baseUrl.Trim(), UriKind.Absolute, out var u) || u.Scheme is not ("http" or "https")) return Problem.Invalid("baseUrl", "An http or https address.");
+        var root = u.ToString().TrimEnd('/');
+        using var request = new HttpRequestMessage(HttpMethod.Get, (root.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) ? root : root + "/v1") + "/models");
+        if ((string.IsNullOrEmpty(typedKey) ? await KeyAsync(ct) : typedKey) is { Length: > 0 } key) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+        foreach (var d in decorators) await d.DecorateAsync(new OutboundRequest(OutboundPurposes.Ai, request), ct);
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(15));
+            using var response = await http.CreateClient(ClientName).SendAsync(request, timeout.Token);
+            if (!response.IsSuccessStatusCode) return new Problem(502, $"The server answered {(int)response.StatusCode} at /v1/models.");
+            var text = await response.Content.ReadAsStringAsync(timeout.Token);
+            if (text.Length > 1_000_000) return new Problem(502, "The model list is too large.");
+            var ids = (JsonNode.Parse(text)?["data"] as JsonArray ?? [])
+                .Select(m => m?["id"]?.GetValue<string>()).OfType<string>().Where(id => id.Length is > 0 and <= 200)
+                .Distinct(StringComparer.Ordinal).Order(StringComparer.OrdinalIgnoreCase).Take(500).ToArray();
+            if (ids.Length == 0) return new Problem(502, "The server lists no models at /v1/models.");
+            return ids;
+        }
+        catch (Exception e) when (e is HttpRequestException or OperationCanceledException or JsonException or InvalidOperationException && !ct.IsCancellationRequested)
+        {
+            return new Problem(502, e is OperationCanceledException ? "No answer from the server in 15 seconds." : "Could not reach the server, or it did not answer with a model list.");
+        }
+    }
+
     private async Task<string?> KeyAsync(CancellationToken ct) => await db.GetAsync(KeyKey, ct) is { Length: > 0 } p ? _key.Unprotect(p) : null;
 
     /// <summary>Who may use a feature: Off nobody, Admins only Admins, Everyone anyone signed in. The test is an Admin's.</summary>

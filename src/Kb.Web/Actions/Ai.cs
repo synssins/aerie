@@ -82,6 +82,27 @@ internal static class AiDto
         new(s, await ai.KeySetAsync(ct), AiGuard.IsDefault(s.Ruleset));
 }
 
+/// <summary>The models a server lists, for the Model choice in Administration › AI. BaseUrl may be one not saved yet.</summary>
+public sealed record AiModelsRequest(string? BaseUrl, string? ApiKey);
+
+[Action("ai.models")]
+public sealed record ListAiModels : IAction<string[]>
+{
+    public required AiModelsRequest Request { get; init; }
+}
+
+internal sealed class ListAiModelsHandler(AiService ai, IAccess access) : IActionHandler<ListAiModels, string[]>
+{
+    public async Task<Problem?> AuthorizeAsync(ActionContext<ListAiModels> ctx) => await access.IsAdminAsync(ctx.Actor, ctx.Cancel) ? null : Problem.Forbidden;
+
+    public async Task<Outcome<string[]>> HandleAsync(ActionContext<ListAiModels> ctx)
+    {
+        var r = ctx.Action.Request;
+        if ((r.ApiKey?.Length ?? 0) > 2000) return Problem.Invalid("apiKey", "2000 characters at most.");
+        return await ai.ListModelsAsync(r.BaseUrl ?? "", r.ApiKey, ctx.Cancel);
+    }
+}
+
 internal sealed class TestAiHandler(AiService ai, IAccess access) : IActionHandler<TestAi, AiTestDto>
 {
     private static readonly JsonObject Schema = JsonNode.Parse("""{"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false}""")!.AsObject();

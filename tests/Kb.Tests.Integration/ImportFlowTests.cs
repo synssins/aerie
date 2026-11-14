@@ -28,6 +28,7 @@ public sealed class ImportFlowTests : IAsyncLifetime
     {
         public int Calls;
         public bool ChangeWords;
+        public string Destination = "inbox";
         public bool SawPicture;
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -65,7 +66,7 @@ public sealed class ImportFlowTests : IAsyncLifetime
                     ["apps"] = new JsonArray(new JsonObject { ["name"] = "acme erp", ["version"] = "4.2", ["servers"] = new JsonArray("erp01") }),
                     ["owner"] = "ERP Support Team",
                     ["reviewMonths"] = 6,
-                    ["destination"] = "inbox",
+                    ["destination"] = Destination,
                 }.ToJsonString();
             }
             var answer = new JsonObject
@@ -224,6 +225,20 @@ public sealed class ImportFlowTests : IAsyncLifetime
         var upd = await cara.PostAsJsonAsync($"/api/v1/imports/items/{second}/accept", new { pages = new[] { new { title = "Reset MFA", contentJson = """{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"New"}]}]}""", tags = (string[]?)null } }, updatePageId = pageId, attachOriginals = false }, Ct);
         Assert.Equal(HttpStatusCode.OK, upd.StatusCode);
         Assert.Equal("2.0", (await cara.GetFromJsonAsync<JsonElement>($"/api/v1/pages/{pageId}", Ct)).GetProperty("version").GetString());
+    }
+
+    [Fact]
+    public async Task IntoTheInbox_TheModelsSuggestedSpace_IsTheDestinationAndTheSuggestion()
+    {
+        var (cara, _) = await UserAsync("cara", "Contributor");
+        _model.Destination = $"space:{_space}";
+        await UploadAsync(cara, ("printers.txt", U("Printers are on floor 2.")));
+        await WorkAsync();
+        var item = (await ItemsAsync(cara)).Single();
+        Assert.Equal("Ready", item.GetProperty("status").GetString());
+        var proposal = (await cara.GetFromJsonAsync<JsonElement>($"/api/v1/imports/items/{item.GetProperty("id").GetGuid()}", Ct)).GetProperty("proposal");
+        Assert.Equal(_space, proposal.GetProperty("destination").GetProperty("spaceId").GetGuid());
+        Assert.Equal(_space, proposal.GetProperty("suggestedDestination").GetProperty("spaceId").GetGuid());
     }
 
     [Fact]
