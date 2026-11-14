@@ -280,7 +280,7 @@ function AnnouncementDialog({ onPosted, onClose }: { onPosted: () => void; onClo
 export type RecentView = { id: string; title: string };
 
 export function HomeView({ me, spaces, viewed, onOpenSpace, onOpenPage }: {
-  me: Me; spaces: Space[]; viewed: RecentView[]; onOpenSpace: (s: Space) => void; onOpenPage: (id: string) => void;
+  me: Me | null; spaces: Space[]; viewed: RecentView[]; onOpenSpace: (s: Space) => void; onOpenPage: (id: string) => void;
 }) {
   const dialogs = useDialogs();
   const [home, setHome] = useState<Home | null>(null);
@@ -300,8 +300,8 @@ export function HomeView({ me, spaces, viewed, onOpenSpace, onOpenPage }: {
         <div className="col">
           <nav className="crumb" aria-label="Breadcrumb"><span className="crumb-home"><House className="ic" aria-hidden /></span></nav>
           <div className="titlebar">
-            <h1>Welcome, {me.displayName}</h1>
-            <div className="ptools">{me.canAnnounce && <button className="tb" onClick={() => setPosting(true)}><Megaphone className="ic" aria-hidden />New announcement</button>}</div>
+            <h1>{me ? `Welcome, ${me.displayName}` : "Welcome"}</h1>
+            <div className="ptools">{me?.canAnnounce && <button className="tb" onClick={() => setPosting(true)}><Megaphone className="ic" aria-hidden />New announcement</button>}</div>
           </div>
 
           {home?.announcements.map((a) => (
@@ -312,7 +312,7 @@ export function HomeView({ me, spaces, viewed, onOpenSpace, onOpenPage }: {
                 {a.body && <p>{a.body}</p>}
                 <div className="muted small">{a.by} · {fmtDate(a.createdAt)}</div>
               </div>
-              {me.canAnnounce && <button className="tb icon" aria-label={`Remove ${a.title}`} title="Remove" onClick={() => void remove(a)}><X className="ic" aria-hidden /></button>}
+              {me?.canAnnounce && <button className="tb icon" aria-label={`Remove ${a.title}`} title="Remove" onClick={() => void remove(a)}><X className="ic" aria-hidden /></button>}
             </section>
           ))}
 

@@ -80,7 +80,13 @@ public static class ApiTokenAuth
             await http.RequestServices.GetRequiredService<IAuditLog>().AppendAsync(new AuditEvent(AuditActions.TokenRefused, refused.Token.OwnerUserId, "token", refused.Token.Id.ToString(),
                 Data: new Dictionary<string, string> { ["reason"] = refused.Reason, ["ip"] = ip }), http.RequestAborted);
         }
-        else if (Current(http) is { } token)
+        if (HasBearer(http.Request) && Current(http) is null)
+        {
+            // A token that was presented and refused is never served as someone not signed in, even on a route open to them.
+            await Microsoft.AspNetCore.Authentication.AuthenticationHttpContextExtensions.ChallengeAsync(http, Scheme);
+            return;
+        }
+        if (Current(http) is { } token)
         {
             var method = http.Request.Method;
             var path = http.Request.Path.Value ?? "";

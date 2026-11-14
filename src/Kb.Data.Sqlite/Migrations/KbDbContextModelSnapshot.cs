@@ -916,9 +916,6 @@ namespace Kb.Data.Sqlite.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("TEXT");
 
-                    b.Property<bool>("IsPublic")
-                        .HasColumnType("INTEGER");
-
                     b.Property<bool>("IsSensitive")
                         .HasColumnType("INTEGER");
 
@@ -931,6 +928,9 @@ namespace Kb.Data.Sqlite.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<int?>("RecycleDays")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Visibility")
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");

@@ -1,7 +1,7 @@
 namespace Kb.Web;
 
-public sealed record CreateSpaceRequest(string Name, string? Key, string? Description, bool IsSensitive = false, bool IsPublic = false);
-public sealed record UpdateSpaceRequest(string? Name, string? Description, bool? IsSensitive, bool? IsPublic,
+public sealed record CreateSpaceRequest(string Name, string? Key, string? Description, bool IsSensitive = false, SpaceVisibility Visibility = SpaceVisibility.Private);
+public sealed record UpdateSpaceRequest(string? Name, string? Description, bool? IsSensitive, SpaceVisibility? Visibility,
     bool? CommentsEnabled = null, int? AgingDays = null, AgingAudience? AgingAudience = null, int? RecycleDays = null);
 public sealed record GrantRoleRequest(PrincipalType PrincipalType, string PrincipalId, SpaceRole Role);
 public sealed record DeleteSpaceRequest(string? Confirm);
@@ -11,17 +11,17 @@ public static class SpaceRoutes
     public static void MapSpaceEndpoints(this RouteGroupBuilder api)
     {
         api.MapGet("/spaces", (IActionBus bus, CancellationToken ct) =>
-            bus.SendAsync(new ListSpaces(), ct).ToHttp()).WithAction<ListSpaces>();
+            bus.SendAsync(new ListSpaces(), ct).ToHttp()).AllowAnonymous().WithAction<ListSpaces>();
 
         api.MapGet("/spaces/{id:guid}", (Guid id, IActionBus bus, CancellationToken ct) =>
-            bus.SendAsync(new ReadSpace { SpaceId = id }, ct).ToHttp()).WithAction<ReadSpace>();
+            bus.SendAsync(new ReadSpace { SpaceId = id }, ct).ToHttp()).AllowAnonymous().WithAction<ReadSpace>();
 
         api.MapPost("/spaces", (CreateSpaceRequest req, IActionBus bus, CancellationToken ct) =>
-            bus.SendAsync(new CreateSpace { Name = req.Name, Key = req.Key, Description = req.Description, IsSensitive = req.IsSensitive, IsPublic = req.IsPublic }, ct)
+            bus.SendAsync(new CreateSpace { Name = req.Name, Key = req.Key, Description = req.Description, IsSensitive = req.IsSensitive, Visibility = req.Visibility }, ct)
                 .ToHttp(space => Results.Created($"/api/v1/spaces/{space.Id}", space))).WithAction<CreateSpace>();
 
         api.MapPatch("/spaces/{id:guid}", (Guid id, UpdateSpaceRequest req, IActionBus bus, CancellationToken ct) =>
-            bus.SendAsync(new UpdateSpace { SpaceId = id, Name = req.Name, Description = req.Description, IsSensitive = req.IsSensitive, IsPublic = req.IsPublic,
+            bus.SendAsync(new UpdateSpace { SpaceId = id, Name = req.Name, Description = req.Description, IsSensitive = req.IsSensitive, Visibility = req.Visibility,
                 CommentsEnabled = req.CommentsEnabled, AgingDays = req.AgingDays, AgingAudience = req.AgingAudience, RecycleDays = req.RecycleDays }, ct).ToHttp()).WithAction<UpdateSpace>();
 
         api.MapGet("/spaces/{id:guid}/roles", (Guid id, IActionBus bus, CancellationToken ct) =>
@@ -48,7 +48,7 @@ public static class SpaceRoutes
             bus.SendAsync(new RestoreSpace { SpaceId = id }, ct).ToHttp()).WithAction<RestoreSpace>();
 
         admin.MapPatch("/spaces/{id:guid}", (Guid id, UpdateSpaceRequest req, IActionBus bus, CancellationToken ct) =>
-            bus.SendAsync(new UpdateSpaceAdmin { SpaceId = id, Name = req.Name, Description = req.Description, IsSensitive = req.IsSensitive, IsPublic = req.IsPublic,
+            bus.SendAsync(new UpdateSpaceAdmin { SpaceId = id, Name = req.Name, Description = req.Description, IsSensitive = req.IsSensitive, Visibility = req.Visibility,
                 CommentsEnabled = req.CommentsEnabled, AgingDays = req.AgingDays, AgingAudience = req.AgingAudience, RecycleDays = req.RecycleDays }, ct).ToHttp()).WithAction<UpdateSpaceAdmin>();
     }
 }

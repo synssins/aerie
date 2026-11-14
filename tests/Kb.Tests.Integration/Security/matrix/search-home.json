@@ -3,8 +3,9 @@
     "action": "search.query",
     "method": "GET",
     "path": "/api/v1/search?q=hello",
-    "expect": {"anonymous": 401, "outsider": 200, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
-    "scope": "server"
+    "expect": {"anonymous": 200, "outsider": 200, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "scope": "server",
+    "note": "Open to callers who are not signed in: they find only what is in Anyone spaces."
   },
   {
     "action": "home.read",

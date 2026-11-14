@@ -47,7 +47,7 @@ void bundleVersion;
 export type Me = { id: string; userName: string; displayName: string; isAdmin: boolean; isBreakGlass: boolean; canAnnounce: boolean; permissions?: string[] | null };
 export type Brand = { productName: string; logoLightUrl: string | null; logoDarkUrl: string | null; primaryColor: string; signInNote?: string | null };
 export type Space = {
-  id: string; key: string; name: string; description: string | null; isSensitive: boolean; isPublic: boolean; myRole: string | null;
+  id: string; key: string; name: string; description: string | null; isSensitive: boolean; visibility: "Private" | "SignedIn" | "Anyone"; myRole: string | null;
   commentsEnabled: boolean; agingDays: number; agingAudience: "Everyone" | "Supervisors"; recycleDays: number | null; createdAt: string;
 };
 export type NotifyPref = { inApp: boolean; email: boolean };

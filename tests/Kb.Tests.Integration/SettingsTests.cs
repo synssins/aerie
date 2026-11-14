@@ -65,7 +65,7 @@ public sealed class SettingsTests : IAsyncLifetime
         var (_, s) = await SpaceAsync();
         var owner = await OwnerOfAsync(s.Id);
         Assert.Equal(HttpStatusCode.Forbidden, (await owner.PatchAsJsonAsync($"/api/v1/spaces/{s.Id}", new { isSensitive = true }, Ct)).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await owner.PatchAsJsonAsync($"/api/v1/spaces/{s.Id}", new { isPublic = true }, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await owner.PatchAsJsonAsync($"/api/v1/spaces/{s.Id}", new { visibility = "Anyone" }, Ct)).StatusCode);
     }
 
     [Fact]

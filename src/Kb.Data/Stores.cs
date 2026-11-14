@@ -119,8 +119,6 @@ public sealed class SpaceAccessData(KbDbContext db, Microsoft.Extensions.Options
         return grants.Where(g => g.ExpiresAt is null || g.ExpiresAt > now).ToList();
     }
 
-    public async Task<bool> IsPublicSpaceEnabledAsync(CancellationToken ct) =>
-        (await db.RuntimeSettings.AsNoTracking().FirstOrDefaultAsync(s => s.Key == RuntimeSettingKeys.PublicSpaceEnabled, ct))?.Value == "true";
 }
 
 public sealed class AccessData(KbDbContext db) : IAccessData

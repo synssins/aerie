@@ -37,13 +37,6 @@
     "scope": "server"
   },
   {
-    "action": "settings.public-space.set",
-    "method": "PUT",
-    "path": "/api/v1/admin/settings/public-space?enabled=false",
-    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
-    "scope": "server"
-  },
-  {
     "action": "settings.uploads.read",
     "method": "GET",
     "path": "/api/v1/admin/uploads",

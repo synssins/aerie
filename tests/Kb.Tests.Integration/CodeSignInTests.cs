@@ -66,7 +66,7 @@ public sealed class CodeSignInTests : IAsyncLifetime
         Assert.Equal((HttpStatusCode.Conflict, "enroll"), await PasswordAsync(c, "ada"));
         // The password alone opens nothing.
         Assert.Equal(HttpStatusCode.Unauthorized, (await c.GetAsync("/api/v1/me", Ct)).StatusCode);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await c.GetAsync("/api/v1/spaces", Ct)).StatusCode);
+        Assert.Equal("[]", await c.GetStringAsync("/api/v1/spaces", Ct)); // answered as to someone not signed in
 
         var key = await KeyAsync(c);
         Assert.Equal(HttpStatusCode.BadRequest, (await c.PostAsJsonAsync("/api/v1/auth/codes", new { code = "000000" == Codes.Totp(key) ? "111111" : "000000" }, Ct)).StatusCode);

@@ -680,14 +680,6 @@ Write. `SetCodeSettings`, answers `Unit`. Core only.
 |---|---|---|
 | RequiredFor | `string` | required |
 
-## settings.public-space.set
-
-Write. `SetPublicSpace`, answers `Unit`.
-
-| Field | Type | |
-|---|---|---|
-| Enabled | `bool` | required |
-
 ## settings.uploads.read
 
 Read. `ReadUploadSettings`, answers `UploadSettingsDto`.
@@ -725,7 +717,7 @@ Write. `CreateSpace`, answers `SpaceDto`.
 | Key | `string?` |  |
 | Description | `string?` |  |
 | IsSensitive | `bool` |  |
-| IsPublic | `bool` |  |
+| Visibility | `SpaceVisibility` |  |
 
 ## space.delete
 
@@ -811,7 +803,7 @@ Write. `UpdateSpace`, answers `SpaceDto`.
 | Name | `string?` |  |
 | Description | `string?` |  |
 | IsSensitive | `bool?` |  |
-| IsPublic | `bool?` |  |
+| Visibility | `SpaceVisibility?` |  |
 | CommentsEnabled | `bool?` |  |
 | AgingDays | `int?` |  |
 | AgingAudience | `AgingAudience?` |  |
@@ -827,7 +819,7 @@ Write. `UpdateSpaceAdmin`, answers `SpaceDto`.
 | Name | `string?` |  |
 | Description | `string?` |  |
 | IsSensitive | `bool?` |  |
-| IsPublic | `bool?` |  |
+| Visibility | `SpaceVisibility?` |  |
 | CommentsEnabled | `bool?` |  |
 | AgingDays | `int?` |  |
 | AgingAudience | `AgingAudience?` |  |

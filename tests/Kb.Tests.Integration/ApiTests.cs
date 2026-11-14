@@ -37,6 +37,7 @@ public sealed class KbAppFactory(string dbPath, bool breakGlass = true, bool loo
         builder.UseSetting("Kb:Setup:CodeFile", SetupCodeFile);
         builder.UseSetting("Kb:Logs:Folder", DbPath + ".logs");
         builder.UseSetting("Kb:Auth:SignInsPerMinutePerAddress", "100000");
+        builder.UseSetting("Kb:Auth:AnonymousRequestsPerMinutePerAddress", "100000");
         if (breakGlass) builder.UseSetting("Kb--BreakGlassPassword", BreakGlassPassword);
         foreach (var (k, v) in settings ?? new Dictionary<string, string>()) builder.UseSetting(k, v);
         // TestServer has no remote address; loopback=true makes requests look like they come from the server itself.

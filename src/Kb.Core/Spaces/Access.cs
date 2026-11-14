@@ -6,7 +6,7 @@ namespace Kb.Core.Spaces;
 /// <summary>
 /// The permission entry point handlers and plugins use. A person is answered by the registered <see cref="ISpacePermissionService"/>,
 /// which already narrows a request made with an API token. A plugin doing background work is Owner of every space that is not sensitive
-/// and has nothing in a sensitive one. Nobody has nothing.
+/// and has nothing in a sensitive one. Nobody (not signed in) is Reader of a space that is Anyone and not sensitive, and has nothing elsewhere.
 /// </summary>
 /// <summary>What <see cref="SpaceAccess"/> needs to know about plugin permissions an Admin changed or granted.</summary>
 public interface IPluginPermissionData
@@ -25,6 +25,7 @@ public sealed class SpaceAccess(ISpacePermissionService permissions, ISpaceAcces
         {
             { Kind: ActorKind.User, UserId: { } user } => await permissions.GetRoleAsync(user, spaceId, ct),
             { Kind: ActorKind.Plugin } => await data.GetSpaceAsync(spaceId, ct) is { IsSensitive: false } ? SpaceRole.Owner : null,
+            { Kind: ActorKind.Anonymous } => await data.GetSpaceAsync(spaceId, ct) is { IsSensitive: false, Visibility: SpaceVisibility.Anyone } ? SpaceRole.Reader : null,
             _ => null,
         };
     }
@@ -61,6 +62,7 @@ public sealed class SpaceAccess(ISpacePermissionService permissions, ISpaceAcces
         {
             { Kind: ActorKind.User, UserId: { } user } => await permissions.VisibleSpaceIdsAsync(user, ct),
             { Kind: ActorKind.Plugin } => [.. (await data.GetAllSpacesAsync(ct)).Where(s => !s.IsSensitive).Select(s => s.Id)],
+            { Kind: ActorKind.Anonymous } => [.. (await data.GetAllSpacesAsync(ct)).Where(s => !s.IsSensitive && s.Visibility == SpaceVisibility.Anyone).Select(s => s.Id)],
             _ => [],
         };
     }

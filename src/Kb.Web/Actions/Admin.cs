@@ -152,19 +152,6 @@ internal sealed class DisableLocalSignInHandler(KbDbContext db, IAccess access, 
     }
 }
 
-internal sealed class SetPublicSpaceHandler(KbDbContext db, IAccess access, TimeProvider time) : IActionHandler<SetPublicSpace, Unit>
-{
-    public async Task<Problem?> AuthorizeAsync(ActionContext<SetPublicSpace> ctx) => await access.IsAdminAsync(ctx.Actor, ctx.Cancel) ? null : Problem.Forbidden;
-
-    public async Task<Outcome<Unit>> HandleAsync(ActionContext<SetPublicSpace> ctx)
-    {
-        var enabled = ctx.Action.Enabled;
-        await db.SetAsync(RuntimeSettingKeys.PublicSpaceEnabled, enabled ? "true" : "false", ctx.Actor.UserId, time.GetUtcNow());
-        ctx.Audit(AuditActions.SettingsChange, "setting", RuntimeSettingKeys.PublicSpaceEnabled, data: new Dictionary<string, string> { ["value"] = enabled.ToString() });
-        return new Unit();
-    }
-}
-
 internal sealed class NewPasswordLinkHandler(KbDbContext db, UserManager<KbUser> users, IAccess access) : IActionHandler<NewPasswordLink, InvitedUser>
 {
     private KbUser? _user;

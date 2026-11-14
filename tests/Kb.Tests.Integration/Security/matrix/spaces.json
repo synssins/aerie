@@ -3,15 +3,17 @@
     "action": "space.list",
     "method": "GET",
     "path": "/api/v1/spaces",
-    "expect": {"anonymous": 401, "outsider": 200, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
-    "scope": "server"
+    "expect": {"anonymous": 200, "outsider": 200, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "scope": "server",
+    "note": "Open to callers who are not signed in, for Anyone spaces only; this space is Private, so nothing is disclosed."
   },
   {
     "action": "space.read",
     "method": "GET",
     "path": "/api/v1/spaces/{space}",
-    "expect": {"anonymous": 401, "outsider": 404, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
-    "sensitive": {"admin": 404}
+    "expect": {"anonymous": 404, "outsider": 404, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404},
+    "note": "Open to callers who are not signed in, for Anyone spaces only; this space is Private, so nothing is disclosed."
   },
   {
     "action": "space.update",

@@ -71,8 +71,5 @@ public static class AdminRoutes
 
         admin.MapPost("/auth/local/disable", (IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new DisableLocalSignIn(), ct).ToHttp()).WithAction<DisableLocalSignIn>();
-
-        admin.MapPut("/settings/public-space", (bool enabled, IActionBus bus, CancellationToken ct) =>
-            bus.SendAsync(new SetPublicSpace { Enabled = enabled }, ct).ToHttp()).WithAction<SetPublicSpace>();
     }
 }

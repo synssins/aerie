@@ -19,12 +19,12 @@ public sealed record CreateSpace : IAction<SpaceDto>
     public string? Key { get; init; }
     public string? Description { get; init; }
     public bool IsSensitive { get; init; }
-    public bool IsPublic { get; init; }
+    public SpaceVisibility Visibility { get; init; }
 }
 
 /// <summary>
 /// Changes a space, as one who manages it. Null leaves a value as it is.
-/// The name, the sensitive flag and the public flag are an Admin's to change.
+/// The name, the sensitive flag and the visibility are an Admin's to change. A sensitive space stays Private.
 /// </summary>
 [Action("space.update")]
 public sealed record UpdateSpace : IAction<SpaceDto>
@@ -33,7 +33,7 @@ public sealed record UpdateSpace : IAction<SpaceDto>
     public string? Name { get; init; }
     public string? Description { get; init; }
     public bool? IsSensitive { get; init; }
-    public bool? IsPublic { get; init; }
+    public SpaceVisibility? Visibility { get; init; }
     public bool? CommentsEnabled { get; init; }
     public int? AgingDays { get; init; }
     public AgingAudience? AgingAudience { get; init; }
@@ -48,7 +48,7 @@ public sealed record UpdateSpaceAdmin : IAction<SpaceDto>
     public string? Name { get; init; }
     public string? Description { get; init; }
     public bool? IsSensitive { get; init; }
-    public bool? IsPublic { get; init; }
+    public SpaceVisibility? Visibility { get; init; }
     public bool? CommentsEnabled { get; init; }
     public int? AgingDays { get; init; }
     public AgingAudience? AgingAudience { get; init; }
@@ -105,7 +105,7 @@ public sealed record DeletedSpaceDto(Guid Id, string Key, string Name, bool IsSe
 [Action("space.list.all", Read = true)]
 public sealed record ListAllSpaces : IAction<IReadOnlyList<SpaceDto>>;
 
-public sealed record SpaceDto(Guid Id, string Key, string Name, string? Description, bool IsSensitive, bool IsPublic, string? MyRole,
+public sealed record SpaceDto(Guid Id, string Key, string Name, string? Description, bool IsSensitive, string Visibility, string? MyRole,
     bool CommentsEnabled, int AgingDays, string AgingAudience, int? RecycleDays, DateTimeOffset CreatedAt);
 /// <summary>Name: the person's display name or the group's name, for showing the row.</summary>
 public sealed record RoleAssignmentDto(Guid Id, PrincipalType PrincipalType, string PrincipalId, SpaceRole Role, string? Name = null);

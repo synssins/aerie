@@ -46,6 +46,8 @@ public sealed class AuthOptions
     public TimeSpan EmergencyAccessDuration { get; set; } = TimeSpan.FromHours(4);
     /// <summary>Sign-in attempts one address may make in a minute, on one server. Bounds password guessing and the audit entries it writes.</summary>
     public int SignInsPerMinutePerAddress { get; set; } = 30;
+    /// <summary>Requests to the API by someone not signed in (reading Anyone spaces), per address.</summary>
+    public int AnonymousRequestsPerMinutePerAddress { get; set; } = 120;
 }
 
 public sealed class EntraOptions

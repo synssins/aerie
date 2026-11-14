@@ -59,7 +59,6 @@ public sealed class RuntimeSetting
 
 public static class RuntimeSettingKeys
 {
-    public const string PublicSpaceEnabled = "PublicSpaceEnabled";
     public const string ExternalAdminVerifiedAt = "ExternalAdminVerifiedAt";
     public const string LocalSignInDisabled = "LocalSignInDisabled";
     /// <summary>Who must use one-time codes at sign-in: "admins" (the default) or "everyone".</summary>

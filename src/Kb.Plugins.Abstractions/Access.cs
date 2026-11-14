@@ -22,6 +22,9 @@ public enum PrincipalType { User, Group }
 
 public enum AgingAudience { Everyone, Supervisors }
 
+/// <summary>Who reads a space besides its roles: nobody (Private), everyone signed in (SignedIn), or people who are not signed in too (Anyone).</summary>
+public enum SpaceVisibility { Private, SignedIn, Anyone }
+
 public enum DiffOp { Same, Add, Del }
 
 public sealed record DiffLine(DiffOp Op, string Text);

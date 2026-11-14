@@ -43,7 +43,7 @@ public sealed class AdminPipelineTests : IAsyncLifetime
         ("user.list", await c.GetAsync($"{Admin}/users", Ct)),
         ("user.invite", await InviteAsync(c, "tech1")),
         ("auth.local.disable", await c.PostAsync($"{Admin}/auth/local/disable", null, Ct)),
-        ("settings.public-space.set", await c.PutAsync($"{Admin}/settings/public-space?enabled=true", null, Ct)),
+        ("settings.codes.set", await c.PutAsJsonAsync($"{Admin}/settings/codes", new { requiredFor = "everyone" }, Ct)),
     ];
 
     private async Task<HttpClient> UserAsync()
@@ -87,22 +87,22 @@ public sealed class AdminPipelineTests : IAsyncLifetime
         await _f.WithDbAsync(async db =>
         {
             Assert.False(await db.Users.AnyAsync(u => u.UserName == "tech1", Ct));
-            Assert.False(await db.RuntimeSettings.AnyAsync(s => s.Key == RuntimeSettingKeys.PublicSpaceEnabled, Ct));
+            Assert.False(await db.RuntimeSettings.AnyAsync(s => s.Key == RuntimeSettingKeys.CodesRequiredFor, Ct));
         });
     }
 
     [Fact]
-    public async Task PublicSpaceSetting_RefusedByHook_Is422_NothingStoredNoAuditEntry()
+    public async Task DisableLocalSignIn_RefusedByHook_Is422_NothingStoredNoAuditEntry()
     {
-        await SetAsync("Refuse", "settings.public-space.set");
+        await SetAsync("Refuse", "auth.local.disable");
 
-        var r = await _admin.PutAsync($"{Admin}/settings/public-space?enabled=true", null, Ct);
+        var r = await _admin.PostAsync($"{Admin}/auth/local/disable", null, Ct);
 
         Assert.Equal((HttpStatusCode)422, r.StatusCode);
         Assert.Equal("Probe refused.", (await r.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("detail").GetString());
         await _f.WithDbAsync(async db =>
         {
-            Assert.False(await db.RuntimeSettings.AnyAsync(s => s.Key == RuntimeSettingKeys.PublicSpaceEnabled, Ct));
+            Assert.False(await db.RuntimeSettings.AnyAsync(s => s.Key == RuntimeSettingKeys.LocalSignInDisabled, Ct));
             Assert.False(await db.AuditEntries.AnyAsync(a => a.Action == AuditActions.SettingsChange, Ct));
         });
     }
@@ -120,7 +120,7 @@ public sealed class AdminPipelineTests : IAsyncLifetime
     public async Task Writes_AreAudited_AsTheCaller_WithoutTheToken()
     {
         var invited = await (await InviteAsync(_admin, "boss", isAdmin: true)).Content.ReadFromJsonAsync<JsonElement>(Ct);
-        (await _admin.PutAsync($"{Admin}/settings/public-space?enabled=true", null, Ct)).EnsureSuccessStatusCode();
+        (await _admin.PutAsJsonAsync($"{Admin}/settings/codes", new { requiredFor = "everyone" }, Ct)).EnsureSuccessStatusCode();
         var bad = await InviteAsync(_admin, " ");
         Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
         Assert.True((await bad.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("errors").TryGetProperty("userName", out _));
@@ -135,9 +135,9 @@ public sealed class AdminPipelineTests : IAsyncLifetime
             Assert.Equal((me, "user", invited.GetProperty("id").GetString(), """{"isAdmin":"True"}"""), (invite.ActorId, invite.TargetType, invite.TargetId, invite.DataJson));
             Assert.DoesNotContain(invited.GetProperty("setPasswordToken").GetString()!, invite.DataJson, StringComparison.Ordinal);
             var setting = await db.AuditEntries.SingleAsync(a => a.Action == AuditActions.SettingsChange, Ct);
-            Assert.Equal((me, "setting", RuntimeSettingKeys.PublicSpaceEnabled, """{"value":"True"}"""), (setting.ActorId, setting.TargetType, setting.TargetId, setting.DataJson));
-            var stored = await db.RuntimeSettings.SingleAsync(s => s.Key == RuntimeSettingKeys.PublicSpaceEnabled, Ct);
-            Assert.Equal(("true", me), (stored.Value, stored.UpdatedBy));
+            Assert.Equal((me, "setting", RuntimeSettingKeys.CodesRequiredFor, """{"value":"everyone"}"""), (setting.ActorId, setting.TargetType, setting.TargetId, setting.DataJson));
+            var stored = await db.RuntimeSettings.SingleAsync(s => s.Key == RuntimeSettingKeys.CodesRequiredFor, Ct);
+            Assert.Equal(("everyone", me), (stored.Value, stored.UpdatedBy));
             Assert.True((await db.Users.SingleAsync(u => u.UserName == "boss", Ct)).IsAdmin);
         });
     }

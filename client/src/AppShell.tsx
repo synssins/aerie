@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   Bell, ChevronDown, ChevronRight, Ellipsis, House, KeyRound, FilePlus, FileText, Folder, FolderCog, FolderInput, FolderPlus, Link as LinkIcon, Plus, Search, Settings,
-  ShieldCheck, SlidersHorizontal, Lock, Moon, Sun, Maximize2, Minimize2, ShieldAlert, LogOut, Trash2, UserRound,
+  ShieldCheck, SlidersHorizontal, Lock, Moon, Sun, Maximize2, Minimize2, ShieldAlert, LogIn, LogOut, Trash2, UserRound,
 } from "lucide-react";
 import { AccountDialog } from "./AccountDialogs";
 import { BrandLogo } from "./Branding";
@@ -50,7 +50,9 @@ function storedViews(): RecentView[] { try { return JSON.parse(stored("kb.recent
 // What an entry of the gear menu is handed: nothing of the screen. An entry leads somewhere (kb.navigate).
 const GEAR_CTX = {};
 
-export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; brand: Brand; onBrandChanged: () => Promise<void>; onSignedOut: () => void }) {
+/** me null: someone not signed in, reading the spaces open to Anyone. They see no editing, settings, notifications or Administration. */
+export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: { me: Me | null; brand: Brand; onBrandChanged: () => Promise<void>; onSignedOut: () => void; onSignIn?: () => void }) {
+  const guest = me === null;
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const prefs = settings ?? DEFAULT_SETTINGS;
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
@@ -104,7 +106,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
 
   function saveSettings(next: UserSettings) {
     setSettings(next);
-    void api.put<UserSettings>("/me/settings", next).catch(() => undefined);
+    if (!guest) void api.put<UserSettings>("/me/settings", next).catch(() => undefined);
   }
 
   const loadTree = useCallback((spaceId: string) =>
@@ -149,29 +151,31 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
   const applyRoute = useCallback(async (all: Space[], start: string) => {
     const r = route();
     const owns = all.some((x) => x.myRole === "Owner");
-    if (r.admin && (me.isAdmin || (owns && r.admin.section === "spaces"))) { reset(); setAdmin(r.admin); setPage(null); return; }
-    if (r.settings) { reset(); setSettingsAt(r.settings); setPage(null); return; }
+    if (r.admin && me && (me.isAdmin || (owns && r.admin.section === "spaces"))) { reset(); setAdmin(r.admin); setPage(null); return; }
+    if (r.settings && me) { reset(); setSettingsAt(r.settings); setPage(null); return; }
     if (r.plugin) { reset(); setPluginAt(r.plugin); setPage(null); return; }
     if (r.search !== undefined) { reset(); setSearchQ(r.search); setQ(r.search); setPage(null); setCurrent(null); return; }
     try {
       if (r.page) { await showPage(r.page, all); if (r.history) setHistoryOf(true); return; }
+      // Someone not signed in has no home page: they start in the first space open to them.
+      if (!r.space && guest && all[0]) { showSpace(all[0]); return; }
       if (!r.space) { reset(); setHome(true); setPage(null); setCurrent(null); return; }
       const s = all.find((x) => x.id === r.space) ?? all[0];
       if (s) { showSpace(s); if (r.bin && s.id === r.space) setBinOf(true); }
     } catch {
       if (all[0]) showSpace(all[0]);
     }
-  }, [showPage, showSpace, reset, me.isAdmin]);
+  }, [showPage, showSpace, reset, me, guest]);
 
   const loadSpaces = useCallback(() => api.get<Space[]>("/spaces").then((s) => { setSpaces(s); return s; }), []);
 
   useEffect(() => {
     void (async () => {
-      const st = await api.get<UserSettings>("/me/settings").catch(() => DEFAULT_SETTINGS);
+      const st = guest ? DEFAULT_SETTINGS : await api.get<UserSettings>("/me/settings").catch(() => DEFAULT_SETTINGS);
       setSettings(st);
       await applyRoute(await loadSpaces(), st.startPage);
     })();
-  }, [loadSpaces, applyRoute]);
+  }, [loadSpaces, applyRoute, guest]);
   // The browser's Back and Forward. Someone in the middle of an edit is asked first, as for a click on a link; on Cancel they stay.
   const shellHistory = useRef<ShellHistory | null>(null);
   const onMove = useRef({ ask: async () => true, apply: async () => {} });
@@ -182,11 +186,12 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
   }, []);
 
   useEffect(() => {
+    if (guest) return;
     const poll = () => api.get<{ unread: number }>("/notifications/count").then((r) => setUnread(r.unread)).catch(() => undefined);
     void poll();
     const t = window.setInterval(poll, 60_000);
     return () => window.clearInterval(t);
-  }, []);
+  }, [guest]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); searchRef.current?.focus(); searchRef.current?.select(); } };
@@ -370,10 +375,10 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
     onSignedOut();
   }
 
-  const initials = useMemo(() => me.displayName.split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase(), [me]);
+  const initials = useMemo(() => (me?.displayName ?? "").split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase(), [me]);
   const canEdit = !!current?.myRole && EDIT_ROLES.includes(current.myRole) && !binOf && !historyOf;
   const ownsSpaces = spaces.some((x) => x.myRole === "Owner");
-  const canManageCurrent = !!current && (me.isAdmin || current.myRole === "Owner");
+  const canManageCurrent = !!current && !!me && (me.isAdmin || current.myRole === "Owner");
   const listed = current
     ? (trees[current.id] ?? []).filter((n) => n.parentId === (page?.kind === "Folder" ? page.id : null)).sort(byTreeOrder)
     : [];
@@ -409,7 +414,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
                 )}
               </div>
             )}
-            <div className="bell-wrap" ref={bellRef}>
+            {me && <div className="bell-wrap" ref={bellRef}>
               <button className="ib" onClick={toggleBell} aria-label={`Notifications, ${unread} unread`} aria-expanded={showBell}>
                 <Bell className="ic" aria-hidden />
                 {unread > 0 && <span className="dot">{unread > 99 ? "99+" : unread}</span>}
@@ -426,14 +431,15 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
                   ))}
                 </div>
               )}
-            </div>
+            </div>}
             <button className="ib" onClick={() => saveSettings({ ...prefs, theme: theme === "light" ? "dark" : "light" })} aria-label="Toggle dark mode">
               {theme === "light" ? <Moon className="ic" aria-hidden /> : <Sun className="ic" aria-hidden />}
             </button>
             <button className="ib" onClick={() => saveSettings({ ...prefs, width: width === "boxed" ? "full" : "boxed" })} aria-label={width === "boxed" ? "Full width" : "Boxed width"}>
               {width === "boxed" ? <Maximize2 className="ic" aria-hidden /> : <Minimize2 className="ic" aria-hidden />}
             </button>
-            <div className="menu-wrap" ref={gearRef}>
+            {!me && onSignIn && <button className="tb primary" onClick={onSignIn}><LogIn className="ic" aria-hidden />Sign in</button>}
+            {me && <div className="menu-wrap" ref={gearRef}>
               <button className={`ib ${admin || settingsAt ? "on" : ""}`} onClick={() => setShowGear(!showGear)} aria-label="Settings" title="Settings" aria-haspopup="menu" aria-expanded={showGear}>
                 <Settings className="ic" aria-hidden />
               </button>
@@ -453,8 +459,8 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
                   <SlotMenuItems slot="header.gear" ctx={GEAR_CTX} onPick={() => setShowGear(false)} />
                 </div>
               )}
-            </div>
-            <div className="menu-wrap" ref={userRef}>
+            </div>}
+            {me && <div className="menu-wrap" ref={userRef}>
               <button className="av" onClick={() => setShowUser(!showUser)} title={me.displayName} aria-label="Account menu" aria-haspopup="menu" aria-expanded={showUser}>{initials}</button>
               {showUser && (
                 <div className="menu right" role="menu">
@@ -464,16 +470,16 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
                   <button role="menuitem" onClick={() => { setShowUser(false); void signOut(); }}><LogOut className="ic" aria-hidden />Sign out</button>
                 </div>
               )}
-            </div>
+            </div>}
           </div>
         </header>
 
-        {me.isBreakGlass && (
+        {me?.isBreakGlass && (
           <div className="breakglass" role="status"><ShieldAlert className="ic" aria-hidden />Break-glass account</div>
         )}
 
         <div className="grid main">
-          {admin ? (
+          {admin && me ? (
             <AdminView
               isAdmin={me.isAdmin}
               section={admin.section}
@@ -486,7 +492,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
               brand={brand}
               onBrandChanged={onBrandChanged}
             />
-          ) : settingsAt ? (
+          ) : settingsAt && me ? (
             <SettingsView
               section={settingsAt}
               settings={prefs}
@@ -568,6 +574,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
                   page={page}
                   spaceName={current.name}
                   role={current.myRole}
+                  guest={guest}
                   codeLanguage={prefs.codeLanguage}
                   onHome={onHome}
                   onHistory={openHistory}
@@ -643,7 +650,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut }: { me: Me; b
 
           {newItem && <NewItemDialog item={newItem} onCreate={create} onClose={() => setNewItem(null)} />}
           {moving && <MoveDialog item={moving} spaces={spaces} onMoved={(p) => moved(moving, p)} onClose={() => setMoving(null)} />}
-          {panel === "account" && <AccountDialog me={me} onClose={() => setPanel(null)} />}
+          {panel === "account" && me && <AccountDialog me={me} onClose={() => setPanel(null)} />}
         </div>
       </div>
     </div>

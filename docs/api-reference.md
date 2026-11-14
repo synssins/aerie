@@ -45,7 +45,6 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | PUT | `/api/v1/admin/search/synonyms` | `search.synonyms.save` | Yes | Needed | No |
 | GET | `/api/v1/admin/settings/codes` | `settings.codes.read` | No | Needed | No |
 | PUT | `/api/v1/admin/settings/codes` | `settings.codes.set` | Yes | Needed | No |
-| PUT | `/api/v1/admin/settings/public-space` | `settings.public-space.set` | Yes | Needed | No |
 | GET | `/api/v1/admin/spaces` | `space.list.all` | No | Needed | No |
 | GET | `/api/v1/admin/spaces/deleted` | `space.list.deleted` | No | Needed | No |
 | PATCH | `/api/v1/admin/spaces/{id:guid}` | `space.update.admin` | Yes | Needed | No |
@@ -77,7 +76,7 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | POST | `/api/v1/announcements` | `announcement.post` | Yes | Needed | No |
 | DELETE | `/api/v1/announcements/{id:guid}` | `announcement.remove` | Yes | Needed | No |
 | DELETE | `/api/v1/attachments/{id:guid}` | `attachment.remove` | Yes | Needed | Write |
-| GET | `/api/v1/attachments/{id:guid}` | `attachment.read` | No | Needed | Read |
+| GET | `/api/v1/attachments/{id:guid}` | `attachment.read` | No | Not needed | Read |
 | POST | `/api/v1/auth/codes` | `auth.codes.enroll` | Yes | Not needed | No |
 | POST | `/api/v1/auth/codes/key` | `auth.codes.key` | Yes | Not needed | No |
 | POST | `/api/v1/auth/local/code` | `auth.signin.code` | Yes | Not needed | No |
@@ -88,7 +87,7 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | GET | `/api/v1/brand` | `brand.read` | No | Not needed | Read |
 | GET | `/api/v1/brand/logo/{variant}` | `brand.logo.read` | No | Not needed | Read |
 | GET | `/api/v1/home` | `home.read` | No | Needed | Read |
-| GET | `/api/v1/images/{id:guid}` | `image.read` | No | Needed | Read |
+| GET | `/api/v1/images/{id:guid}` | `image.read` | No | Not needed | Read |
 | GET | `/api/v1/me` | `me.read` | No | Needed | Read |
 | DELETE | `/api/v1/me/codes` | `me.codes.off` | Yes | Needed | No |
 | GET | `/api/v1/me/codes` | `me.codes.read` | No | Needed | No |
@@ -99,7 +98,7 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | POST | `/api/v1/notifications/read-all` | `notification.mark.all` | Yes | Needed | No |
 | POST | `/api/v1/notifications/{id:guid}/read` | `notification.mark` | Yes | Needed | No |
 | DELETE | `/api/v1/pages/{id:guid}` | `page.delete` | Yes | Needed | Write |
-| GET | `/api/v1/pages/{id:guid}` | `page.read` | No | Needed | Read |
+| GET | `/api/v1/pages/{id:guid}` | `page.read` | No | Not needed | Read |
 | PUT | `/api/v1/pages/{id:guid}` | `page.save` | Yes | Needed | Write |
 | POST | `/api/v1/pages/{id:guid}/attachments` | `attachment.add` | Yes | Needed | Write |
 | GET | `/api/v1/pages/{id:guid}/diff` | `page.diff` | No | Needed | Read |
@@ -116,12 +115,12 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | GET | `/api/v1/pages/{id:guid}/versions/{version}` | `page.version.read` | No | Needed | Read |
 | POST | `/api/v1/pages/{id:guid}/versions/{version}/restore` | `page.version.restore` | Yes | Needed | Write |
 | GET | `/api/v1/principals` | `principal.list` | No | Needed | No |
-| GET | `/api/v1/search` | `search.query` | No | Needed | Read |
+| GET | `/api/v1/search` | `search.query` | No | Not needed | Read |
 | POST | `/api/v1/setup` | `setup.run` | Yes | Not needed | No |
 | GET | `/api/v1/setup/status` | `setup.status` | No | Not needed | No |
-| GET | `/api/v1/spaces` | `space.list` | No | Needed | Read |
+| GET | `/api/v1/spaces` | `space.list` | No | Not needed | Read |
 | POST | `/api/v1/spaces` | `space.create` | Yes | Needed | No |
-| GET | `/api/v1/spaces/{id:guid}` | `space.read` | No | Needed | Read |
+| GET | `/api/v1/spaces/{id:guid}` | `space.read` | No | Not needed | Read |
 | PATCH | `/api/v1/spaces/{id:guid}` | `space.update` | Yes | Needed | No |
 | POST | `/api/v1/spaces/{id:guid}/access-requests` | `access.request` | Yes | Needed | No |
 | GET | `/api/v1/spaces/{id:guid}/bin` | `bin.list` | No | Needed | No |
@@ -134,7 +133,7 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | GET | `/api/v1/spaces/{id:guid}/roles` | `space.role.list` | No | Needed | No |
 | PUT | `/api/v1/spaces/{id:guid}/roles` | `space.role.grant` | Yes | Needed | No |
 | DELETE | `/api/v1/spaces/{id:guid}/roles/{assignmentId:guid}` | `space.role.revoke` | Yes | Needed | No |
-| GET | `/api/v1/spaces/{id:guid}/tree` | `tree.read` | No | Needed | Read |
+| GET | `/api/v1/spaces/{id:guid}/tree` | `tree.read` | No | Not needed | Read |
 | GET | `/api/v1/tokens` | `token.list` | No | Needed | No |
 | POST | `/api/v1/tokens` | `token.create` | Yes | Needed | No |
 | DELETE | `/api/v1/tokens/{id:guid}` | `token.revoke` | Yes | Needed | No |

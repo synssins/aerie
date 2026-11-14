@@ -30,7 +30,7 @@ public sealed class Space
     public required string Name { get; set; }
     public string? Description { get; set; }
     public bool IsSensitive { get; set; }
-    public bool IsPublic { get; set; }
+    public SpaceVisibility Visibility { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public bool CommentsEnabled { get; set; } = true;
     public int AgingDays { get; set; } = 180;
@@ -79,7 +79,6 @@ public interface ISpaceAccessData
     Task<IReadOnlyList<SpaceRoleAssignment>> GetAssignmentsAsync(Guid spaceId, CancellationToken ct);
     Task<IReadOnlyList<SpaceRoleAssignment>> GetAssignmentsForPrincipalsAsync(IReadOnlyCollection<string> userAndGroupIds, CancellationToken ct);
     Task<IReadOnlyList<SpaceAccessGrant>> GetActiveGrantsAsync(Guid userId, DateTimeOffset now, CancellationToken ct);
-    Task<bool> IsPublicSpaceEnabledAsync(CancellationToken ct);
 }
 
 public interface ISpacePermissionService
@@ -91,7 +90,7 @@ public interface ISpacePermissionService
 
 /// <summary>
 /// Effective role = highest of: direct and group assignments; admin implicit Owner on non-sensitive spaces;
-/// approved or unexpired emergency grants. Users without full access only see public spaces (when enabled), as Reader.
+/// approved or unexpired emergency grants. Everyone signed in reads a space that is SignedIn or Anyone (as Reader), whatever else they hold.
 /// Scoped lifetime: caches nothing across requests.
 /// </summary>
 public sealed class SpacePermissionService(ISpaceAccessData data, TimeProvider time) : ISpacePermissionService
@@ -101,7 +100,8 @@ public sealed class SpacePermissionService(ISpaceAccessData data, TimeProvider t
         var p = await data.GetPrincipalAsync(userId, ct);
         var space = await data.GetSpaceAsync(spaceId, ct);
         if (p is null || space is null) return null;
-        var publicOn = space.IsPublic && await data.IsPublicSpaceEnabledAsync(ct);
+        // A sensitive space is always Private; the check here holds even if a row says otherwise.
+        var publicOn = space.Visibility != SpaceVisibility.Private && !space.IsSensitive;
 
         if (!p.HasFullAccess) return publicOn ? SpaceRole.Reader : null;
 
@@ -129,8 +129,7 @@ public sealed class SpacePermissionService(ISpaceAccessData data, TimeProvider t
         var p = await data.GetPrincipalAsync(userId, ct);
         if (p is null) return [];
         var spaces = await data.GetAllSpacesAsync(ct);
-        var publicOn = await data.IsPublicSpaceEnabledAsync(ct);
-        var visible = new HashSet<Guid>(spaces.Where(s => s.IsPublic && publicOn).Select(s => s.Id));
+        var visible = new HashSet<Guid>(spaces.Where(s => s.Visibility != SpaceVisibility.Private && !s.IsSensitive).Select(s => s.Id));
         if (!p.HasFullAccess) return [.. visible];
 
         if (p.IsAdmin) foreach (var s in spaces.Where(s => !s.IsSensitive)) visible.Add(s.Id);

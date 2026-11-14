@@ -58,7 +58,9 @@ internal sealed class CreateSpaceHandler(KbDbContext db, IAccess access, TimePro
         }
         else if (!SpaceKeyPattern().IsMatch(key)) return Problem.Invalid("key", "2-32 chars: lowercase letters, digits, hyphen.");
         else if (await db.Spaces.IgnoreQueryFilters().AnyAsync(x => x.Key == key, ctx.Cancel)) return new Problem(409);
-        var s = new Space { Key = key, Name = req.Name.Trim(), Description = req.Description, IsSensitive = req.IsSensitive, IsPublic = req.IsPublic, CreatedAt = time.GetUtcNow() };
+        if (!Enum.IsDefined(req.Visibility)) return Problem.Invalid("visibility", "Private, SignedIn or Anyone.");
+        if (req.IsSensitive && req.Visibility != SpaceVisibility.Private) return SensitiveStaysPrivate;
+        var s = new Space { Key = key, Name = req.Name.Trim(), Description = req.Description, IsSensitive = req.IsSensitive, Visibility = req.Visibility, CreatedAt = time.GetUtcNow() };
         db.Spaces.Add(s);
         await db.SaveChangesAsync();
         ctx.Audit(AuditActions.SpaceCreate, "space", s.Id.ToString(), s.Id);
@@ -96,20 +98,20 @@ internal sealed class UpdateSpaceAdminHandler(KbDbContext db, IAccess access) : 
         if (!await access.IsAdminAsync(ctx.Actor, ctx.Cancel)) return Problem.Forbidden;
         var id = ctx.Action.SpaceId;
         if ((_space = await db.Spaces.FirstOrDefaultAsync(x => x.Id == id, ctx.Cancel)) is null) return Problem.NotFound;
-        // "Admins have no silent access to a sensitive space." Clearing its flag makes every Admin its Owner, and making it public
-        // opens it to everyone: an Admin does either only with access to the space (a role, or emergency access, which tells the Owners).
+        // "Admins have no silent access to a sensitive space." Clearing its flag makes every Admin its Owner: an Admin does it only with
+        // access to the space (a role, or emergency access, which tells the Owners). A sensitive space cannot be opened at all (it stays Private).
         return Lowers(_space, ctx.Action) && await access.RoleAsync(ctx.Actor, id, ctx.Cancel) is null
             ? new Problem(403, "No access to this space.") : null;
     }
 
-    /// <summary>True when the update takes protection from a sensitive space: the flag is cleared, or the space is made public.</summary>
-    private static bool Lowers(Space s, UpdateSpaceAdmin req) => s.IsSensitive && (req.IsSensitive == false || (req.IsPublic == true && !s.IsPublic));
+    /// <summary>True when the update takes protection from a sensitive space: the flag is cleared.</summary>
+    private static bool Lowers(Space s, UpdateSpaceAdmin req) => s.IsSensitive && req.IsSensitive == false;
 
     public async Task<Outcome<SpaceDto>> HandleAsync(ActionContext<UpdateSpaceAdmin> ctx)
     {
         var (req, s) = (ctx.Action, _space!);
         // The same update as an Owner's. An Admin needs no role in the space for it, except to lower a sensitive space's protection (above).
-        var update = new UpdateSpace { SpaceId = req.SpaceId, Name = req.Name, Description = req.Description, IsSensitive = req.IsSensitive, IsPublic = req.IsPublic,
+        var update = new UpdateSpace { SpaceId = req.SpaceId, Name = req.Name, Description = req.Description, IsSensitive = req.IsSensitive, Visibility = req.Visibility,
             CommentsEnabled = req.CommentsEnabled, AgingDays = req.AgingDays, AgingAudience = req.AgingAudience, RecycleDays = req.RecycleDays };
         if (await UpdateSpaceAsync(s, update, db, ctx) is { } problem) return problem;
         return ToDto(s, null);

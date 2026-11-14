@@ -1,3 +1,4 @@
+import { useDialogs } from "./Dialogs";
 import { CodeSettingsPanel } from "./admin/CodeSettings";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ArrowLeft, ChevronRight, Ellipsis, FolderTree, HardDrive, House, Lock, Palette, Paperclip, Plug, Plus, Search, Shield, Trash2 } from "lucide-react";
@@ -336,7 +337,10 @@ function SearchPanel() {
   );
 }
 
-function SpaceEditor({ space, isAdmin, area, onBack, onSaved, onHome, onDeleted }: { space: Space; isAdmin: boolean; area: string; onBack: () => void; onSaved: () => Promise<void>; onHome: () => void; onDeleted: () => void }) {
+const VISIBILITY = [["Private", "Private"], ["SignedIn", "Signed-in users"], ["Anyone", "Anyone"]] as const;
+
+export function SpaceEditor({ space, isAdmin, area, onBack, onSaved, onHome, onDeleted }: { space: Space; isAdmin: boolean; area: string; onBack: () => void; onSaved: () => Promise<void>; onHome: () => void; onDeleted: () => void }) {
+  const dialogs = useDialogs();
   const [deleting, setDeleting] = useState(false);
   const [tab, setTab] = useState<"details" | "settings" | "members">("details");
   const [form, setForm] = useState(space);
@@ -351,6 +355,11 @@ function SpaceEditor({ space, isAdmin, area, onBack, onSaved, onHome, onDeleted 
   }, [space.id]);
 
   const set = <K extends keyof Space>(k: K, v: Space[K]) => { setForm((f) => ({ ...f, [k]: v })); setStatus(null); };
+  // Anyone opens the space to people who are not signed in: asked first, in the app.
+  async function chooseVisibility(v: Space["visibility"]) {
+    if (v === "Anyone" && form.visibility !== "Anyone" && !await dialogs.confirm({ title: `Open “${space.name}” to anyone, without sign-in?`, ok: "Anyone", danger: true })) return;
+    set("visibility", v);
+  }
   const dirty = JSON.stringify(form) !== JSON.stringify(space);
 
   async function save(e: FormEvent) {
@@ -361,7 +370,7 @@ function SpaceEditor({ space, isAdmin, area, onBack, onSaved, onHome, onDeleted 
       ? { description: form.description ?? "", ...(isAdmin ? { name: form.name } : {}) }
       : {
           commentsEnabled: form.commentsEnabled, agingDays: form.agingDays, agingAudience: form.agingAudience,
-          recycleDays: form.recycleDays ?? undefined, ...(isAdmin ? { isSensitive: form.isSensitive } : {}),
+          recycleDays: form.recycleDays ?? undefined, ...(isAdmin ? { isSensitive: form.isSensitive, visibility: form.visibility } : {}),
         };
     try {
       await api.patch(isAdmin ? `/admin/spaces/${space.id}` : `/spaces/${space.id}`, body);
@@ -369,7 +378,7 @@ function SpaceEditor({ space, isAdmin, area, onBack, onSaved, onHome, onDeleted 
       setStatus("Saved.");
     } catch (err) {
       // A refusal that says why (an Admin without access to a sensitive space) is shown as the server worded it.
-      setStatus(err instanceof ApiError && err.status === 400 ? "Days must be 1-3650." : err instanceof ApiError && err.status === 403 && err.body?.detail ? err.body.detail : "Not saved.");
+      setStatus(err instanceof ApiError && err.status === 400 ? "Days must be 1-3650." : err instanceof ApiError && (err.status === 403 || err.status === 409) && err.body?.detail ? err.body.detail : "Not saved.");
     } finally {
       setBusy(false);
     }
@@ -426,6 +435,12 @@ function SpaceEditor({ space, isAdmin, area, onBack, onSaved, onHome, onDeleted 
                   <>
                     <span className="lbl">Sensitive space</span>
                     <button type="button" role="switch" aria-checked={form.isSensitive} aria-label="Sensitive space" className={`sw ${form.isSensitive ? "on" : ""}`} onClick={() => set("isSensitive", !form.isSensitive)} />
+                    <span className="lbl">Visibility</span>
+                    <div className="seg" role="radiogroup" aria-label="Visibility">
+                      {VISIBILITY.map(([v, t]) => (
+                        <button key={v} type="button" role="radio" aria-checked={form.visibility === v} className={form.visibility === v ? "on" : ""} onClick={() => void chooseVisibility(v)}>{t}</button>
+                      ))}
+                    </div>
                   </>
                 )}
               </>
@@ -442,6 +457,7 @@ function SpaceEditor({ space, isAdmin, area, onBack, onSaved, onHome, onDeleted 
       <aside className="side" aria-label="Details">
         <h3>Space</h3><div>{space.name}</div>
         <h3>Key</h3><div className="mono">{space.key}</div>
+        <h3>Visibility</h3><div>{VISIBILITY.find(([v]) => v === space.visibility)?.[1]}</div>
         {counts && <><h3>Contents</h3><div>{counts.folders} folders · {counts.pages} pages</div></>}
         <h3>Created</h3><div>{fmtDate(space.createdAt)}</div>
         {space.isSensitive && <><h3>Sensitive</h3><div>Yes</div></>}

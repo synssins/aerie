@@ -36,6 +36,6 @@ public static class ImageRoutes
                 .ToHttp(image => Results.Created(image.Url, image))).WithAction<ImportImage>();
 
         api.MapGet("/images/{id:guid}", (Guid id, IActionBus bus, CancellationToken ct) =>
-            bus.SendAsync(new ReadImage { ImageId = id }, ct).ToHttp()).WithAction<ReadImage>();
+            bus.SendAsync(new ReadImage { ImageId = id }, ct).ToHttp()).AllowAnonymous().WithAction<ReadImage>();
     }
 }

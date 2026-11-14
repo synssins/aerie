@@ -169,13 +169,12 @@ public sealed class FindingTests : IAsyncLifetime
             .Where(n => n.GetProperty("kind").GetString() == "security.alert").Select(n => n.GetProperty("title").GetString()!)];
         var before = (await AlertsAsync()).Count;
 
-        foreach (var change in new object[] { new { isSensitive = false }, new { isPublic = true } })
-        {
-            var refused = await adam.PatchAsJsonAsync($"/api/v1/admin/spaces/{vault}", change, Ct);
-            Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
-            Assert.Equal("No access to this space.", (await refused.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("detail").GetString());
-        }
-        await _f.WithDbAsync(async db => Assert.True((await db.Spaces.SingleAsync(s => s.Id == vault, Ct)) is { IsSensitive: true, IsPublic: false }));
+        var refused = await adam.PatchAsJsonAsync($"/api/v1/admin/spaces/{vault}", new { isSensitive = false }, Ct);
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+        Assert.Equal("No access to this space.", (await refused.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("detail").GetString());
+        // A sensitive space is not opened by anyone: it stays Private.
+        Assert.Equal(HttpStatusCode.Conflict, (await adam.PatchAsJsonAsync($"/api/v1/admin/spaces/{vault}", new { visibility = "Anyone" }, Ct)).StatusCode);
+        await _f.WithDbAsync(async db => Assert.True((await db.Spaces.SingleAsync(s => s.Id == vault, Ct)) is { IsSensitive: true, Visibility: SpaceVisibility.Private }));
         // What does not lower the space's protection needs no access: a new name, and the flag itself on a space that has none.
         Assert.Equal(HttpStatusCode.OK, (await adam.PatchAsJsonAsync($"/api/v1/admin/spaces/{vault}", new { name = "Vault" }, Ct)).StatusCode);
         Assert.Equal(before, (await AlertsAsync()).Count);

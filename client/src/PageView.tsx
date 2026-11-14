@@ -104,7 +104,9 @@ function headingsOf(json: string): Heading[] {
 
 const fmt = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
-export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDirty, onCancelNew, onHistory, onMove, onDelete, autoEdit = false, codeLanguage = "plaintext" }: {
+export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDirty, onCancelNew, onHistory, onMove, onDelete, autoEdit = false, codeLanguage = "plaintext", guest = false }: {
+  /** Someone not signed in: no history and no export, which need sign-in. */
+  guest?: boolean;
   page: Page;
   onHistory: () => void;
   onMove: () => void;
@@ -340,10 +342,10 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
             ) : (
               <>
                 {page.canEdit && <button className="tb" onClick={startEdit}><Pencil className="ic" aria-hidden />Edit</button>}
-                <button className="tb icon" aria-label="History" title="History" onClick={onHistory}><History className="ic" aria-hidden /></button>
+                {!guest && <button className="tb icon" aria-label="History" title="History" onClick={onHistory}><History className="ic" aria-hidden /></button>}
                 <button className="tb icon" aria-label="Copy link" title="Copy link" onClick={() => navigator.clipboard?.writeText(`${location.origin}/p/${page.id}`)}><LinkIcon className="ic" aria-hidden /></button>
                 <SlotTools slot="page.tools" ctx={{ page }} />
-                <MenuButton label="Export" icon={<Download className="ic" aria-hidden />} items={exportItems} />
+                {!guest && <MenuButton label="Export" icon={<Download className="ic" aria-hidden />} items={exportItems} />}
                 {page.canDelete && (
                   <MenuButton label="More" iconOnly icon={<Ellipsis className="ic" aria-hidden />} items={[
                     { label: "Move", icon: <FolderInput className="ic" aria-hidden />, onClick: onMove },

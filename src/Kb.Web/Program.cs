@@ -105,6 +105,9 @@ services.AddRateLimiter(o =>
             ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("signin:" + http.Connection.RemoteIpAddress, _ => new() { PermitLimit = kb.Auth.SignInsPerMinutePerAddress, Window = TimeSpan.FromMinutes(1) })
         : ApiTokenAuth.PresentedId(http) is { } tokenId
             ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("token:" + tokenId, _ => new() { PermitLimit = kb.Tokens.RequestsPerMinute, Window = TimeSpan.FromMinutes(1) })
+        // Someone not signed in (reading Anyone spaces) is counted by address; the limiter runs after authentication, so a session is known.
+        : http.User.Identity?.IsAuthenticated != true && http.Request.Path.StartsWithSegments("/api")
+            ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("anon:" + http.Connection.RemoteIpAddress, _ => new() { PermitLimit = kb.Auth.AnonymousRequestsPerMinutePerAddress, Window = TimeSpan.FromMinutes(1) })
         : System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter(""));
 });
 

@@ -925,9 +925,6 @@ namespace Kb.Data.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<bool>("IsPublic")
-                        .HasColumnType("bit");
-
                     b.Property<bool>("IsSensitive")
                         .HasColumnType("bit");
 
@@ -940,6 +937,9 @@ namespace Kb.Data.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<int?>("RecycleDays")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Visibility")
                         .HasColumnType("int");
 
                     b.HasKey("Id");

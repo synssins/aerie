@@ -36,7 +36,7 @@ public static class AttachmentRoutes
                 .ToHttp(a => Results.Created(a.Url, a))).WithAction<AddAttachment>();
 
         api.MapGet("/attachments/{id:guid}", (Guid id, IActionBus bus, CancellationToken ct) =>
-            bus.SendAsync(new ReadAttachment { AttachmentId = id }, ct).ToHttp()).WithAction<ReadAttachment>();
+            bus.SendAsync(new ReadAttachment { AttachmentId = id }, ct).ToHttp()).AllowAnonymous().WithAction<ReadAttachment>();
 
         api.MapDelete("/attachments/{id:guid}", (Guid id, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new RemoveAttachment { AttachmentId = id }, ct).ToHttp()).WithAction<RemoveAttachment>();

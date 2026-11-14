@@ -106,21 +106,19 @@ public class SpacePermissionServiceTests
         public List<Space> Spaces { get; } = [];
         public List<SpaceRoleAssignment> Assignments { get; } = [];
         public List<SpaceAccessGrant> Grants { get; } = [];
-        public bool PublicOn { get; set; }
         public Task<PrincipalInfo?> GetPrincipalAsync(Guid u, CancellationToken ct) => Task.FromResult(Users.GetValueOrDefault(u));
         public Task<Space?> GetSpaceAsync(Guid s, CancellationToken ct) => Task.FromResult(Spaces.FirstOrDefault(x => x.Id == s));
         public Task<IReadOnlyList<Space>> GetAllSpacesAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<Space>>(Spaces);
         public Task<IReadOnlyList<SpaceRoleAssignment>> GetAssignmentsAsync(Guid s, CancellationToken ct) => Task.FromResult<IReadOnlyList<SpaceRoleAssignment>>(Assignments.Where(a => a.SpaceId == s).ToList());
         public Task<IReadOnlyList<SpaceRoleAssignment>> GetAssignmentsForPrincipalsAsync(IReadOnlyCollection<string> ids, CancellationToken ct) => Task.FromResult<IReadOnlyList<SpaceRoleAssignment>>(Assignments.Where(a => ids.Contains(a.PrincipalId)).ToList());
         public Task<IReadOnlyList<SpaceAccessGrant>> GetActiveGrantsAsync(Guid u, DateTimeOffset now, CancellationToken ct) => Task.FromResult<IReadOnlyList<SpaceAccessGrant>>(Grants.Where(g => g.UserId == u && (g.ExpiresAt is null || g.ExpiresAt > now)).ToList());
-        public Task<bool> IsPublicSpaceEnabledAsync(CancellationToken ct) => Task.FromResult(PublicOn);
     }
 
     private readonly FakeData _d = new();
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 11, 9, 0, 0, 0, TimeSpan.Zero));
     private readonly Space _normal = new() { Key = "sd", Name = "Service Desk" };
     private readonly Space _sensitive = new() { Key = "hr", Name = "HR", IsSensitive = true };
-    private readonly Space _public = new() { Key = "help", Name = "Help", IsPublic = true };
+    private readonly Space _public = new() { Key = "help", Name = "Help" };
     private readonly Guid _admin = Guid.NewGuid(), _user = Guid.NewGuid(), _outsider = Guid.NewGuid();
     private SpacePermissionService Svc => new(_d, _time);
 
@@ -156,13 +154,23 @@ public class SpacePermissionServiceTests
     }
 
     [Fact]
-    public async Task NonFullAccessUser_OnlyPublicSpacesVisible_WhenSwitchOn()
+    public async Task NonFullAccessUser_OnlySpacesOpenToEveryoneSignedIn()
     {
         Assert.Empty(await Svc.VisibleSpaceIdsAsync(_outsider));
-        _d.PublicOn = true;
+        _public.Visibility = SpaceVisibility.SignedIn;
         Assert.Equal([_public.Id], await Svc.VisibleSpaceIdsAsync(_outsider));
         Assert.Equal(SpaceRole.Reader, await Svc.GetRoleAsync(_outsider, _public.Id));
         Assert.Null(await Svc.GetRoleAsync(_outsider, _normal.Id));
+        _public.Visibility = SpaceVisibility.Anyone;
+        Assert.Equal(SpaceRole.Reader, await Svc.GetRoleAsync(_outsider, _public.Id));
+    }
+
+    [Fact]
+    public async Task ASensitiveSpace_IsNeverOpened_EvenIfARowSaysSo()
+    {
+        _sensitive.Visibility = SpaceVisibility.Anyone;
+        Assert.Null(await Svc.GetRoleAsync(_user, _sensitive.Id));
+        Assert.DoesNotContain(_sensitive.Id, await Svc.VisibleSpaceIdsAsync(_outsider));
     }
 
     [Fact]
