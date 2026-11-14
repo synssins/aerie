@@ -1,0 +1,35 @@
+# Aerie on Fly.io: the published image, its data on a volume, HTTPS at the edge.
+# Deploy: fly deploy    (the app name is set by `fly apps create`; replace it below)
+app = "aerie-kb"
+primary_region = "ord"
+
+[build]
+  image = "ghcr.io/synssins/aerie:latest"
+
+[env]
+  # The first admin is made from these at first start, so the setup page is never open to the internet.
+  # The password is a Fly secret: fly secrets set KB_SETUP_ADMIN_PASSWORD=...
+  Kb__Setup__AdminUserName = "admin"
+  Kb__Setup__AdminPasswordSecretName = "KB_SETUP_ADMIN_PASSWORD"
+
+[[mounts]]
+  source = "aerie_data"
+  destination = "/app/App_Data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "30s"
+    method = "GET"
+    path = "/health/ready"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
