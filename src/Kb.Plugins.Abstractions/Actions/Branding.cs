@@ -37,4 +37,4 @@ public sealed record RemoveBrandLogo : IAction<Unit>
     public required string Variant { get; init; }
 }
 
-public sealed record BrandDto(string ProductName, string? LogoLightUrl, string? LogoDarkUrl, string PrimaryColor);
+public sealed record BrandDto(string ProductName, string? LogoLightUrl, string? LogoDarkUrl, string PrimaryColor, string? SignInNote = null);

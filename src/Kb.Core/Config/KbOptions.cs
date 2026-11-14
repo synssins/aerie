@@ -25,6 +25,8 @@ public sealed class BrandOptions
     public string LogoLightPath { get; set; } = "/brand/logo-light.svg";
     public string LogoDarkPath { get; set; } = "/brand/logo-dark.svg";
     public string PrimaryColor { get; set; } = "#14304f";
+    // A line shown under the sign-in fields, such as a public demo's login. Empty shows nothing.
+    public string SignInNote { get; set; } = "";
 }
 
 public enum DatabaseProvider { SqlServer, Sqlite }

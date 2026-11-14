@@ -11,6 +11,8 @@ primary_region = "ord"
   # The password is a Fly secret: fly secrets set KB_SETUP_ADMIN_PASSWORD=...
   Kb__Setup__AdminUserName = "admin"
   Kb__Setup__AdminPasswordSecretName = "KB_SETUP_ADMIN_PASSWORD"
+  # Tells visitors to the public read-only demo how to sign in. Off on every other install.
+  Kb__Brand__SignInNote = "Read-Only Preview: demo/demo"
 
 [[mounts]]
   source = "aerie_data"

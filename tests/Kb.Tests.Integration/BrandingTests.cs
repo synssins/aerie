@@ -38,6 +38,14 @@ public sealed class BrandingTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SignInNote_IsReadOnlyWhenSet()
+    {
+        Assert.Null((await _f.NewClient().GetFromJsonAsync<BrandDto>("/api/v1/brand", Ct))!.SignInNote);
+        await using var f = new KbAppFactory(KbAppFactory.NewDbPath(), settings: new Dictionary<string, string> { ["Kb:Brand:SignInNote"] = "Read-Only Preview: demo/demo" });
+        Assert.Equal("Read-Only Preview: demo/demo", (await f.NewClient().GetFromJsonAsync<BrandDto>("/api/v1/brand", Ct))!.SignInNote);
+    }
+
+    [Fact]
     public async Task Rename_ByAdmin_ChangesProductName()
     {
         var admin = await _f.SignedInBreakGlassAsync();

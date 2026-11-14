@@ -49,6 +49,7 @@ export function SignIn({ brand, onSignedIn }: { brand: Brand; onSignedIn: (me: M
           Password
           <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </label>
+        {brand.signInNote && <p className="muted small">{brand.signInNote}</p>}
         {error && <p className="form-error" role="alert">{error}</p>}
         <button className="btn primary" type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
       </form>
