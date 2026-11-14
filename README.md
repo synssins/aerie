@@ -1,148 +1,109 @@
-# Aerie
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="branding/aerie-logo-on-dark.svg">
+  <img src="branding/aerie-logo-on-light.svg" alt="Aerie" width="240">
+</picture>
 
-Aerie is an internal knowledge and documentation system for runbooks, how-to articles, application records, and network documentation. Each team works in its own permissioned space.
+Aerie is a self-hosted knowledge base for teams that keep runbooks, how-to articles and technical documentation. Each team works in its own space, and only the people given a role there can see it.
 
-Written for security review; separates Phase 1 (in progress) from planned phases.
+It runs on your own server (IIS) or on Azure App Service, with SQL Server. There is no cloud service behind it.
 
-| | |
-|---|---|
-| Status | Design approved 2026-11-08. Phase 1 foundation in progress. Not in production. |
-| Owner | Project owner |
-| Stack | .NET 10 LTS (ASP.NET Core), React with TypeScript, SQL Server |
-| Hosting | Azure App Service on private endpoints, or IIS on an internal server |
-| Exposure | Internal network and VPN only, across all hostnames |
-| Design document | [docs/superpowers/specs/2026-11-08-aerie-design.md](docs/superpowers/specs/2026-11-08-aerie-design.md) |
+**Status:** in development. Not production-ready.
 
-## Why the company needs it
+## What it does today
 
-The company has no central documentation system. Fixes sit in ticket comments and personal files, knowledge walks out when engineers leave, and application contract and support records are scattered across inboxes.
+**Spaces and access**
+- Spaces, each with its own folder and page tree.
+- Four roles per space: Reader, Contributor, Supervisor, Owner. Without a role in a space, you can't see that the space exists.
+- Local users and local groups. A group gets a role in a space, and every member holds that role.
+- Only an Admin makes or removes an Owner. Owners give the other roles from the space's Members tab.
+- Sensitive spaces, closed to Admins too. An Admin can open one through emergency access, and the space's Owners are told when that happens.
+- Access requests: anyone can ask for a role in a space, and its Owners approve or deny.
 
-Products like Confluence cover this scope, but their sprawl makes them slow for non-IT staff to adopt. Aerie covers the features the company needs without training overhead.
+**Pages**
+- A rich-text editor with code blocks, tables, images and attachments.
+- Version history with side-by-side diffs and restore. Drafts save as you type.
+- Search with typo tolerance and synonyms.
+- Exports to PDF and Word. Tables export to CSV or Excel, and code blocks download as files.
+- A recycle bin for pages and whole spaces. Nothing is purged automatically.
 
-## What it does
+**Administration and security**
+- An audit log in which each entry is chained to the previous one by a SHA-256 hash, so changes and deletions show up. Entries can be shipped to a SIEM.
+- API tokens, scoped to read or write, per space or for every space, always with an expiry. A token never reaches more than its owner can.
+- Sign-in rate limiting and account lockout. Signing out ends every session of that user.
+- File storage in a local folder or a network share, with a tool that moves files from one place to another.
+- Branding: the product name and logos.
 
-### Built in Phase 1 (in progress)
+**Plugins**
+- A plugin brings its own server code, database tables and screens. The core stays small.
+- An Admin installs a plugin by uploading its package, and the package's SHA-256 is recorded in the audit log. Safe Mode starts the app without uploaded plugins.
 
-| Feature | Scope |
-|---|---|
-| Spaces | Per-team spaces (Service Desk, Infrastructure Operations, etc.) bound to Active Directory / Entra ID groups. |
-| Roles | Per-space roles: Reader, Contributor, Supervisor, Owner. Users without a role in a space cannot see that the space exists. |
-| Sign-in | Microsoft Entra ID SSO, local accounts with passkeys, and one break-glass account for identity outages. |
-| Documents | Folder tree, breadcrumbs, and a rich-text editor (code blocks, tables, images, attachments) with numbered version history and side-by-side diffs. |
-| Recycle bin | Restores deleted documents to their original path. Browsed like the knowledge base: a tree of folders and pages, each opened to read. An Administrator deletes a whole space into the bin (three confirmations, the last a typed phrase) and restores it whole. |
-| Exports | Pages export to PDF or Word with secure links stripped. Tables export to CSV or Excel. Code blocks download with the matching file extension. |
-| API | REST API with scoped, expiring tokens. |
-| Plugins | Core plugin host included in v1. Email delivery ships as the first plugin. |
+## Planned
 
-### Planned for Phase 2
+- Sign-in with Entra ID, AD/LDAP or passkeys, and AD/Entra security groups (nested groups included) that give roles in spaces. These will be plugins.
+- Comments and ratings on pages.
+- Azure Blob Storage for files.
 
-- **Application registry:** Tracks versions per environment, support contacts, and links to contract records in a password manager (e.g., Bitwarden). Retiring an application archives linked articles.
-- **Content aging:** Flags pages unreviewed past a configured threshold and surfaces them in aging reports.
-- **Engagement and reporting:** Article ratings, comments, email notifications, and activity reports.
-- **Public help space:** Readable by any signed-in employee for self-service articles linked from support tickets.
-- **Identity and TLS:** LDAP and SAML sign-in, plus automated certificate renewal.
+## Requirements
 
-### Planned for Phase 3
+- Windows Server or Windows 10/11 with IIS, or Azure App Service
+- [.NET 10 SDK](https://dotnet.microsoft.com/download) (10.0.403 or later) and the ASP.NET Core 10 Hosting Bundle
+- Node.js, to build the web client
+- SQL Server (Express is enough)
 
-- **Network and asset directory:** Admin-defined schemas for servers, services, circuits, network drops, switch port maps, locations, and contacts (including Area Tech Leads per division group).
-- **Location map:** Pin map of sites and assigned Area Tech Leads.
-- **Meraki plugin:** Imports selected networks, VLANs, and DNS settings. Imported fields are read-only in Aerie.
-- **SolarWinds Service Desk plugin:** "This fixed my problem" action posts the resolution and article link to a ticket as a private comment.
-- **Contribution scoring:** Scores changes for supervisors by substantive diff size, ignoring whitespace and minor edits.
-- **AI-assisted search:** Optional, disabled by default.
+## Install on IIS
 
-## Security
+Run these from the repository root.
 
-### Exposure
+1. Install IIS, SQL Server Express and the Hosting Bundle. This step needs an elevated prompt.
+   ```powershell
+   .\tools\install-prereqs.ps1
+   ```
+2. Build the client and the server into `artifacts\publish`.
+   ```powershell
+   .\tools\publish.ps1
+   ```
+3. Create the site, the app pool, the database and a self-signed certificate. This step needs an elevated prompt, and is only needed the first time.
+   ```powershell
+   .\tools\deploy-iis.ps1
+   ```
+   Open `https://localhost` and the setup page creates the first admin. You can also pass `-AdminUser` and `-AdminPassword` to the script. `-TrustCert` trusts the certificate on this computer.
+4. To update later, run `.\tools\publish.ps1` and then `.\tools\update-iis.ps1`. No elevated prompt is needed.
 
-- Internal hostnames only. On Azure, the app, database, storage, and Key Vault run behind private endpoints with public network access disabled.
-- No anonymous pages. Only load-balancer health check endpoints respond without authentication.
+## Tests
 
-### Identity
+```powershell
+dotnet test --solution Kb.sln
+```
+```powershell
+cd client; npm test
+```
 
-- Entra ID sign-in is restricted to assigned groups, with guest accounts blocked by default. Only the Phase 2 public help space is readable by all signed-in employees.
-- Scheduled group sync revokes access on group removal without waiting for sign-out.
-- Local accounts are invite-only (no self-registration) and require passkeys or NIST SP 800-63B passwords with failed-attempt lockout.
-- Local sign-in can be disabled after SSO is configured. The toggle remains locked until an administrator completes an SSO sign-in.
-- Every use of the break-glass account is logged and alerts all administrators by email.
-
-### Authorization
-
-- All permission checks run server-side through a single authorization service covering search results, exports, API responses, and links.
-- Sensitive spaces (Legal, HR) deny default administrator access. Administrators must request Owner approval or trigger a 4-hour emergency override that immediately emails all space Owners.
-- Users can request space access in-app. Owners approve or deny via in-app notifications.
-
-### Data protection
-
-- Aerie stores no passwords or contract secrets, only permission-filtered links to the password manager. Secure links are stripped from exports and blocked in the public help space.
-- Editor content is stored as structured data and sanitized against an allow-list before rendering, backed by a strict Content Security Policy that blocks inline scripts.
-- Attachments are served with `Content-Disposition: attachment` and never rendered inline.
-- Emptying a space recycle bin soft-deletes items for the retention period. Early purge requires two-administrator approval, and legal holds block purging.
-
-### Audit
-
-- Append-only audit log covering sign-ins, permission changes, sensitive-space access, settings changes, deletions, restores, exports, token use, break-glass events, and plugin changes.
-- Entries are SHA-256 hash-chained, with scheduled integrity verification.
-- Supports log streaming to a SIEM (e.g., Microsoft Sentinel).
-
-### API tokens
-
-- Scoped to read or write (per-space or global), bound to the owner's permissions, with mandatory expiration.
-- Stored hashed and displayed once at creation.
-- Fixed token prefix for secret scanners.
-- Revocation takes effect immediately across all nodes.
-
-### Plugins
-
-- A plugin runs inside the app, with the app's rights. Install only a plugin from a publisher you trust as much as the app itself.
-- A plugin is either shipped in the app's folder (built-in) or installed by an Admin, who uploads its package. The package's SHA-256 is written to the audit log with the install. There is no allow-list of hashes: a package an Admin uploads is loaded.
-- The HTTP client the app gives a plugin refuses a request to a host the plugin's manifest does not declare, and follows no redirect.
-- A plugin's secret settings are stored in the database encrypted with ASP.NET Core Data Protection. The API never returns them and they are not written to logs.
-- Plugin install, update, enable, disable, removal and data deletion are audited.
-- A plugin that keeps failing is switched off by the app. Safe Mode starts the app without uploaded plugins.
-
-### Supply chain
-
-- Dependencies are minimized and restricted to actively maintained packages under permissive licenses (MIT, Apache 2.0, BSD).
-- Builds fail on any high or critical vulnerability in direct or transitive dependencies (enforced in CI, where transitive advisory `GHSA-846f-f764-76mx` was blocked and pinned before merge).
-- Locked package versions, CycloneDX SBOM generation per build, weekly Dependabot updates, and CodeQL scanning on every change.
-
-### Availability and patching
-
-Runs on two or more nodes behind a load balancer. Updates use rolling node drains with shared session state and backward-compatible database migrations.
-
-## How it is built
-
-- Built in-house on open-source components with no licensing cost. Company-specific configuration is kept out of the source tree so the project can be open-sourced later.
-- Code is written primarily by AI coding agents (Claude and Cursor) against the approved design and implementation plan (`AGENTS.md`). Every task starts with a failing test, and merges require passing tests and CI security gates.
-- The product name lives in a single brand setting, while the codebase uses a neutral `Kb` prefix.
+The server tests run against SQLite, so they need no SQL Server.
 
 ## Repository layout
 
 | Path | Contents |
 |---|---|
-| `src/Kb.Plugins.Abstractions` | Plugin contract interfaces |
-| `src/Kb.Plugins.Data` | Plugin contract for a plugin's own tables |
-| `src/Kb.Core` | Domain logic: permissions, audit, access requests, notifications, plugin host |
-| `src/Kb.Data` | Data access |
-| `src/Kb.Web` | Web application and REST API |
-| `plugins/` | First-party plugins |
-| `tests/` | Unit and integration tests |
-| `docs/` | Design specs, implementation plans, plugin and deployment guides |
+| `src/Kb.Web` | Web app and REST API |
+| `src/Kb.Core` | Permissions, audit, notifications, the plugin host |
+| `src/Kb.Data` | Data access and migrations |
+| `src/Kb.Plugins.Abstractions` | The contract a plugin builds against |
+| `client/` | React and TypeScript web client |
+| `plugins/` | Built-in plugins |
+| `tests/` | Server tests |
+| `tools/` | Install, build and deploy scripts |
+| `branding/` | Icon and logo |
+| `docs/` | Design, plans and guides |
 
-## Plugin guides
+The code uses the prefix `Kb`, so renaming the product changes no code.
 
-- [Developer guide](docs/plugins/developer-guide.md): how to write a plugin, with the sample plugin's code.
-- [Manifest reference](docs/plugins/manifest-reference.md): every property of `kb-plugin.json`.
-- [Admin guide](docs/plugins/admin-guide.md): install, update, remove, settings, locks, Safe Mode.
-- [Action reference](docs/plugins/action-reference.md): every action a plugin can hook.
+## Documentation
 
-## API
+- [Agent API](docs/agent-api.md): how a program signs in with a token, then finds, reads and changes pages.
+- [API reference](docs/api-reference.md): every route, and whether an API token may call it.
+- [Plugin developer guide](docs/plugins/developer-guide.md), [manifest reference](docs/plugins/manifest-reference.md), [admin guide](docs/plugins/admin-guide.md), [action reference](docs/plugins/action-reference.md).
+- [Design](docs/superpowers/specs/2026-11-08-aerie-design.md).
 
-- [Agent API](docs/agent-api.md): how an agent or another system signs in with a token, finds, reads and changes pages.
-- [API reference](docs/api-reference.md): every route, the action it sends, and whether an API token may call it.
+## License
 
-## Open items
-
-- DNS provider for the company's public zone (required for Phase 2 ACME certificate automation).
-- Open-source license selection prior to any public release.
+No license has been chosen yet. Until one is added, all rights are reserved.
