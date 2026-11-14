@@ -536,10 +536,31 @@ Where a box cannot stand (first in a list item, inside a table row, a mark insid
 
 Limit: an attribute a plugin adds to one of the editor's own nodes (an alignment on `paragraph`) is not carried. Without the plugin's extension the editor drops it on the next save. Use a node or a mark of your own.
 
+## Logging
+
+A plugin logs with `ILogger<T>`, taken from the container like any service: put it in a constructor (a hook, a handler, a job, a decorator), or ask `IServiceProvider` for it. The lines go to the app's log, under the type's name.
+
+```csharp
+public sealed class SyncJob(ILogger<SyncJob> log, IActionBus bus) : IKbJob
+{
+    public async Task RunAsync(CancellationToken ct)
+    {
+        log.LogInformation("Sync started for {Source}.", "cmdb");
+        // ...
+    }
+}
+```
+
+- Never log a secret, a setting marked secret, a header value, a token or a password, at any level. Log that a value is missing, never the value.
+- Never log an `HttpRequestMessage` or its headers: `ToString()` prints every header with its value. Log the method, the host and the status.
+- Exceptions of `HttpClient` can hold the address of the call; keep secrets out of addresses (query strings), and they stay out of logs.
+- The app's own HTTP clients log header names with their values redacted.
+
 ## Calling other systems
 
 List every host the plugin calls in `outboundHosts`. Take the plugin's client from `IHttpClientFactory` with the name `PluginHttp.ClientName("<id>")`.
 That client refuses a host that is not listed, and it follows no redirect: the plugin gets the 3xx answer and may ask again with the new address, which is checked like any other. List the host a redirect leads to as well.
+When you follow a redirect yourself, build a new request for the new host and add your own secret headers again only when that host is one you meant to send them to. Never copy the headers of the first request.
 
 ## Extension points
 
@@ -572,6 +593,10 @@ public void ConfigureServices(IServiceCollection services, IPluginContext contex
 - `DecorateAsync(OutboundRequest request, ct)` gets every call the service makes: `request.Purpose` is `OutboundPurposes.Ai` (`"ai"`) and `request.Message` the `HttpRequestMessage`, with its `Authorization` header already set.
 - The calls are `POST <address>/v1/chat/completions` and `GET <address>/v1/models` (the Model list on Administration > AI).
 - Every decorator runs, in plugin load order. One that throws refuses the call; it is not sent.
+- `OutboundPurposes.Ai` is the only purpose today. Check it, so a kind of call added later does not get your headers unasked.
+- Not set up, or not for this host: do nothing. Set up for this host but missing a value it needs: throw, so the call is refused with "A plugin that adds to the AI's requests failed" instead of reaching the gateway without its headers.
+- No redirect is followed on these calls: .NET would carry added headers to the new host. A 3xx answer is a refusal ("The model server answered a redirect ...").
+- The app logs no header value of these calls, at any level.
 - The call goes through the app's HTTP client, so the manifest's `outboundHosts` does not apply. Check the request's host yourself.
 - Reasoning is off unless the Admin turns it on: the request says `chat_template_kwargs.enable_thinking: false` and `reasoning_effort: "none"`. Leave the body alone.
 

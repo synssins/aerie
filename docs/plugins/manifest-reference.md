@@ -12,7 +12,7 @@ A list may be left out (it is then empty) but may not be `null`, and no item of 
 |---|---|---|---|
 | `id` | text | required | Lowercase letters and digits joined by single dots or hyphens, 3 to 64 characters. It names the plugin everywhere: its routes, its table prefix, its settings. |
 | `version` | text | required | Three numbers: `1.0.0`. No prefix or suffix. |
-| `publisher` | text | required | Who made it. Shown on the Plugins screen. |
+| `publisher` | text | required | Who made it and stands behind it: your organisation or your name as people know it (`Example Ltd`, not an email address). Shown on the Plugins screen, beside the id. |
 | `name` | text | the id | The name people see. |
 | `description` | text | none | One line about what it does. |
 | `assembly` | text | `<id>.dll` | The file name of the main assembly, at the top of the package. A file name only: no `/`, `\` or `:`. |
@@ -42,10 +42,10 @@ A list may be left out (it is then empty) but may not be `null`, and no item of 
 |---|---|---|---|
 | `key` | text | required | The name the plugin reads the setting by. Case-sensitive. |
 | `label` | text | required | The label on the Plugins screen. |
-| `type` | text | `text` | `text`, `secret`, `number`, `toggle`, `select` or `multiline`. A toggle is stored as `true` or `false`. Every value reaches the plugin as text. `secret` is the same as `"secret": true`. |
+| `type` | text | `text` | `text`, `secret`, `number`, `toggle`, `select` or `multiline`. A toggle is stored as `true` or `false`. Every value reaches the plugin as text. `secret` is the same as `"secret": true`. A `multiline` value arrives with LF (`\n`) line ends, whatever the browser or an API caller sent. |
 | `options` | list of text | none | The choices of a `select`. |
 | `secret` | true or false | false | Stored protected, never sent back to the browser, never logged. Read with `GetSecretAsync`, after start; `GetSetting` answers null for it. |
-| `required` | true or false | false | Saving the settings answers "Required." while it is empty. |
+| `required` | true or false | false | Saving the settings answers "Required." while it is empty. A secret that is already stored counts as set: saving the other settings keeps it and passes. Clearing it answers "Required.". |
 | `restart` | true or false | false | A change restarts the app. Use it for a setting the plugin reads only while it is configured. |
 
 ## permissions

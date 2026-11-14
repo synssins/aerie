@@ -71,6 +71,8 @@ public sealed class PluginSettingsStore
         {
             var row = rows.FirstOrDefault(r => r.Key == d.Key);
             var given = values.GetValueOrDefault(d.Key);
+            // A multiline value reaches the plugin with LF line ends, whoever sent it.
+            if (d.Type == "multiline" && given is not null) given = given.ReplaceLineEndings("\n");
             if (given is { Length: > 0 } && !IsSecret(d) && Refusal(d, given) is { } refusal) return Problem.Invalid(d.Key, refusal);
             if (d.Required && string.IsNullOrEmpty(given ?? row?.Value)) return Problem.Invalid(d.Key, "Required.");
             if (given is null) continue;

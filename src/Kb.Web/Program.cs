@@ -186,7 +186,11 @@ services.AddScoped<Kb.Web.Import.ImportService>();
 services.AddSingleton<Kb.Web.Import.ImportWorker>();
 services.AddHostedService(sp => sp.GetRequiredService<Kb.Web.Import.ImportWorker>());
 // The model server is the one an Admin names (often on the local network): no address guard; the time limit is per call.
-services.AddHttpClient(AiService.ClientName, c => { c.Timeout = Timeout.InfiniteTimeSpan; c.MaxResponseContentBufferSize = 16 * 1024 * 1024; });
+// The AI's calls carry headers plugins add (an access gateway's secrets). They follow no redirect: .NET keeps such headers on a
+// redirect to another host, so a redirect is answered as a refusal instead. No header value is ever written to a log.
+services.AddHttpClient(AiService.ClientName, c => { c.Timeout = Timeout.InfiniteTimeSpan; c.MaxResponseContentBufferSize = 16 * 1024 * 1024; })
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false })
+    .RedactLoggedHeaders(_ => true);
 
 services.AddHealthChecks().AddCheck<ReadinessCheck>("ready", tags: ["ready"]);
 services.AddProblemDetails();

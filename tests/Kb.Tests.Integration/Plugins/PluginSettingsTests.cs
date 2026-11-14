@@ -23,7 +23,7 @@ public sealed class PluginSettingsTests : IAsyncLifetime
     public async ValueTask InitializeAsync()
     {
         await TestPlugins.InstallAsync(await _f.SignedInBreakGlassAsync(), TestPlugins.Package(TestPlugins.Probe,
-            m => m with { Settings = [.. m.Settings, new PluginSetting("Must", "Must", Required: true), new PluginSetting("Count", "Count", Type: "number"), new PluginSetting("On", "On", Type: "toggle")] }));
+            m => m with { Settings = [.. m.Settings, new PluginSetting("Must", "Must", Required: true), new PluginSetting("Count", "Count", Type: "number"), new PluginSetting("On", "On", Type: "toggle"), new PluginSetting("Hosts", "Hosts", Type: "multiline")] }));
         _f = await _f.RestartAsync();
         _admin = await _f.SignedInBreakGlassAsync();
     }
@@ -53,6 +53,13 @@ public sealed class PluginSettingsTests : IAsyncLifetime
         Assert.False(got.GetProperty("values").TryGetProperty("Greeting", out _));
         Assert.Equal("3", got.GetProperty("values").GetProperty("Count").GetString());
         Assert.Equal(HttpStatusCode.NotFound, (await _admin.GetAsync("/api/v1/admin/plugins/kb.nothing/settings", Ct)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Multiline_ReachesThePlugin_WithLfLineEnds()
+    {
+        Assert.Equal(HttpStatusCode.OK, (await SaveAsync(new { Must = "yes", Hosts = "a.example.com\r\nb.example.com\rc.example.com" })).StatusCode);
+        Assert.Equal("a.example.com\nb.example.com\nc.example.com", Store().Get("kb.test.probe", "Hosts"));
     }
 
     [Fact]

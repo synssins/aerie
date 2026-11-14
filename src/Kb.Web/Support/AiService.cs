@@ -94,6 +94,7 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(15));
             using var response = await http.CreateClient(ClientName).SendAsync(request, timeout.Token);
+            if (Redirect(response) is { } moved) return new Problem(502, moved);
             if (!response.IsSuccessStatusCode) return new Problem(502, $"The server answered {(int)response.StatusCode} at /v1/models.");
             var text = await response.Content.ReadAsStringAsync(timeout.Token);
             if (text.Length > 1_000_000) return new Problem(502, "The model list is too large.");
@@ -172,6 +173,7 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(s.TimeoutSeconds, 5, 600)));
             using var response = await http.CreateClient(ClientName).SendAsync(request, timeout.Token);
+            if (Redirect(response) is { } moved) return await RefuseAsync("error", new Problem(502, moved), moved);
             var text = await response.Content.ReadAsStringAsync(timeout.Token);
             if (!response.IsSuccessStatusCode)
                 return await RefuseAsync("error", new Problem(502, $"The model server answered {(int)response.StatusCode} ({response.ReasonPhrase}): it may be overloaded, or the content too large for it."), text.Length > 200 ? text[..200] : text);
@@ -201,6 +203,15 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
         await AuditAsync(actor, feature, "ok", inTokens, outTokens, ms, null);
         return new AiResult(output, model, inTokens, outTokens, ms, string.IsNullOrWhiteSpace(reasoning));
     }
+
+    /// <summary>
+    /// A redirect is not followed: the request carries headers plugins added, which .NET would send on to the new host.
+    /// The Admin sets the final address instead.
+    /// </summary>
+    private static string? Redirect(HttpResponseMessage response) =>
+        (int)response.StatusCode is >= 300 and < 400
+            ? $"The model server answered a redirect ({(int)response.StatusCode}){(response.Headers.Location is { } to ? $" to {(to.IsAbsoluteUri ? to.GetLeftPart(UriPartial.Path) : to.OriginalString)}" : "")}. Redirects are not followed: set the final address in Administration > AI."
+            : null;
 
     // Some servers wrap JSON in a ``` fence even when asked not to.
     private static string StripFence(string text)

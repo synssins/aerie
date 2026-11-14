@@ -74,7 +74,7 @@ Ship your own assembly, its `.pdb` (a stack trace then names lines), its `.deps.
 
 ## The package
 
-A package is a zip file. Name it `<id>-<version>.kbplugin` (the app reads any name; the extension is what the upload screen offers).
+A package is a zip file. Name it `<id>-<version>.kbplugin`. The upload screen offers `.kbplugin` and `.zip` files, and the app reads the content, not the name: a `.zip` of the same content installs the same way.
 
 ```
 example.gateway-headers-1.0.0.kbplugin
@@ -153,6 +153,8 @@ tar.exe -a -c -f ..\your.id-1.0.0.zip *
 cd ..
 ren your.id-1.0.0.zip your.id-1.0.0.kbplugin
 ```
+
+The rename is optional: the upload screen takes the `.zip` too.
 
 `tar.exe` comes with Windows 10 and later; `-a` with a `.zip` name writes a zip with `/` in its names.
 Do not use `Compress-Archive` in Windows PowerShell 5.1: it writes `\` in entry names, and on a Linux server the files of `ui/` are not found.

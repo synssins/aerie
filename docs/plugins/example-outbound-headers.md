@@ -26,9 +26,12 @@ public static class OutboundPurposes
 
 - A decorator runs after the app set its own headers (`Authorization: Bearer <API key>` when a key is set), so it can add to them or replace them.
 - It never sees the answer.
-- Every decorator runs, in the order the plugins load. Act only on the purposes you know.
-- A decorator that throws refuses the call: it is not sent. The person sees "A plugin that adds to the AI's requests failed (<exception type>).", and the AI's audit entry records the refusal. Throw when a header you need is missing; never send a call without it.
+- Every decorator runs, in the order the plugins load.
+- **Purposes.** `OutboundPurposes.Ai` is the only purpose today. A later version of the app may give decorators other calls (with another purpose). Check the purpose: act on the ones you were written for, so a new kind of call never gets your secrets by surprise.
+- **Not configured, or misconfigured.** A plugin with no host set, or whose host does not match the request, does nothing: it returns and the call goes on unchanged. A plugin that is set up for this host but cannot add a header it needs (its secret is empty) throws. The call is then not sent, the person sees "A plugin that adds to the AI's requests failed (<exception type>).", and the AI's audit entry records the refusal. Never let a call to the gateway go out without the gateway's headers: the error then says what is wrong, where a gateway's refusal would not.
 - The call goes through the app's own HTTP client, not the plugin's. `outboundHosts` does not apply; the plugin decides by the request's host.
+- **Redirects.** The app follows no redirect on these calls. .NET keeps added headers when it follows a redirect to another host, so a redirect would carry your secret there. A model server that answers 3xx gets no second call; the person sees "The model server answered a redirect (302) to ...". Set the final address in Administration > AI.
+- **Logs.** The app never logs these requests or their header values: its HTTP client logs header names with the values redacted, at every level. Do the same in your plugin: never log a secret, a header value, or an `HttpRequestMessage` (its `ToString()` prints every header and its value).
 
 ## The project
 
