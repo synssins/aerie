@@ -2,10 +2,13 @@ import { useRef, useState, type FormEvent } from "react";
 import { Trash2, Upload } from "lucide-react";
 import { api, ApiError, type Brand } from "./api";
 
+/** Aerie's own icon: the logo until an Admin uploads one. It reads on light and dark alike. */
+export const DEFAULT_LOGO = "/aerie-icon.svg";
+
 /** The company logo for a background. The top bar is always dark, so it asks for "dark". */
 export function BrandLogo({ brand, background }: { brand: Brand; background: "light" | "dark" }) {
-  const src = background === "dark" ? brand.logoDarkUrl ?? brand.logoLightUrl : brand.logoLightUrl ?? brand.logoDarkUrl;
-  return src ? <img className="logo-img" src={src} alt={`${brand.productName} logo`} /> : null;
+  const src = (background === "dark" ? brand.logoDarkUrl ?? brand.logoLightUrl : brand.logoLightUrl ?? brand.logoDarkUrl) ?? DEFAULT_LOGO;
+  return <img className="logo-img" src={src} alt={`${brand.productName} logo`} />;
 }
 
 function LogoField({ variant, label, url, onChanged }: { variant: "light" | "dark"; label: string; url: string | null; onChanged: () => Promise<void> }) {
@@ -37,7 +40,7 @@ function LogoField({ variant, label, url, onChanged }: { variant: "light" | "dar
     <>
       <span className="lbl">{label}</span>
       <div className="logo-field">
-        <div className={`logo-swatch ${variant}`}>{url ? <img src={url} alt="" /> : <span className="muted small">None</span>}</div>
+        <div className={`logo-swatch ${variant}`}><img src={url ?? DEFAULT_LOGO} alt="" /></div>
         <input ref={input} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); }} />
         <button type="button" className="tb" disabled={busy} onClick={() => input.current?.click()}><Upload className="ic" aria-hidden />Upload</button>
         {url && <button type="button" className="tb icon" disabled={busy} aria-label={`Remove ${label}`} title="Remove" onClick={() => void remove()}><Trash2 className="ic" aria-hidden /></button>}
