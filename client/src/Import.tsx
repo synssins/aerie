@@ -219,6 +219,35 @@ function ImportInbox({ onOpen, onHome }: { onOpen: (id: string) => void; onHome:
 
 type Draft = { key: number; title: string; json: string };
 
+const TOP = "Top level";
+/** The space's folders as paths ("Runbooks / DR"), in tree order: what the Folder box offers. */
+export function folderPaths(nodes: TreeNode[]): { id: string; path: string }[] {
+  const out: { id: string; path: string }[] = [];
+  const walkFolders = (parent: string | null, prefix: string) => {
+    for (const n of nodes.filter((x) => x.kind === "Folder" && x.parentId === parent).sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true }))) {
+      const path = prefix ? `${prefix} / ${n.title}` : n.title;
+      out.push({ id: n.id, path });
+      walkFolders(n.id, path);
+    }
+  };
+  walkFolders(null, "");
+  return out;
+}
+
+/** What is typed in the Folder box: an existing folder, the top level, or a new folder (under the folder its path starts with). */
+export function resolveFolder(text: string, paths: { id: string; path: string }[]): { parentId: string | null; newFolder: string | null } {
+  const t = text.trim();
+  if (!t || t === TOP) return { parentId: null, newFolder: null };
+  const hit = paths.find((p) => p.path === t);
+  if (hit) return { parentId: hit.id, newFolder: null };
+  const cut = t.lastIndexOf(" / ");
+  const under = cut > 0 ? paths.find((p) => p.path === t.slice(0, cut)) : undefined;
+  return under ? { parentId: under.id, newFolder: t.slice(cut + 3).trim() } : { parentId: null, newFolder: t };
+}
+
+// Drafts made before the wording changed carry the old last sentence.
+const warning = (w: string) => w.replace("Check it says nothing new.", "Confirm the document is correct before saving.");
+
 /** One proposed page, editable as in the page editor. */
 function DraftEditor({ draft, onChange }: { draft: Draft; onChange: (json: string) => void }) {
   const extensions = useMemo(() => makeExtensions("plaintext"), []);
@@ -305,8 +334,9 @@ function ImportReview({ id, onBack, onOpenPage, onHome }: { id: string; onBack: 
   const [reviewTouched, setReviewTouched] = useState(false);
   const [mode, setMode] = useState<string>("new");
   const [space, setSpace] = useState("");
-  const [folder, setFolder] = useState("");
-  const [folders, setFolders] = useState<TreeNode[]>([]);
+  const [folder, setFolder] = useState(TOP);
+  const [folders, setFolders] = useState<{ id: string; path: string }[]>([]);
+  const [wantFolder, setWantFolder] = useState<string | null>(null);
   const [attach, setAttach] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -322,17 +352,25 @@ function ImportReview({ id, onBack, onOpenPage, onHome }: { id: string; onBack: 
     setTags(p.tags);
     const sp = p.destination?.spaceId ?? "";
     setSpace(sp);
-    setFolder(p.destination?.parentId ?? "");
+    setWantFolder(p.destination?.parentId ?? null);
     setReview(it.spaces?.find((s) => s.id === sp)?.reviewMonths ?? p.reviewMonths);
   }).catch(() => setError("This draft was not found.")), [id]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (item && ["Queued", "Working"].includes(item.status)) { const t = setTimeout(() => void load(), 2000); return () => clearTimeout(t); } }, [item, load]);
-  useEffect(() => { if (!space) { setFolders([]); return; } void api.get<TreeNode[]>(`/spaces/${space}/tree`).then((t) => setFolders(t.filter((n) => n.kind === "Folder"))).catch(() => setFolders([])); }, [space]);
+  useEffect(() => {
+    if (!space) { setFolders([]); return; }
+    void api.get<TreeNode[]>(`/spaces/${space}/tree`).then((t) => {
+      const paths = folderPaths(t);
+      setFolders(paths);
+      if (wantFolder) { setFolder(paths.find((x) => x.id === wantFolder)?.path ?? TOP); setWantFolder(null); }
+    }).catch(() => setFolders([]));
+  }, [space, wantFolder]);
 
   const spaces: ImportSpace[] = item?.spaces ?? [];
-  function pickSpace(sid: string) {
+  function pickSpace(sid: string, parent: string | null = null) {
     setSpace(sid);
-    setFolder("");
+    setFolder(TOP);
+    setWantFolder(parent);
     // A space's own review cycle is where a page placed there starts, unless it was chosen here already.
     const d = spaces.find((s) => s.id === sid)?.reviewMonths;
     if (!reviewTouched && d != null) setReview(d);
@@ -353,7 +391,7 @@ function ImportReview({ id, onBack, onOpenPage, onHome }: { id: string; onBack: 
     try {
       const ids = await api.post<string[]>(`/imports/items/${id}/accept`, {
         pages: drafts.map((d) => ({ title: d.title, contentJson: d.json, tags })),
-        spaceId: update ? null : space || null, parentId: update ? null : folder || null, updatePageId: update,
+        spaceId: update ? null : space || null, updatePageId: update, ...(update ? { parentId: null } : resolveFolder(folder, folders)),
         details: {
           appliesTo: useApplies ? p.appliesTo.map((a) => ({ applicationId: a.applicationId, servers: a.servers })) : [],
           ownerType: useOwner && p.owner ? p.owner.type : null, ownerId: useOwner && p.owner ? p.owner.id : null, reviewMonths: review,
@@ -395,24 +433,32 @@ function ImportReview({ id, onBack, onOpenPage, onHome }: { id: string; onBack: 
           </div>
           {error && <p className="form-error" role="alert">{error}</p>}
           {!ready && <p className={item.status === "Failed" || item.status === "Blocked" ? "form-error" : "muted"} role="status">{statusText(item)}</p>}
-          {p?.warnings.map((w) => <p key={w} className="note-row" role="status"><span>{w}</span></p>)}
+          {p?.warnings.map((w) => <p key={w} className="note-row" role="status"><span>{warning(w)}</span></p>)}
 
           <Summary item={item} />
 
           {p && ready && (
             <section className="review-options" aria-label="Placement and details">
               <h3>Placement</h3>
-              <div className="place-row">
+              <div className="place-grid">
+                <span />
+                <span className="col-head" id="place-space">Space</span>
+                <span className="col-head" id="place-folder">Folder</span>
                 <label className="check"><input type="radio" name="dest" checked={mode === "new"} onChange={() => setMode("new")} />New page</label>
-                <select className="sel" aria-label="Space" value={space} disabled={mode !== "new"} onChange={(e) => pickSpace(e.target.value)}>
-                  <option value="">{spaces.length ? "Choose a space" : "No space you can add pages to"}</option>
+                <select className="sel" aria-labelledby="place-space" value={space} disabled={mode !== "new"} onChange={(e) => pickSpace(e.target.value)}>
+                  <option value="">{spaces.length ? "" : "No space you can add pages to"}</option>
                   {spaces.map((s) => <option key={s.id} value={s.id}>{s.name}{s.isSensitive ? " (sensitive)" : ""}</option>)}
                 </select>
-                <select className="sel" aria-label="Level" value={folder} disabled={mode !== "new" || !space} onChange={(e) => setFolder(e.target.value)}>
-                  <option value="">Top level</option>{folders.map((f) => <option key={f.id} value={f.id}>{f.title}</option>)}
-                </select>
+                <span className="folder-pick">
+                  <input type="text" className="sel" aria-labelledby="place-folder" list="place-folders" value={folder} maxLength={200} disabled={mode !== "new" || !space}
+                    placeholder="New folder name" onFocus={(e) => e.target.select()} onChange={(e) => setFolder(e.target.value)} />
+                  <datalist id="place-folders"><option value="" /><option value={TOP} />{folders.map((f) => <option key={f.id} value={f.path} />)}</datalist>
+                  {space && resolveFolder(folder, folders).newFolder && <span className="chip">New folder</span>}
+                </span>
+              </div>
+              <div className="place-row">
                 {p.suggestedDestination && p.suggestedDestination.spaceId !== space && spaces.some((s) => s.id === p.suggestedDestination!.spaceId) && (
-                  <button type="button" className="link small" onClick={() => { setMode("new"); pickSpace(p.suggestedDestination!.spaceId); setFolder(p.suggestedDestination!.parentId ?? ""); }}>
+                  <button type="button" className="link small" onClick={() => { setMode("new"); pickSpace(p.suggestedDestination!.spaceId, p.suggestedDestination!.parentId); }}>
                     Suggested: {spaces.find((s) => s.id === p.suggestedDestination!.spaceId)?.name}
                   </button>
                 )}

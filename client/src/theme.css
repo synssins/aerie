@@ -218,6 +218,12 @@ h2.s { font-size: 17px; margin: 22px 0 8px; }
 .review-options h3:first-child { margin-top: 0; }
 .review-options .check { margin: 2px 0; }
 .review-options > .sel { justify-self: start; }
+.place-grid { display: grid; grid-template-columns: max-content minmax(0, 260px) minmax(0, 320px); gap: 2px 12px; align-items: center; }
+.place-grid .col-head { font-size: 12px; color: var(--ink2); }
+.place-grid .check { margin: 0; }
+.folder-pick { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.folder-pick input { flex: 1; min-width: 0; }
+@media (max-width: 700px) { .place-grid { grid-template-columns: 1fr; } .place-grid > span:empty, .place-grid .col-head { display: none; } }
 .place-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
 .place-row .check { margin: 0; }
 .place-row .sel { max-width: 280px; }

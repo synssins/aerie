@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import type { ImportItem } from "./api";
 import { DialogProvider } from "./Dialogs";
-import { ImportView, mergeDrafts, splitAtHeadings, statusText } from "./Import";
+import { folderPaths, ImportView, mergeDrafts, resolveFolder, splitAtHeadings, statusText } from "./Import";
 import { PageView } from "./PageView";
 
 HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) { this.setAttribute("open", ""); };
@@ -87,13 +87,13 @@ describe("import review", () => {
       pages: [{ title: "Reset MFA", contentJson: doc(["p", "password: Hunter2"]), redactedJson: doc(["p", "password: [REDACTED]"]) }],
       tags: ["mfa"], appliesTo: [{ applicationId: "a1", name: "Acme ERP", servers: ["ERP01"] }], owner: { type: "Group", id: "local:g1", name: "ERP Support Team" }, reviewMonths: 6,
       destination: null, suggestedDestination: { spaceId: "s1", parentId: null }, sensitive: [{ kind: "Password", sample: "Hu•••r2" }],
-      duplicates: [{ pageId: "p9", title: "Reset MFA (old)", score: 0.6, spaceId: "s1" }], warnings: [], model: "stub", ms: 9000,
+      duplicates: [{ pageId: "p9", title: "Reset MFA (old)", score: 0.6, spaceId: "s1" }], warnings: ["The draft uses words that are not in the source (vpn). Check it says nothing new."], model: "stub", ms: 9000,
       found: { people: ["Lena Kowalski"], servers: ["ERP01"], applications: [], tickets: ["CHG0041234"], versions: ["4.2"], conflicts: ["4.1 and 4.2 are both named."] },
     },
   };
 
   it("in order: summary, placement filled with the writable spaces, details, source above the proposed page; originals not attached", async () => {
-    const calls = server({ "GET /imports/items/i1": () => item, "GET /spaces/s1/tree": () => [{ id: "f9", kind: "Folder", title: "Runbooks", parentId: null }], "POST /imports/items/i1/accept": () => ["p1"] });
+    const calls = server({ "GET /imports/items/i1": () => item, "GET /spaces/s1/tree": () => [{ id: "f9", kind: "Folder", title: "Runbooks", parentId: null }, { id: "f8", kind: "Folder", title: "DR", parentId: "f9" }], "POST /imports/items/i1/accept": () => ["p1"] });
     const onOpenPage = vi.fn();
     render(<DialogProvider><ImportView itemId="i1" onOpenItem={() => {}} onOpenPage={onOpenPage} onHome={() => {}} /></DialogProvider>);
     const summary = await screen.findByRole("region", { name: "Summary" });
@@ -109,11 +109,17 @@ describe("import review", () => {
     // Picking the suggested space takes its review cycle (12) over the model's (6).
     await userEvent.click(screen.getByRole("button", { name: "Suggested: IAM" }));
     expect((screen.getByLabelText("Review cycle") as HTMLSelectElement).value).toBe("12");
-    await userEvent.selectOptions(await screen.findByLabelText("Level"), "Runbooks");
+    expect(screen.getByText("The draft uses words that are not in the source (vpn). Confirm the document is correct before saving.")).toBeTruthy();
+    const folderBox = screen.getByLabelText("Folder") as HTMLInputElement;
+    expect(folderBox.value).toBe("Top level");
+    await waitFor(() => expect([...document.querySelectorAll("#place-folders option")].map((o) => (o as HTMLOptionElement).value)).toEqual(["", "Top level", "Runbooks", "Runbooks / DR"]));
+    await userEvent.clear(folderBox);
+    await userEvent.type(folderBox, "Runbooks / MFA");
+    expect(screen.getByText("New folder")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
     await waitFor(() => expect(onOpenPage).toHaveBeenCalledWith("p1"));
     const body = calls.find((c) => c.key === "POST /imports/items/i1/accept")!.body as Record<string, unknown>;
-    expect(body).toMatchObject({ spaceId: "s1", parentId: "f9", updatePageId: null, attachOriginals: false, details: { reviewMonths: 12, ownerType: "Group", appliesTo: [{ applicationId: "a1" }] } });
+    expect(body).toMatchObject({ spaceId: "s1", parentId: "f9", newFolder: "MFA", updatePageId: null, attachOriginals: false, details: { reviewMonths: 12, ownerType: "Group", appliesTo: [{ applicationId: "a1" }] } });
     expect(JSON.stringify(body.pages)).not.toContain("Hunter2");
   });
 
@@ -134,6 +140,16 @@ describe("import review", () => {
     await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(calls.some((c) => c.key === "DELETE /imports/items/i1")).toBe(true));
     expect(onOpenItem).toHaveBeenCalledWith(null);
+  });
+
+  it("the Folder box: an existing folder by its path, the top level, or a new folder under the folder its path starts with", () => {
+    const paths = folderPaths([{ id: "a", kind: "Folder", title: "Runbooks", parentId: null }, { id: "b", kind: "Folder", title: "DR", parentId: "a" }, { id: "p", kind: "Page", title: "x", parentId: null }] as never);
+    expect(paths).toEqual([{ id: "a", path: "Runbooks" }, { id: "b", path: "Runbooks / DR" }]);
+    expect(resolveFolder("Runbooks / DR", paths)).toEqual({ parentId: "b", newFolder: null });
+    expect(resolveFolder("Top level", paths)).toEqual({ parentId: null, newFolder: null });
+    expect(resolveFolder("", paths)).toEqual({ parentId: null, newFolder: null });
+    expect(resolveFolder("Runbooks / DR / Exchange", paths)).toEqual({ parentId: "b", newFolder: "Exchange" });
+    expect(resolveFolder("Network", paths)).toEqual({ parentId: null, newFolder: "Network" });
   });
 
   it("splits a page at its headings and merges pages back", () => {

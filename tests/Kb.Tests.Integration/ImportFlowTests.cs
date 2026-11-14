@@ -275,6 +275,34 @@ public sealed class ImportFlowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Accept_IntoANewFolder_MakesTheFolderUnderTheChosenParent_WithTheImportersRights()
+    {
+        var (cara, _) = await UserAsync("cara", "Contributor");
+        var parent = (await (await _admin.PostAsJsonAsync($"/api/v1/spaces/{_space}/pages", new { kind = "Folder", title = "Runbooks" }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("id").GetGuid();
+        await UploadAsync(cara, ("mfa.txt", U("Reset MFA in the portal.")));
+        await WorkAsync();
+        var id = (await ItemsAsync(cara)).Single().GetProperty("id").GetGuid();
+        var doc = """{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Reset MFA in the portal."}]}]}""";
+        var r = await cara.PostAsJsonAsync($"/api/v1/imports/items/{id}/accept", new { pages = new[] { new { title = "MFA", contentJson = doc, tags = (string[]?)null } }, spaceId = _space, parentId = parent, newFolder = "Identity" }, Ct);
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var page = await cara.GetFromJsonAsync<JsonElement>($"/api/v1/pages/{(await r.Content.ReadFromJsonAsync<Guid[]>(Ct))![0]}", Ct);
+        var folderId = page.GetProperty("parentId").GetGuid();
+        var folder = await cara.GetFromJsonAsync<JsonElement>($"/api/v1/pages/{folderId}", Ct);
+        Assert.Equal("Identity", folder.GetProperty("title").GetString());
+        Assert.Equal("Folder", folder.GetProperty("kind").GetString());
+        Assert.Equal(parent, folder.GetProperty("parentId").GetGuid());
+
+        // A Reader cannot make one through import.
+        var (rita, _) = await UserAsync("rita", "Reader");
+        await UploadAsync(rita, ("x.txt", U("Printers are on floor 2.")));
+        await WorkAsync();
+        var rid = (await ItemsAsync(rita)).Single().GetProperty("id").GetGuid();
+        var refused = await rita.PostAsJsonAsync($"/api/v1/imports/items/{rid}/accept", new { pages = new[] { new { title = "P", contentJson = doc, tags = (string[]?)null } }, spaceId = _space, newFolder = "Nope" }, Ct);
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+        await _f.WithDbAsync(async db => Assert.False(await db.Pages.AnyAsync(p => p.Title == "Nope", Ct)));
+    }
+
+    [Fact]
     public async Task ASpacesReviewCycle_IsSetByItsOwner_AndShownWithTheSpace()
     {
         var r = await _admin.PatchAsJsonAsync($"/api/v1/spaces/{_space}", new { reviewMonths = 12 }, Ct);

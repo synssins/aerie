@@ -366,7 +366,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         var inWords = new HashSet<string>(AiGuard.Words(source).Select(w => w.ToLowerInvariant()));
         var added = outWords.Where(w => !inWords.Contains(w) && w.Length > 3).Distinct().ToList();
         if (source.Length > 0 && outWords.Count > 0 && added.Count > Math.Max(8, outWords.Distinct().Count() / 10))
-            warnings.Add($"The draft uses words that are not in the source ({string.Join(", ", added.Take(12))}). Check it says nothing new.");
+            warnings.Add($"The draft uses words that are not in the source ({string.Join(", ", added.Take(12))}). Confirm the document is correct before saving.");
 
         var tags = (output["tags"]?.AsArray() ?? []).Select(t => t!.GetValue<string>().Trim().ToLowerInvariant()).Where(t => t.Length is > 0 and <= 50 && !t.Contains(',')).ToList();
         var appliesTo = new JsonArray();
@@ -469,6 +469,15 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         }
         else if (req.SpaceId is { } s) spaceId = s;
         else return Problem.Invalid("destination", "Choose where the page goes.");
+        var parentId = req.ParentId;
+        // A folder typed in at placement: made first, under the chosen parent, by the normal action (the importer's rights, audited).
+        if (req.UpdatePageId is null && req.NewFolder?.Trim() is { Length: > 0 } folderName)
+        {
+            if (folderName.Length > 200) return Problem.Invalid("newFolder", "200 characters at most.");
+            var folder = await bus.SendAsync(new CreatePage { SpaceId = spaceId, ParentId = parentId, Kind = "Folder", Title = folderName, ContentJson = """{"type":"doc","content":[]}""" }, ct);
+            if (folder.Problem is { } fp) return fp;
+            parentId = folder.Value!.Id;
+        }
 
         // Pictures of the import become images of the target space, under the importer's rights.
         var imageUrls = new Dictionary<string, string>();
@@ -495,7 +504,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         {
             Outcome<PageDto> saved = req.UpdatePageId is { } upd
                 ? await bus.SendAsync(new SavePage { PageId = upd, Title = page.Title, ContentJson = Swap(page.ContentJson), BaseVersion = baseVersion!, Major = true, Note = $"Imported from {string.Join(", ", files.Where(f => f.ParentId is null).Select(f => f.Name).Take(5))}", Tags = page.Tags }, ct)
-                : await bus.SendAsync(new CreatePage { SpaceId = spaceId, ParentId = req.ParentId, Kind = "Page", Title = page.Title, ContentJson = Swap(page.ContentJson), Tags = page.Tags }, ct);
+                : await bus.SendAsync(new CreatePage { SpaceId = spaceId, ParentId = parentId, Kind = "Page", Title = page.Title, ContentJson = Swap(page.ContentJson), Tags = page.Tags }, ct);
             if (saved.Problem is { } p) return made.Count == 0 ? p : new Problem(p.Status, $"{made.Count} page(s) were made before this failed: {p.Message ?? p.Status.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             made.Add(saved.Value!.Id);
             if (req.Details is { } d)
@@ -613,8 +622,10 @@ public sealed record AcceptPage(string Title, string ContentJson, IReadOnlyList<
 /// <summary>
 /// Pages: what the importer reviewed (title, content, tags). Either UpdatePageId (a new version of that page) or SpaceId and ParentId.
 /// Details: Applies to, owner and review cycle to set, or null. AttachOriginals: attach the original files to the first page.
+/// NewFolder: a folder to make under ParentId (or at the top of the space) and put the page(s) in.
 /// </summary>
-public sealed record AcceptRequest(IReadOnlyList<AcceptPage>? Pages, Guid? SpaceId, Guid? ParentId, Guid? UpdatePageId, Kb.Web.Actions.PageDetailsRequest? Details, bool AttachOriginals = false);
+public sealed record AcceptRequest(IReadOnlyList<AcceptPage>? Pages, Guid? SpaceId, Guid? ParentId, Guid? UpdatePageId, Kb.Web.Actions.PageDetailsRequest? Details, bool AttachOriginals = false,
+    string? NewFolder = null);
 
 internal static class StringExtensions
 {
