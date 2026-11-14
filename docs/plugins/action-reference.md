@@ -80,6 +80,18 @@ Read. `ListAudit`, answers `IReadOnlyList<AuditEntryDto>`.
 
 Read. `VerifyAudit`, answers `AuditVerifyResult`.
 
+## auth.codes.enroll
+
+Write. `EnrollCodes`, answers `CodesEnrolled`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Code | `string` |  |
+
+## auth.codes.key
+
+Write. `NewCodeKey`, answers `CodeKey`. Core only.
+
 ## auth.local.disable
 
 Write. `DisableLocalSignIn`, answers `Unit`.
@@ -102,6 +114,14 @@ Write. `SignIn`, answers `MeResponse`.
 |---|---|---|
 | UserName | `string` | required |
 | Password | `string` | never logged |
+
+## auth.signin.code
+
+Write. `SignInCode`, answers `MeResponse`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Code | `string` |  |
 
 ## auth.signout
 
@@ -340,6 +360,14 @@ Write. `TestLogTarget`, answers `StorageTestDto`. Core only.
 | Field | Type | |
 |---|---|---|
 | Id | `Guid` | required |
+
+## me.codes.off
+
+Write. `TurnOffMyCodes`, answers `Unit`. Core only.
+
+## me.codes.read
+
+Read. `ReadMyCodes`, answers `MyCodes`. Core only.
 
 ## me.read
 
@@ -640,6 +668,18 @@ Write. `SaveSynonyms`, answers `SynonymsDto`.
 |---|---|---|
 | Text | `string` | required |
 
+## settings.codes.read
+
+Read. `ReadCodeSettings`, answers `CodeSettings`. Core only.
+
+## settings.codes.set
+
+Write. `SetCodeSettings`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| RequiredFor | `string` | required |
+
 ## settings.public-space.set
 
 Write. `SetPublicSpace`, answers `Unit`.
@@ -933,6 +973,23 @@ Write. `SetAnnouncer`, answers `Unit`.
 |---|---|---|
 | UserId | `Guid` | required |
 | Enabled | `bool` | required |
+
+## user.codes.exempt
+
+Write. `SetUserCodesExempt`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| UserId | `Guid` | required |
+| Exempt | `bool` | required |
+
+## user.codes.reset
+
+Write. `ResetUserCodes`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| UserId | `Guid` | required |
 
 ## user.delete
 

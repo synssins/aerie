@@ -39,7 +39,12 @@ public sealed class SetupTests
         var code = (await File.ReadAllTextAsync(f.SetupCodeFile, Ct)).Trim();
 
         var r = await c.PostAsJsonAsync("/api/v1/setup", Body(code), Ct);
-        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        // An Admin uses codes: no session until they are set up.
+        Assert.Equal(HttpStatusCode.Conflict, r.StatusCode);
+        Assert.Equal("enroll", (await r.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>(Ct)).GetProperty("step").GetString());
+        Assert.Equal(HttpStatusCode.Unauthorized, (await c.GetAsync("/api/v1/me", Ct)).StatusCode);
+        var key = (await (await c.PostAsync("/api/v1/auth/codes/key", null, Ct)).Content.ReadFromJsonAsync<System.Text.Json.JsonElement>(Ct)).GetProperty("key").GetString()!;
+        Assert.Equal(HttpStatusCode.OK, (await c.PostAsJsonAsync("/api/v1/auth/codes", new { code = Codes.Totp(key) }, Ct)).StatusCode);
         var me = await c.GetFromJsonAsync<MeResponse>("/api/v1/me", Ct);
         Assert.True(me!.IsAdmin);
         Assert.False(me.IsBreakGlass);
@@ -60,7 +65,7 @@ public sealed class SetupTests
         var s = await c.GetFromJsonAsync<SetupStatus>("/api/v1/setup/status", Ct);
         Assert.False(s!.CodeRequired);
         var r = await c.PostAsJsonAsync("/api/v1/setup", Body(), Ct);
-        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, r.StatusCode);
     }
 
     [Fact]
@@ -80,7 +85,7 @@ public sealed class SetupTests
             ["Kb--SetupAdminPassword"] = Pw,
         });
         var c = f.NewClient();
-        var r = await c.PostAsJsonAsync("/api/v1/auth/local/signin", new { userName = "chris", password = Pw }, Ct);
+        var r = await Codes.SignInAsync(f, c, "chris", Pw);
         Assert.Equal(HttpStatusCode.OK, r.StatusCode);
         var s = await c.GetFromJsonAsync<SetupStatus>("/api/v1/setup/status", Ct);
         Assert.False(s!.Required);

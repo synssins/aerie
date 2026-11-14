@@ -44,7 +44,7 @@ public sealed class FindingTests : IAsyncLifetime
         foreach (var (space, role) in roles)
             (await _admin.PutAsJsonAsync($"/api/v1/spaces/{space}/roles", new { principalType = "User", principalId = id.ToString(), role }, Ct)).EnsureSuccessStatusCode();
         var c = _f.NewClient();
-        (await c.PostAsJsonAsync("/api/v1/auth/local/signin", new { userName = name, password = Password }, Ct)).EnsureSuccessStatusCode();
+        (await Codes.SignInAsync(_f, c, name, Password)).EnsureSuccessStatusCode();
         return (c, id);
     }
 

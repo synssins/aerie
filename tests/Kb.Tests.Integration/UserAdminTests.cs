@@ -45,7 +45,7 @@ public sealed class UserAdminTests : IAsyncLifetime
         var (id, token) = await InviteAsync(name, admin);
         Assert.Equal(HttpStatusCode.NoContent, (await SetPasswordAsync(id, token, Password)).StatusCode);
         var c = _f.NewClient();
-        Assert.Equal(HttpStatusCode.OK, (await SignInAsync(c, name)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Codes.SignInAsync(_f, c, name, Password)).StatusCode);
         return (c, id);
     }
 

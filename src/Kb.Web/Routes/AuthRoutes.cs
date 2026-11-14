@@ -2,6 +2,10 @@ using Kb.Web.Actions;
 namespace Kb.Web;
 
 public sealed record SignInRequest(string UserName, string Password);
+public sealed record CodeRequest(string? Code)
+{
+    public override string ToString() => "CodeRequest";
+}
 public sealed record SetupRequest(string UserName, string DisplayName, string Password, string? Code);
 
 /// <summary>The body of the set-password request. Its text form leaves out the token and the password.</summary>
@@ -16,6 +20,23 @@ public static class AuthRoutes
     {
         api.MapPost("/auth/local/signin", (SignInRequest req, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new SignIn { UserName = req.UserName, Password = req.Password }, ct).ToHttp()).AllowAnonymous().WithAction<SignIn>();
+
+        // The second step: the password was right a moment ago (a pending sign-in), and this is the code.
+        api.MapPost("/auth/local/code", (CodeRequest req, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new SignInCode { Code = req.Code ?? "" }, ct).ToHttp()).AllowAnonymous().WithAction<SignInCode>();
+
+        // Setting up codes: pending at sign-in, or signed in and turning them on. The handlers decide who the caller is.
+        api.MapPost("/auth/codes/key", (IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new NewCodeKey(), ct).ToHttp()).AllowAnonymous().WithAction<NewCodeKey>();
+
+        api.MapPost("/auth/codes", (CodeRequest req, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new EnrollCodes { Code = req.Code ?? "" }, ct).ToHttp()).AllowAnonymous().WithAction<EnrollCodes>();
+
+        api.MapGet("/me/codes", (IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new ReadMyCodes(), ct).ToHttp()).WithAction<ReadMyCodes>();
+
+        api.MapDelete("/me/codes", (IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new TurnOffMyCodes(), ct).ToHttp()).WithAction<TurnOffMyCodes>();
 
         // With the link an Admin handed over. Nobody is signed in; the link is the right to do it.
         api.MapPost("/auth/local/password", (SetPasswordRequest req, IActionBus bus, CancellationToken ct) =>

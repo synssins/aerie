@@ -588,6 +588,12 @@ namespace Kb.Data.Migrations
                     b.Property<bool>("CanAnnounce")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("CodesExempt")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("CodesRequired")
+                        .HasColumnType("bit");
+
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
                         .HasColumnType("nvarchar(max)");

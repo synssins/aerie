@@ -57,6 +57,18 @@ public static class AdminRoutes
         api.MapGet("/principals", (string? q, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new ListPrincipals { Query = q }, ct).ToHttp()).WithAction<ListPrincipals>();
 
+        admin.MapPost("/users/{id:guid}/codes/reset", (Guid id, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new ResetUserCodes { UserId = id }, ct).ToHttp()).WithAction<ResetUserCodes>();
+
+        admin.MapPut("/users/{id:guid}/codes/exempt", (Guid id, CodesExemptRequest req, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new SetUserCodesExempt { UserId = id, Exempt = req.Exempt }, ct).ToHttp()).WithAction<SetUserCodesExempt>();
+
+        admin.MapGet("/settings/codes", (IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new ReadCodeSettings(), ct).ToHttp()).WithAction<ReadCodeSettings>();
+
+        admin.MapPut("/settings/codes", (CodeSettings req, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new SetCodeSettings { RequiredFor = req.RequiredFor ?? "" }, ct).ToHttp()).WithAction<SetCodeSettings>();
+
         admin.MapPost("/auth/local/disable", (IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new DisableLocalSignIn(), ct).ToHttp()).WithAction<DisableLocalSignIn>();
 

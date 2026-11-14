@@ -78,7 +78,7 @@ export type ApiToken = {
   createdAt: string; expiresAt: string; revokedAt: string | null; lastUsedAt: string | null; state: "Active" | "Expired" | "Revoked";
 };
 export type PluginSetting = { key: string; label: string; secret: boolean; required: boolean; type: string; options: string[] | null; restart: boolean };
-export type AdminUser = { id: string; userName: string; displayName: string; source: string; isAdmin: boolean; isBreakGlass: boolean; createdAt: string; deactivatedAt: string | null; canAnnounce: boolean; permissions: string[]; groups?: string[] };
+export type AdminUser = { id: string; userName: string; displayName: string; source: string; isAdmin: boolean; isBreakGlass: boolean; createdAt: string; deactivatedAt: string | null; canAnnounce: boolean; permissions: string[]; groups?: string[]; codesExempt?: boolean };
 export type Group = { id: string; key: string; name: string; isLocal: boolean; members: number };
 export type GroupMember = { userId: string; userName: string; displayName: string; source: string };
 export type Principal = { type: "User" | "Group"; id: string; name: string; detail: string };

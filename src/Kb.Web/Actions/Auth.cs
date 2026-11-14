@@ -49,7 +49,7 @@ internal sealed class SetPasswordHandler(UserManager<KbUser> users, IAuditLog au
     }
 }
 
-internal sealed class SignInHandler(SignInManager<KbUser> signIn, UserManager<KbUser> users, KbDbContext db, IAuditLog audit, BreakGlassService breakGlass, Kb.Core.Plugins.PluginRegistry plugins)
+internal sealed class SignInHandler(SignInManager<KbUser> signIn, UserManager<KbUser> users, KbDbContext db, IAuditLog audit, BreakGlassService breakGlass, CodeSignIn codes)
     : IActionHandler<SignIn, MeResponse>
 {
     // Nobody is signed in yet, so there is nothing to permit: the name and the password are checked as the work.
@@ -72,18 +72,20 @@ internal sealed class SignInHandler(SignInManager<KbUser> signIn, UserManager<Kb
         }
         if (!user.IsBreakGlass && await db.GetAsync(RuntimeSettingKeys.LocalSignInDisabled, ctx.Cancel) == "true") return Problem.Forbidden;
 
-        var result = await signIn.PasswordSignInAsync(user, req.Password, isPersistent: false, lockoutOnFailure: true);
+        // The password is checked without opening a session: someone who must use codes gets a pending sign-in instead.
+        var result = await signIn.CheckPasswordSignInAsync(user, req.Password, lockoutOnFailure: true);
         if (!result.Succeeded)
         {
             await audit.AppendAsync(new AuditEvent(AuditActions.SignInFailed, user.Id, "user", user.Id.ToString(),
                 Data: new Dictionary<string, string> { ["userName"] = user.UserName ?? "", ["reason"] = result.IsLockedOut ? "locked out" : "wrong password", ["lockedOut"] = result.IsLockedOut.ToString(), ["ip"] = ip }));
             return Problem.Unauthorized;
         }
+        if (await codes.NeededAsync(user, ctx.Cancel)) return await codes.PendAsync(user);
+        await signIn.SignInAsync(user, isPersistent: false, authenticationMethod: "pwd");
         await audit.AppendAsync(new AuditEvent(AuditActions.SignIn, user.Id, "user", user.Id.ToString(), Data: new Dictionary<string, string> { ["method"] = "local", ["ip"] = ip }));
         if (user.IsBreakGlass) await breakGlass.OnSignInAsync(user, ctx.Actor.RemoteIp);
         // The same answer as me.read: a plugin's script is handed this person without another request in between.
-        return new MeResponse(user.Id, user.UserName!, user.DisplayName, user.IsAdmin, user.IsBreakGlass, user.IsAdmin || user.CanAnnounce,
-            await PluginPermissions.HeldAsync(db, plugins, user.Id, user.IsAdmin, ctx.Cancel));
+        return await codes.MeAsync(user, ctx.Cancel);
     }
 }
 
@@ -171,11 +173,11 @@ internal sealed class ReadSetupStatusHandler(SetupService setup, IHttpContextAcc
     }
 }
 
-internal sealed class RunSetupHandler(SetupService setup, SignInManager<KbUser> signIn, IHttpContextAccessor http) : IActionHandler<RunSetup, MeResponse>
+internal sealed class RunSetupHandler(SetupService setup, CodeSignIn codes, IHttpContextAccessor http) : IActionHandler<RunSetup, MeResponse>
 {
     // Nobody is signed in yet. Whether setup is still open and whether the code fits are checked with the work, inside the service's lock.
     public Task<Problem?> AuthorizeAsync(ActionContext<RunSetup> ctx) => Task.FromResult<Problem?>(null);
 
     public Task<Outcome<MeResponse>> HandleAsync(ActionContext<RunSetup> ctx) =>
-        setup.RunAsync(ctx.Action, SetupService.IsLocal(http.HttpContext), signIn, ctx.Cancel);
+        setup.RunAsync(ctx.Action, SetupService.IsLocal(http.HttpContext), codes, ctx.Cancel);
 }

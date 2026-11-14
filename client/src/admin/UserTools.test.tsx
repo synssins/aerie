@@ -76,7 +76,7 @@ describe("UserTools", () => {
     cleanup();
     show(user());
     await userEvent.click(screen.getByRole("button", { name: "More" }));
-    expect(screen.getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Password link", "Delete"]);
+    expect(screen.getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Password link", "Reset authenticator", "No codes", "Delete"]);
   });
 
   it("Password link asks the server for a new link and shows it", async () => {
@@ -101,6 +101,39 @@ describe("UserTools", () => {
 
     await waitFor(() => expect(p.onChanged).toHaveBeenCalled());
     expect(calls.map((c) => c.key)).toEqual(["DELETE /admin/users/u1"]);
+  });
+
+  it("Reset authenticator asks first, in the app, and then resets", async () => {
+    const calls = server({ "POST /admin/users/u1/codes/reset": () => ({ status: 204 }) });
+    const p = show(user());
+    await userEvent.click(screen.getByRole("button", { name: "More" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Reset authenticator" }));
+    expect(screen.getByText("Reset authenticator of “Gail”?")).toBeTruthy();
+    expect(calls).toEqual([]);
+    await userEvent.click(screen.getByRole("button", { name: "Reset" }));
+    await waitFor(() => expect(p.onChanged).toHaveBeenCalled());
+    expect(calls.map((c) => c.key)).toEqual(["POST /admin/users/u1/codes/reset"]);
+  });
+
+  it("No codes asks first and is not offered for an Admin; Use codes takes it back", async () => {
+    const calls = server({ "PUT /admin/users/u1/codes/exempt": () => ({ status: 204 }) });
+    const p = show(user());
+    await userEvent.click(screen.getByRole("button", { name: "More" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "No codes" }));
+    await userEvent.click(screen.getByRole("button", { name: "No codes" }));
+    await waitFor(() => expect(p.onChanged).toHaveBeenCalled());
+    expect(calls).toEqual([{ key: "PUT /admin/users/u1/codes/exempt", body: { exempt: true } }]);
+    cleanup();
+
+    show(user({ codesExempt: true }));
+    await userEvent.click(screen.getByRole("button", { name: "More" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Use codes" }));
+    await waitFor(() => expect(calls.at(-1)).toEqual({ key: "PUT /admin/users/u1/codes/exempt", body: { exempt: false } }));
+    cleanup();
+
+    show(user({ isAdmin: true }));
+    await userEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.queryByRole("menuitem", { name: "No codes" })).toBeNull();
   });
 
   it("Delete says why the server refused", async () => {

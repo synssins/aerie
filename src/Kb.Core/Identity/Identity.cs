@@ -25,6 +25,10 @@ public sealed class KbUser : IdentityUser<Guid>
     public DateTimeOffset? DeletedAt { get; set; }
     /// <summary>Per-user app settings (theme, layout, notifications) as JSON. See Kb.Web UserSettings.</summary>
     public string SettingsJson { get; set; } = "{}";
+    /// <summary>The person turned on one-time codes for their own account. Admins, and everyone when the setting says so, use them anyway.</summary>
+    public bool CodesRequired { get; set; }
+    /// <summary>An Admin turned codes off for this account (a shared read-only demo account). Never applies to an Admin.</summary>
+    public bool CodesExempt { get; set; }
 }
 
 public sealed class KbRole : IdentityRole<Guid>;
@@ -58,6 +62,8 @@ public static class RuntimeSettingKeys
     public const string PublicSpaceEnabled = "PublicSpaceEnabled";
     public const string ExternalAdminVerifiedAt = "ExternalAdminVerifiedAt";
     public const string LocalSignInDisabled = "LocalSignInDisabled";
+    /// <summary>Who must use one-time codes at sign-in: "admins" (the default) or "everyone".</summary>
+    public const string CodesRequiredFor = "CodesRequiredFor";
     /// <summary>Raised by every plugin change. A server that started with an older number restarts.</summary>
     public const string PluginGeneration = "Plugins.Generation";
     /// <summary>Raised by every plugin settings change. A server that sees a newer one reloads its settings.</summary>

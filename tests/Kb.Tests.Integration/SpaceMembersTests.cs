@@ -45,7 +45,7 @@ public sealed class SpaceMembersTests : IAsyncLifetime
         var id = await NewUserAsync(name);
         Assert.Equal(HttpStatusCode.NoContent, (await GrantAsync(_admin, "User", id.ToString(), role)).StatusCode);
         var c = _f.NewClient();
-        (await c.PostAsJsonAsync("/api/v1/auth/local/signin", new { userName = name, password = Password }, Ct)).EnsureSuccessStatusCode();
+        (await Codes.SignInAsync(_f, c, name, Password)).EnsureSuccessStatusCode();
         return (c, id);
     }
 

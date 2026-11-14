@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Ellipsis, KeyRound, Plus, Trash2 } from "lucide-react";
+import { Ellipsis, KeyRound, Plus, ShieldCheck, ShieldOff, Trash2 } from "lucide-react";
 import { api, ApiError, type AdminUser } from "../api";
 import { useDialogs } from "../Dialogs";
 import { MenuButton } from "../ui";
@@ -11,7 +11,7 @@ type Link = { name: string; url: string };
 const linkFor = (m: Made) => `${location.origin}/set-password/${m.id}#${encodeURIComponent(m.setPasswordToken)}`;
 
 /**
- * Administration > Users: the tools. New user, and for the selected local user a new password link or Delete.
+ * Administration > Users: the tools. New user, and for the selected local user a new password link, Reset authenticator or Delete.
  * An account of a directory, and the break-glass account, are not managed here.
  */
 export function UserTools({ picked, onChanged, onError }: { picked: AdminUser | null; onChanged: () => void; onError: (text: string | null) => void }) {
@@ -26,6 +26,20 @@ export function UserTools({ picked, onChanged, onError }: { picked: AdminUser | 
     catch (e) { onError(e instanceof ApiError && e.body?.detail ? e.body.detail : "No link was made."); }
   }
 
+  async function resetCodes(u: AdminUser) {
+    onError(null);
+    if (!await dialogs.confirm({ title: `Reset authenticator of “${u.displayName}”?`, ok: "Reset", danger: true })) return;
+    try { await api.post(`/admin/users/${u.id}/codes/reset`); onChanged(); }
+    catch { onError("Not reset."); }
+  }
+
+  async function setExempt(u: AdminUser, exempt: boolean) {
+    onError(null);
+    if (exempt && !await dialogs.confirm({ title: `No codes for “${u.displayName}”?`, ok: "No codes", danger: true })) return;
+    try { await api.put(`/admin/users/${u.id}/codes/exempt`, { exempt }); onChanged(); }
+    catch (e) { onError(e instanceof ApiError && e.body?.detail ? e.body.detail : "Not changed."); }
+  }
+
   async function remove(u: AdminUser) {
     onError(null);
     if (!await dialogs.confirm({ title: `Delete “${u.displayName}”?`, ok: "Delete", danger: true })) return;
@@ -38,6 +52,10 @@ export function UserTools({ picked, onChanged, onError }: { picked: AdminUser | 
       {local && (
         <MenuButton label="More" iconOnly icon={<Ellipsis className="ic" aria-hidden />} items={[
           { label: "Password link", icon: <KeyRound className="ic" aria-hidden />, onClick: () => void newLink(local) },
+          { label: "Reset authenticator", icon: <ShieldOff className="ic" aria-hidden />, onClick: () => void resetCodes(local) },
+          ...(local.isAdmin ? [] : [local.codesExempt
+            ? { label: "Use codes", icon: <ShieldCheck className="ic" aria-hidden />, onClick: () => void setExempt(local, false) }
+            : { label: "No codes", icon: <ShieldOff className="ic" aria-hidden />, onClick: () => void setExempt(local, true) }]),
           { label: "Delete", icon: <Trash2 className="ic" aria-hidden />, onClick: () => void remove(local), danger: true },
         ]} />
       )}

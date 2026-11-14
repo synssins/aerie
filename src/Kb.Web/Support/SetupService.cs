@@ -85,10 +85,10 @@ public sealed class SetupService(
     }
 
     /// <summary><paramref name="local"/>: the request came from the server itself, so it needs no setup code.</summary>
-    public async Task<Outcome<MeResponse>> RunAsync(RunSetup req, bool local, SignInManager<KbUser> signIn, CancellationToken ct)
+    internal async Task<Outcome<MeResponse>> RunAsync(RunSetup req, bool local, Kb.Web.Actions.CodeSignIn codes, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(req);
-        ArgumentNullException.ThrowIfNull(signIn);
+        ArgumentNullException.ThrowIfNull(codes);
         await Gate.WaitAsync(ct);
         try
         {
@@ -99,8 +99,8 @@ public sealed class SetupService(
             var (user, result) = await CreateAdminAsync(req.UserName, req.DisplayName, req.Password, local ? "setup-local" : "setup-code");
             if (user is null) return new Problem(400, Fields: new Dictionary<string, string[]> { ["password"] = result.Errors.Select(e => e.Description).ToArray() });
 
-            await signIn.SignInAsync(user, isPersistent: false);
-            return new MeResponse(user.Id, user.UserName!, user.DisplayName, user.IsAdmin, user.IsBreakGlass, user.IsAdmin);
+            // An Admin uses one-time codes: the new admin sets them up before there is a session.
+            return await codes.PendAsync(user);
         }
         finally { Gate.Release(); }
     }

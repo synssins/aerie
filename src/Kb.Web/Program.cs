@@ -76,6 +76,16 @@ services.ConfigureApplicationCookie(o =>
     };
 });
 
+// The pending sign-in between the password and the code: as strict as the session cookie, and short.
+services.Configure<Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationOptions>(IdentityConstants.TwoFactorUserIdScheme, o =>
+{
+    o.Cookie.Name = "__Host-kb-pending";
+    o.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    o.Cookie.SameSite = SameSiteMode.Lax;
+    o.Cookie.HttpOnly = true;
+    o.ExpireTimeSpan = TimeSpan.FromMinutes(10);
+});
+
 // API tokens beside the sign-in cookie: a request with a Bearer header goes to the token handler, every other one to the cookie.
 services.AddAuthentication()
     .AddPolicyScheme(ApiTokenAuth.Selector, null, o => o.ForwardDefaultSelector = ctx => ApiTokenAuth.HasBearer(ctx.Request) ? ApiTokenAuth.Scheme : IdentityConstants.ApplicationScheme)
@@ -88,9 +98,10 @@ services.AddRateLimiter(o =>
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     // Sign-in attempts are counted by the address they come from; a token is counted by itself. The route that matched decides, not
     // the text of the address (a trailing slash reaches the same route), and it decides first (a refused token does not buy a higher limit).
-    // Guessing a password link is counted like guessing a password.
+    // Guessing a password link, a one-time code or a recovery code is counted like guessing a password.
     o.GlobalLimiter = System.Threading.RateLimiting.PartitionedRateLimiter.Create<HttpContext, string>(http =>
         HttpMethods.IsPost(http.Request.Method) && (http.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText is "/api/v1/auth/local/signin" or "/api/v1/auth/local/password"
+            or "/api/v1/auth/local/code" or "/api/v1/auth/codes" or "/api/v1/auth/codes/key"
             ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("signin:" + http.Connection.RemoteIpAddress, _ => new() { PermitLimit = kb.Auth.SignInsPerMinutePerAddress, Window = TimeSpan.FromMinutes(1) })
         : ApiTokenAuth.PresentedId(http) is { } tokenId
             ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("token:" + tokenId, _ => new() { PermitLimit = kb.Tokens.RequestsPerMinute, Window = TimeSpan.FromMinutes(1) })
@@ -164,6 +175,7 @@ services.AddScoped<INotifier, Notifier>();
 services.AddScoped<AccessService>();
 services.AddScoped<BreakGlassService>();
 services.AddScoped<SetupService>();
+services.AddScoped<Kb.Web.Actions.CodeSignIn>();
 
 services.AddHealthChecks().AddCheck<ReadinessCheck>("ready", tags: ["ready"]);
 services.AddProblemDetails();

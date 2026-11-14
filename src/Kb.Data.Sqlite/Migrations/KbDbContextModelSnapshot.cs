@@ -580,6 +580,12 @@ namespace Kb.Data.Sqlite.Migrations
                     b.Property<bool>("CanAnnounce")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("CodesExempt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("CodesRequired")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
                         .HasColumnType("TEXT");

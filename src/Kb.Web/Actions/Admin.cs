@@ -74,7 +74,7 @@ internal sealed class ListUsersHandler(KbDbContext db, IAccess access, Kb.Core.P
     public async Task<Outcome<IReadOnlyList<AdminUserDto>>> HandleAsync(ActionContext<ListUsers> ctx)
     {
         var users = await db.Users.AsNoTracking().Where(u => u.DeletedAt == null).OrderBy(u => u.DisplayName)
-            .Select(u => new AdminUserDto(u.Id, u.UserName!, u.DisplayName, u.Source.ToString(), u.IsAdmin, u.IsBreakGlass, u.CreatedAt, u.DeactivatedAt, u.CanAnnounce, null))
+            .Select(u => new AdminUserDto(u.Id, u.UserName!, u.DisplayName, u.Source.ToString(), u.IsAdmin, u.IsBreakGlass, u.CreatedAt, u.DeactivatedAt, u.CanAnnounce, null, null, u.CodesExempt))
             .ToListAsync(ctx.Cancel);
         // The global plugin permissions each person holds: an Admin every one, anyone else those they were given.
         var (all, grants) = (PluginPermissions.Global(plugins), await PluginPermissions.GrantsAsync(db, plugins, ctx.Cancel));

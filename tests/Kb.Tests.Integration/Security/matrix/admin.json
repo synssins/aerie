@@ -66,6 +66,36 @@
     "scope": "server"
   },
   {
+    "action": "user.codes.reset",
+    "method": "POST",
+    "path": "/api/v1/admin/users/{victim}/codes/reset",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 204},
+    "scope": "server"
+  },
+  {
+    "action": "user.codes.exempt",
+    "method": "PUT",
+    "path": "/api/v1/admin/users/{victim}/codes/exempt",
+    "body": {"exempt": false},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 204},
+    "scope": "server"
+  },
+  {
+    "action": "settings.codes.read",
+    "method": "GET",
+    "path": "/api/v1/admin/settings/codes",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "settings.codes.set",
+    "method": "PUT",
+    "path": "/api/v1/admin/settings/codes",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 400},
+    "scope": "server"
+  },
+  {
     "action": "user.delete",
     "method": "DELETE",
     "path": "/api/v1/admin/users/{victim}",

@@ -271,8 +271,11 @@ public sealed class ApiTokenTests : IAsyncLifetime
 
         var closed = routes.Where(r => !open.Contains($"{r.Method} {r.Template}")).ToList();
         Assert.Contains(("GET", "/api/v1/admin/users"), closed);
-        foreach (var (method, template) in closed)
+        // This class allows a token 100 requests a minute, and there are more closed routes than that: a fresh token every 90.
+        for (var i = 0; i < closed.Count; i++)
         {
+            var (method, template) = closed[i];
+            if (i > 0 && i % 90 == 0) (token, _, _) = await TokenAsync(admin, [Scope(null, "Write")]);
             var path = System.Text.RegularExpressions.Regex.Replace(template, @"\{[a-zA-Z]+:guid\}", Guid.NewGuid().ToString());
             path = System.Text.RegularExpressions.Regex.Replace(path, @"\{[^}]+\}", "1");
             using var req = new HttpRequestMessage(new HttpMethod(method), path) { Content = JsonContent.Create(new { }) };

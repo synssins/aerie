@@ -25,6 +25,11 @@ public static class AuditActions
     public const string SignIn = "auth.signin";
     public const string SignInFailed = "auth.signin.failed";
     public const string SignOut = "auth.signout";
+    public const string CodeFailed = "auth.code.failed";
+    public const string CodesEnroll = "auth.codes.enroll";
+    public const string CodesOff = "auth.codes.off";
+    public const string UserCodesReset = "user.codes.reset";
+    public const string UserCodesExempt = "user.codes.exempt";
     public const string BreakGlass = "auth.breakglass";
     public const string SetupAdminCreate = "setup.admin.create";
     public const string BrandUpdate = "brand.update";

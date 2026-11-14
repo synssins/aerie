@@ -36,9 +36,12 @@ public sealed class AuthPipelineTests : IAsyncLifetime
         // A refusal by the core names the action too.
         Assert.Equal((HttpStatusCode.Forbidden, "setup.run"), Answer(await c.PostAsJsonAsync("/api/v1/setup", new { userName = "admin", displayName = "First Admin", password = Pw }, Ct)));
         var code = (await File.ReadAllTextAsync(_f.SetupCodeFile, Ct)).Trim();
-        Assert.Equal((HttpStatusCode.OK, "setup.run"), Answer(await c.PostAsJsonAsync("/api/v1/setup", new { userName = "admin", displayName = "First Admin", password = Pw, code }, Ct)));
-
-        // Setup signed the new admin in.
+        // An Admin uses codes: setup leaves a pending sign-in, and setting up codes opens the session.
+        Assert.Equal((HttpStatusCode.Conflict, "setup.run"), Answer(await c.PostAsJsonAsync("/api/v1/setup", new { userName = "admin", displayName = "First Admin", password = Pw, code }, Ct)));
+        var key = await c.PostAsync("/api/v1/auth/codes/key", null, Ct);
+        Assert.Equal((HttpStatusCode.OK, "auth.codes.key"), Answer(key));
+        var secret = (await key.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("key").GetString()!;
+        Assert.Equal((HttpStatusCode.OK, "auth.codes.enroll"), Answer(await c.PostAsJsonAsync("/api/v1/auth/codes", new { code = Codes.Totp(secret) }, Ct)));
         Assert.Equal((HttpStatusCode.OK, "me.read"), Answer(await c.GetAsync("/api/v1/me", Ct)));
         Assert.Equal((HttpStatusCode.OK, "me.settings.read"), Answer(await c.GetAsync("/api/v1/me/settings", Ct)));
         Assert.Equal((HttpStatusCode.OK, "me.settings.save"), Answer(await c.PutAsJsonAsync("/api/v1/me/settings", Settings("dark"), Ct)));
@@ -46,8 +49,9 @@ public sealed class AuthPipelineTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Unauthorized, (await c.GetAsync("/api/v1/me", Ct)).StatusCode);
 
         Assert.Equal((HttpStatusCode.Unauthorized, "auth.signin"), Answer(await c.PostAsJsonAsync(SignInUrl, new { userName = "admin", password = "nope" }, Ct)));
-        var signedIn = await c.PostAsJsonAsync(SignInUrl, new { userName = "admin", password = Pw }, Ct);
-        Assert.Equal((HttpStatusCode.OK, "auth.signin"), Answer(signedIn));
+        Assert.Equal((HttpStatusCode.Conflict, "auth.signin"), Answer(await c.PostAsJsonAsync(SignInUrl, new { userName = "admin", password = Pw }, Ct)));
+        var signedIn = await c.PostAsJsonAsync("/api/v1/auth/local/code", new { code = Codes.Totp(secret) }, Ct);
+        Assert.Equal((HttpStatusCode.OK, "auth.signin.code"), Answer(signedIn));
         Assert.Equal("First Admin", (await signedIn.Content.ReadFromJsonAsync<MeResponse>(Ct))!.DisplayName);
     }
 

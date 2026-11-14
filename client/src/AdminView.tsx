@@ -1,3 +1,4 @@
+import { CodeSettingsPanel } from "./admin/CodeSettings";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ArrowLeft, ChevronRight, Ellipsis, FolderTree, HardDrive, House, Lock, Palette, Paperclip, Plug, Plus, Search, Shield, Trash2 } from "lucide-react";
 import { BinTable } from "./Views";
@@ -15,8 +16,8 @@ import { UserTools } from "./admin/UserTools";
 import { TokensPanel } from "./Tokens";
 import { api, ApiError, fmtSize, type AdminUser, type Brand, type PluginInfo, type Space, type TreeNode } from "./api";
 
-export type AdminSection = "spaces" | "users" | "groups" | "branding" | "search" | "uploads" | "storage" | "tokens" | "logs" | "bin" | "plugins" | "audit";
-export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "groups", "branding", "search", "uploads", "storage", "tokens", "logs", "bin", "plugins", "audit"];
+export type AdminSection = "spaces" | "users" | "groups" | "signin" | "branding" | "search" | "uploads" | "storage" | "tokens" | "logs" | "bin" | "plugins" | "audit";
+export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "groups", "signin", "branding", "search", "uploads", "storage", "tokens", "logs", "bin", "plugins", "audit"];
 type UploadSettings = { attachmentMb: number; serverLimitBytes: number | null };
 
 type AuditRow = { sequence: number; at: string; action: string; actor: string | null; targetType: string | null; targetId: string | null };
@@ -43,7 +44,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
 }) {
   const [allSpaces, setAllSpaces] = useState<Space[]>([]);
   const [open, setOpen] = useState<Record<string, boolean>>({ spaces: true, appearance: section === "branding",
-    security: ["users", "groups", "tokens", "audit", "logs"].includes(section), storage: ["bin", "storage"].includes(section) });
+    security: ["users", "groups", "signin", "tokens", "audit", "logs"].includes(section), storage: ["bin", "storage"].includes(section) });
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [userPermissions, setUserPermissions] = useState<PermissionColumn[]>([]);
   const [audit, setAudit] = useState<AuditRow[]>([]);
@@ -85,7 +86,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
     setVerify(r.valid ? "Chain intact." : `Chain broken at entry ${r.firstBrokenSequence}.`);
   }
 
-  const title = space?.name ?? ({ spaces: "Spaces", users: "Users", groups: "Groups", branding: "Branding", search: "Search", uploads: "Uploads", storage: "Document storage", tokens: "API tokens", logs: "Log shipping", bin: "Recycle bin", plugins: "Plugins", audit: "Audit log" } as const)[section];
+  const title = space?.name ?? ({ spaces: "Spaces", users: "Users", groups: "Groups", signin: "Sign-in", branding: "Branding", search: "Search", uploads: "Uploads", storage: "Document storage", tokens: "API tokens", logs: "Log shipping", bin: "Recycle bin", plugins: "Plugins", audit: "Audit log" } as const)[section];
 
   async function setAnnouncer(u: AdminUser, enabled: boolean) {
     await api.put(`/admin/users/${u.id}/announcer`, { enabled });
@@ -131,6 +132,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
                 <div className="kids sub">
                   <button className={`node ${section === "users" ? "cur" : ""}`} onClick={() => onNavigate("users")}><span className="grow">Users</span></button>
                   <button className={`node ${section === "groups" ? "cur" : ""}`} onClick={() => onNavigate("groups")}><span className="grow">Groups</span></button>
+                  <button className={`node ${section === "signin" ? "cur" : ""}`} onClick={() => onNavigate("signin")}><span className="grow">Sign-in</span></button>
                   <button className={`node ${section === "tokens" ? "cur" : ""}`} onClick={() => onNavigate("tokens")}><span className="grow">API tokens</span></button>
                   <button className={`node ${section === "audit" ? "cur" : ""}`} onClick={() => onNavigate("audit")}><span className="grow">Audit log</span></button>
                   <button className={`node ${section === "logs" ? "cur" : ""}`} onClick={() => onNavigate("logs")}><span className="grow">Log shipping</span></button>
@@ -217,6 +219,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
 
               {section === "branding" && isAdmin && <BrandingPanel brand={brand} onChanged={onBrandChanged} />}
               {section === "search" && isAdmin && <SearchPanel />}
+              {section === "signin" && isAdmin && <CodeSettingsPanel />}
               {section === "tokens" && isAdmin && <TokensPanel admin spaces={allSpaces} />}
               {section === "uploads" && isAdmin && uploads && <UploadsPanel key={uploads.attachmentMb} settings={uploads} onSaved={setUploads} />}
               {section === "bin" && isAdmin && (

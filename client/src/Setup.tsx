@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { api, ApiError, type Brand, type Me } from "./api";
 import { BrandLogo } from "./Branding";
+import { CodeSetup, stepOf } from "./Codes";
 
 export type SetupStatus = { required: boolean; codeRequired: boolean };
 
@@ -12,6 +13,7 @@ export function Setup({ brand, codeRequired, onDone }: { brand: Brand; codeRequi
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [enroll, setEnroll] = useState(false);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -21,13 +23,16 @@ export function Setup({ brand, codeRequired, onDone }: { brand: Brand; codeRequi
     try {
       onDone(await api.post<Me>("/setup", { userName, displayName, password, code: codeRequired ? code : null }));
     } catch (err) {
-      if (err instanceof ApiError && err.status === 403) setError("Setup code is wrong.");
+      if (stepOf(err) === "enroll") setEnroll(true);
+      else if (err instanceof ApiError && err.status === 403) setError("Setup code is wrong.");
       else if (err instanceof ApiError && err.status === 409) location.reload();
       else setError("Password must be at least 15 characters.");
     } finally {
       setBusy(false);
     }
   }
+
+  if (enroll) return <main className="signin"><CodeSetup className="signin-card" onDone={onDone} /></main>;
 
   return (
     <main className="signin">

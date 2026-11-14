@@ -1,12 +1,14 @@
 import { useState, type FormEvent } from "react";
 import { api, ApiError, type Brand, type Me } from "./api";
 import { BrandLogo } from "./Branding";
+import { CodeSetup, CodeStep, stepOf } from "./Codes";
 
 export function SignIn({ brand, onSignedIn }: { brand: Brand; onSignedIn: (me: Me) => void }) {
   const [userName, setUserName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState<"code" | "enroll" | null>(null);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -15,6 +17,8 @@ export function SignIn({ brand, onSignedIn }: { brand: Brand; onSignedIn: (me: M
     try {
       onSignedIn(await api.post<Me>("/auth/local/signin", { userName, password }));
     } catch (err) {
+      const next = stepOf(err);
+      if (next) { setStep(next); return; }
       setError(err instanceof ApiError && err.status === 403
         ? "Local sign-in is off. Use single sign-on."
         : "Wrong user name or password.");
@@ -22,6 +26,12 @@ export function SignIn({ brand, onSignedIn }: { brand: Brand; onSignedIn: (me: M
       setBusy(false);
     }
   }
+
+  if (step) return (
+    <main className="signin">
+      {step === "code" ? <CodeStep className="signin-card" onSignedIn={onSignedIn} /> : <CodeSetup className="signin-card" onDone={onSignedIn} />}
+    </main>
+  );
 
   return (
     <main className="signin">
