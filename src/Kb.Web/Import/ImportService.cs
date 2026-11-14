@@ -111,7 +111,15 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         foreach (var scanner in scanners)
         {
             await using var stream = new MemoryStream(data, false);
-            if (await scanner.ScanAsync(stream, f.Name, ct) == ScanVerdict.Infected)
+            ScanVerdict verdict;
+            // A scanner that fails blocks this file, not the batch: a file nobody could scan is not read.
+            try { verdict = await scanner.ScanAsync(stream, f.Name, ct); }
+            catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                (f.Kind, f.Note) = ("Blocked", $"Not scanned: the virus scanner failed ({e.GetType().Name}).");
+                return;
+            }
+            if (verdict == ScanVerdict.Infected)
             {
                 (f.Kind, f.Note) = ("Blocked", "Quarantined: the scanner flagged it.");
                 await audit.AppendAsync(new AuditEvent(AuditActions.ImportQuarantine, f.UserId, "importFile", f.Id.ToString(), Data: new Dictionary<string, string> { ["name"] = f.Name, ["sha256"] = f.Sha256 }), ct);

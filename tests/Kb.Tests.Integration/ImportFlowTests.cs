@@ -78,6 +78,14 @@ public sealed class ImportFlowTests : IAsyncLifetime
         }
     }
 
+    /// <summary>A virus scanner that fails on one file name, as a plugin's scanner may.</summary>
+    private sealed class FlakyScanner : Kb.Plugins.IMalwareScanner
+    {
+        public string ProviderId => "kb.test.scanner";
+        public Task<Kb.Plugins.ScanVerdict> ScanAsync(Stream content, string fileName, CancellationToken ct) =>
+            fileName == "scanfail.txt" ? throw new IOException("scanner down") : Task.FromResult(fileName == "eicar.txt" ? Kb.Plugins.ScanVerdict.Infected : Kb.Plugins.ScanVerdict.Clean);
+    }
+
     private readonly StubModel _model = new();
     private readonly KbAppFactory _f;
     private HttpClient _admin = null!;
@@ -87,7 +95,11 @@ public sealed class ImportFlowTests : IAsyncLifetime
     public ImportFlowTests()
     {
         var model = _model;
-        _f = new KbAppFactory(KbAppFactory.NewDbPath(), services: s => s.AddHttpClient(AiService.ClientName).ConfigurePrimaryHttpMessageHandler(() => model));
+        _f = new KbAppFactory(KbAppFactory.NewDbPath(), services: s =>
+        {
+            s.AddHttpClient(AiService.ClientName).ConfigurePrimaryHttpMessageHandler(() => model);
+            s.AddSingleton<Kb.Plugins.IMalwareScanner, FlakyScanner>();
+        });
     }
 
     public async ValueTask InitializeAsync()
@@ -300,6 +312,22 @@ public sealed class ImportFlowTests : IAsyncLifetime
         var refused = await rita.PostAsJsonAsync($"/api/v1/imports/items/{rid}/accept", new { pages = new[] { new { title = "P", contentJson = doc, tags = (string[]?)null } }, spaceId = _space, newFolder = "Nope" }, Ct);
         Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
         await _f.WithDbAsync(async db => Assert.False(await db.Pages.AnyAsync(p => p.Title == "Nope", Ct)));
+    }
+
+    [Fact]
+    public async Task AVirusScanner_QuarantinesAFile_AndOneThatFails_BlocksOnlyThatFile()
+    {
+        var (cara, _) = await UserAsync("cara", "Contributor");
+        var batch = await UploadAsync(cara, ("a/scanfail.txt", U("Printers are on floor 2.")), ("b/eicar.txt", U("bad")), ("c/ok.txt", U("VPN uses the new gateway.")));
+        await WorkAsync();
+        var list = await cara.GetFromJsonAsync<JsonElement>("/api/v1/imports", Ct);
+        Assert.Equal(JsonValueKind.Null, list.GetProperty("batches").EnumerateArray().Single(b => b.GetProperty("id").GetGuid() == batch).GetProperty("error").ValueKind);
+        var items = list.GetProperty("items").EnumerateArray().ToList();
+        string StatusOf(string source) => items.Single(i => i.GetProperty("source").GetString() == source).GetProperty("status").GetString()!;
+        Assert.Equal("Blocked", StatusOf("scanfail.txt"));
+        Assert.Equal("Blocked", StatusOf("eicar.txt"));
+        Assert.Equal("Ready", StatusOf("ok.txt"));
+        Assert.Contains("virus scanner failed", items.Single(i => i.GetProperty("source").GetString() == "scanfail.txt").GetProperty("error").GetString(), StringComparison.Ordinal);
     }
 
     [Fact]

@@ -2,26 +2,28 @@
 
 `kb-plugin.json` sits at the top of the package. Property names are read without regard to case; the keys of settings are case-sensitive. This file lists every property the app reads.
 
-Related: [developer guide](developer-guide.md), [admin guide](admin-guide.md).
+Related: [building and packaging](packaging.md) (the package around the manifest, and a complete manifest), [developer guide](developer-guide.md), [admin guide](admin-guide.md).
+
+A list may be left out (it is then empty) but may not be `null`, and no item of a list may be `null`: either refuses the install with "Not a plugin package.". Properties the app does not know are ignored.
 
 ## Top level
 
 | Property | Type | Default | Meaning |
 |---|---|---|---|
 | `id` | text | required | Lowercase letters and digits joined by single dots or hyphens, 3 to 64 characters. It names the plugin everywhere: its routes, its table prefix, its settings. |
-| `version` | text | required | Three numbers: `1.0.0`. |
+| `version` | text | required | Three numbers: `1.0.0`. No prefix or suffix. |
 | `publisher` | text | required | Who made it. Shown on the Plugins screen. |
 | `name` | text | the id | The name people see. |
 | `description` | text | none | One line about what it does. |
-| `assembly` | text | `<id>.dll` | The file name of the main assembly, at the top of the package. |
-| `minKbVersion` | text | `0.1.0` | The lowest app version it runs on. |
-| `abstractionsVersion` | text | `0.1.0` | The version of `Kb.Plugins.Abstractions` it was built against. |
+| `assembly` | text | `<id>.dll` | The file name of the main assembly, at the top of the package. A file name only: no `/`, `\` or `:`. |
+| `minKbVersion` | text | `0.1.0` | The lowest app version it runs on. The app is at 0.3.0. |
+| `abstractionsVersion` | text | `0.1.0` | The version of `Kb.Plugins.Abstractions` it was built against. The app's is 0.3.0; a plugin fits when its major number is the app's and it is not higher. |
 | `uiApiVersion` | text | none | The version of the script API its script was written for: `1.0.0`. Needed when the plugin has a script: without it the install is refused. |
 | `enforcing` | true or false | false | True when the plugin enforces a rule. If the core disables it, the actions it guarded stay locked until an Admin releases the lock. |
 | `requires` | list | empty | The plugins it needs. See below. |
 | `exports` | list of text | empty | The assemblies it shares with the plugins that require it, by assembly name without `.dll` (`My.Lib`). |
-| `extensionPoints` | list of text | empty | The extension points it supplies, for example `email-sender` or `audit-sink`. Shown on the Plugins screen. |
-| `outboundHosts` | list of text | empty | The only hosts its `HttpClient` may call. |
+| `extensionPoints` | list of text | empty | The extension points it supplies, for example `email-sender`, `audit-sink`, `malware-scanner`, `outbound-request-decorator`. Shown on the Plugins screen; the app does not act on it. The services the plugin registers are what count. |
+| `outboundHosts` | list of text | empty | The only hosts the plugin's own `HttpClient` may call (host names, no scheme or path). It does not apply to the core's calls a plugin decorates. |
 | `settings` | list | empty | The settings an Admin sets in the app. See below. |
 | `permissions` | list | empty | The permissions it declares. See below. |
 | `schedules` | list | empty | The jobs it runs. See below. |
@@ -40,9 +42,9 @@ Related: [developer guide](developer-guide.md), [admin guide](admin-guide.md).
 |---|---|---|---|
 | `key` | text | required | The name the plugin reads the setting by. Case-sensitive. |
 | `label` | text | required | The label on the Plugins screen. |
-| `type` | text | `text` | `text`, `secret`, `number`, `toggle`, `select` or `multiline`. A toggle is stored as `true` or `false`. |
+| `type` | text | `text` | `text`, `secret`, `number`, `toggle`, `select` or `multiline`. A toggle is stored as `true` or `false`. Every value reaches the plugin as text. `secret` is the same as `"secret": true`. |
 | `options` | list of text | none | The choices of a `select`. |
-| `secret` | true or false | false | Stored protected, never sent back to the browser, never logged. |
+| `secret` | true or false | false | Stored protected, never sent back to the browser, never logged. Read with `GetSecretAsync`, after start; `GetSetting` answers null for it. |
 | `required` | true or false | false | Saving the settings answers "Required." while it is empty. |
 | `restart` | true or false | false | A change restarts the app. Use it for a setting the plugin reads only while it is configured. |
 

@@ -3,7 +3,7 @@
 This guide covers what is built today. The last section lists what is planned and not built.
 The examples come from the sample plugin in `plugins/Kb.Plugin.Sample`: readers acknowledge a page, and a Supervisor sees who has.
 
-Related: [manifest reference](manifest-reference.md), [action reference](action-reference.md), [admin guide](admin-guide.md).
+Related: [building and packaging](packaging.md) (project file, package layout, names, what an install checks), [manifest reference](manifest-reference.md), [action reference](action-reference.md) (every action, its fields, and every type with an example of its JSON), [API reference](../api-reference.md), [example: an outbound-headers plugin](example-outbound-headers.md), [admin guide](admin-guide.md).
 
 ## What a plugin is
 
@@ -17,7 +17,7 @@ A plugin can:
 - keep its own tables in the app's database;
 - run jobs on a schedule;
 - have settings and secrets that an Admin sets in the app;
-- supply an implementation of an extension point (an email sender, an audit sink, a storage kind, a log shipping kind);
+- supply an implementation of an extension point (an email sender, an audit sink, a storage kind, a log shipping kind, a virus scanner for imports, headers on the AI service's calls);
 - define extension points and actions of its own for other plugins.
 
 ### The security position
@@ -35,12 +35,12 @@ What the core does do:
 
 ## A first plugin in ten steps
 
-1. Create a class library for the app's target framework.
-2. Reference `Kb.Plugins.Abstractions`. Reference `Kb.Plugins.Data` too when the plugin has tables. Reference nothing else of the app.
+1. Create a class library for `net10.0`, the app's target framework.
+2. Reference `Kb.Plugins.Abstractions` (a project or a DLL from the repository: [packaging](packaging.md#what-you-need)). Reference `Kb.Plugins.Data` too when the plugin has tables. Reference nothing else of the app.
 3. Add `kb-plugin.json` next to the project file. Give it an `id`, a `version` and a `publisher`. See the [manifest reference](manifest-reference.md).
 4. Write a class that implements `IKbPlugin`, and name it in an assembly attribute: `[assembly: KbPlugin(typeof(MyPlugin))]`.
-5. Register what the plugin adds in `Configure`.
-6. Pack it: `tools\pack-plugin.ps1 <project folder>`. The package is written to `artifacts\plugins\<id>-<version>.kbplugin`.
+5. Register its services in `ConfigureServices` and what it adds to the app in `Configure`.
+6. Pack it: `tools\pack-plugin.ps1 <project folder>`, or by hand ([packaging](packaging.md#build-the-package)). The package is a zip with `kb-plugin.json` and the main assembly at the top.
 7. Sign in as an Admin. Open Administration > Plugins. Select Upload and choose the package.
 8. The screen shows "Restarting" and comes back by itself. The plugin is listed as Enabled.
 9. Select the plugin to set its settings.
@@ -74,7 +74,7 @@ Rules for both methods:
 - Do not read a secret here. Secrets are available only after the app has started.
 - Do not register a hosted service. The app refuses the plugin. Use a job.
 - An exception here disables the plugin, and the app starts without it.
-- A service the plugin registers never replaces a service of the core or of the framework.
+- A service the plugin registers never replaces a service of the core or of the framework: the core's registration of the same service wins. A plugin adds; it cannot replace.
 
 ## Settings and secrets
 
@@ -238,6 +238,7 @@ public sealed class ReadAcksHandler(SampleData db, IActionBus bus, IAccess acces
 A plugin declares its permissions in the manifest and asks for one by name: `"<plugin id>:<key>"`.
 
 - A `space` permission is held, in a space, by everyone whose role there is at least its minimum role. The manifest gives the default (`defaultRole`); an Admin can change it on the Plugins screen. Ask with the space id.
+  The minimum is always a built-in role: `Reader`, `Contributor`, `Supervisor` or `Owner`. Admins can also make custom roles (Administration > Security > Roles): sets of what a person may do in a space. A person with a custom role holds the permission when their rights in the space include all of a built-in role's; they rank as the strongest built-in role so covered, and as a Reader at least.
 - A `global` permission is held by the people an Admin gave it to (Administration > Users) and by every Admin. Ask without a space. `me.read` lists the global permissions its caller holds.
 - A permission of a plugin that is not loaded is not held, whatever was set or granted.
 - A request made with an API token holds no global permission. For a space permission the role the token has in the space counts.
@@ -540,6 +541,123 @@ Limit: an attribute a plugin adds to one of the editor's own nodes (an alignment
 List every host the plugin calls in `outboundHosts`. Take the plugin's client from `IHttpClientFactory` with the name `PluginHttp.ClientName("<id>")`.
 That client refuses a host that is not listed, and it follows no redirect: the plugin gets the 3xx answer and may ask again with the new address, which is checked like any other. List the host a redirect leads to as well.
 
+## Extension points
+
+An extension point is an interface of the contract that the core calls. A plugin supplies one by registering a service in `ConfigureServices`.
+
+| Interface | Register | The core uses it |
+|---|---|---|
+| `IEmailSender` | `services.AddSingleton<IEmailSender, MySender>()` | For every mail. One sender: the one whose `ProviderId` is `Kb:Email:Provider` in the app's configuration (case does not matter). A sender that throws is a failure of its plugin. |
+| `IAuditSink` | `services.AddSingleton<IAuditSink, MySink>()` | Every sink gets each audit entry after it is written (a SIEM, for example). A sink that throws is a failure of its plugin; the entry stays written. |
+| `IFileStoreKind` | `services.AddSingleton<IFileStoreKind, MyKind>()` | A kind of storage place (Administration > Document storage), chosen by its `Kind`. The plugin cannot be disabled while a storage place uses its kind. |
+| `ILogShipperKind` | `services.AddSingleton<ILogShipperKind, MyKind>()` | A kind of log target (Administration > Log shipping). The plugin cannot be disabled while an enabled target uses its kind. |
+| `IMalwareScanner` | `services.AddSingleton<IMalwareScanner, MyScanner>()` | Every scanner, for every file of an AI import. [Below](#import-the-virus-scan-hook). |
+| `IOutboundRequestDecorator` | `services.AddSingleton<IOutboundRequestDecorator>(...)` | Every decorator, for each call of the AI service. [Below](#the-ai-service-and-outbound-headers). |
+
+- `ProviderId` is the plugin's id. The app does not check it, but uses it: to choose the email sender, and to count a failure against the right plugin. Use your manifest id.
+- Declare what the plugin supplies in the manifest's `extensionPoints` (`email-sender`, `audit-sink`, ...). It is shown on the Plugins screen; the app does not act on it.
+- Declared in the contract and not called by the core yet: `IMapProvider`, `IAiProvider`, `IRecordImporter`, `IPageAction`, `IExportFormat`, `IDnsProvider`, and `Kb.Plugins.ISearchProvider` (the app's search does not go through it). A plugin that registers one loads, and nothing calls it.
+- `IFileStore` and the search engine are the core's own. A plugin's registration of them is ignored; supply a storage kind instead.
+
+## The AI service and outbound headers
+
+The app has one AI service, set on Administration > AI: an OpenAI-compatible server address, a model, an API key, limits, and the rules the model is held to. A plugin does not call the model and cannot see the API key.
+What a plugin can do is add to the service's calls, for an access gateway in front of the model server:
+
+```csharp
+public void ConfigureServices(IServiceCollection services, IPluginContext context) =>
+    services.AddSingleton<IOutboundRequestDecorator>(new GatewayHeaders(context));
+```
+
+- `DecorateAsync(OutboundRequest request, ct)` gets every call the service makes: `request.Purpose` is `OutboundPurposes.Ai` (`"ai"`) and `request.Message` the `HttpRequestMessage`, with its `Authorization` header already set.
+- The calls are `POST <address>/v1/chat/completions` and `GET <address>/v1/models` (the Model list on Administration > AI).
+- Every decorator runs, in plugin load order. One that throws refuses the call; it is not sent.
+- The call goes through the app's HTTP client, so the manifest's `outboundHosts` does not apply. Check the request's host yourself.
+- Reasoning is off unless the Admin turns it on: the request says `chat_template_kwargs.enable_thinking: false` and `reasoning_effort: "none"`. Leave the body alone.
+
+The whole plugin, with settings for the host and two secret headers, a unit test and its packaging: [example: an outbound-headers plugin](example-outbound-headers.md).
+
+## Inventory
+
+The app keeps an inventory of applications and where they are installed (Inventory, in the tree). Pages say which applications they apply to (page details, below).
+A plugin feeds it with the contract's action `inventory.installs.sync`, from a job that reads a CMDB, a scanner or a file share:
+
+```csharp
+public sealed class SyncJob(IActionBus bus, MySource source) : IKbJob
+{
+    public async Task RunAsync(CancellationToken ct)
+    {
+        var rows = (await source.ReadAsync(ct)).Select(r => new SyncRowDto(r.Application, r.Vendor, r.Server, r.Version)).ToList();
+        var result = await bus.SendAsync(new SyncInstalls { Source = "cmdb", Rows = rows, RemoveMissing = false }, ct);
+        if (result.Problem is { } p) throw new InvalidOperationException(p.Message);
+    }
+}
+```
+
+| Field | |
+|---|---|
+| `Source` | Who the data comes from (1 to 100 characters). The history of each install names it. |
+| `Rows` | One `SyncRowDto(Application, Vendor, Server, Version)` per install. A new application is made by name; `Vendor` is set only on a new application, or one that has none. |
+| `RemoveMissing` | True: an install of this source that is not in `Rows` is removed. |
+| `Apply` | False: nothing is saved; the answer says what would change. Default true. |
+
+The answer, `SyncResultDto`, counts what was added, changed, unchanged and removed, with each change. The [action reference](action-reference.md#inventoryinstallssync) has the types and an example of their JSON.
+
+- A job runs as the plugin, and a plugin may always edit the inventory.
+- A script outside the app sends the same rows to `POST /api/v1/inventory/sync` with an API token: the token needs the Write scope, and its owner (or the token itself) must be allowed to edit the inventory. Administration > Security > Inventory access lists who may: everyone, a person, a group, the people with any role in a space, the people with a given role, or one named API token. A token is never an Admin, so an Admin's token needs a rule too. See `tools/Seed-Inventory.ps1`.
+- A plugin can hook the action like any other: a before hook to refuse rows, an after handler to react to a sync.
+
+## Page details
+
+A page has details: the applications (and servers) it applies to, its owner (a person or a group: who owns the process or the escalation path, not who wrote the page), and its review cycle in months.
+They come with every page a plugin reads, in `PageDto.Details` (`PageDetailsDto(AppliesTo, Owner, ReviewMonths)`). Saving them is core-only (`page.details.save`): a plugin reads them and cannot hook their change.
+
+## Import: the virus-scan hook
+
+AI Import (Import inbox) reads files people upload and drafts pages from them. Every `IMalwareScanner` sees every file before it is read, zip entries and mail attachments too:
+
+```csharp
+public sealed class MyScanner : IMalwareScanner
+{
+    public string ProviderId => "acme.scanner";
+    public async Task<ScanVerdict> ScanAsync(Stream content, string fileName, CancellationToken ct) => /* ask the engine */ ScanVerdict.Clean;
+}
+```
+
+- `Infected`: the file is quarantined. It is not read, not sent to the model, its item says "Blocked", and the audit log has `import.quarantine` with the file's name and SHA-256.
+- `Clean` and `Unknown`: the file is read.
+- A scanner that throws blocks that file ("Not scanned: the virus scanner failed."), not the whole upload.
+- Each scanner gets its own stream of the file's bytes.
+- Attachments and images added to pages directly are not scanned today; only imports are.
+
+Imports are core-only: a plugin cannot hook them, read them or send them to the model. Their pages are made by the normal actions (`page.create`, `page.save`, `image.add`, `attachment.add`) as the importer, so hooks on those run.
+
+## Who the caller is
+
+Every action carries an actor (`ctx.Actor`). It is one of:
+
+- **A person** in the browser: signed in with a password, then a code when the app asks for one (below). `UserId` is set.
+- **A person through an API token**: `UserId` is the token's owner, `TokenId` is set. A token narrows what its owner may do: each scope is Read (Reader) or Write (Contributor) for one space or all, never more than its owner holds. A token is never an Admin, even an Admin's. A service token's owner is a service account that cannot sign in; its all-spaces scope does not reach a sensitive space. Tokens reach only the routes the [API reference](../api-reference.md) marks; plugin routes are closed to them.
+- **A plugin** (`ActorKind.Plugin`), in a job or an after handler. It reads every space that is not sensitive, Private ones too, and nothing of a sensitive space. An action that records who did it (`page.create`, `page.save` and the like) answers 401 for it.
+- **Nobody** (`ActorKind.Anonymous`): someone not signed in. They read only spaces open to Anyone that are not sensitive.
+
+`IAccess` answers for all of them; ask it rather than checking the kind yourself.
+
+### Spaces open to more people
+
+A space is Private (its members), Signed in (every signed-in person reads it) or Anyone (read without signing in, as Reader). A sensitive space is always Private.
+`IAccess.RoleAsync` and `VisibleSpacesAsync` already count this: a signed-in person has the Reader role in a Signed in space they are not a member of. A plugin route that should be read by people who are not signed in says `AllowAnonymous()`, and its handler still asks `IAccess`.
+
+### The audit log
+
+Every action's audit entries say who did it. A call made with an API token adds `token` (its name) and `tokenId` to the entry's data; Administration > Audit log shows it in the Via column (API or Web). Each call made with a token also writes a `token.use` entry with the method and the route.
+What a plugin writes through `ctx.Audit(...)` gets the same.
+
+### Sign-in codes
+
+An Admin can make people use a code from an authenticator app at sign-in (Administration > Security > Sign-in). The password is checked first, then the code (`auth.signin`, then `auth.signin.code`).
+A before hook on `auth.signin` runs before the code is asked. The code, the key behind it and the recovery codes are never in an action's JSON or text. Code actions are core-only.
+
 ## Library plugins
 
 A plugin can serve other plugins.
@@ -573,7 +691,7 @@ The plugin stays disabled until an Admin selects Enable. Uploading a new version
 - `abstractionsVersion`: the version of `Kb.Plugins.Abstractions` the plugin was built against. The app refuses a plugin built for a newer one.
 - `minKbVersion`: the lowest app version the plugin runs on.
 
-The contract is at 0.2.0 and can still change.
+The contract and the app are at 0.3.0, and can still change before 1.0.0. 0.3.0 added `IOutboundRequestDecorator`, the inventory sync action and its records, and page details on `PageDto`; a plugin that uses them says `"abstractionsVersion": "0.3.0"`. See [packaging](packaging.md#versions).
 
 ## Planned, not built
 
@@ -581,5 +699,7 @@ The contract is at 0.2.0 and can still change.
 - A build preset for scripts written in TypeScript or JSX; scripts on the sign-in screen; calling other hosts from the browser.
 - Data attached to core rows (a count that comes with the page).
 - Sign-in schemes, page kinds of a plugin's own, export formats.
+- The extension points the contract declares and the core does not call yet: maps, an AI provider, record importers, page actions, export formats, DNS, a search engine.
+- Scanning attachments and images added to pages directly.
 - After handlers that survive a crash (a queue in the database).
 - A plugin table save inside the core action's transaction.

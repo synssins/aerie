@@ -81,7 +81,14 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
         var root = u.ToString().TrimEnd('/');
         using var request = new HttpRequestMessage(HttpMethod.Get, (root.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) ? root : root + "/v1") + "/models");
         if ((string.IsNullOrEmpty(typedKey) ? await KeyAsync(ct) : typedKey) is { Length: > 0 } key) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-        foreach (var d in decorators) await d.DecorateAsync(new OutboundRequest(OutboundPurposes.Ai, request), ct);
+        try
+        {
+            foreach (var d in decorators) await d.DecorateAsync(new OutboundRequest(OutboundPurposes.Ai, request), ct);
+        }
+        catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            return new Problem(502, $"A plugin that adds to the AI's requests failed ({e.GetType().Name}).");
+        }
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -153,7 +160,15 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
                 Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"),
             };
             if (await KeyAsync(ct) is { } key) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-            foreach (var d in decorators) await d.DecorateAsync(new OutboundRequest(OutboundPurposes.Ai, request), ct);
+            // A plugin that adds headers (an access gateway) and fails: the call is refused, never sent without them.
+            try
+            {
+                foreach (var d in decorators) await d.DecorateAsync(new OutboundRequest(OutboundPurposes.Ai, request), ct);
+            }
+            catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                return await RefuseAsync("error", new Problem(502, $"A plugin that adds to the AI's requests failed ({e.GetType().Name})."), e.Message);
+            }
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(s.TimeoutSeconds, 5, 600)));
             using var response = await http.CreateClient(ClientName).SendAsync(request, timeout.Token);

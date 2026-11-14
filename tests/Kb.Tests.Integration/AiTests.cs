@@ -50,14 +50,18 @@ public sealed class AiTests : IAsyncLifetime
 
     private sealed class Gateway : IOutboundRequestDecorator
     {
+        public bool Fail { get; set; }
+
         public Task DecorateAsync(OutboundRequest request, CancellationToken ct)
         {
+            if (Fail) throw new InvalidDataException("no secret");
             if (request.Purpose == OutboundPurposes.Ai) request.Message.Headers.Add("X-Gateway", "pass");
             return Task.CompletedTask;
         }
     }
 
     private readonly StubModel _model = new();
+    private readonly Gateway _gateway = new();
     private readonly KbAppFactory _f;
     private HttpClient _admin = null!;
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -65,11 +69,11 @@ public sealed class AiTests : IAsyncLifetime
 
     public AiTests()
     {
-        var model = _model;
+        var (model, gateway) = (_model, _gateway);
         _f = new KbAppFactory(KbAppFactory.NewDbPath(), services: s =>
         {
             s.AddHttpClient(AiService.ClientName).ConfigurePrimaryHttpMessageHandler(() => model);
-            s.AddSingleton<IOutboundRequestDecorator, Gateway>();
+            s.AddSingleton<IOutboundRequestDecorator>(gateway);
         });
     }
 
@@ -226,5 +230,19 @@ public sealed class AiTests : IAsyncLifetime
         Assert.Contains("503", await down.Content.ReadAsStringAsync(Ct), StringComparison.Ordinal);
         Assert.Equal("Bearer typed", _model.Seen[^1].Auth);
         Assert.Equal(HttpStatusCode.BadRequest, (await _admin.PostAsJsonAsync("/api/v1/admin/ai/models", new { baseUrl = "file:///etc" }, Ct)).StatusCode);
+    }
+
+    [Fact]
+    public async Task AHeaderPluginThatFails_RefusesTheCall_AndNothingIsSent()
+    {
+        var bo = await UserAsync("bo");
+        (await SaveAsync(On())).EnsureSuccessStatusCode();
+        _gateway.Fail = true;
+        var r = await RunAsync(bo, AiFeatures.Search, new() { ["q"] = "vpn" });
+        Assert.Equal(502, r.Problem!.Status);
+        Assert.Contains("A plugin that adds to the AI's requests failed", r.Problem.Message, StringComparison.Ordinal);
+        var models = await _admin.PostAsJsonAsync("/api/v1/admin/ai/models", new { baseUrl = "http://other.local:8093" }, Ct);
+        Assert.Equal(HttpStatusCode.BadGateway, models.StatusCode);
+        Assert.Empty(_model.Seen); // never sent without the headers
     }
 }

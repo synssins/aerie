@@ -2,13 +2,13 @@
 
 Plugins are managed on Administration > Plugins, by an Admin. This guide covers what is built today.
 
-Related: [developer guide](developer-guide.md), [manifest reference](manifest-reference.md).
+Related: [developer guide](developer-guide.md), [building and packaging](packaging.md), [manifest reference](manifest-reference.md).
 
 ## Before you install one
 
 A plugin runs inside the app with the app's rights. Install a plugin only from a publisher you trust as much as the app itself.
 A plugin can also ship a script that runs in the browser of every person who signs in, with that person's session.
-The app loads any package an Admin uploads. It records each install in the audit log with the package's SHA-256.
+The app loads any package an Admin uploads. Packages are not signed. It records each install in the audit log with the package's SHA-256: compare it with the hash the publisher gives you (`Get-FileHash <file>` on Windows, `sha256sum <file>` elsewhere).
 
 ## Install and update
 
@@ -84,6 +84,12 @@ Select Release lock when you accept that the rule is not enforced for now. Enabl
 
 When a plugin stops the app from starting, or keeps people from signing in, set `Kb:Plugins:SafeMode` to `true` in the app's configuration and start the app.
 In Safe Mode no uploaded plugin is loaded, no state is changed and locks are ignored. Remove or disable the plugin, then switch Safe Mode off.
+
+## Plugins that reach into other features
+
+- **Headers on the AI's calls.** A plugin for an access gateway in front of the model server adds headers to the AI service's calls (Administration > AI). Set its host and secrets on the Plugins screen, then select Test connection on Administration > AI. If the plugin fails, the AI's calls are refused, not sent without the headers: the test says "A plugin that adds to the AI's requests failed".
+- **A virus scanner for imports.** Every file of an AI import is given to each scanner plugin first. A file it flags is quarantined (the draft says Blocked; the audit log has `import.quarantine`). A scanner that fails blocks that file. Attachments and images added to pages directly are not scanned.
+- **The inventory.** A plugin's job may feed the inventory; a plugin may always edit it. A script feeding it with an API token needs a rule on Administration > Security > Inventory access.
 
 ## The upload size limit
 
