@@ -17,3 +17,7 @@ artifacts/
 tools/*.log
 dev-credentials.txt
 *.tsbuildinfo
+
+# Agent instruction files stay local
+AGENTS.md
+CLAUDE.md
