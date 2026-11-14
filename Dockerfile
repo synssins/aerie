@@ -19,8 +19,6 @@ RUN rm -f global.json \
  && rm -f /out/appsettings.Development.json
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
-# Liberation fonts stand in for Arial and Courier New in PDF exports.
-RUN apt-get update && apt-get install -y --no-install-recommends fonts-liberation && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /out .
 RUN mkdir -p /app/App_Data && chown app:app /app/App_Data

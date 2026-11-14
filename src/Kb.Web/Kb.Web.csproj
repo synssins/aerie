@@ -19,4 +19,9 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Kb.Tests.Integration" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- PDF export's fonts, inside the app; their license ships next to it. -->
+    <EmbeddedResource Include="Fonts\*.ttf" LogicalName="Kb.Fonts.%(Filename).ttf" />
+    <None Include="Fonts\OFL.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="Fonts\OFL.txt" />
+  </ItemGroup>
 </Project>
