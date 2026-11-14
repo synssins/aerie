@@ -135,6 +135,8 @@ public sealed class AttachmentPipelineTests : IAsyncLifetime
             "Content-Length: 17",
             "Content-Security-Policy: default-src 'none'; sandbox",
             "Content-Type: application/octet-stream",
+            "Cross-Origin-Resource-Policy: same-origin",
+            "Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()",
             "Referrer-Policy: same-origin",
             "X-Content-Type-Options: nosniff",
             "X-Frame-Options: DENY",

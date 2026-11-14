@@ -212,6 +212,61 @@ Write. `SaveDraft`, answers `DraftSavedDto`.
 | BaseVersion | `string` | required |
 | Tags | `IReadOnlyList<string>?` |  |
 
+## group.create
+
+Write. `CreateGroup`, answers `GroupDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Name | `string` | required |
+
+## group.delete
+
+Write. `DeleteGroup`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| GroupId | `Guid` | required |
+
+## group.list
+
+Read. `ListGroups`, answers `IReadOnlyList<GroupDto>`. Core only.
+
+## group.member.add
+
+Write. `AddGroupMember`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| GroupId | `Guid` | required |
+| UserId | `Guid` | required |
+
+## group.member.list
+
+Read. `ListGroupMembers`, answers `IReadOnlyList<GroupMemberDto>`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| GroupId | `Guid` | required |
+
+## group.member.remove
+
+Write. `RemoveGroupMember`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| GroupId | `Guid` | required |
+| UserId | `Guid` | required |
+
+## group.rename
+
+Write. `RenameGroup`, answers `GroupDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| GroupId | `Guid` | required |
+| Name | `string` | required |
+
 ## home.read
 
 Read. `ReadHome`, answers `HomeDto`.
@@ -546,6 +601,14 @@ Write. `SetPluginState`, answers `Unit`. Core only.
 |---|---|---|
 | Id | `string` | required |
 | Enabled | `bool` | required |
+
+## principal.list
+
+Read. `ListPrincipals`, answers `IReadOnlyList<PrincipalDto>`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Query | `string?` |  |
 
 ## search.query
 

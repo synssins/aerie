@@ -25,8 +25,9 @@ public sealed class ReadinessCheck(KbDbContext db, IWebHostEnvironment env) : IH
 
 public sealed class SecurityHeadersMiddleware(RequestDelegate next)
 {
-    private static readonly string Version =
-        typeof(SecurityHeadersMiddleware).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0";
+    // Opaque: the client only checks whether it changed, so the build and commit are not given out.
+    private static readonly string Version = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+        typeof(SecurityHeadersMiddleware).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0")))[..12];
 
     public Task InvokeAsync(HttpContext ctx)
     {
@@ -34,6 +35,8 @@ public sealed class SecurityHeadersMiddleware(RequestDelegate next)
         h["X-Content-Type-Options"] = "nosniff";
         h["X-Frame-Options"] = "DENY";
         h["Referrer-Policy"] = "same-origin";
+        h["Cross-Origin-Resource-Policy"] = "same-origin";
+        h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()";
         // style-src-attr: the editor sets element style attributes (table column widths). Scripts and stylesheets stay 'self'.
         h["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
         h["X-Kb-Version"] = Version;

@@ -185,6 +185,12 @@ public sealed class MatrixTests : IAsyncLifetime
                 return id;
             }
             case "victim": return (await NewUserAsync("victim" + Guid.NewGuid().ToString("N")[..8])).ToString();
+            case "group":
+            {
+                var made = await _breakGlass.PostAsJsonAsync("/api/v1/admin/groups", new { name = "g" + Guid.NewGuid().ToString("N")[..10] }, Ct);
+                Assert.Equal(HttpStatusCode.Created, made.StatusCode);
+                return (await made.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("id").GetGuid().ToString();
+            }
             case "token":
             {
                 var made = await _owner.PostAsJsonAsync("/api/v1/tokens", new { name = "matrix " + Guid.NewGuid().ToString("N")[..8], kind = "Personal", scopes = new[] { new { spaceId = (Guid?)null, access = "Read" } }, days = 1 }, Ct);
@@ -251,6 +257,12 @@ public sealed class MatrixTests : IAsyncLifetime
                 var client = e.FreshSession && level >= 0 ? await SignInAsync(name) : _callers[name];
                 using var request = await RequestAsync(e, space);
                 var got = (await client.SendAsync(request, Ct)).StatusCode;
+                if (e.FreshSession && level >= 0)
+                {
+                    // Signing out ends every session of that user, the shared one too: sign it in again for the entries after this one.
+                    _callers[name] = await SignInAsync(name);
+                    if (name == "owner") _owner = _callers[name];
+                }
                 var known = e.Known?.FirstOrDefault(k => k.Caller == name && (k.Space == "both" || k.Space == where));
                 if (known is not null)
                 {

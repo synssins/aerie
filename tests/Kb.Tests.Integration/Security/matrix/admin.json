@@ -71,5 +71,13 @@
     "path": "/api/v1/admin/users/{victim}",
     "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 204},
     "scope": "server"
-  }
+  },
+  {"action": "group.list", "method": "GET", "path": "/api/v1/admin/groups", "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200}, "scope": "server"},
+  {"action": "group.create", "method": "POST", "path": "/api/v1/admin/groups", "body": {"name": "{newKey}"}, "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 201}, "scope": "server"},
+  {"action": "group.rename", "method": "PATCH", "path": "/api/v1/admin/groups/{group}", "body": {"name": "{newKey}"}, "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200}, "scope": "server"},
+  {"action": "group.delete", "method": "DELETE", "path": "/api/v1/admin/groups/{group}", "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 204}, "scope": "server"},
+  {"action": "group.member.list", "method": "GET", "path": "/api/v1/admin/groups/{group}/members", "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200}, "scope": "server"},
+  {"action": "group.member.add", "method": "PUT", "path": "/api/v1/admin/groups/{group}/members/{victim}", "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 204}, "scope": "server"},
+  {"action": "group.member.remove", "method": "DELETE", "path": "/api/v1/admin/groups/{group}/members/{victim}", "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 204}, "scope": "server"},
+  {"action": "principal.list", "method": "GET", "path": "/api/v1/principals?q=a", "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 200, "admin": 200}, "scope": "server"}
 ]

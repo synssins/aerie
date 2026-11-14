@@ -15,6 +15,8 @@ public static class RoleMatrix
         SpaceAction.ReviewTeamHistory => SpaceRole.Supervisor,
         SpaceAction.ManageBinAgingComments => SpaceRole.Supervisor,
         SpaceAction.RemoveAttribution => SpaceRole.Supervisor,
+        // Owners give roles below Owner and change space settings. Admin only, whatever the role: making or removing an Owner,
+        // the sensitive and public flags, and the name (SpaceSupport.NeedsAdmin, GrantSpaceRole, RevokeSpaceRole).
         SpaceAction.ManageRolesSettingsSensitive => SpaceRole.Owner,
         SpaceAction.ApproveAccessRequests => SpaceRole.Owner,
         _ => throw new ArgumentOutOfRangeException(nameof(a), a, null),

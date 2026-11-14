@@ -87,13 +87,16 @@ internal sealed class SignInHandler(SignInManager<KbUser> signIn, UserManager<Kb
     }
 }
 
-internal sealed class SignOutHandler(SignInManager<KbUser> signIn, IAuditLog audit) : IActionHandler<SignOut, Unit>
+internal sealed class SignOutHandler(SignInManager<KbUser> signIn, UserManager<KbUser> users, IAuditLog audit) : IActionHandler<SignOut, Unit>
 {
     public Task<Problem?> AuthorizeAsync(ActionContext<SignOut> ctx) => Task.FromResult(ctx.Actor.UserId is null ? Problem.Unauthorized : null);
 
     public async Task<Outcome<Unit>> HandleAsync(ActionContext<SignOut> ctx)
     {
         var me = ctx.Actor.UserId!.Value;
+        // A new security stamp fails every cookie issued before it (checked on each request), so a copied cookie dies too.
+        // Owner's choice: signing out anywhere ends all of this user's sessions.
+        if (await users.FindByIdAsync(me.ToString()) is { } user) await users.UpdateSecurityStampAsync(user);
         await signIn.SignOutAsync();
         // Written here, as sign-in's entries are: the action changes who is signed in.
         await audit.AppendAsync(new AuditEvent(AuditActions.SignOut, me, "user", me.ToString(), Data: new Dictionary<string, string> { ["ip"] = ctx.Actor.RemoteIp ?? "" }));

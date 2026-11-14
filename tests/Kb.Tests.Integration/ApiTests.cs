@@ -114,8 +114,11 @@ public sealed class ApiTests : IAsyncLifetime
     public async Task SecurityHeaders_AndVersionHeader_Present()
     {
         var r = await _f.NewClient().GetAsync("/api/v1/brand", TestContext.Current.CancellationToken);
-        Assert.True(r.Headers.Contains("X-Kb-Version"));
+        // Opaque change marker only: never the build number or git commit.
+        Assert.Matches("^[0-9A-F]{12}$", r.Headers.GetValues("X-Kb-Version").Single());
         Assert.Contains("frame-ancestors 'none'", r.Headers.GetValues("Content-Security-Policy").Single());
+        Assert.Equal("same-origin", r.Headers.GetValues("Cross-Origin-Resource-Policy").Single());
+        Assert.Contains("camera=()", r.Headers.GetValues("Permissions-Policy").Single());
     }
 
     [Fact]
@@ -240,6 +243,35 @@ public sealed class ApiTests : IAsyncLifetime
         req.Headers.Add("Cookie", setCookie);
         var r = await b.SendAsync(req, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+    }
+
+    [Fact]
+    public async Task SignOut_EndsEverySessionOfThatUser()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        _ = _f.NewClient(); // starts the app so the database exists
+        await using (var scope = _f.Services.CreateAsyncScope())
+            Assert.True((await scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<Kb.Core.Identity.KbUser>>()
+                .CreateAsync(new Kb.Core.Identity.KbUser { UserName = "leaver", DisplayName = "Leaver", CreatedAt = DateTimeOffset.UtcNow }, "Leaver-pass-123!")).Succeeded);
+        var raw = _f.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), HandleCookies = false });
+        async Task<string> SignInAsync() => (await raw.PostAsJsonAsync("/api/v1/auth/local/signin", new { userName = "leaver", password = "Leaver-pass-123!" }, ct))
+            .Headers.GetValues("Set-Cookie").First(h => h.StartsWith("__Host-kb=", StringComparison.Ordinal)).Split(';')[0];
+        async Task<HttpStatusCode> SendAsync(HttpMethod m, string path, string cookie)
+        {
+            using var req = new HttpRequestMessage(m, path);
+            req.Headers.Add("Cookie", cookie);
+            return (await raw.SendAsync(req, ct)).StatusCode;
+        }
+        var laptop = await SignInAsync();
+        var phone = await SignInAsync();
+        Assert.Equal(HttpStatusCode.OK, await SendAsync(HttpMethod.Get, "/api/v1/me", laptop));
+
+        Assert.Equal(HttpStatusCode.NoContent, await SendAsync(HttpMethod.Post, "/api/v1/auth/signout", laptop));
+
+        // A copied cookie must not outlive sign-out, and (owner's choice, 2026-11-13) signing out anywhere ends every session.
+        Assert.Equal(HttpStatusCode.Unauthorized, await SendAsync(HttpMethod.Get, "/api/v1/me", laptop));
+        Assert.Equal(HttpStatusCode.Unauthorized, await SendAsync(HttpMethod.Get, "/api/v1/me", phone));
+        Assert.Equal(HttpStatusCode.OK, await SendAsync(HttpMethod.Get, "/api/v1/me", await SignInAsync()));
     }
 
     [Fact]

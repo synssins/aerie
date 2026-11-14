@@ -107,4 +107,5 @@ public sealed record ListAllSpaces : IAction<IReadOnlyList<SpaceDto>>;
 
 public sealed record SpaceDto(Guid Id, string Key, string Name, string? Description, bool IsSensitive, bool IsPublic, string? MyRole,
     bool CommentsEnabled, int AgingDays, string AgingAudience, int? RecycleDays, DateTimeOffset CreatedAt);
-public sealed record RoleAssignmentDto(Guid Id, PrincipalType PrincipalType, string PrincipalId, SpaceRole Role);
+/// <summary>Name: the person's display name or the group's name, for showing the row.</summary>
+public sealed record RoleAssignmentDto(Guid Id, PrincipalType PrincipalType, string PrincipalId, SpaceRole Role, string? Name = null);

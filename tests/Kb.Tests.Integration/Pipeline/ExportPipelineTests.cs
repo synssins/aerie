@@ -75,6 +75,8 @@ public sealed class ExportPipelineTests : IAsyncLifetime
         // The app's own policy, as on every answer: an export sets no header of its own.
         "Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
         $"Content-Type: {type}",
+        "Cross-Origin-Resource-Policy: same-origin",
+        "Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()",
         "Referrer-Policy: same-origin",
         "X-Content-Type-Options: nosniff",
         "X-Frame-Options: DENY",

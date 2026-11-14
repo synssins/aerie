@@ -71,6 +71,11 @@ public static class AuditActions
     public const string PluginSettingsChange = "plugin.settings.change";
     public const string PluginPermissionsChange = "plugin.permissions.change";
     public const string UserPermissionsSet = "user.permissions.set";
+    public const string GroupCreate = "group.create";
+    public const string GroupRename = "group.rename";
+    public const string GroupDelete = "group.delete";
+    public const string GroupMemberAdd = "group.member.add";
+    public const string GroupMemberRemove = "group.member.remove";
     public const string StoragePlaceAdd = "storage.place.add";
     public const string StoragePlaceChange = "storage.place.change";
     public const string StoragePlaceRemove = "storage.place.remove";

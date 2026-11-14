@@ -78,7 +78,11 @@ internal sealed class ListUsersHandler(KbDbContext db, IAccess access, Kb.Core.P
             .ToListAsync(ctx.Cancel);
         // The global plugin permissions each person holds: an Admin every one, anyone else those they were given.
         var (all, grants) = (PluginPermissions.Global(plugins), await PluginPermissions.GrantsAsync(db, plugins, ctx.Cancel));
-        return Outcome.List<AdminUserDto>([.. users.Select(u => u with { Permissions = u.IsAdmin ? all : [.. grants[u.Id].Order(StringComparer.Ordinal)] })]);
+        // The groups each person is in, local or from a directory, by name.
+        var groups = (await db.KbGroupMembers.AsNoTracking().Join(db.KbGroups, m => m.GroupId, g => g.Id, (m, g) => new { m.UserId, g.Name }).ToListAsync(ctx.Cancel))
+            .ToLookup(x => x.UserId, x => x.Name);
+        return Outcome.List<AdminUserDto>([.. users.Select(u => u with { Permissions = u.IsAdmin ? all : [.. grants[u.Id].Order(StringComparer.Ordinal)],
+            Groups = [.. groups[u.Id].Order(StringComparer.OrdinalIgnoreCase)] })]);
     }
 }
 

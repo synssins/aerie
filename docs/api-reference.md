@@ -17,6 +17,13 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | PUT | `/api/v1/admin/brand` | `brand.update` | Yes | Needed | No |
 | DELETE | `/api/v1/admin/brand/logo/{variant}` | `brand.logo.remove` | Yes | Needed | No |
 | PUT | `/api/v1/admin/brand/logo/{variant}` | `brand.logo.set` | Yes | Needed | No |
+| GET | `/api/v1/admin/groups` | `group.list` | No | Needed | No |
+| POST | `/api/v1/admin/groups` | `group.create` | Yes | Needed | No |
+| DELETE | `/api/v1/admin/groups/{id:guid}` | `group.delete` | Yes | Needed | No |
+| PATCH | `/api/v1/admin/groups/{id:guid}` | `group.rename` | Yes | Needed | No |
+| GET | `/api/v1/admin/groups/{id:guid}/members` | `group.member.list` | No | Needed | No |
+| DELETE | `/api/v1/admin/groups/{id:guid}/members/{userId:guid}` | `group.member.remove` | Yes | Needed | No |
+| PUT | `/api/v1/admin/groups/{id:guid}/members/{userId:guid}` | `group.member.add` | Yes | Needed | No |
 | GET | `/api/v1/admin/logs/` | `log.read` | No | Needed | No |
 | POST | `/api/v1/admin/logs/targets` | `log.target.add` | Yes | Needed | No |
 | DELETE | `/api/v1/admin/logs/targets/{id:guid}` | `log.target.remove` | Yes | Needed | No |
@@ -99,6 +106,7 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | GET | `/api/v1/pages/{id:guid}/versions` | `page.version.list` | No | Needed | Read |
 | GET | `/api/v1/pages/{id:guid}/versions/{version}` | `page.version.read` | No | Needed | Read |
 | POST | `/api/v1/pages/{id:guid}/versions/{version}/restore` | `page.version.restore` | Yes | Needed | Write |
+| GET | `/api/v1/principals` | `principal.list` | No | Needed | No |
 | GET | `/api/v1/search` | `search.query` | No | Needed | Read |
 | POST | `/api/v1/setup` | `setup.run` | Yes | Not needed | No |
 | GET | `/api/v1/setup/status` | `setup.status` | No | Not needed | No |
