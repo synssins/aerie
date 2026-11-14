@@ -58,6 +58,9 @@ public static class AuditActions
     public const string SpaceRoleGrant = "space.role.grant";
     public const string SpaceRoleRevoke = "space.role.revoke";
     public const string RoleCreate = "role.create";
+    public const string AiCall = "ai.call";
+    public const string AiRefused = "ai.refused";
+    public const string AiSettingsChange = "ai.settings.change";
     public const string InventoryAppCreate = "inventory.app.create";
     public const string InventoryAppUpdate = "inventory.app.update";
     public const string InventoryAppDelete = "inventory.app.delete";

@@ -25,6 +25,22 @@ Write. `RequestAccess`, answers `AccessRequestedDto`.
 | Role | `SpaceRole` | required |
 | Reason | `string?` |  |
 
+## ai.settings.read
+
+Read. `ReadAiSettings`, answers `AiSettingsDto`. Core only.
+
+## ai.settings.save
+
+Write. `SaveAiSettings`, answers `AiSettingsDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Request | `AiSettingsRequest` | required |
+
+## ai.test
+
+Write. `TestAi`, answers `AiTestDto`. Core only.
+
 ## announcement.post
 
 Write. `PostAnnouncement`, answers `AnnouncementPostedDto`.

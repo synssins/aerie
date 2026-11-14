@@ -42,6 +42,11 @@ public static class InventoryRoutes
             bus.SendAsync(new SyncInstalls { Source = req.Source ?? "", Rows = req.Rows ?? [], RemoveMissing = req.RemoveMissing, Apply = req.Apply ?? true }, ct).ToHttp())
             .WithAction<SyncInstalls>();
 
+        var ai = api.MapGroup("/admin/ai");
+        ai.MapGet("", (IActionBus bus, CancellationToken ct) => bus.SendAsync(new ReadAiSettings(), ct).ToHttp()).WithAction<ReadAiSettings>();
+        ai.MapPut("", (AiSettingsRequest req, IActionBus bus, CancellationToken ct) => bus.SendAsync(new SaveAiSettings { Request = req }, ct).ToHttp()).WithAction<SaveAiSettings>();
+        ai.MapPost("/test", (IActionBus bus, CancellationToken ct) => bus.SendAsync(new TestAi(), ct).ToHttp()).WithAction<TestAi>();
+
         var admin = api.MapGroup("/admin/inventory");
         admin.MapGet("/access", (IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new ReadInventoryAccess(), ct).ToHttp()).WithAction<ReadInventoryAccess>();

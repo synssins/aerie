@@ -173,6 +173,11 @@ h2.s { font-size: 17px; margin: 22px 0 8px; }
 .rule-add .picker input { width: 240px; }
 .plain-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .pre { white-space: pre-wrap; }
+.contents { display: contents; }
+.prompt-edit { display: flex; flex-direction: column; gap: 8px; }
+.prompt-edit textarea { min-height: 220px; }
+.form input.narrow { width: 140px; justify-self: start; }
+.form .unit input[type="password"] { width: 280px; }
 .signin-card label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 500; }
 .signin-card input { height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 0 12px; font: inherit; background: var(--paper); color: var(--ink); }
 .btn { height: 38px; border-radius: 8px; font-weight: 600; }

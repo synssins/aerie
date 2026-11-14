@@ -1,3 +1,5 @@
+import { Sparkles } from "lucide-react";
+import { AiPanel } from "./admin/AiSettings";
 import { InventoryAccess } from "./admin/InventoryAccess";
 import { AuditLog } from "./admin/AuditLog";
 import { Roles } from "./admin/Roles";
@@ -20,8 +22,8 @@ import { UserTools } from "./admin/UserTools";
 import { TokensPanel } from "./Tokens";
 import { api, ApiError, fmtSize, type AdminUser, type Brand, type PluginInfo, type Space, type TreeNode } from "./api";
 
-export type AdminSection = "spaces" | "users" | "groups" | "roles" | "inventory" | "signin" | "branding" | "search" | "uploads" | "storage" | "tokens" | "logs" | "bin" | "plugins" | "audit";
-export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "groups", "roles", "inventory", "signin", "branding", "search", "uploads", "storage", "tokens", "logs", "bin", "plugins", "audit"];
+export type AdminSection = "spaces" | "users" | "groups" | "roles" | "inventory" | "signin" | "branding" | "search" | "ai" | "uploads" | "storage" | "tokens" | "logs" | "bin" | "plugins" | "audit";
+export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "groups", "roles", "inventory", "signin", "branding", "search", "ai", "uploads", "storage", "tokens", "logs", "bin", "plugins", "audit"];
 type UploadSettings = { attachmentMb: number; serverLimitBytes: number | null };
 
 type Picked = { kind: "user"; item: AdminUser } | null;
@@ -89,7 +91,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
     setVerify(r.valid ? "Chain intact." : `Chain broken at entry ${r.firstBrokenSequence}.`);
   }
 
-  const title = space?.name ?? ({ spaces: "Spaces", users: "Users", groups: "Groups", roles: "Roles", inventory: "Inventory access", signin: "Sign-in", branding: "Branding", search: "Search", uploads: "Uploads", storage: "Document storage", tokens: "API tokens", logs: "Log shipping", bin: "Recycle bin", plugins: "Plugins", audit: "Audit log" } as const)[section];
+  const title = space?.name ?? ({ spaces: "Spaces", users: "Users", groups: "Groups", roles: "Roles", inventory: "Inventory access", signin: "Sign-in", branding: "Branding", search: "Search", ai: "AI", uploads: "Uploads", storage: "Document storage", tokens: "API tokens", logs: "Log shipping", bin: "Recycle bin", plugins: "Plugins", audit: "Audit log" } as const)[section];
 
   async function setAnnouncer(u: AdminUser, enabled: boolean) {
     await api.put(`/admin/users/${u.id}/announcer`, { enabled });
@@ -168,6 +170,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
                 </div>
               )}
             </div>
+            <button className={`node ${section === "ai" ? "cur" : ""}`} onClick={() => onNavigate("ai")}><Sparkles className="ic" aria-hidden /><span className="grow">AI</span></button>
             <button className={`node ${section === "search" ? "cur" : ""}`} onClick={() => onNavigate("search")}><Search className="ic" aria-hidden /><span className="grow">Search</span></button>
             <button className={`node ${section === "uploads" ? "cur" : ""}`} onClick={() => onNavigate("uploads")}><Paperclip className="ic" aria-hidden /><span className="grow">Uploads</span></button>
             <button className={`node ${section === "plugins" ? "cur" : ""}`} onClick={() => onNavigate("plugins")}><Plug className="ic" aria-hidden /><span className="grow">Plugins</span></button>
@@ -228,6 +231,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
 
               {section === "branding" && isAdmin && <BrandingPanel brand={brand} onChanged={onBrandChanged} />}
               {section === "search" && isAdmin && <SearchPanel />}
+              {section === "ai" && isAdmin && <AiPanel />}
               {section === "signin" && isAdmin && <CodeSettingsPanel />}
               {section === "tokens" && isAdmin && <TokensPanel admin spaces={allSpaces} />}
               {section === "uploads" && isAdmin && uploads && <UploadsPanel key={uploads.attachmentMb} settings={uploads} onSaved={setUploads} />}

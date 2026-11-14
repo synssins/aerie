@@ -180,6 +180,10 @@ services.AddScoped<BreakGlassService>();
 services.AddScoped<SetupService>();
 services.AddScoped<Kb.Web.Actions.CodeSignIn>();
 services.AddScoped<InventoryService>();
+services.AddScoped<AiService>();
+services.AddSingleton<AiRateLimiter>();
+// The model server is the one an Admin names (often on the local network): no address guard; the time limit is per call.
+services.AddHttpClient(AiService.ClientName, c => { c.Timeout = Timeout.InfiniteTimeSpan; c.MaxResponseContentBufferSize = 16 * 1024 * 1024; });
 
 services.AddHealthChecks().AddCheck<ReadinessCheck>("ready", tags: ["ready"]);
 services.AddProblemDetails();

@@ -1,0 +1,25 @@
+[
+  {
+    "action": "ai.settings.read",
+    "method": "GET",
+    "path": "/api/v1/admin/ai",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "ai.settings.save",
+    "method": "PUT",
+    "path": "/api/v1/admin/ai",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 400},
+    "scope": "server"
+  },
+  {
+    "action": "ai.test",
+    "method": "POST",
+    "path": "/api/v1/admin/ai/test",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server",
+    "note": "AI is off in the test server, so the admin's test answers ok false without calling anything."
+  }
+]
