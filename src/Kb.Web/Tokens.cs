@@ -103,7 +103,9 @@ public static class ApiTokenAuth
             var read = HttpMethods.IsGet(method) || HttpMethods.IsHead(method);
             if (!Open.Contains($"{method} {route}") || (!read && !token.Scopes().Any(s => s.Access == TokenAccess.Write)))
             {
-                http.Response.StatusCode = StatusCodes.Status403Forbidden;
+                // Says which: the route is not one for tokens, or this one needs a Write scope.
+                await Results.Problem(Open.Contains($"{method} {route}") ? "This token needs the Write scope." : "API tokens can't call this route.", statusCode: StatusCodes.Status403Forbidden)
+                    .ExecuteAsync(http);
                 return;
             }
         }

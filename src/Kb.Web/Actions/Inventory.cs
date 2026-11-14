@@ -15,7 +15,7 @@ public sealed record InvInstallDto(Guid Id, string Server, string Version, DateT
 public sealed record InvPageDto(Guid Id, string Title, string SpaceName, IReadOnlyList<string> Servers);
 public sealed record InvAppDto(Guid Id, string Name, string? Vendor, OwnerRefDto? Owner, string? Notes, IReadOnlyList<InvInstallDto> Installs, IReadOnlyList<InvPageDto> Pages, bool CanEdit);
 public sealed record InvMeDto(bool CanView, bool CanEdit);
-/// <summary>Kind: Everyone, Space, Role, User or Group. Id: the space id, role id, user id or group key. Name: shown, filled on read.</summary>
+/// <summary>Kind: Everyone, Space, Role, User, Group or Token. Id: the space id, role id, user id, group key or token id. Name: shown, filled on read.</summary>
 public sealed record InvRuleDto(string Kind, string? Id, string? Name = null);
 public sealed record InvAccessDto(IReadOnlyList<InvRuleDto> View, IReadOnlyList<InvRuleDto> Edit);
 public sealed record InvAppRequest(string? Name, string? Vendor, string? Notes, string? OwnerType, string? OwnerId);
@@ -193,11 +193,14 @@ internal sealed class ReadInventoryMeHandler(InventoryService inventory) : IActi
 /// <summary>Views: 401 for nobody, 403 for one the Admin's rules leave out.</summary>
 internal static class InvGate
 {
+    // The refusal says which of the Admin's rules is missing, so a script's owner knows what to ask for.
     internal static async Task<Problem?> ViewAsync(InventoryService inventory, Actor actor, CancellationToken ct) =>
-        actor.UserId is null && actor.Kind != ActorKind.Plugin ? Problem.Unauthorized : await inventory.CanViewAsync(actor, ct) ? null : Problem.Forbidden;
+        actor.UserId is null && actor.Kind != ActorKind.Plugin ? Problem.Unauthorized
+        : await inventory.CanViewAsync(actor, ct) ? null : new Problem(403, actor.TokenId is null ? "You can't view the inventory." : "This token's owner can't view the inventory.");
 
     internal static async Task<Problem?> EditAsync(InventoryService inventory, Actor actor, CancellationToken ct) =>
-        actor.UserId is null && actor.Kind != ActorKind.Plugin ? Problem.Unauthorized : await inventory.CanEditAsync(actor, ct) ? null : Problem.Forbidden;
+        actor.UserId is null && actor.Kind != ActorKind.Plugin ? Problem.Unauthorized
+        : await inventory.CanEditAsync(actor, ct) ? null : new Problem(403, actor.TokenId is null ? "You can't edit the inventory." : "This token's owner can't edit the inventory.");
 }
 
 internal sealed class ListInvAppsHandler(KbDbContext db, InventoryService inventory) : IActionHandler<ListInvApps, IReadOnlyList<InvAppRowDto>>
@@ -424,10 +427,13 @@ internal static class InventoryAccess
         var groups = await db.KbGroups.AsNoTracking().ToDictionaryAsync(g => g.Key, g => g.Name, ct);
         var userIds = rules.Where(r => r.Kind == InvRuleKind.User && Guid.TryParse(r.TargetId, out _)).Select(r => Guid.Parse(r.TargetId!)).ToList();
         var users = await db.Users.AsNoTracking().Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id.ToString("D"), u => u.DisplayName, ct);
+        var tokenIds = rules.Where(r => r.Kind == InvRuleKind.Token && Guid.TryParse(r.TargetId, out _)).Select(r => Guid.Parse(r.TargetId!)).ToList();
+        var tokens = await db.ApiTokens.AsNoTracking().Where(t => tokenIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id.ToString("D"), t => t.Name, ct);
         string? Name(InvAccessRule r) => r.Kind switch
         {
             InvRuleKind.Space => spaces.GetValueOrDefault(r.TargetId ?? ""), InvRuleKind.Role => roles.GetValueOrDefault(r.TargetId ?? ""),
-            InvRuleKind.Group => groups.GetValueOrDefault(r.TargetId ?? ""), InvRuleKind.User => users.GetValueOrDefault(r.TargetId ?? ""), _ => null,
+            InvRuleKind.Group => groups.GetValueOrDefault(r.TargetId ?? ""), InvRuleKind.User => users.GetValueOrDefault(r.TargetId ?? ""),
+            InvRuleKind.Token => tokens.GetValueOrDefault(r.TargetId ?? ""), _ => null,
         };
         InvRuleDto Dto(InvAccessRule r) => new(r.Kind.ToString(), r.TargetId, Name(r));
         return new InvAccessDto([.. rules.Where(r => !r.Edit).Select(Dto)], [.. rules.Where(r => r.Edit).Select(Dto)]);
@@ -445,7 +451,7 @@ internal sealed class SaveInventoryAccessHandler(KbDbContext db, IAccess access)
         foreach (var (list, edit) in new[] { (req.View ?? [], false), (req.Edit ?? [], true) })
             foreach (var r in list)
             {
-                if (!Enum.TryParse<InvRuleKind>(r.Kind, out var kind) || !Enum.IsDefined(kind)) return Problem.Invalid("kind", "Everyone, Space, Role, User or Group.");
+                if (!Enum.TryParse<InvRuleKind>(r.Kind, out var kind) || !Enum.IsDefined(kind) || int.TryParse(r.Kind, out _)) return Problem.Invalid("kind", "Everyone, Space, Role, User, Group or Token.");
                 var id = kind == InvRuleKind.Everyone ? null : r.Id?.Trim();
                 var exists = kind switch
                 {
@@ -453,6 +459,7 @@ internal sealed class SaveInventoryAccessHandler(KbDbContext db, IAccess access)
                     InvRuleKind.Space => Guid.TryParse(id, out var s) && await db.Spaces.AnyAsync(x => x.Id == s, ctx.Cancel),
                     InvRuleKind.Role => Guid.TryParse(id, out var ro) && await db.SpaceRoleDefs.AnyAsync(x => x.Id == ro, ctx.Cancel),
                     InvRuleKind.User => Guid.TryParse(id, out var u) && await db.Users.AnyAsync(x => x.Id == u && x.DeletedAt == null, ctx.Cancel),
+                    InvRuleKind.Token => Guid.TryParse(id, out var t) && await db.ApiTokens.AnyAsync(x => x.Id == t && x.RevokedAt == null, ctx.Cancel),
                     _ => id is not null && await db.KbGroups.AnyAsync(x => x.Key == id, ctx.Cancel),
                 };
                 if (!exists) return Problem.Invalid("id", $"No such {kind.ToString().ToLowerInvariant()}.");

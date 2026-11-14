@@ -48,10 +48,11 @@ public sealed class InvHistory
     public required string By { get; set; }
 }
 
-public enum InvRuleKind { Everyone, Space, Role, User, Group }
+/// <summary>Token: one API token (a service token has no person behind it), by its id.</summary>
+public enum InvRuleKind { Everyone, Space, Role, User, Group, Token }
 
 /// <summary>
-/// Who views (Edit false) or edits (Edit true) the inventory. TargetId: the space id, the role id, the user id or the group key.
+/// Who views (Edit false) or edits (Edit true) the inventory. TargetId: the space id, the role id, the user id, the group key or the token id.
 /// Editing includes viewing. Admins always do both.
 /// </summary>
 public sealed class InvAccessRule

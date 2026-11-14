@@ -27,6 +27,7 @@ public sealed class InventoryService(KbDbContext db, IAccess access, TimeProvide
         var rules = await db.InvAccessRules.AsNoTracking().Where(r => r.Edit || !edit).ToListAsync(ct);
         if (rules.Count == 0) return false;
         if (rules.Any(r => r.Kind == InvRuleKind.Everyone)) return true;
+        if (actor.TokenId is { } token && rules.Any(r => r.Kind == InvRuleKind.Token && string.Equals(r.TargetId, token.ToString("D"), StringComparison.OrdinalIgnoreCase))) return true;
         var meText = me.ToString("D");
         if (rules.Any(r => r.Kind == InvRuleKind.User && string.Equals(r.TargetId, meText, StringComparison.OrdinalIgnoreCase))) return true;
         var groups = await db.KbGroupMembers.Where(m => m.UserId == me).Join(db.KbGroups, m => m.GroupId, g => g.Id, (m, g) => g.Key).ToListAsync(ct);

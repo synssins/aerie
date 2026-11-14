@@ -73,7 +73,7 @@ export type InvApp = { id: string; name: string; vendor: string | null; owner: O
   pages: { id: string; title: string; spaceName: string; servers: string[] }[]; canEdit: boolean };
 export type SyncChange = { application: string; server: string; kind: "Added" | "Changed" | "Unchanged" | "Removed"; from: string | null; to: string | null };
 export type SyncResult = { added: number; changed: number; unchanged: number; removed: number; newApplications: number; changes: SyncChange[] };
-export type InvRule = { kind: "Everyone" | "Space" | "Role" | "User" | "Group"; id: string | null; name?: string | null };
+export type InvRule = { kind: "Everyone" | "Space" | "Role" | "User" | "Group" | "Token"; id: string | null; name?: string | null };
 export type Attachment = { id: string; name: string; size: number; url: string; at: string };
 export type Draft = { title: string; contentJson: string; tags: string[]; baseVersion: string; updatedAt: string };
 export type BinItem = { id: string; spaceId: string; spaceName: string; kind: "Folder" | "Page"; title: string; location: string; items: number; deletedAt: string; deletedBy: string; hidden: boolean };

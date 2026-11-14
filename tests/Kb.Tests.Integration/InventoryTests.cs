@@ -130,6 +130,53 @@ public sealed class InventoryTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Forbidden, (await token.PostAsJsonAsync("/api/v1/inventory/sync", Body("4.3"), Ct)).StatusCode);
     }
 
+    private HttpClient Bearer(string text)
+    {
+        var c = _f.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
+        c.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", text);
+        return c;
+    }
+
+    private static async Task<string?> DetailAsync(HttpResponseMessage r) =>
+        (await r.Content.ReadFromJsonAsync<JsonElement>(Ct)).TryGetProperty("detail", out var d) ? d.GetString() : null;
+
+    [Fact]
+    public async Task AServiceToken_SyncsOnceTheAdminAllowsIt_AndRefusalsSayWhy()
+    {
+        var space = (await (await _admin.PostAsJsonAsync("/api/v1/spaces", new { key = "cmdb", name = "cmdb" }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("id").GetGuid();
+        async Task<(HttpClient Client, Guid Id)> TokenAsync(string access)
+        {
+            var made = await (await _admin.PostAsJsonAsync("/api/v1/tokens", new { name = $"CMDB {access}", kind = "Service", scopes = new[] { new { spaceId = (Guid?)space, access } }, days = 1 }, Ct))
+                .Content.ReadFromJsonAsync<JsonElement>(Ct);
+            return (Bearer(made.GetProperty("token").GetString()!), made.GetProperty("info").GetProperty("id").GetGuid());
+        }
+        var (writer, writerId) = await TokenAsync("Write");
+        var (reader, _) = await TokenAsync("Read");
+        var body = new { source = "cmdb", rows = new[] { new { application = "Acme ERP", vendor = "Acme", server = "ERP01", version = "4.2" } } };
+
+        var refused = await writer.PostAsJsonAsync("/api/v1/inventory/sync", body, Ct);
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+        Assert.Equal("This token's owner can't edit the inventory.", await DetailAsync(refused));
+        var readOnly = await reader.PostAsJsonAsync("/api/v1/inventory/sync", body, Ct);
+        Assert.Equal(HttpStatusCode.Forbidden, readOnly.StatusCode);
+        Assert.Equal("This token needs the Write scope.", await DetailAsync(readOnly));
+
+        var saved = await _admin.PutAsJsonAsync("/api/v1/admin/inventory/access", new
+        {
+            view = new[] { new { kind = "Everyone", id = (string?)null } },
+            edit = new[] { new { kind = "Token", id = (string?)writerId.ToString() } },
+        }, Ct);
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+        Assert.Equal("CMDB Write", (await saved.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("edit")[0].GetProperty("name").GetString());
+        Assert.Equal(HttpStatusCode.OK, (await writer.PostAsJsonAsync("/api/v1/inventory/sync", body, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await _admin.PutAsJsonAsync("/api/v1/admin/inventory/access", new { view = Array.Empty<object>(), edit = new[] { new { kind = "Token", id = Guid.NewGuid().ToString() } } }, Ct)).StatusCode);
+
+        // A person who may not edit hears why too.
+        var (ben, _) = await UserAsync("benny");
+        var app = (await _admin.GetFromJsonAsync<JsonElement[]>("/api/v1/inventory/apps", Ct))!.Single().GetProperty("id").GetGuid();
+        Assert.Equal("You can't edit the inventory.", await DetailAsync(await SetInstallAsync(ben, app, "S1", "1")));
+    }
+
     [Fact]
     public async Task Access_IsWhatTheAdminSets_BySpaceRolePersonOrGroup()
     {

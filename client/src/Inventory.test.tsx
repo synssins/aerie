@@ -116,19 +116,31 @@ describe("page details", () => {
 });
 
 describe("inventory access", () => {
-  it("adds and removes who views and who edits", async () => {
+  it("shows each rule as one row with Remove, and adds a rule from one row", async () => {
     const calls = server({
-      "GET /admin/inventory/access": () => ({ view: [{ kind: "Everyone", id: null }], edit: [] }),
+      "GET /admin/inventory/access": () => ({ view: [{ kind: "Everyone", id: null }, { kind: "Group", id: "local:g1", name: "Network Engineering" }], edit: [] }),
       "PUT /admin/inventory/access": (b) => b,
       "GET /admin/spaces": () => [{ id: "s1", name: "Ops" }],
       "GET /roles": () => [{ id: "r2", name: "Contributor", permissions: ["Read"], builtIn: "Contributor", inUse: 0 }],
+      "GET /admin/tokens": () => [{ id: "t1", name: "CMDB feed", owner: "CMDB", state: "Active" }, { id: "t2", name: "Old", owner: "x", state: "Revoked" }],
     });
     render(<InventoryAccess area="Administration" onHome={() => {}} />);
-    expect(await screen.findByText("Admins only")).toBeTruthy();
-    await userEvent.selectOptions(screen.getByLabelText("Add to edit"), "Holders of a role");
-    await userEvent.selectOptions(await screen.findByLabelText("Role"), "Contributor");
-    const addButtons = screen.getAllByRole("button", { name: "Add" });
-    await userEvent.click(addButtons[1]);
-    await waitFor(() => expect(calls).toContainEqual({ key: "PUT /admin/inventory/access", body: { view: [{ kind: "Everyone", id: null }], edit: [{ kind: "Role", id: "r2" }] } }));
+    const view = await screen.findByRole("region", { name: "Can view" });
+    const rows = within(view).getAllByRole("listitem");
+    expect(rows.map((r) => r.querySelector("span")?.textContent)).toEqual(["Everyone signed in", "Group: Network Engineering"]);
+    expect(within(rows[1]).getByRole("button", { name: "Remove" })).toBeTruthy();
+    const edit = screen.getByRole("region", { name: "Can edit" });
+    expect(within(edit).getByText("Admins only")).toBeTruthy();
+    // A target picker only for a kind that needs one; an API token from the active ones.
+    expect(within(edit).queryByLabelText("Can edit: API token")).toBeNull();
+    await userEvent.selectOptions(within(edit).getByLabelText("Can edit: kind"), "An API token");
+    const picker = within(edit).getByLabelText("Can edit: API token");
+    expect(within(picker).queryByRole("option", { name: /Old/ })).toBeNull();
+    await userEvent.selectOptions(picker, "CMDB feed · CMDB");
+    await userEvent.click(within(edit).getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(calls).toContainEqual({ key: "PUT /admin/inventory/access", body: {
+      view: [{ kind: "Everyone", id: null }, { kind: "Group", id: "local:g1", name: "Network Engineering" }], edit: [{ kind: "Token", id: "t1" }] } }));
+    await userEvent.click(within(rows[1]).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(calls.at(-1)?.body).toMatchObject({ view: [{ kind: "Everyone", id: null }] }));
   });
 });
