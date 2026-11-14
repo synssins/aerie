@@ -3,6 +3,9 @@
     <UserSecretsId>kb-web-dev</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="ExcelDataReader" />
+    <PackageReference Include="MimeKit" />
+    <PackageReference Include="PdfPig" />
     <ProjectReference Include="..\Kb.Core\Kb.Core.csproj" />
     <ProjectReference Include="..\Kb.Data\Kb.Data.csproj" />
     <ProjectReference Include="..\Kb.Data.Sqlite\Kb.Data.Sqlite.csproj" />

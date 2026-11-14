@@ -59,6 +59,9 @@ public static class AuditActions
     public const string SpaceRoleRevoke = "space.role.revoke";
     public const string RoleCreate = "role.create";
     public const string AiCall = "ai.call";
+    public const string ImportAccept = "import.accept";
+    public const string ImportQuarantine = "import.quarantine";
+    public const string PageFormat = "page.format";
     public const string AiRefused = "ai.refused";
     public const string AiSettingsChange = "ai.settings.change";
     public const string InventoryAppCreate = "inventory.app.create";

@@ -75,14 +75,21 @@ public static partial class AiGuard
     /// The chat completions request. No tools and no function calling are ever sent. With reasoning off, both switches servers know
     /// are sent: chat_template_kwargs.enable_thinking false and reasoning_effort none.
     /// </summary>
-    public static JsonObject Request(AiSettings s, string system, string user, JsonObject schema)
+    /// <summary>A picture sent with the data (a screenshot to read). It is data too, never instructions.</summary>
+    public sealed record Picture(string Mime, byte[] Data);
+
+    public static JsonObject Request(AiSettings s, string system, string user, JsonObject schema, IReadOnlyList<Picture>? pictures = null)
     {
+        // Pictures go in the user message beside the data, as image parts: still data, never in the system message.
+        JsonNode userContent = pictures is not { Count: > 0 } ? JsonValue.Create(user)
+            : new JsonArray([new JsonObject { ["type"] = "text", ["text"] = user },
+                .. pictures.Select(p => (JsonNode)new JsonObject { ["type"] = "image_url", ["image_url"] = new JsonObject { ["url"] = $"data:{p.Mime};base64,{Convert.ToBase64String(p.Data)}" } })]);
         var body = new JsonObject
         {
             ["model"] = s.Model,
             ["messages"] = new JsonArray(
                 new JsonObject { ["role"] = "system", ["content"] = system },
-                new JsonObject { ["role"] = "user", ["content"] = user }),
+                new JsonObject { ["role"] = "user", ["content"] = userContent }),
             ["temperature"] = s.Temperature,
             ["max_tokens"] = s.MaxTokens,
             ["stream"] = false,
@@ -136,8 +143,15 @@ public static partial class AiGuard
     [GeneratedRegex(@"[\p{L}\p{N}]+")]
     private static partial Regex WordPattern();
 
-    /// <summary>For formatting that may only change markup: the same words, in the same order, or it is refused.</summary>
-    public static bool SameWords(string before, string after) => Words(before).SequenceEqual(Words(after), StringComparer.Ordinal);
+    /// <summary>
+    /// For formatting that may only change markup: the same words, in the same order, or it is refused. A list mark typed at a line
+    /// start ("1.", "2)", "-") counts as markup, since a numbered list carries its numbers itself.
+    /// </summary>
+    public static bool SameWords(string before, string after) =>
+        Words(ListMark().Replace(before, "")).SequenceEqual(Words(ListMark().Replace(after, "")), StringComparer.Ordinal);
+
+    [GeneratedRegex(@"^[ \t]*(?:\d{1,3}[.)]|[-*•])[ \t]+", RegexOptions.Multiline)]
+    private static partial Regex ListMark();
 
     /// <summary>
     /// Checks a value against a JSON schema: type (object, array, string, integer, number, boolean, null), properties, required,

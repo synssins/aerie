@@ -37,6 +37,8 @@ public class AiGuardTests
         Assert.False(AiGuard.SameWords("restart the server", "reboot the server"));
         Assert.False(AiGuard.SameWords("restart the server", "restart the server now"));
         Assert.False(AiGuard.SameWords("one two", "two one"));
+        Assert.True(AiGuard.SameWords("Steps\n1. Open services\n2) Stop it\n- done", "Steps\nOpen services\nStop it\ndone")); // typed list marks are markup
+        Assert.False(AiGuard.SameWords("Port 443 open", "Port open")); // a number inside a line is a word
     }
 
     [Fact]

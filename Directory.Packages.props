@@ -4,6 +4,9 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- transitive pin: Azure.Identity pulls a vulnerable 9.0.x (GHSA-846f-f764-76mx) -->
+    <PackageVersion Include="ExcelDataReader" Version="3.9.0" />
+    <PackageVersion Include="MimeKit" Version="5.0.0" />
+    <PackageVersion Include="PdfPig" Version="0.1.16" />
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.14" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.14" />

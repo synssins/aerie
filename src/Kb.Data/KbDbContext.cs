@@ -73,6 +73,9 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     public DbSet<Kb.Core.Inventory.InvHistory> InvHistory => Set<Kb.Core.Inventory.InvHistory>();
     public DbSet<Kb.Core.Inventory.InvAccessRule> InvAccessRules => Set<Kb.Core.Inventory.InvAccessRule>();
     public DbSet<Kb.Core.Inventory.PageAppLink> PageAppLinks => Set<Kb.Core.Inventory.PageAppLink>();
+    public DbSet<Kb.Core.Import.ImportBatch> ImportBatches => Set<Kb.Core.Import.ImportBatch>();
+    public DbSet<Kb.Core.Import.ImportFile> ImportFiles => Set<Kb.Core.Import.ImportFile>();
+    public DbSet<Kb.Core.Import.ImportItem> ImportItems => Set<Kb.Core.Import.ImportItem>();
     public DbSet<SpaceAccessGrant> SpaceAccessGrants => Set<SpaceAccessGrant>();
     public DbSet<AccessRequest> AccessRequests => Set<AccessRequest>();
     public DbSet<Notification> Notifications => Set<Notification>();
@@ -114,6 +117,26 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
         builder.Entity<SpaceRoleAssignment>().HasIndex(a => new { a.SpaceId, a.PrincipalType, a.PrincipalId }).IsUnique();
         builder.Entity<SpaceRoleAssignment>().HasIndex(a => a.PrincipalId);
         builder.Entity<SpaceRoleAssignment>().HasIndex(a => a.RoleId);
+        // Imports: only the importer sees them; the worker picks up items by status.
+        builder.Entity<Kb.Core.Import.ImportBatch>().HasIndex(b => new { b.UserId, b.Grouped });
+        builder.Entity<Kb.Core.Import.ImportFile>(e =>
+        {
+            e.Property(f => f.Path).HasMaxLength(1000);
+            e.Property(f => f.Name).HasMaxLength(255);
+            e.Property(f => f.Sha256).HasMaxLength(64);
+            e.Property(f => f.Kind).HasMaxLength(20);
+            e.Property(f => f.Mime).HasMaxLength(100);
+            e.Property(f => f.Note).HasMaxLength(500);
+            e.HasIndex(f => f.BatchId);
+            e.HasIndex(f => f.ItemId);
+        });
+        builder.Entity<Kb.Core.Import.ImportItem>(e =>
+        {
+            e.Property(i => i.Title).HasMaxLength(300);
+            e.Property(i => i.Error).HasMaxLength(1000);
+            e.HasIndex(i => new { i.UserId, i.Status });
+            e.HasIndex(i => i.Status);
+        });
         // The application inventory.
         builder.Entity<Kb.Core.Inventory.InvApplication>(e =>
         {

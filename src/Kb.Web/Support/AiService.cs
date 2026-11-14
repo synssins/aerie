@@ -20,6 +20,13 @@ public sealed class AiRateLimiter(TimeProvider time)
     private readonly ConcurrentDictionary<string, Queue<DateTimeOffset>> _calls = new();
 
     // shortcut: counted per server, so N servers allow N times as much; move it to the database if that matters.
+    /// <summary>Whether a call would be allowed now, without counting one: background work waits for a free slot.</summary>
+    public bool Free(string key, int perMinute)
+    {
+        if (!_calls.TryGetValue(key, out var q)) return true;
+        lock (q) { var now = time.GetUtcNow(); return q.Count(t => now - t < TimeSpan.FromMinutes(1)) < perMinute; }
+    }
+
     public bool Allow(string key, int perMinute)
     {
         var now = time.GetUtcNow();
@@ -84,7 +91,8 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
     /// schema: what the answer must be. Refused before the call: AI off, the feature not open to the caller, too much data, a
     /// tripwire pattern in the data, too many calls. Refused after: an answer that is not JSON matching the schema.
     /// </summary>
-    public async Task<Outcome<AiResult>> RunAsync(Actor actor, string feature, string task, IReadOnlyDictionary<string, string> data, JsonObject schema, CancellationToken ct)
+    public async Task<Outcome<AiResult>> RunAsync(Actor actor, string feature, string task, IReadOnlyDictionary<string, string> data, JsonObject schema, CancellationToken ct,
+        IReadOnlyList<AiGuard.Picture>? pictures = null)
     {
         ArgumentNullException.ThrowIfNull(actor);
         var s = await SettingsAsync(ct);
@@ -102,7 +110,8 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
         if (!limiter.Allow($"u:{actor.UserId}", s.UserPerMinute) || (actor.TokenId is { } token && !limiter.Allow($"t:{token}", s.TokenPerMinute)))
             return await RefuseAsync("limited", new Problem(429, "Too many AI calls. Wait a minute."));
 
-        var body = AiGuard.Request(s, AiGuard.SystemMessage(s.Ruleset, task, schema), AiGuard.UserMessage(data), schema);
+        if (pictures?.Sum(p => (long)p.Data.Length) > 32L * 1024 * 1024) return await RefuseAsync("too-large", Problem.Invalid("pictures", "32 MB of pictures at most."));
+        var body = AiGuard.Request(s, AiGuard.SystemMessage(s.Ruleset, task, schema), AiGuard.UserMessage(data), schema, pictures);
         var clock = Stopwatch.StartNew();
         JsonNode? answer;
         try

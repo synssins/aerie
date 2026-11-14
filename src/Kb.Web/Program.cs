@@ -182,6 +182,9 @@ services.AddScoped<Kb.Web.Actions.CodeSignIn>();
 services.AddScoped<InventoryService>();
 services.AddScoped<AiService>();
 services.AddSingleton<AiRateLimiter>();
+services.AddScoped<Kb.Web.Import.ImportService>();
+services.AddSingleton<Kb.Web.Import.ImportWorker>();
+services.AddHostedService(sp => sp.GetRequiredService<Kb.Web.Import.ImportWorker>());
 // The model server is the one an Admin names (often on the local network): no address guard; the time limit is per call.
 services.AddHttpClient(AiService.ClientName, c => { c.Timeout = Timeout.InfiniteTimeSpan; c.MaxResponseContentBufferSize = 16 * 1024 * 1024; });
 
@@ -253,6 +256,7 @@ api.MapHomeEndpoints();
 api.MapExportEndpoints();
 api.MapUiEndpoints();
 api.MapInventoryEndpoints();
+api.MapImportEndpoints();
 app.MapPluginFiles();
 // Each loaded plugin's own routes, under /api/v1/plugins/<id>/. They need sign-in unless a route says AllowAnonymous, and are closed to API tokens.
 // A server that runs an old set of plugins answers 503 there until it has restarted.

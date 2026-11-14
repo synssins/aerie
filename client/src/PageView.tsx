@@ -6,7 +6,7 @@ import {
   Bold, ChevronRight, House, Code, Download, Ellipsis, FolderInput, History, ImagePlus, Heading2, Heading3, Italic, Link as LinkIcon, List, ListOrdered, ListTodo, Minus,
   Paperclip, Pencil, Quote, Redo2, SquareCode, Strikethrough, Table, Trash2, Underline, Undo2, X,
 } from "lucide-react";
-import { api, ApiError, fmtSize, upload, type Attachment, type Draft, type Page, type PageDetails } from "./api";
+import { api, ApiError, fmtSize, upload, type Attachment, type Draft, type DiffLine, type Page, type PageDetails } from "./api";
 import { editorExtensions, fromEditor, makeExtensions, toEditor } from "./editor/extensions";
 import { PluginBoundary, SlotSections, SlotTools } from "./kit/SlotViews";
 import { reportUiError } from "./kit/errors";
@@ -105,7 +105,9 @@ function headingsOf(json: string): Heading[] {
 
 const fmt = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
-export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDirty, onCancelNew, onHistory, onMove, onDelete, autoEdit = false, codeLanguage = "plaintext", guest = false, onTag, onOpenApp }: {
+export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDirty, onCancelNew, onHistory, onMove, onDelete, autoEdit = false, codeLanguage = "plaintext", guest = false, onTag, onOpenApp, canFormat = false }: {
+  /** The AI Format button: a preview of the same words with better structure, applied only if accepted, saved only with Save. */
+  canFormat?: boolean;
   /** An application the page applies to was clicked: open it in the inventory. */
   onOpenApp?: (id: string) => void;
   /** Someone not signed in: no history and no export, which need sign-in. */
@@ -280,6 +282,17 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
     ...exports.code.map((lang, i): MenuItem => ({ label: `Code ${i + 1} · ${lang}`, href: `/api/v1/pages/${page.id}/export/code/${i + 1}` })),
   ];
 
+  const [formatting, setFormatting] = useState(false);
+  const [formatted, setFormatted] = useState<{ contentJson: string; diff: DiffLine[] } | null>(null);
+  async function runFormat() {
+    if (!editor) return;
+    setFormatting(true);
+    setError(null);
+    try { setFormatted(await api.post<{ contentJson: string; diff: DiffLine[] }>(`/pages/${page.id}/format`, { contentJson: fromEditor(editor) })); }
+    catch (e) { setError(e instanceof ApiError && e.body?.detail ? e.body.detail : "Not formatted."); }
+    finally { setFormatting(false); }
+  }
+
   async function save() {
     if (!editor) return;
     setBusy(true);
@@ -344,6 +357,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
             {editing ? (
               <>
                 {savedAt && <span className="muted small draft-at" role="status">Draft saved {new Date(savedAt).toLocaleTimeString(undefined, { timeStyle: "short" })}</span>}
+                {canFormat && !isNew && <button className="tb" onClick={() => void runFormat()} disabled={busy || formatting}>{formatting ? "Formatting…" : "Format"}</button>}
                 <button className="tb" onClick={cancel} disabled={busy}>Cancel</button>
                 <button className="tb primary" onClick={save} disabled={busy || !title.trim()}>{busy ? "Saving…" : "Save"}</button>
               </>
@@ -364,6 +378,10 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
             )}
           </div>
         </div>
+        {formatted && editor && (
+          <FormatDialog diff={formatted.diff} onClose={() => setFormatted(null)}
+            onAccept={() => { editor.commands.setContent(toEditor(formatted.contentJson, extensions)); setFormatted(null); }} />
+        )}
         <PageDetailsPanel details={page.details} updatedAt={page.updatedAt} editing={editing} value={details} onChange={setDetails} onOpenApp={onOpenApp} />
         {error && <p className="form-error" role="alert">{error}</p>}
         {!editing && hasDraft && page.draft && page.canEdit && (
@@ -451,7 +469,7 @@ function ToolbarEntry({ item, source, ctx }: { item: ActionItem<{ editor: Editor
   );
 }
 
-function Toolbar({ editor, onImages }: { editor: Editor; onImages: (files: File[]) => void }) {
+export function Toolbar({ editor, onImages }: { editor: Editor; onImages: (files: File[]) => void }) {
   const dialogs = useDialogs();
   const picker = useRef<HTMLInputElement>(null);
   const ctx = useMemo(() => ({ editor }), [editor]);
@@ -535,5 +553,22 @@ function Toolbar({ editor, onImages }: { editor: Editor; onImages: (files: File[
       <B label="Undo" run={() => c().undo().run()}><Undo2 className="ic" /></B>
       <B label="Redo" run={() => c().redo().run()}><Redo2 className="ic" /></B>
     </div>
+  );
+}
+
+/** The formatting the AI proposes, as changed lines: accepted or rejected whole. Accepting changes the editor only; Save saves. */
+function FormatDialog({ diff, onAccept, onClose }: { diff: DiffLine[]; onAccept: () => void; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => { ref.current?.showModal(); }, []);
+  const mark = (op: DiffLine["op"]) => (op === "Add" ? "+" : op === "Del" ? "−" : " ");
+  return (
+    <dialog ref={ref} className="dlg wide format-dlg" onCancel={(e) => { e.preventDefault(); onClose(); }} aria-labelledby="fmt-title">
+      <h2 id="fmt-title">Format</h2>
+      <pre className="diff-lines">{diff.map((l, i) => <div key={i} className={`diff-${l.op.toLowerCase()}`}>{mark(l.op)} {l.text}</div>)}</pre>
+      <div className="dlg-actions">
+        <button type="button" className="tb" onClick={onClose}>Reject</button>
+        <button type="button" className="tb primary" onClick={onAccept} autoFocus>Accept</button>
+      </div>
+    </dialog>
   );
 }

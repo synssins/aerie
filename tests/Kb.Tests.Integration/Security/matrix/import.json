@@ -1,0 +1,88 @@
+[
+  {
+    "action": "import.batch.create",
+    "method": "POST",
+    "path": "/api/v1/imports",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 403},
+    "scope": "server",
+    "note": "AI is off in the test server, so import is open to no one."
+  },
+  {
+    "action": "import.file.add",
+    "method": "POST",
+    "path": "/api/v1/imports/{newGuid}/files",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 403},
+    "scope": "server"
+  },
+  {
+    "action": "import.batch.start",
+    "method": "POST",
+    "path": "/api/v1/imports/{newGuid}/start",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 403},
+    "scope": "server"
+  },
+  {
+    "action": "import.list",
+    "method": "GET",
+    "path": "/api/v1/imports",
+    "expect": {"anonymous": 401, "outsider": 200, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "scope": "server",
+    "note": "Each person sees only their own imports."
+  },
+  {
+    "action": "import.read",
+    "method": "GET",
+    "path": "/api/v1/imports/items/{newGuid}",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 404, "contributor": 404, "supervisor": 404, "owner": 404, "admin": 404},
+    "scope": "server"
+  },
+  {
+    "action": "import.file.read",
+    "method": "GET",
+    "path": "/api/v1/imports/files/{newGuid}",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 404, "contributor": 404, "supervisor": 404, "owner": 404, "admin": 404},
+    "scope": "server"
+  },
+  {
+    "action": "import.accept",
+    "method": "POST",
+    "path": "/api/v1/imports/items/{newGuid}/accept",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 403},
+    "scope": "server"
+  },
+  {
+    "action": "import.retry",
+    "method": "POST",
+    "path": "/api/v1/imports/items/{newGuid}/retry",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 403},
+    "scope": "server"
+  },
+  {
+    "action": "import.discard",
+    "method": "DELETE",
+    "path": "/api/v1/imports/items/{newGuid}",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 404, "contributor": 404, "supervisor": 404, "owner": 404, "admin": 404},
+    "scope": "server",
+    "note": "Throwing away one's own draft needs no AI."
+  },
+  {
+    "action": "import.merge",
+    "method": "POST",
+    "path": "/api/v1/imports/merge",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 403},
+    "scope": "server"
+  },
+  {
+    "action": "page.format",
+    "method": "POST",
+    "path": "/api/v1/pages/{page}/format",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 403},
+    "sensitive": {"admin": 404},
+    "note": "Formatting needs the right to edit the page and the Format feature, which is off while AI is off."
+  }
+]

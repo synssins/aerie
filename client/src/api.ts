@@ -156,3 +156,16 @@ export async function upload<T>(path: string, file: File): Promise<T> {
 /** Tree order: folders first, then pages, each alphabetical (natural number order). */
 export const byTreeOrder = (a: TreeNode, b: TreeNode) =>
   a.kind === b.kind ? a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" }) : a.kind === "Folder" ? -1 : 1;
+
+/** An import's draft and what the code found. Pages: content as the AI drafted it, and with flagged secrets redacted. */
+export type ImportProposal = {
+  pages: { title: string; contentJson: string; redactedJson: string }[];
+  tags: string[]; appliesTo: AppliesTo[]; owner: OwnerRef | null; reviewMonths: number | null;
+  destination: { spaceId: string; parentId: string | null } | null; suggestedDestination: { spaceId: string; parentId: string | null } | null;
+  sensitive: { kind: string; sample: string }[]; duplicates: { pageId: string; title: string; score: number; spaceId: string }[]; warnings: string[]; model: string;
+};
+export type ImportFile = { id: string; name: string; path: string; size: number; kind: "Text" | "Image" | "Container" | "Blocked" | "Unsupported" | "Pending"; note: string | null; embedded: boolean; sha256: string };
+export type ImportItemRow = { id: string; batchId: string; title: string; status: "Queued" | "Working" | "Ready" | "Failed" | "Blocked" | "Accepted" | "Discarded"; error: string | null; files: number; createdAt: string; pageId: string | null };
+export type ImportBatch = { id: string; createdAt: string; files: number; started: boolean; grouped: boolean; error: string | null; queued: number; working: number; ready: number; failed: number; blocked: number; done: number };
+export type ImportList = { batches: ImportBatch[]; items: ImportItemRow[]; canImport: boolean; canFormat: boolean };
+export type ImportItem = { id: string; title: string; status: ImportItemRow["status"]; error: string | null; proposal: ImportProposal | null; files: ImportFile[]; sources: Record<string, string>; pageId: string | null };

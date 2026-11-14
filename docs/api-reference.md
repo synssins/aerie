@@ -96,6 +96,16 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | GET | `/api/v1/brand/logo/{variant}` | `brand.logo.read` | No | Not needed | Read |
 | GET | `/api/v1/home` | `home.read` | No | Needed | Read |
 | GET | `/api/v1/images/{id:guid}` | `image.read` | No | Not needed | Read |
+| GET | `/api/v1/imports/` | `import.list` | No | Needed | No |
+| POST | `/api/v1/imports/` | `import.batch.create` | Yes | Needed | No |
+| GET | `/api/v1/imports/files/{id:guid}` | `import.file.read` | No | Needed | No |
+| DELETE | `/api/v1/imports/items/{id:guid}` | `import.discard` | Yes | Needed | No |
+| GET | `/api/v1/imports/items/{id:guid}` | `import.read` | No | Needed | No |
+| POST | `/api/v1/imports/items/{id:guid}/accept` | `import.accept` | Yes | Needed | No |
+| POST | `/api/v1/imports/items/{id:guid}/retry` | `import.retry` | Yes | Needed | No |
+| POST | `/api/v1/imports/merge` | `import.merge` | Yes | Needed | No |
+| POST | `/api/v1/imports/{id:guid}/files` | `import.file.add` | Yes | Needed | No |
+| POST | `/api/v1/imports/{id:guid}/start` | `import.batch.start` | Yes | Needed | No |
 | GET | `/api/v1/inventory/apps` | `inventory.app.list` | No | Needed | No |
 | POST | `/api/v1/inventory/apps` | `inventory.app.create` | Yes | Needed | No |
 | DELETE | `/api/v1/inventory/apps/{id:guid}` | `inventory.app.delete` | Yes | Needed | No |
@@ -128,6 +138,7 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | GET | `/api/v1/pages/{id:guid}/export` | `page.export` | No | Needed | Read |
 | GET | `/api/v1/pages/{id:guid}/export/code/{n:int}` | `page.export.code` | No | Needed | Read |
 | GET | `/api/v1/pages/{id:guid}/export/table/{n:int}` | `page.export.table` | No | Needed | Read |
+| POST | `/api/v1/pages/{id:guid}/format` | `page.format` | Yes | Needed | No |
 | GET | `/api/v1/pages/{id:guid}/markdown` | `page.markdown` | No | Needed | Read |
 | POST | `/api/v1/pages/{id:guid}/move` | `page.move` | Yes | Needed | Write |
 | POST | `/api/v1/pages/{id:guid}/restore` | `page.restore` | Yes | Needed | No |

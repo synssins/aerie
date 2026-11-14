@@ -339,6 +339,85 @@ Read. `ReadImage`, answers `FileOut`.
 |---|---|---|
 | ImageId | `Guid` | required |
 
+## import.accept
+
+Write. `AcceptImport`, answers `IReadOnlyList<Guid>`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| ItemId | `Guid` | required |
+| Request | `AcceptRequest` | required |
+
+## import.batch.create
+
+Write. `CreateImportBatch`, answers `ImportBatchDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| SpaceId | `Guid?` |  |
+| ParentId | `Guid?` |  |
+
+## import.batch.start
+
+Write. `StartImportBatch`, answers `ImportBatchDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| BatchId | `Guid` | required |
+
+## import.discard
+
+Write. `DiscardImport`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| ItemId | `Guid` | required |
+
+## import.file.add
+
+Write. `AddImportFile`, answers `ImportFileDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| BatchId | `Guid` | required |
+| File | `UploadContent?` | never logged |
+
+## import.file.read
+
+Read. `ReadImportFile`, answers `FileOut`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| FileId | `Guid` | required |
+
+## import.list
+
+Read. `ListImports`, answers `ImportListDto`. Core only.
+
+## import.merge
+
+Write. `MergeImports`, answers `ImportItemRowDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| ItemIds | `IReadOnlyList<Guid>` | required |
+
+## import.read
+
+Read. `ReadImportItem`, answers `ImportItemDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| ItemId | `Guid` | required |
+
+## import.retry
+
+Write. `RetryImport`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| ItemId | `Guid` | required |
+
 ## inventory.access.read
 
 Read. `ReadInventoryAccess`, answers `InvAccessDto`. Core only.
@@ -603,6 +682,15 @@ Read. `ExportPageTable`, answers `FileOut`.
 | PageId | `Guid` | required |
 | Number | `int` | required |
 | Format | `string?` |  |
+
+## page.format
+
+Write. `FormatPage`, answers `FormatDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+| ContentJson | `string` | required |
 
 ## page.markdown
 
