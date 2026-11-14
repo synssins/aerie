@@ -19,7 +19,20 @@ Most extra features are meant to be plugins. A plugin brings its own code, table
 
 Not built yet: sign-in through Entra ID, AD/LDAP or passkeys, AD and Entra groups, comments and ratings, and Azure Blob storage.
 
-## Running it
+## Running it in Docker
+
+The image runs on any Linux Docker host and keeps its data in a SQLite file on a volume.
+
+```bash
+docker build -t aerie .
+docker compose up -d
+```
+
+It listens on port 8080 over plain HTTP. Put it behind a reverse proxy that serves HTTPS, because the sign-in cookie is only sent over HTTPS. Open the site and the setup page asks for the first admin account, or set one up front in `docker-compose.yml`, which also shows how to point it at SQL Server instead.
+
+The volume holds everything: the database, uploaded files and logs. Back up `/app/App_Data` and you have it all.
+
+## Running it on IIS
 
 You need Windows with IIS, the [.NET 10 SDK](https://dotnet.microsoft.com/download) and Node.js. For the database, use SQL Server (Express works) or a single SQLite file. The SQLite file needs nothing else installed.
 
