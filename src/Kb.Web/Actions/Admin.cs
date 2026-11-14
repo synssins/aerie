@@ -57,13 +57,28 @@ internal sealed class ListAuditHandler(KbDbContext db, IAccess access) : IAction
 
     public async Task<Outcome<IReadOnlyList<AuditEntryDto>>> HandleAsync(ActionContext<ListAudit> ctx)
     {
-        var n = Math.Clamp(ctx.Action.Take ?? 100, 1, 500);
-        return Outcome.List(await (from a in db.AuditEntries.AsNoTracking()
-                                   orderby a.Sequence descending
-                                   join u in db.Users on a.ActorId equals u.Id into au
-                                   from u in au.DefaultIfEmpty()
-                                   select new AuditEntryDto(a.Sequence, a.At, a.Action, u == null ? null : u.DisplayName, a.TargetType, a.TargetId))
-                                  .Take(n).ToListAsync(ctx.Cancel));
+        var req = ctx.Action;
+        if (req.From is { } f && req.To is { } t && f > t) return Problem.Invalid("from", "From is after To.");
+        var n = Math.Clamp(req.Take ?? 100, 1, 500);
+        var q = db.AuditEntries.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(req.Action)) { var prefix = req.Action.Trim(); q = q.Where(a => a.Action.StartsWith(prefix)); }
+        if (req.ActorId is { } actor) q = q.Where(a => a.ActorId == actor);
+        if (req.From is { } from) { var start = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(a => a.At >= start); }
+        if (req.To is { } to) { var end = new DateTimeOffset(to.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(a => a.At < end); }
+        // An entry made with a token names it in its data, which the hash chain covers (AuditData.WithToken).
+        if (req.TokenId is { } token) { var mark = $"\"{AuditData.TokenIdKey}\":\"{token:D}\""; q = q.Where(a => a.DataJson.Contains(mark)); }
+        var rows = await (from a in q
+                          orderby a.Sequence descending
+                          join u in db.Users on a.ActorId equals u.Id into au
+                          from u in au.DefaultIfEmpty()
+                          select new { a.Sequence, a.At, a.Action, Actor = u == null ? null : u.DisplayName, a.TargetType, a.TargetId, a.DataJson })
+                         .Skip(Math.Max(req.Offset ?? 0, 0)).Take(n).ToListAsync(ctx.Cancel);
+        return Outcome.List(rows.Select(a =>
+        {
+            var data = AuditData.Read(a.DataJson);
+            return new AuditEntryDto(a.Sequence, a.At, a.Action, a.Actor, a.TargetType, a.TargetId,
+                data.ContainsKey(AuditData.TokenIdKey) ? "API" : "Web", data.GetValueOrDefault(AuditData.TokenKey));
+        }).ToList());
     }
 }
 

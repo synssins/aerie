@@ -15,8 +15,8 @@ public static class AdminRoutes
         admin.MapGet("/audit/verify", (IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new VerifyAudit(), ct).ToHttp()).WithAction<VerifyAudit>();
 
-        admin.MapGet("/audit", (int? take, IActionBus bus, CancellationToken ct) =>
-            bus.SendAsync(new ListAudit { Take = take }, ct).ToHttp()).WithAction<ListAudit>();
+        admin.MapGet("/audit", (int? take, int? offset, string? action, Guid? actor, DateOnly? from, DateOnly? to, Guid? token, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new ListAudit { Take = take, Offset = offset, Action = action, ActorId = actor, From = from, To = to, TokenId = token }, ct).ToHttp()).WithAction<ListAudit>();
 
         admin.MapGet("/users", (IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new ListUsers(), ct).ToHttp()).WithAction<ListUsers>();

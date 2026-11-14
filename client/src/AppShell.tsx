@@ -26,8 +26,8 @@ type AdminAt = { section: AdminSection; spaceId: string | null };
 type PluginAt = { id: string; rest: string };
 
 /** URLs carry IDs only, never names, so renames never break links. */
-function route(): { space?: string; page?: string; admin?: AdminAt; settings?: SettingsSection; search?: string; history?: boolean; bin?: boolean; plugin?: PluginAt } {
-  if (location.pathname === "/search") return { search: new URLSearchParams(location.search).get("q") ?? "" };
+function route(): { space?: string; page?: string; admin?: AdminAt; settings?: SettingsSection; search?: string; tag?: string; history?: boolean; bin?: boolean; plugin?: PluginAt } {
+  if (location.pathname === "/search") { const p = new URLSearchParams(location.search); return { search: p.get("q") ?? "", tag: p.get("tag") ?? undefined }; }
   // A plugin's own screen: /x/<plugin id>/<whatever the plugin defines>.
   const x = /^\/x\/([a-z0-9]+(?:[.-][a-z0-9]+)*)(?:\/(.*))?$/.exec(location.pathname);
   if (x) return { plugin: { id: x[1], rest: x[2] ?? "" } };
@@ -70,6 +70,8 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
   const [settingsAt, setSettingsAt] = useState<SettingsSection | null>(null);
   const [home, setHome] = useState(false);
   const [searchQ, setSearchQ] = useState<string | null>(null);
+  // A tag that was clicked: the search lists every page with it.
+  const [searchTag, setSearchTag] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [historyOf, setHistoryOf] = useState(false);
   const [binOf, setBinOf] = useState(false);
@@ -118,6 +120,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
     setAdmin(null);
     setSettingsAt(null);
     setSearchQ(null);
+    setSearchTag(null);
     setHistoryOf(false);
     setBinOf(false);
     setBinItem(null);
@@ -154,7 +157,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
     if (r.admin && me && (me.isAdmin || (owns && r.admin.section === "spaces"))) { reset(); setAdmin(r.admin); setPage(null); return; }
     if (r.settings && me) { reset(); setSettingsAt(r.settings); setPage(null); return; }
     if (r.plugin) { reset(); setPluginAt(r.plugin); setPage(null); return; }
-    if (r.search !== undefined) { reset(); setSearchQ(r.search); setQ(r.search); setPage(null); setCurrent(null); return; }
+    if (r.search !== undefined) { reset(); setSearchQ(r.search); setSearchTag(r.tag ?? null); setQ(r.search); setPage(null); setCurrent(null); return; }
     try {
       if (r.page) { await showPage(r.page, all); if (r.history) setHistoryOf(true); return; }
       // Someone not signed in has no home page: they start in the first space open to them.
@@ -297,6 +300,16 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
     setPage(null);
     setCurrent(null);
     go(`/search?q=${encodeURIComponent(text)}`);
+  }
+
+  async function openTag(tag: string) {
+    if (!await discardOk()) return;
+    reset();
+    setSearchQ("");
+    setSearchTag(tag);
+    setPage(null);
+    setCurrent(null);
+    go(`/search?tag=${encodeURIComponent(tag)}`);
   }
 
   async function openPageById(id: string) {
@@ -552,7 +565,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
               {pluginAt ? (
                 <PluginScreen at={pluginAt} onHome={onHome} />
               ) : searchQ !== null ? (
-                <SearchView query={searchQ} onHome={onHome} onOpen={(id) => void openPageById(id)} />
+                <SearchView query={searchQ} tag={searchTag} onHome={onHome} onOpen={(id) => void openPageById(id)} />
               ) : home || !current ? (
                 <HomeView me={me} spaces={spaces} viewed={viewed} onOpenSpace={(s) => void openSpace(s)} onOpenPage={(id) => void openPageById(id)} />
               ) : binOf && binItem ? (
@@ -575,6 +588,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
                   spaceName={current.name}
                   role={current.myRole}
                   guest={guest}
+                  onTag={(t) => void openTag(t)}
                   codeLanguage={prefs.codeLanguage}
                   onHome={onHome}
                   onHistory={openHistory}

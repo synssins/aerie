@@ -75,6 +75,12 @@ Read. `ListAudit`, answers `IReadOnlyList<AuditEntryDto>`.
 | Field | Type | |
 |---|---|---|
 | Take | `int?` |  |
+| Offset | `int?` |  |
+| Action | `string?` |  |
+| ActorId | `Guid?` |  |
+| From | `DateOnly?` |  |
+| To | `DateOnly?` |  |
+| TokenId | `Guid?` |  |
 
 ## audit.verify
 

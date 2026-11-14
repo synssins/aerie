@@ -1,3 +1,4 @@
+import { AuditLog } from "./admin/AuditLog";
 import { Roles } from "./admin/Roles";
 import { useDialogs } from "./Dialogs";
 import { CodeSettingsPanel } from "./admin/CodeSettings";
@@ -22,7 +23,6 @@ export type AdminSection = "spaces" | "users" | "groups" | "roles" | "signin" | 
 export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "groups", "roles", "signin", "branding", "search", "uploads", "storage", "tokens", "logs", "bin", "plugins", "audit"];
 type UploadSettings = { attachmentMb: number; serverLimitBytes: number | null };
 
-type AuditRow = { sequence: number; at: string; action: string; actor: string | null; targetType: string | null; targetId: string | null };
 type Picked = { kind: "user"; item: AdminUser } | null;
 
 const fmt = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -49,7 +49,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
     security: ["users", "groups", "roles", "signin", "tokens", "audit", "logs"].includes(section), storage: ["bin", "storage"].includes(section) });
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [userPermissions, setUserPermissions] = useState<PermissionColumn[]>([]);
-  const [audit, setAudit] = useState<AuditRow[]>([]);
+  const [auditKey, setAuditKey] = useState(0);
   const [verify, setVerify] = useState<string | null>(null);
   const [picked, setPicked] = useState<Picked>(null);
   const [newSpace, setNewSpace] = useState(false);
@@ -78,7 +78,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
         .flatMap((p) => p.permissions.filter((x) => x.scope === "global").map((x) => ({ name: `${p.id}:${x.key}`, label: x.label })))));
     }
     if (section === "uploads") void api.get<UploadSettings>("/admin/uploads").then(setUploads);
-    if (section === "audit") { setVerify(null); void api.get<AuditRow[]>("/admin/audit?take=200").then(setAudit); }
+    if (section === "audit") { setVerify(null); setAuditKey((k) => k + 1); }
   }, [section, isAdmin, loadUsers]);
 
   async function changed() { await loadSpaces(); await onSpacesChanged(); }
@@ -239,19 +239,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
                   onPick={(u) => setPicked({ kind: "user", item: u })} onAnnouncer={(u, enabled) => void setAnnouncer(u, enabled)} onPermission={(u, p, granted) => void setPermission(u, p, granted)} />
               )}
 
-              {section === "audit" && isAdmin && (
-                <table className="grid-table">
-                  <thead><tr><th>#</th><th>Time</th><th>Action</th><th>By</th><th>Target</th></tr></thead>
-                  <tbody>
-                    {audit.map((a) => (
-                      <tr key={a.sequence}>
-                        <td className="muted">{a.sequence}</td><td className="muted">{fmt(a.at)}</td><td className="mono">{a.action}</td>
-                        <td>{a.actor ?? "System"}</td><td className="muted mono">{a.targetType ? `${a.targetType} ${a.targetId ?? ""}` : ""}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+              {section === "audit" && isAdmin && <AuditLog reloadKey={auditKey} />}
             </div>
           </main>
 

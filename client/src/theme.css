@@ -150,6 +150,9 @@ h2.s { font-size: 17px; margin: 22px 0 8px; }
 .recovery-codes { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, max-content); gap: 6px 24px; }
 .code-actions { display: flex; gap: 8px; }
 .role-head { display: inline-flex; align-items: center; gap: 2px; }
+.audit-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 12px; }
+.audit-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500; }
+.audit-filters input[type="text"] { width: 160px; }
 .signin-card label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 500; }
 .signin-card input { height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 0 12px; font: inherit; background: var(--paper); color: var(--ink); }
 .btn { height: 38px; border-radius: 8px; font-weight: 600; }
@@ -272,6 +275,8 @@ textarea { resize: both; max-width: 100%; }
 .chip { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border-radius: 12px; background: var(--cur-bg); color: var(--accent); font-size: 12.5px; }
 .chip button { display: inline-flex; color: inherit; opacity: .7; }
 .chip button:hover { opacity: 1; }
+button.chip { border: 0; font: inherit; font-size: 12.5px; cursor: pointer; }
+button.chip:hover { text-decoration: underline; }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; margin: -6px 0 14px; }
 .tags-edit { margin-bottom: 10px; max-width: 560px; }
 

@@ -77,23 +77,24 @@ export function BinView({ space, onHome, onOpenSpace, onRestored, onOpen, onEmpt
   );
 }
 
-export function SearchView({ query, onHome, onOpen }: { query: string; onHome: () => void; onOpen: (id: string) => void }) {
+/** tag: every page with that tag (in the spaces the person may read), instead of a text search. */
+export function SearchView({ query, tag = null, onHome, onOpen }: { query: string; tag?: string | null; onHome: () => void; onOpen: (id: string) => void }) {
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [offset, setOffset] = useState(0);
-  useEffect(() => { setOffset(0); }, [query]);
+  useEffect(() => { setOffset(0); }, [query, tag]);
   useEffect(() => {
     let live = true;
     setResult(null);
-    void api.get<SearchResponse>(`/search?q=${encodeURIComponent(query)}&limit=20&offset=${offset}`).then((r) => { if (live) setResult(r); }).catch(() => { if (live) setResult({ query, total: 0, limit: 20, offset, hits: [] }); });
+    void api.get<SearchResponse>(`/search?q=${encodeURIComponent(query)}${tag ? `&tag=${encodeURIComponent(tag)}` : ""}&limit=20&offset=${offset}`).then((r) => { if (live) setResult(r); }).catch(() => { if (live) setResult({ query, total: 0, limit: 20, offset, hits: [] }); });
     return () => { live = false; };
-  }, [query, offset]);
+  }, [query, tag, offset]);
 
   return (
     <>
       <main className="doc wide">
         <div className="col">
           <Crumbs onHome={onHome}><Sep /><b>Search</b></Crumbs>
-          <div className="titlebar"><h1>“{query}”</h1></div>
+          <div className="titlebar"><h1>{tag ? <>Tag <span className="chip">{tag}</span></> : `“${query}”`}</h1></div>
           {result && <p className="muted">{result.total === 1 ? "1 result" : `${result.total} results`}</p>}
           <div className="results">
             {result?.hits.map((h) => (

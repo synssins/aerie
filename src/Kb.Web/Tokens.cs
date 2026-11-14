@@ -96,7 +96,7 @@ public static class ApiTokenAuth
             await services.GetRequiredService<KbDbContext>().ApiTokens.Where(t => t.Id == token.Id).ExecuteUpdateAsync(s => s.SetProperty(t => t.LastUsedAt, now), http.RequestAborted);
             // shortcut: one audit entry per call, appended under the audit chain's lock; batch them per token if call volume makes the lock a bottleneck.
             await services.GetRequiredService<IAuditLog>().AppendAsync(new AuditEvent(AuditActions.TokenUse, token.OwnerUserId, "token", token.Id.ToString(),
-                Data: new Dictionary<string, string> { ["method"] = method, ["route"] = route, ["ip"] = ip }), http.RequestAborted);
+                Data: new Dictionary<string, string> { ["method"] = method, ["route"] = route, ["ip"] = ip, [AuditData.TokenKey] = token.Name, [AuditData.TokenIdKey] = token.Id.ToString("D") }), http.RequestAborted);
 
             var read = HttpMethods.IsGet(method) || HttpMethods.IsHead(method);
             if (!Open.Contains($"{method} {route}") || (!read && !token.Scopes().Any(s => s.Access == TokenAccess.Write)))

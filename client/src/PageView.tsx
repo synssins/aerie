@@ -104,9 +104,11 @@ function headingsOf(json: string): Heading[] {
 
 const fmt = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
-export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDirty, onCancelNew, onHistory, onMove, onDelete, autoEdit = false, codeLanguage = "plaintext", guest = false }: {
+export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDirty, onCancelNew, onHistory, onMove, onDelete, autoEdit = false, codeLanguage = "plaintext", guest = false, onTag }: {
   /** Someone not signed in: no history and no export, which need sign-in. */
   guest?: boolean;
+  /** A tag was clicked: list every page with it. */
+  onTag?: (tag: string) => void;
   page: Page;
   onHistory: () => void;
   onMove: () => void;
@@ -393,7 +395,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
       <h3>Tags</h3>
       {editing
         ? <TagInput value={tags} onChange={setTags} />
-        : page.tags.length ? <div className="tags">{page.tags.map((t) => <span key={t} className="chip">{t}</span>)}</div> : <div className="muted">None</div>}
+        : page.tags.length ? <div className="tags">{page.tags.map((t) => <button key={t} type="button" className="chip" onClick={() => onTag?.(t)}>{t}</button>)}</div> : <div className="muted">None</div>}
       {!isNew && (
         <>
           <h3>Attachments</h3>
