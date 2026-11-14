@@ -1,0 +1,22 @@
+# Aerie with its data in one SQLite file on a named volume.
+# Put it behind a reverse proxy that serves HTTPS (Caddy, Traefik, nginx): sign-in cookies are Secure-only.
+services:
+  aerie:
+    image: aerie:latest
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - aerie-data:/app/App_Data
+    environment:
+      # First admin, made at first start if none exists. Leave both out to use the setup page instead.
+      # Kb__Setup__AdminUserName: admin
+      # Kb--SetupAdminPassword: change-me-to-15-or-more-characters
+      # To use SQL Server instead of SQLite:
+      # Kb__Database__Provider: SqlServer
+      # Kb__Database__ConnectionString: "Server=sql;Database=Kb;User Id=aerie;Password=...;TrustServerCertificate=True"
+      TZ: UTC
+
+volumes:
+  aerie-data:

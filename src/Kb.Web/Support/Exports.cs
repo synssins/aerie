@@ -33,10 +33,11 @@ public static class Exports
     };
 
     // PDFsharp finds fonts itself only when told to use the Windows font folder, and the setting can be made once.
-    // shortcut: Windows hosts only (IIS, Windows App Service); a Linux host needs a font resolver with bundled fonts.
+    // Anywhere else (the Docker image) the Liberation fonts stand in for Arial and Courier New.
     static Exports()
     {
         if (OperatingSystem.IsWindows()) PdfSharp.Fonts.GlobalFontSettings.UseWindowsFontsUnderWindows = true;
+        else PdfSharp.Fonts.GlobalFontSettings.FontResolver = new LinuxFontResolver(LinuxFontResolver.SystemFolders);
     }
 
     public static string ExtensionFor(string? language) => Extensions.GetValueOrDefault(language ?? "", "txt");

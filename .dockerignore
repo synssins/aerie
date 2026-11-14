@@ -1,0 +1,17 @@
+**/bin/
+**/obj/
+**/node_modules/
+artifacts/
+TestResults/
+src/Kb.Web/wwwroot/
+src/Kb.Web/App_Data/
+tools/*.log
+.git/
+.vs/
+.superpowers/
+.impeccable/
+docs/superpowers/
+AGENTS.md
+CLAUDE.md
+PRODUCT.md
+dev-credentials.txt
