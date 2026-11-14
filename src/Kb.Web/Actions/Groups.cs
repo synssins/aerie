@@ -222,8 +222,10 @@ internal sealed class ListPrincipalsHandler(KbDbContext db, IAccess access) : IA
         // An Owner of any space, directly or through a group, picks who gets a role there.
         var ids = await db.KbGroupMembers.Where(m => m.UserId == me).Join(db.KbGroups, m => m.GroupId, g => g.Id, (m, g) => g.Key).ToListAsync(ctx.Cancel);
         ids.Add(me.ToString("D"));
-        var ownerRoles = (await db.SpaceRoleDefs.AsNoTracking().ToListAsync(ctx.Cancel)).Where(r => Kb.Core.Spaces.SpacePerms.IsOwnerGrade(r.Permissions)).Select(r => r.Id).ToList();
-        return await db.SpaceRoleAssignments.AnyAsync(a => ownerRoles.Contains(a.RoleId) && ids.Contains(a.PrincipalId), ctx.Cancel) ? null : Problem.Forbidden;
+        // Also anyone who may edit a page somewhere: they pick a page's owner, a person or a group.
+        var pickers = (await db.SpaceRoleDefs.AsNoTracking().ToListAsync(ctx.Cancel))
+            .Where(r => Kb.Core.Spaces.SpacePerms.IsOwnerGrade(r.Permissions) || Kb.Core.Spaces.SpacePerms.Has(r.Permissions, SpaceAction.CreateEdit)).Select(r => r.Id).ToList();
+        return await db.SpaceRoleAssignments.AnyAsync(a => pickers.Contains(a.RoleId) && ids.Contains(a.PrincipalId), ctx.Cancel) ? null : Problem.Forbidden;
     }
 
     public async Task<Outcome<IReadOnlyList<PrincipalDto>>> HandleAsync(ActionContext<ListPrincipals> ctx)

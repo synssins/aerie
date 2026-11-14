@@ -47,4 +47,4 @@ public sealed record DraftInfoDto(bool Mine, string By, DateTimeOffset UpdatedAt
 public sealed record AttachmentDto(Guid Id, string Name, long Size, string Url, DateTimeOffset At);
 public sealed record PageDto(Guid Id, Guid SpaceId, Guid? ParentId, string Kind, string Title, string ContentJson, string Version,
     DateTimeOffset UpdatedAt, string UpdatedBy, IReadOnlyList<CrumbDto> Path, IReadOnlyList<VersionDto> History, bool CanEdit, IReadOnlyList<string> Tags,
-    bool CanDelete, DraftInfoDto? Draft, IReadOnlyList<AttachmentDto> Attachments, long MaxAttachmentBytes);
+    bool CanDelete, DraftInfoDto? Draft, IReadOnlyList<AttachmentDto> Attachments, long MaxAttachmentBytes, PageDetailsDto? Details = null);

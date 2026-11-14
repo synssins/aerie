@@ -1,3 +1,5 @@
+using Kb.Plugins;
+
 namespace Kb.Core.Content;
 
 public enum PageKind { Folder, Page }
@@ -28,6 +30,14 @@ public sealed class Page
     public bool BinHidden { get; set; }
     /// <summary>Plain text of title, tags and body, for search snippets.</summary>
     public string SearchText { get; set; } = "";
+    /// <summary>
+    /// Who owns the process or escalation path the page is about (not who wrote it): a user id or a group's key.
+    /// Example: an ERP error page whose steps end in "escalate to the ERP Support Team" is owned by that team.
+    /// </summary>
+    public PrincipalType? OwnerType { get; set; }
+    public string? OwnerId { get; set; }
+    /// <summary>How often the page is to be reviewed, in months; null for none.</summary>
+    public int? ReviewMonths { get; set; }
 
     public string Version => $"{Major}.{Minor}";
 }

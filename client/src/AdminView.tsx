@@ -1,3 +1,4 @@
+import { InventoryAccess } from "./admin/InventoryAccess";
 import { AuditLog } from "./admin/AuditLog";
 import { Roles } from "./admin/Roles";
 import { useDialogs } from "./Dialogs";
@@ -19,8 +20,8 @@ import { UserTools } from "./admin/UserTools";
 import { TokensPanel } from "./Tokens";
 import { api, ApiError, fmtSize, type AdminUser, type Brand, type PluginInfo, type Space, type TreeNode } from "./api";
 
-export type AdminSection = "spaces" | "users" | "groups" | "roles" | "signin" | "branding" | "search" | "uploads" | "storage" | "tokens" | "logs" | "bin" | "plugins" | "audit";
-export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "groups", "roles", "signin", "branding", "search", "uploads", "storage", "tokens", "logs", "bin", "plugins", "audit"];
+export type AdminSection = "spaces" | "users" | "groups" | "roles" | "inventory" | "signin" | "branding" | "search" | "uploads" | "storage" | "tokens" | "logs" | "bin" | "plugins" | "audit";
+export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "groups", "roles", "inventory", "signin", "branding", "search", "uploads", "storage", "tokens", "logs", "bin", "plugins", "audit"];
 type UploadSettings = { attachmentMb: number; serverLimitBytes: number | null };
 
 type Picked = { kind: "user"; item: AdminUser } | null;
@@ -46,7 +47,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
 }) {
   const [allSpaces, setAllSpaces] = useState<Space[]>([]);
   const [open, setOpen] = useState<Record<string, boolean>>({ spaces: true, appearance: section === "branding",
-    security: ["users", "groups", "roles", "signin", "tokens", "audit", "logs"].includes(section), storage: ["bin", "storage"].includes(section) });
+    security: ["users", "groups", "roles", "inventory", "signin", "tokens", "audit", "logs"].includes(section), storage: ["bin", "storage"].includes(section) });
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [userPermissions, setUserPermissions] = useState<PermissionColumn[]>([]);
   const [auditKey, setAuditKey] = useState(0);
@@ -88,7 +89,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
     setVerify(r.valid ? "Chain intact." : `Chain broken at entry ${r.firstBrokenSequence}.`);
   }
 
-  const title = space?.name ?? ({ spaces: "Spaces", users: "Users", groups: "Groups", roles: "Roles", signin: "Sign-in", branding: "Branding", search: "Search", uploads: "Uploads", storage: "Document storage", tokens: "API tokens", logs: "Log shipping", bin: "Recycle bin", plugins: "Plugins", audit: "Audit log" } as const)[section];
+  const title = space?.name ?? ({ spaces: "Spaces", users: "Users", groups: "Groups", roles: "Roles", inventory: "Inventory access", signin: "Sign-in", branding: "Branding", search: "Search", uploads: "Uploads", storage: "Document storage", tokens: "API tokens", logs: "Log shipping", bin: "Recycle bin", plugins: "Plugins", audit: "Audit log" } as const)[section];
 
   async function setAnnouncer(u: AdminUser, enabled: boolean) {
     await api.put(`/admin/users/${u.id}/announcer`, { enabled });
@@ -135,6 +136,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
                   <button className={`node ${section === "users" ? "cur" : ""}`} onClick={() => onNavigate("users")}><span className="grow">Users</span></button>
                   <button className={`node ${section === "groups" ? "cur" : ""}`} onClick={() => onNavigate("groups")}><span className="grow">Groups</span></button>
                   <button className={`node ${section === "roles" ? "cur" : ""}`} onClick={() => onNavigate("roles")}><span className="grow">Roles</span></button>
+                  <button className={`node ${section === "inventory" ? "cur" : ""}`} onClick={() => onNavigate("inventory")}><span className="grow">Inventory access</span></button>
                   <button className={`node ${section === "signin" ? "cur" : ""}`} onClick={() => onNavigate("signin")}><span className="grow">Sign-in</span></button>
                   <button className={`node ${section === "tokens" ? "cur" : ""}`} onClick={() => onNavigate("tokens")}><span className="grow">API tokens</span></button>
                   <button className={`node ${section === "audit" ? "cur" : ""}`} onClick={() => onNavigate("audit")}><span className="grow">Audit log</span></button>
@@ -180,6 +182,8 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
         <BinPageView id={binItem} onHome={onHome} onBin={() => setBinItem(null)} onOpen={setBinItem} onRestored={() => { setBinItem(null); setBinKey((k) => k + 1); void onSpacesChanged(); }} />
       ) : section === "plugins" && isAdmin ? (
         <Plugins area={area} onHome={onHome} />
+      ) : section === "inventory" && isAdmin ? (
+        <InventoryAccess area={area} onHome={onHome} />
       ) : section === "roles" && isAdmin ? (
         <Roles area={area} onHome={onHome} />
       ) : section === "groups" && isAdmin ? (

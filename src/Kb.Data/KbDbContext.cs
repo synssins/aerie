@@ -68,6 +68,11 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     public DbSet<Space> Spaces => Set<Space>();
     public DbSet<SpaceRoleAssignment> SpaceRoleAssignments => Set<SpaceRoleAssignment>();
     public DbSet<SpaceRoleDef> SpaceRoleDefs => Set<SpaceRoleDef>();
+    public DbSet<Kb.Core.Inventory.InvApplication> InvApplications => Set<Kb.Core.Inventory.InvApplication>();
+    public DbSet<Kb.Core.Inventory.InvInstall> InvInstalls => Set<Kb.Core.Inventory.InvInstall>();
+    public DbSet<Kb.Core.Inventory.InvHistory> InvHistory => Set<Kb.Core.Inventory.InvHistory>();
+    public DbSet<Kb.Core.Inventory.InvAccessRule> InvAccessRules => Set<Kb.Core.Inventory.InvAccessRule>();
+    public DbSet<Kb.Core.Inventory.PageAppLink> PageAppLinks => Set<Kb.Core.Inventory.PageAppLink>();
     public DbSet<SpaceAccessGrant> SpaceAccessGrants => Set<SpaceAccessGrant>();
     public DbSet<AccessRequest> AccessRequests => Set<AccessRequest>();
     public DbSet<Notification> Notifications => Set<Notification>();
@@ -109,6 +114,44 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
         builder.Entity<SpaceRoleAssignment>().HasIndex(a => new { a.SpaceId, a.PrincipalType, a.PrincipalId }).IsUnique();
         builder.Entity<SpaceRoleAssignment>().HasIndex(a => a.PrincipalId);
         builder.Entity<SpaceRoleAssignment>().HasIndex(a => a.RoleId);
+        // The application inventory.
+        builder.Entity<Kb.Core.Inventory.InvApplication>(e =>
+        {
+            e.Property(a => a.Name).HasMaxLength(200);
+            e.Property(a => a.NameKey).HasMaxLength(200);
+            e.HasIndex(a => a.NameKey).IsUnique();
+            e.Property(a => a.Vendor).HasMaxLength(200);
+            e.Property(a => a.OwnerId).HasMaxLength(200);
+            e.Property(a => a.Notes).HasMaxLength(4000);
+        });
+        builder.Entity<Kb.Core.Inventory.InvInstall>(e =>
+        {
+            e.Property(i => i.Server).HasMaxLength(200);
+            e.Property(i => i.ServerKey).HasMaxLength(200);
+            e.Property(i => i.Version).HasMaxLength(100);
+            e.Property(i => i.ChangedBy).HasMaxLength(300);
+            e.HasIndex(i => new { i.ApplicationId, i.ServerKey }).IsUnique();
+            e.HasIndex(i => i.ServerKey);
+        });
+        builder.Entity<Kb.Core.Inventory.InvHistory>(e =>
+        {
+            e.Property(h => h.Server).HasMaxLength(200);
+            e.Property(h => h.ServerKey).HasMaxLength(200);
+            e.Property(h => h.From).HasMaxLength(100);
+            e.Property(h => h.To).HasMaxLength(100);
+            e.Property(h => h.By).HasMaxLength(300);
+            e.HasIndex(h => new { h.ApplicationId, h.ServerKey });
+        });
+        builder.Entity<Kb.Core.Inventory.InvAccessRule>(e =>
+        {
+            e.Property(r => r.TargetId).HasMaxLength(200);
+            e.HasData(new Kb.Core.Inventory.InvAccessRule { Id = Kb.Core.Inventory.InvAccessRule.DefaultViewId, Edit = false, Kind = Kb.Core.Inventory.InvRuleKind.Everyone });
+        });
+        builder.Entity<Kb.Core.Inventory.PageAppLink>(e =>
+        {
+            e.HasKey(l => new { l.PageId, l.ApplicationId });
+            e.HasIndex(l => l.ApplicationId);
+        });
         builder.Entity<SpaceRoleDef>().ToTable("SpaceRoles");
         builder.Entity<SpaceRoleDef>().Property(r => r.Name).HasMaxLength(50);
         builder.Entity<SpaceRoleDef>().HasIndex(r => r.Name).IsUnique();

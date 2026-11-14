@@ -133,5 +133,5 @@
   {"action": "group.member.list", "method": "GET", "path": "/api/v1/admin/groups/{group}/members", "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200}, "scope": "server"},
   {"action": "group.member.add", "method": "PUT", "path": "/api/v1/admin/groups/{group}/members/{victim}", "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 204}, "scope": "server"},
   {"action": "group.member.remove", "method": "DELETE", "path": "/api/v1/admin/groups/{group}/members/{victim}", "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 204}, "scope": "server"},
-  {"action": "principal.list", "method": "GET", "path": "/api/v1/principals?q=a", "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 200, "admin": 200}, "scope": "server"}
+  {"action": "principal.list", "method": "GET", "path": "/api/v1/principals?q=a", "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200}, "scope": "server", "note": "Owners pick members; anyone who may edit a page picks its owner (a person or a group)."}
 ]

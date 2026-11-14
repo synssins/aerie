@@ -166,6 +166,7 @@ internal static class PageSupport
 
         return new PageDto(page.Id, page.SpaceId, page.ParentId, page.Kind.ToString(), page.Title, page.ContentJson, page.Version,
             page.UpdatedAt, updatedBy, path, await HistoryAsync(db, page.Id, 10), canEdit, tags, canDelete,
-            draft is null ? null : new DraftInfoDto(draft.UserId == me, draft.DisplayName, draft.UpdatedAt), files, await UploadLimits.AttachmentBytesAsync(db));
+            draft is null ? null : new DraftInfoDto(draft.UserId == me, draft.DisplayName, draft.UpdatedAt), files, await UploadLimits.AttachmentBytesAsync(db),
+            await Kb.Web.Actions.InventorySupport.PageDetailsAsync(db, page, CancellationToken.None));
     }
 }

@@ -211,8 +211,17 @@ namespace Kb.Data.Sqlite.Migrations
                     b.Property<int>("Minor")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("OwnerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("OwnerType")
+                        .HasColumnType("INTEGER");
+
                     b.Property<Guid?>("ParentId")
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("ReviewMonths")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("SearchText")
                         .IsRequired()
@@ -690,6 +699,186 @@ namespace Kb.Data.Sqlite.Migrations
                     b.HasKey("Key");
 
                     b.ToTable("RuntimeSettings");
+                });
+
+            modelBuilder.Entity("Kb.Core.Inventory.InvAccessRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Edit")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TargetId")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("InvAccessRules");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-0000000000a1"),
+                            Edit = false,
+                            Kind = 0
+                        });
+                });
+
+            modelBuilder.Entity("Kb.Core.Inventory.InvApplication", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NameKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("OwnerType")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Vendor")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NameKey")
+                        .IsUnique();
+
+                    b.ToTable("InvApplications");
+                });
+
+            modelBuilder.Entity("Kb.Core.Inventory.InvHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("At")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("By")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("From")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Server")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ServerKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("To")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApplicationId", "ServerKey");
+
+                    b.ToTable("InvHistory");
+                });
+
+            modelBuilder.Entity("Kb.Core.Inventory.InvInstall", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ChangedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ChangedBy")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Server")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ServerKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Version")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServerKey");
+
+                    b.HasIndex("ApplicationId", "ServerKey")
+                        .IsUnique();
+
+                    b.ToTable("InvInstalls");
+                });
+
+            modelBuilder.Entity("Kb.Core.Inventory.PageAppLink", b =>
+                {
+                    b.Property<Guid>("PageId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ServersJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("PageId", "ApplicationId");
+
+                    b.HasIndex("ApplicationId");
+
+                    b.ToTable("PageAppLinks");
                 });
 
             modelBuilder.Entity("Kb.Core.Notifications.Notification", b =>

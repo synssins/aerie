@@ -1,7 +1,8 @@
+import { InventoryView } from "./Inventory";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   Bell, ChevronDown, ChevronRight, Ellipsis, House, KeyRound, FilePlus, FileText, Folder, FolderCog, FolderInput, FolderPlus, Link as LinkIcon, Plus, Search, Settings,
-  ShieldCheck, SlidersHorizontal, Lock, Moon, Sun, Maximize2, Minimize2, ShieldAlert, LogIn, LogOut, Trash2, UserRound,
+  ShieldCheck, SlidersHorizontal, Lock, Moon, Sun, Maximize2, Minimize2, ShieldAlert, Boxes, LogIn, LogOut, Trash2, UserRound,
 } from "lucide-react";
 import { AccountDialog } from "./AccountDialogs";
 import { BrandLogo } from "./Branding";
@@ -26,8 +27,10 @@ type AdminAt = { section: AdminSection; spaceId: string | null };
 type PluginAt = { id: string; rest: string };
 
 /** URLs carry IDs only, never names, so renames never break links. */
-function route(): { space?: string; page?: string; admin?: AdminAt; settings?: SettingsSection; search?: string; tag?: string; history?: boolean; bin?: boolean; plugin?: PluginAt } {
+function route(): { space?: string; page?: string; admin?: AdminAt; settings?: SettingsSection; search?: string; tag?: string; inventory?: { appId: string | null }; history?: boolean; bin?: boolean; plugin?: PluginAt } {
   if (location.pathname === "/search") { const p = new URLSearchParams(location.search); return { search: p.get("q") ?? "", tag: p.get("tag") ?? undefined }; }
+  const inv = /^\/inventory(?:\/([0-9a-f-]{36}))?$/i.exec(location.pathname);
+  if (inv) return { inventory: { appId: inv[1] ?? null } };
   // A plugin's own screen: /x/<plugin id>/<whatever the plugin defines>.
   const x = /^\/x\/([a-z0-9]+(?:[.-][a-z0-9]+)*)(?:\/(.*))?$/.exec(location.pathname);
   if (x) return { plugin: { id: x[1], rest: x[2] ?? "" } };
@@ -79,6 +82,10 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
   const [binItem, setBinItem] = useState<string | null>(null);
   const [binKey, setBinKey] = useState(0);
   const [pluginAt, setPluginAt] = useState<PluginAt | null>(null);
+  // The application inventory: the list (appId null) or one application. Shown to those the Admin lets view it.
+  const [inventoryAt, setInventoryAt] = useState<{ appId: string | null } | null>(null);
+  const [invView, setInvView] = useState(false);
+  useEffect(() => { if (me) void api.get<{ canView: boolean }>("/inventory/me").then((m) => setInvView(m.canView)).catch(() => setInvView(false)); }, [me]);
   // What the person is looking at, for the scripts of plugins.
   useEffect(() => { currentView.set({ page: page?.id ? page : null, space: current }); }, [page, current]);
   const [moving, setMoving] = useState<Page | null>(null);
@@ -125,6 +132,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
     setBinOf(false);
     setBinItem(null);
     setPluginAt(null);
+    setInventoryAt(null);
   }, []);
 
   const showSpace = useCallback((s: Space) => {
@@ -157,6 +165,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
     if (r.admin && me && (me.isAdmin || (owns && r.admin.section === "spaces"))) { reset(); setAdmin(r.admin); setPage(null); return; }
     if (r.settings && me) { reset(); setSettingsAt(r.settings); setPage(null); return; }
     if (r.plugin) { reset(); setPluginAt(r.plugin); setPage(null); return; }
+    if (r.inventory && me) { reset(); setInventoryAt(r.inventory); setPage(null); setCurrent(null); return; }
     if (r.search !== undefined) { reset(); setSearchQ(r.search); setSearchTag(r.tag ?? null); setQ(r.search); setPage(null); setCurrent(null); return; }
     try {
       if (r.page) { await showPage(r.page, all); if (r.history) setHistoryOf(true); return; }
@@ -312,6 +321,15 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
     go(`/search?tag=${encodeURIComponent(tag)}`);
   }
 
+  async function openInventory(appId: string | null) {
+    if (!await discardOk()) return;
+    reset();
+    setInventoryAt({ appId });
+    setPage(null);
+    setCurrent(null);
+    go(appId ? `/inventory/${appId}` : "/inventory");
+  }
+
   async function openPageById(id: string) {
     if (!await discardOk()) return;
     reloadIfPending();
@@ -414,7 +432,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
             </form>
           </div>
           <div className="c3">
-            {canEdit && !admin && !settingsAt && !home && !pluginAt && searchQ === null && (
+            {canEdit && !admin && !settingsAt && !home && !pluginAt && !inventoryAt && searchQ === null && (
               <div className="menu-wrap" ref={newRef}>
                 <button className="ib" onClick={() => setShowNew(!showNew)} aria-haspopup="menu" aria-expanded={showNew}>
                   <Plus className="ic" aria-hidden />New<ChevronDown className="ic sm" aria-hidden />
@@ -560,9 +578,16 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
                     )}
                   </div>
                 ))}
+                {invView && (
+                  <button className={`node ${inventoryAt ? "cur" : ""}`} onClick={() => void openInventory(null)}>
+                    <Boxes className="ic ft" aria-hidden /><span className="grow">Inventory</span>
+                  </button>
+                )}
               </nav>
 
-              {pluginAt ? (
+              {inventoryAt ? (
+                <InventoryView appId={inventoryAt.appId} onOpenApp={(id) => void openInventory(id)} onOpenPage={(id) => void openPageById(id)} onHome={onHome} />
+              ) : pluginAt ? (
                 <PluginScreen at={pluginAt} onHome={onHome} />
               ) : searchQ !== null ? (
                 <SearchView query={searchQ} tag={searchTag} onHome={onHome} onOpen={(id) => void openPageById(id)} />
@@ -589,6 +614,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
                   role={current.myRole}
                   guest={guest}
                   onTag={(t) => void openTag(t)}
+                  onOpenApp={invView ? (id) => void openInventory(id) : undefined}
                   codeLanguage={prefs.codeLanguage}
                   onHome={onHome}
                   onHistory={openHistory}

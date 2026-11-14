@@ -179,6 +179,7 @@ services.AddScoped<AccessService>();
 services.AddScoped<BreakGlassService>();
 services.AddScoped<SetupService>();
 services.AddScoped<Kb.Web.Actions.CodeSignIn>();
+services.AddScoped<InventoryService>();
 
 services.AddHealthChecks().AddCheck<ReadinessCheck>("ready", tags: ["ready"]);
 services.AddProblemDetails();
@@ -247,6 +248,7 @@ api.MapSearchEndpoints();
 api.MapHomeEndpoints();
 api.MapExportEndpoints();
 api.MapUiEndpoints();
+api.MapInventoryEndpoints();
 app.MapPluginFiles();
 // Each loaded plugin's own routes, under /api/v1/plugins/<id>/. They need sign-in unless a route says AllowAnonymous, and are closed to API tokens.
 // A server that runs an old set of plugins answers 503 there until it has restarted.

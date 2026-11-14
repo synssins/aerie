@@ -323,6 +323,107 @@ Read. `ReadImage`, answers `FileOut`.
 |---|---|---|
 | ImageId | `Guid` | required |
 
+## inventory.access.read
+
+Read. `ReadInventoryAccess`, answers `InvAccessDto`. Core only.
+
+## inventory.access.save
+
+Write. `SaveInventoryAccess`, answers `InvAccessDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Access | `InvAccessDto` | required |
+
+## inventory.app.create
+
+Write. `CreateInvApp`, answers `InvAppDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| App | `InvAppRequest` | required |
+
+## inventory.app.delete
+
+Write. `DeleteInvApp`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| ApplicationId | `Guid` | required |
+
+## inventory.app.list
+
+Read. `ListInvApps`, answers `IReadOnlyList<InvAppRowDto>`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Query | `string?` |  |
+| Server | `string?` |  |
+
+## inventory.app.read
+
+Read. `ReadInvApp`, answers `InvAppDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| ApplicationId | `Guid` | required |
+
+## inventory.app.update
+
+Write. `UpdateInvApp`, answers `InvAppDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| ApplicationId | `Guid` | required |
+| App | `InvAppRequest` | required |
+
+## inventory.import
+
+Write. `ImportInventory`, answers `SyncResultDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Csv | `string` | required |
+| RemoveMissing | `bool` |  |
+| Apply | `bool` |  |
+
+## inventory.install.remove
+
+Write. `RemoveInvInstall`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| InstallId | `Guid` | required |
+
+## inventory.install.set
+
+Write. `SetInvInstall`, answers `InvAppDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| ApplicationId | `Guid` | required |
+| Server | `string` | required |
+| Version | `string` | required |
+
+## inventory.installs.sync
+
+Write. `SyncInstalls`, answers `SyncResultDto`.
+
+| Field | Type | |
+|---|---|---|
+| Source | `string` | required |
+| Rows | `IReadOnlyList<SyncRowDto>` | required |
+| RemoveMissing | `bool` |  |
+| Apply | `bool` |  |
+
+## inventory.me
+
+Read. `ReadInventoryMe`, answers `InvMeDto`. Core only.
+
+## inventory.server.list
+
+Read. `ListInvServers`, answers `IReadOnlyList<string>`. Core only.
+
 ## log.read
 
 Read. `ReadLogs`, answers `LogsDto`. Core only.
@@ -439,6 +540,15 @@ Write. `DeletePage`, answers `Unit`.
 | Field | Type | |
 |---|---|---|
 | PageId | `Guid` | required |
+
+## page.details.save
+
+Write. `SavePageDetails`, answers `PageDetailsDto`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+| Details | `PageDetailsRequest` | required |
 
 ## page.diff
 

@@ -43,6 +43,8 @@ public static class ApiTokenAuth
         "POST /api/v1/spaces/{id:guid}/pages", "PUT /api/v1/pages/{id:guid}", "POST /api/v1/pages/{id:guid}/move", "DELETE /api/v1/pages/{id:guid}",
         "POST /api/v1/pages/{id:guid}/versions/{version}/restore", "POST /api/v1/pages/{id:guid}/attachments", "DELETE /api/v1/attachments/{id:guid}",
         "POST /api/v1/spaces/{id:guid}/images", "POST /api/v1/spaces/{id:guid}/images/import",
+        // A CMDB or scan feed keeps the inventory up to date; its owner must be one the Admin lets edit the inventory.
+        "POST /api/v1/inventory/sync",
     };
 
     /// <summary>The token this request was authenticated with, or null for a signed-in person.</summary>

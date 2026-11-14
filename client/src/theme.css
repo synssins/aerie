@@ -153,6 +153,20 @@ h2.s { font-size: 17px; margin: 22px 0 8px; }
 .audit-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 12px; }
 .audit-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500; }
 .audit-filters input[type="text"] { width: 160px; }
+.page-details { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; align-items: center; margin: 4px 0 14px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--rail); font-size: 13.5px; }
+.page-details dt, .page-details .lbl { font-weight: 500; color: var(--ink2); }
+.page-details dd { margin: 0; }
+.page-details .sel { justify-self: start; }
+.applies-edit { display: flex; flex-direction: column; gap: 6px; }
+.applies-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.server-picks { display: inline-flex; flex-wrap: wrap; gap: 10px; }
+.server-picks .check, .dlg label.check { font-weight: 400; }
+.picker input { height: 32px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; font: inherit; background: var(--paper); color: var(--ink); width: 260px; max-width: 100%; }
+.import-preview { max-height: 280px; overflow: auto; }
+.history-row td { padding-top: 2px; padding-bottom: 2px; }
+.plain-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pre { white-space: pre-wrap; }
 .signin-card label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 500; }
 .signin-card input { height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 0 12px; font: inherit; background: var(--paper); color: var(--ink); }
 .btn { height: 38px; border-radius: 8px; font-weight: 600; }

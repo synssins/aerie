@@ -59,7 +59,21 @@ export type Page = {
   id: string; spaceId: string; parentId: string | null; kind: "Folder" | "Page"; title: string; contentJson: string; version: string;
   updatedAt: string; updatedBy: string; path: { id: string; title: string }[]; history: PageVersion[]; canEdit: boolean; tags: string[];
   canDelete: boolean; draft: { mine: boolean; by: string; updatedAt: string } | null; attachments: Attachment[]; maxAttachmentBytes: number;
+  details?: PageDetails | null;
 };
+/** Who owns a process or escalation path: a person (user id) or a group (its key). */
+export type OwnerRef = { type: "User" | "Group"; id: string; name: string };
+/** servers: some of the application's servers; none means all of them. */
+export type AppliesTo = { applicationId: string; name: string; servers: string[] };
+export type PageDetails = { appliesTo: AppliesTo[]; owner: OwnerRef | null; reviewMonths: number | null };
+export type InvAppRow = { id: string; name: string; vendor: string | null; owner: OwnerRef | null; installs: number };
+export type InvHistory = { at: string; by: string; kind: "Added" | "Changed" | "Removed"; from: string | null; to: string | null };
+export type InvInstall = { id: string; server: string; version: string; changedAt: string; changedBy: string; history: InvHistory[] };
+export type InvApp = { id: string; name: string; vendor: string | null; owner: OwnerRef | null; notes: string | null; installs: InvInstall[];
+  pages: { id: string; title: string; spaceName: string; servers: string[] }[]; canEdit: boolean };
+export type SyncChange = { application: string; server: string; kind: "Added" | "Changed" | "Unchanged" | "Removed"; from: string | null; to: string | null };
+export type SyncResult = { added: number; changed: number; unchanged: number; removed: number; newApplications: number; changes: SyncChange[] };
+export type InvRule = { kind: "Everyone" | "Space" | "Role" | "User" | "Group"; id: string | null; name?: string | null };
 export type Attachment = { id: string; name: string; size: number; url: string; at: string };
 export type Draft = { title: string; contentJson: string; tags: string[]; baseVersion: string; updatedAt: string };
 export type BinItem = { id: string; spaceId: string; spaceName: string; kind: "Folder" | "Page"; title: string; location: string; items: number; deletedAt: string; deletedBy: string; hidden: boolean };

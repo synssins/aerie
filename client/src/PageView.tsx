@@ -1,3 +1,4 @@
+import { detailsBody, detailsChanged, EMPTY_DETAILS, PageDetailsPanel } from "./PageDetails";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import type { EditorView } from "@tiptap/pm/view";
@@ -5,7 +6,7 @@ import {
   Bold, ChevronRight, House, Code, Download, Ellipsis, FolderInput, History, ImagePlus, Heading2, Heading3, Italic, Link as LinkIcon, List, ListOrdered, ListTodo, Minus,
   Paperclip, Pencil, Quote, Redo2, SquareCode, Strikethrough, Table, Trash2, Underline, Undo2, X,
 } from "lucide-react";
-import { api, ApiError, fmtSize, upload, type Attachment, type Draft, type Page } from "./api";
+import { api, ApiError, fmtSize, upload, type Attachment, type Draft, type Page, type PageDetails } from "./api";
 import { editorExtensions, fromEditor, makeExtensions, toEditor } from "./editor/extensions";
 import { PluginBoundary, SlotSections, SlotTools } from "./kit/SlotViews";
 import { reportUiError } from "./kit/errors";
@@ -104,7 +105,9 @@ function headingsOf(json: string): Heading[] {
 
 const fmt = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
-export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDirty, onCancelNew, onHistory, onMove, onDelete, autoEdit = false, codeLanguage = "plaintext", guest = false, onTag }: {
+export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDirty, onCancelNew, onHistory, onMove, onDelete, autoEdit = false, codeLanguage = "plaintext", guest = false, onTag, onOpenApp }: {
+  /** An application the page applies to was clicked: open it in the inventory. */
+  onOpenApp?: (id: string) => void;
   /** Someone not signed in: no history and no export, which need sign-in. */
   guest?: boolean;
   /** A tag was clicked: list every page with it. */
@@ -129,6 +132,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
   const [editing, setEditing] = useState(autoEdit);
   const [title, setTitle] = useState(stored?.title ?? page.title);
   const [tags, setTags] = useState<string[]>(stored?.tags ?? page.tags);
+  const [details, setDetails] = useState<PageDetails>(page.details ?? EMPTY_DETAILS);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [base, setBase] = useState(page.version);
@@ -221,7 +225,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
     if (page.id) void api.del(`/pages/${page.id}/draft`).catch(() => undefined); else clearNewDraft();
   }, [page.id]);
 
-  function startEdit() { setTitle(page.title); setTags(page.tags); setBase(page.version); setError(null); setEditing(true); editor?.commands.focus("end"); }
+  function startEdit() { setTitle(page.title); setTags(page.tags); setDetails(page.details ?? EMPTY_DETAILS); setBase(page.version); setError(null); setEditing(true); editor?.commands.focus("end"); }
 
   async function resumeDraft() {
     const d = await api.get<Draft>(`/pages/${page.id}/draft`).catch(() => null);
@@ -291,7 +295,9 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
       onDirty(false);
       setEditing(false);
       setSavedAt(null);
-      onSaved(saved);
+      // The details are not part of a version: they are saved beside it, once the page exists.
+      const done = detailsChanged(page.details, details) ? { ...saved, details: await api.put<PageDetails>(`/pages/${saved.id}/details`, detailsBody(details)) } : saved;
+      onSaved(done);
     } catch (e) {
       const s = e instanceof ApiError ? e.status : 0;
       const detail = e instanceof ApiError ? e.body?.detail : undefined;
@@ -358,6 +364,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
             )}
           </div>
         </div>
+        <PageDetailsPanel details={page.details} updatedAt={page.updatedAt} editing={editing} value={details} onChange={setDetails} onOpenApp={onOpenApp} />
         {error && <p className="form-error" role="alert">{error}</p>}
         {!editing && hasDraft && page.draft && page.canEdit && (
           <div className="note-row" role="status">

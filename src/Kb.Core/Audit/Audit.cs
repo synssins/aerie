@@ -58,6 +58,15 @@ public static class AuditActions
     public const string SpaceRoleGrant = "space.role.grant";
     public const string SpaceRoleRevoke = "space.role.revoke";
     public const string RoleCreate = "role.create";
+    public const string InventoryAppCreate = "inventory.app.create";
+    public const string InventoryAppUpdate = "inventory.app.update";
+    public const string InventoryAppDelete = "inventory.app.delete";
+    public const string InventoryInstallSet = "inventory.install.set";
+    public const string InventoryInstallRemove = "inventory.install.remove";
+    public const string InventoryImport = "inventory.import";
+    public const string InventorySync = "inventory.sync";
+    public const string InventoryAccessSet = "inventory.access.set";
+    public const string PageDetailsSet = "page.details.set";
     public const string RoleUpdate = "role.update";
     public const string RoleDelete = "role.delete";
     public const string AccessRequest = "access.request";

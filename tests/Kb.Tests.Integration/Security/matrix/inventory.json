@@ -1,0 +1,109 @@
+[
+  {
+    "action": "inventory.me",
+    "method": "GET",
+    "path": "/api/v1/inventory/me",
+    "expect": {"anonymous": 401, "outsider": 200, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "inventory.app.list",
+    "method": "GET",
+    "path": "/api/v1/inventory/apps",
+    "expect": {"anonymous": 401, "outsider": 200, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "scope": "server",
+    "note": "Out of the box everyone signed in views the inventory; the Admin sets who views and who edits."
+  },
+  {
+    "action": "inventory.server.list",
+    "method": "GET",
+    "path": "/api/v1/inventory/servers",
+    "expect": {"anonymous": 401, "outsider": 200, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "inventory.app.read",
+    "method": "GET",
+    "path": "/api/v1/inventory/apps/{newGuid}",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 404, "contributor": 404, "supervisor": 404, "owner": 404, "admin": 404},
+    "scope": "server"
+  },
+  {
+    "action": "inventory.app.create",
+    "method": "POST",
+    "path": "/api/v1/inventory/apps",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 400},
+    "scope": "server",
+    "note": "Out of the box only Admins edit the inventory."
+  },
+  {
+    "action": "inventory.app.update",
+    "method": "PUT",
+    "path": "/api/v1/inventory/apps/{newGuid}",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 404},
+    "scope": "server"
+  },
+  {
+    "action": "inventory.app.delete",
+    "method": "DELETE",
+    "path": "/api/v1/inventory/apps/{newGuid}",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 404},
+    "scope": "server"
+  },
+  {
+    "action": "inventory.install.set",
+    "method": "PUT",
+    "path": "/api/v1/inventory/apps/{newGuid}/installs",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 404},
+    "scope": "server"
+  },
+  {
+    "action": "inventory.install.remove",
+    "method": "DELETE",
+    "path": "/api/v1/inventory/installs/{newGuid}",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 404},
+    "scope": "server"
+  },
+  {
+    "action": "inventory.import",
+    "method": "POST",
+    "path": "/api/v1/inventory/import",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 400},
+    "scope": "server"
+  },
+  {
+    "action": "inventory.installs.sync",
+    "method": "POST",
+    "path": "/api/v1/inventory/sync",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 400},
+    "scope": "server"
+  },
+  {
+    "action": "inventory.access.read",
+    "method": "GET",
+    "path": "/api/v1/admin/inventory/access",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "inventory.access.save",
+    "method": "PUT",
+    "path": "/api/v1/admin/inventory/access",
+    "body": {"view": [{"kind": "Everyone"}], "edit": []},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "page.details.save",
+    "method": "PUT",
+    "path": "/api/v1/pages/{page}/details",
+    "body": {"appliesTo": [], "reviewMonths": 6},
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
+  }
+]

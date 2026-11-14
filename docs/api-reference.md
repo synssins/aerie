@@ -24,6 +24,8 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | GET | `/api/v1/admin/groups/{id:guid}/members` | `group.member.list` | No | Needed | No |
 | DELETE | `/api/v1/admin/groups/{id:guid}/members/{userId:guid}` | `group.member.remove` | Yes | Needed | No |
 | PUT | `/api/v1/admin/groups/{id:guid}/members/{userId:guid}` | `group.member.add` | Yes | Needed | No |
+| GET | `/api/v1/admin/inventory/access` | `inventory.access.read` | No | Needed | No |
+| PUT | `/api/v1/admin/inventory/access` | `inventory.access.save` | Yes | Needed | No |
 | GET | `/api/v1/admin/logs/` | `log.read` | No | Needed | No |
 | POST | `/api/v1/admin/logs/targets` | `log.target.add` | Yes | Needed | No |
 | DELETE | `/api/v1/admin/logs/targets/{id:guid}` | `log.target.remove` | Yes | Needed | No |
@@ -91,6 +93,17 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | GET | `/api/v1/brand/logo/{variant}` | `brand.logo.read` | No | Not needed | Read |
 | GET | `/api/v1/home` | `home.read` | No | Needed | Read |
 | GET | `/api/v1/images/{id:guid}` | `image.read` | No | Not needed | Read |
+| GET | `/api/v1/inventory/apps` | `inventory.app.list` | No | Needed | No |
+| POST | `/api/v1/inventory/apps` | `inventory.app.create` | Yes | Needed | No |
+| DELETE | `/api/v1/inventory/apps/{id:guid}` | `inventory.app.delete` | Yes | Needed | No |
+| GET | `/api/v1/inventory/apps/{id:guid}` | `inventory.app.read` | No | Needed | No |
+| PUT | `/api/v1/inventory/apps/{id:guid}` | `inventory.app.update` | Yes | Needed | No |
+| PUT | `/api/v1/inventory/apps/{id:guid}/installs` | `inventory.install.set` | Yes | Needed | No |
+| POST | `/api/v1/inventory/import` | `inventory.import` | Yes | Needed | No |
+| DELETE | `/api/v1/inventory/installs/{id:guid}` | `inventory.install.remove` | Yes | Needed | No |
+| GET | `/api/v1/inventory/me` | `inventory.me` | No | Needed | No |
+| GET | `/api/v1/inventory/servers` | `inventory.server.list` | No | Needed | No |
+| POST | `/api/v1/inventory/sync` | `inventory.installs.sync` | Yes | Needed | Write |
 | GET | `/api/v1/me` | `me.read` | No | Needed | Read |
 | DELETE | `/api/v1/me/codes` | `me.codes.off` | Yes | Needed | No |
 | GET | `/api/v1/me/codes` | `me.codes.read` | No | Needed | No |
@@ -104,6 +117,7 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | GET | `/api/v1/pages/{id:guid}` | `page.read` | No | Not needed | Read |
 | PUT | `/api/v1/pages/{id:guid}` | `page.save` | Yes | Needed | Write |
 | POST | `/api/v1/pages/{id:guid}/attachments` | `attachment.add` | Yes | Needed | Write |
+| PUT | `/api/v1/pages/{id:guid}/details` | `page.details.save` | Yes | Needed | No |
 | GET | `/api/v1/pages/{id:guid}/diff` | `page.diff` | No | Needed | Read |
 | DELETE | `/api/v1/pages/{id:guid}/draft` | `draft.discard` | Yes | Needed | No |
 | GET | `/api/v1/pages/{id:guid}/draft` | `draft.read` | No | Needed | No |
