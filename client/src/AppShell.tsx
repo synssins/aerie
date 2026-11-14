@@ -590,7 +590,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
               ) : pluginAt ? (
                 <PluginScreen at={pluginAt} onHome={onHome} />
               ) : searchQ !== null ? (
-                <SearchView query={searchQ} tag={searchTag} onHome={onHome} onOpen={(id) => void openPageById(id)} />
+                <SearchView query={searchQ} tag={searchTag} onHome={onHome} onOpen={(id) => void openPageById(id)} onTag={(t) => void openTag(t)} />
               ) : home || !current ? (
                 <HomeView me={me} spaces={spaces} viewed={viewed} onOpenSpace={(s) => void openSpace(s)} onOpenPage={(id) => void openPageById(id)} />
               ) : binOf && binItem ? (

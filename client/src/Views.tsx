@@ -78,7 +78,7 @@ export function BinView({ space, onHome, onOpenSpace, onRestored, onOpen, onEmpt
 }
 
 /** tag: every page with that tag (in the spaces the person may read), instead of a text search. */
-export function SearchView({ query, tag = null, onHome, onOpen }: { query: string; tag?: string | null; onHome: () => void; onOpen: (id: string) => void }) {
+export function SearchView({ query, tag = null, onHome, onOpen, onTag }: { query: string; tag?: string | null; onHome: () => void; onOpen: (id: string) => void; onTag?: (tag: string) => void }) {
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [offset, setOffset] = useState(0);
   useEffect(() => { setOffset(0); }, [query, tag]);
@@ -98,12 +98,13 @@ export function SearchView({ query, tag = null, onHome, onOpen }: { query: strin
           {result && <p className="muted">{result.total === 1 ? "1 result" : `${result.total} results`}</p>}
           <div className="results">
             {result?.hits.map((h) => (
-              <button key={h.id} className="result" onClick={() => onOpen(h.id)}>
-                <span className="result-title">{h.kind === "Folder" ? <Folder className="ic ft" aria-hidden /> : <FileText className="ic pg" aria-hidden />}{h.title}</span>
+              // The title opens the page; a tag opens the list of pages with that tag. Two separate buttons, so neither click is the other's.
+              <div key={h.id} className="result">
+                <button type="button" className="result-title" onClick={() => onOpen(h.id)}>{h.kind === "Folder" ? <Folder className="ic ft" aria-hidden /> : <FileText className="ic pg" aria-hidden />}{h.title}</button>
                 <span className="muted small">{[h.spaceName, ...h.path].join(" / ")} · {fmtDate(h.updatedAt)}</span>
                 {h.snippet && <span className="result-snippet">{h.snippet}</span>}
-                {h.tags.length > 0 && <span className="tags flat">{h.tags.map((t) => <span key={t} className="chip">{t}</span>)}</span>}
-              </button>
+                {h.tags.length > 0 && <span className="tags flat">{h.tags.map((t) => <button key={t} type="button" className="chip" disabled={!onTag} onClick={() => onTag?.(t)}>{t}</button>)}</span>}
+              </div>
             ))}
           </div>
           {result && result.total > result.limit && (

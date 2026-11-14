@@ -31,4 +31,18 @@ describe("tags", () => {
     expect(urls[0]).toBe("/api/v1/search?q=&tag=vpn&limit=20&offset=0");
     await waitFor(() => expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Tag vpn"));
   });
+
+  it("a tag under a result opens that tag's list, not the page", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ query: "", total: 1, limit: 20, offset: 0,
+      hits: [{ id: "p1", kind: "Page", title: "Reset MFA", spaceName: "IAM", path: [], updatedAt: "2026-11-12T10:00:00Z", snippet: null, tags: ["identity", "mfa"] }] }), { status: 200 })));
+    const onOpen = vi.fn();
+    const onTag = vi.fn();
+    render(<SearchView query="" tag="identity" onHome={() => {}} onOpen={onOpen} onTag={onTag} />);
+    await userEvent.click(await screen.findByRole("button", { name: "mfa" }));
+    expect(onTag).toHaveBeenCalledWith("mfa");
+    expect(onOpen).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Reset MFA" }));
+    expect(onOpen).toHaveBeenCalledWith("p1");
+    expect(onTag).toHaveBeenCalledTimes(1);
+  });
 });

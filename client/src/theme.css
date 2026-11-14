@@ -427,7 +427,8 @@ label.inline { display: inline-flex; align-items: center; gap: 8px; font-size: 1
 .results { display: flex; flex-direction: column; gap: 4px; max-width: 860px; }
 .result { display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 10px 12px; border-radius: 8px; }
 .result:hover { background: var(--hover); }
-.result-title { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--accent); }
+.result-title { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--accent); align-self: flex-start; text-align: left; }
+.result-title:hover { text-decoration: underline; }
 .result-snippet { color: var(--ink2); font-size: 13.5px; }
 .tags.flat { margin: 2px 0 0; }
 
