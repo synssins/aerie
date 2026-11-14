@@ -21,3 +21,6 @@ dev-credentials.txt
 # Agent instruction files stay local
 AGENTS.md
 CLAUDE.md
+.impeccable/
+docs/superpowers/
+docs/night-report-*.md

@@ -93,7 +93,7 @@ The server tests run against SQLite, so they need no SQL Server.
 | `tests/` | Server tests |
 | `tools/` | Install, build and deploy scripts |
 | `branding/` | Icon and logo |
-| `docs/` | Design, plans and guides |
+| `docs/` | API and plugin guides |
 
 The code uses the prefix `Kb`, so renaming the product changes no code.
 
@@ -102,7 +102,6 @@ The code uses the prefix `Kb`, so renaming the product changes no code.
 - [Agent API](docs/agent-api.md): how a program signs in with a token, then finds, reads and changes pages.
 - [API reference](docs/api-reference.md): every route, and whether an API token may call it.
 - [Plugin developer guide](docs/plugins/developer-guide.md), [manifest reference](docs/plugins/manifest-reference.md), [admin guide](docs/plugins/admin-guide.md), [action reference](docs/plugins/action-reference.md).
-- [Design](docs/superpowers/specs/2026-11-08-aerie-design.md).
 
 ## License
 
