@@ -3,106 +3,68 @@
   <img src="branding/aerie-logo-on-light.svg" alt="Aerie" width="240">
 </picture>
 
-Aerie is a self-hosted knowledge base for teams that keep runbooks, how-to articles and technical documentation. Each team works in its own space, and only the people given a role there can see it.
+A self-hosted knowledge base for IT teams. You write runbooks and how-tos in it, and each team gets its own space that other teams can't see unless they're given a role there.
 
-It runs on your own server (IIS) or on Azure App Service, with SQL Server. There is no cloud service behind it.
+It's still in development, so expect rough edges and breaking changes.
 
-**Status:** in development. Not production-ready.
+## Features
 
-## What it does today
+Pages live in spaces, in a tree of folders. The editor handles code blocks, tables, images and attachments. Every save is a version you can diff against or roll back to, and drafts are kept while you type. Search copes with typos. Pages export to PDF or Word, and tables to CSV or Excel.
 
-**Spaces and access**
-- Spaces, each with its own folder and page tree.
-- Four roles per space: Reader, Contributor, Supervisor, Owner. Without a role in a space, you can't see that the space exists.
-- Local users and local groups. A group gets a role in a space, and every member holds that role.
-- Only an Admin makes or removes an Owner. Owners give the other roles from the space's Members tab.
-- Sensitive spaces, closed to Admins too. An Admin can open one through emergency access, and the space's Owners are told when that happens.
-- Access requests: anyone can ask for a role in a space, and its Owners approve or deny.
+Access is per space. Someone is a Reader, Contributor, Supervisor or Owner in a space, either directly or through a group. An Admin creates spaces and Owners. Owners handle the rest of their space's members. A space marked sensitive is closed to Admins as well, unless they use emergency access, and its Owners hear about it when they do.
 
-**Pages**
-- A rich-text editor with code blocks, tables, images and attachments.
-- Version history with side-by-side diffs and restore. Drafts save as you type.
-- Search with typo tolerance and synonyms.
-- Exports to PDF and Word. Tables export to CSV or Excel, and code blocks download as files.
-- A recycle bin for pages and whole spaces. Nothing is purged automatically.
+Deleted pages and spaces go to a recycle bin. Sign-ins, permission changes, deletions and other security events go into an audit log whose entries are hash-chained, and the log can be sent to a syslog or SIEM. API tokens are scoped and always expire.
 
-**Administration and security**
-- An audit log in which each entry is chained to the previous one by a SHA-256 hash, so changes and deletions show up. Entries can be shipped to a SIEM.
-- API tokens, scoped to read or write, per space or for every space, always with an expiry. A token never reaches more than its owner can.
-- Sign-in rate limiting and account lockout. Signing out ends every session of that user.
-- File storage in a local folder or a network share, with a tool that moves files from one place to another.
-- Branding: the product name and logos.
+Most extra features are meant to be plugins. A plugin brings its own code, tables and screens, and an Admin installs one by uploading it.
 
-**Plugins**
-- A plugin brings its own server code, database tables and screens. The core stays small.
-- An Admin installs a plugin by uploading its package, and the package's SHA-256 is recorded in the audit log. Safe Mode starts the app without uploaded plugins.
+Not built yet: sign-in through Entra ID, AD/LDAP or passkeys, AD and Entra groups, comments and ratings, and Azure Blob storage.
 
-## Planned
+## Running it
 
-- Sign-in with Entra ID, AD/LDAP or passkeys, and AD/Entra security groups (nested groups included) that give roles in spaces. These will be plugins.
-- Comments and ratings on pages.
-- Azure Blob Storage for files.
+You need Windows with IIS, the [.NET 10 SDK](https://dotnet.microsoft.com/download) and Node.js. For the database, use SQL Server (Express works) or a single SQLite file. The SQLite file needs nothing else installed.
 
-## Requirements
+From the repository root, in an elevated PowerShell:
 
-- Windows Server or Windows 10/11 with IIS, or Azure App Service
-- [.NET 10 SDK](https://dotnet.microsoft.com/download) (10.0.403 or later) and the ASP.NET Core 10 Hosting Bundle
-- Node.js, to build the web client
-- SQL Server (Express is enough)
+```powershell
+.\tools\install-prereqs.ps1          # IIS, SQL Server Express, the ASP.NET Core Hosting Bundle
+.\tools\publish.ps1                  # builds the client and server into artifacts\publish
+.\tools\deploy-iis.ps1               # site, app pool, database, self-signed certificate
+```
 
-## Install on IIS
+For SQLite, add `-Sqlite` to the first and last commands. The data then lives in `C:\inetpub\aerie\App_Data\kb.db`, and updates leave it alone.
 
-Run these from the repository root.
+Open `https://localhost` and the setup page asks for the first admin account. `deploy-iis.ps1 -TrustCert` stops the browser warning on that machine.
 
-1. Install IIS, SQL Server Express and the Hosting Bundle. This step needs an elevated prompt.
-   ```powershell
-   .\tools\install-prereqs.ps1
-   ```
-2. Build the client and the server into `artifacts\publish`.
-   ```powershell
-   .\tools\publish.ps1
-   ```
-3. Create the site, the app pool, the database and a self-signed certificate. This step needs an elevated prompt, and is only needed the first time.
-   ```powershell
-   .\tools\deploy-iis.ps1
-   ```
-   Open `https://localhost` and the setup page creates the first admin. You can also pass `-AdminUser` and `-AdminPassword` to the script. `-TrustCert` trusts the certificate on this computer.
-4. To update later, run `.\tools\publish.ps1` and then `.\tools\update-iis.ps1`. No elevated prompt is needed.
+To update later, without elevation:
+
+```powershell
+.\tools\publish.ps1
+.\tools\update-iis.ps1
+```
 
 ## Tests
 
 ```powershell
 dotnet test --solution Kb.sln
-```
-```powershell
 cd client; npm test
 ```
 
-The server tests run against SQLite, so they need no SQL Server.
+The server tests run on SQLite and need no database server.
 
-## Repository layout
+## Where things are
 
-| Path | Contents |
-|---|---|
-| `src/Kb.Web` | Web app and REST API |
-| `src/Kb.Core` | Permissions, audit, notifications, the plugin host |
-| `src/Kb.Data` | Data access and migrations |
-| `src/Kb.Plugins.Abstractions` | The contract a plugin builds against |
-| `client/` | React and TypeScript web client |
-| `plugins/` | Built-in plugins |
-| `tests/` | Server tests |
-| `tools/` | Install, build and deploy scripts |
-| `branding/` | Icon and logo |
-| `docs/` | API and plugin guides |
+- `src/Kb.Web`: the web app and REST API
+- `src/Kb.Core`: permissions, audit, notifications, the plugin host
+- `src/Kb.Data`: data access, with SQL Server migrations
+- `src/Kb.Data.Sqlite`: the SQLite migrations
+- `src/Kb.Plugins.Abstractions`: what a plugin builds against
+- `client/`: the React web client
+- `plugins/`: plugins that ship with it
+- `tools/`: install and deploy scripts
+- `docs/`: [agent API](docs/agent-api.md), [API reference](docs/api-reference.md), and the plugin guides ([developer](docs/plugins/developer-guide.md), [manifest](docs/plugins/manifest-reference.md), [admin](docs/plugins/admin-guide.md), [actions](docs/plugins/action-reference.md))
 
-The code uses the prefix `Kb`, so renaming the product changes no code.
-
-## Documentation
-
-- [Agent API](docs/agent-api.md): how a program signs in with a token, then finds, reads and changes pages.
-- [API reference](docs/api-reference.md): every route, and whether an API token may call it.
-- [Plugin developer guide](docs/plugins/developer-guide.md), [manifest reference](docs/plugins/manifest-reference.md), [admin guide](docs/plugins/admin-guide.md), [action reference](docs/plugins/action-reference.md).
+Code uses the prefix `Kb` rather than the product name, so a rename doesn't touch it.
 
 ## License
 
-No license has been chosen yet. Until one is added, all rights are reserved.
+None yet. All rights reserved until one is added.

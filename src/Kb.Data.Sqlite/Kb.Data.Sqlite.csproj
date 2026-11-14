@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The database migrations for SQLite: a database in one file, for an install without SQL Server. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Kb.Data\Kb.Data.csproj" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

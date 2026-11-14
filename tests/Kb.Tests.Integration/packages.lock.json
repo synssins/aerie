@@ -840,6 +840,12 @@
           "Microsoft.EntityFrameworkCore.Sqlite": "[10.0.14, )"
         }
       },
+      "kb.data.sqlite": {
+        "type": "Project",
+        "dependencies": {
+          "Kb.Data": "[1.0.0, )"
+        }
+      },
       "kb.plugin.email.graph": {
         "type": "Project",
         "dependencies": {
@@ -869,6 +875,7 @@
           "DocumentFormat.OpenXml": "[3.5.1, )",
           "Kb.Core": "[1.0.0, )",
           "Kb.Data": "[1.0.0, )",
+          "Kb.Data.Sqlite": "[1.0.0, )",
           "Kb.Plugin.Email.Graph": "[1.0.0, )",
           "Kb.Plugin.Email.Smtp": "[1.0.0, )",
           "PDFsharp-MigraDoc": "[6.2.4, )"

@@ -60,6 +60,9 @@ public sealed class SpaceImageGrant
 public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     : IdentityDbContext<KbUser, KbRole, Guid>(options), IDataProtectionKeyContext
 {
+    /// <summary>Where SQLite's migrations are. SQL Server's are in this assembly; a model change needs a migration in both.</summary>
+    public const string SqliteMigrations = "Kb.Data.Sqlite";
+
     public DbSet<KbGroup> KbGroups => Set<KbGroup>();
     public DbSet<KbGroupMember> KbGroupMembers => Set<KbGroupMember>();
     public DbSet<Space> Spaces => Set<Space>();

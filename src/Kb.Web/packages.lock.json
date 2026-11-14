@@ -444,6 +444,12 @@
           "Microsoft.EntityFrameworkCore.Sqlite": "[10.0.14, )"
         }
       },
+      "kb.data.sqlite": {
+        "type": "Project",
+        "dependencies": {
+          "Kb.Data": "[1.0.0, )"
+        }
+      },
       "kb.plugin.email.graph": {
         "type": "Project",
         "dependencies": {

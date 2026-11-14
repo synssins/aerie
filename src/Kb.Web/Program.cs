@@ -30,7 +30,8 @@ var kb = config.GetSection(KbOptions.Section).Get<KbOptions>() ?? new KbOptions(
 // ---- database ----
 services.AddDbContext<KbDbContext>(o => _ = kb.Database.Provider switch
 {
-    DatabaseProvider.Sqlite => o.UseSqlite(kb.Database.ConnectionString),
+    // One file, no SQL Server: its migrations are in their own assembly, as SQLite's tables differ from SQL Server's.
+    DatabaseProvider.Sqlite => o.UseSqlite(kb.Database.ConnectionString, s => s.MigrationsAssembly(KbDbContext.SqliteMigrations)),
     _ => o.UseSqlServer(kb.Database.ConnectionString, s => s.EnableRetryOnFailure()),
 });
 

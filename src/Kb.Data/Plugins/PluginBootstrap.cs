@@ -38,12 +38,11 @@ public static class PluginBootstrap
         var builder = new DbContextOptionsBuilder<KbDbContext>();
         _ = options.Database.Provider switch
         {
-            DatabaseProvider.Sqlite => builder.UseSqlite(options.Database.ConnectionString),
+            DatabaseProvider.Sqlite => builder.UseSqlite(options.Database.ConnectionString, s => s.MigrationsAssembly(KbDbContext.SqliteMigrations)),
             _ => builder.UseSqlServer(options.Database.ConnectionString, s => s.EnableRetryOnFailure()),
         };
         await using var db = new KbDbContext(builder.Options);
-        if (db.Database.IsSqlite()) await db.Database.EnsureCreatedAsync(ct);
-        else await db.Database.MigrateAsync(ct);
+        await db.Database.MigrateAsync(ct); // both providers: SQLite and SQL Server each have their own migrations
 
         var safeMode = options.Plugins.SafeMode;
         var now = DateTimeOffset.UtcNow;

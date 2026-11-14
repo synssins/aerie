@@ -5,6 +5,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Kb.Core\Kb.Core.csproj" />
     <ProjectReference Include="..\Kb.Data\Kb.Data.csproj" />
+    <ProjectReference Include="..\Kb.Data.Sqlite\Kb.Data.Sqlite.csproj" />
     <ProjectReference Include="..\..\plugins\Kb.Plugin.Email.Smtp\Kb.Plugin.Email.Smtp.csproj" />
     <ProjectReference Include="..\..\plugins\Kb.Plugin.Email.Graph\Kb.Plugin.Email.Graph.csproj" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />

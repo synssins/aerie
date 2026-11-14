@@ -7,7 +7,8 @@
   - App pool "Aerie": no managed code, ApplicationPoolIdentity, ASPNETCORE_ENVIRONMENT=Production.
   - Site "Aerie" on https://*:443 (and http://*:80, which only redirects to https) with a self-signed
     certificate for localhost and this computer's name. Stops IIS's empty "Default Web Site" if it holds port 80.
-  - SQL Express database "Kb"; the pool identity gets db_owner (migrations run at startup).
+  - SQL Express database "Kb"; the pool identity gets db_owner (migrations run at startup). With -Sqlite: the file
+    App_Data\kb.db instead, made and upgraded by the app itself; updates leave App_Data as it is.
   - First admin: pass -AdminUser/-AdminPassword to create it at first start, or leave them off and the
     site shows a first-run setup page (open https://localhost on this server; no code needed locally).
 
@@ -17,6 +18,8 @@
   First administrator's password (15+ characters).
 .PARAMETER BreakGlassPassword
   Optional. Creates the emergency break-glass account with this password (only if it doesn't exist yet).
+.PARAMETER Sqlite
+  Keep the data in one SQLite file (App_Data\kb.db) instead of SQL Server. No SQL Server is needed.
 .PARAMETER TrustCert
   Also add the self-signed certificate to Trusted Root (removes the browser warning on this PC only).
 #>
@@ -30,7 +33,8 @@ param(
     [string]$AdminUser = '',
     [string]$AdminPassword = '',
     [string]$BreakGlassPassword = '',
-    [switch]$TrustCert
+    [switch]$TrustCert,
+    [switch]$Sqlite
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
@@ -59,6 +63,9 @@ try {
     Set-PoolEnv 'Kb__Setup__AdminUserName' $AdminUser
     Set-PoolEnv 'Kb--SetupAdminPassword' $AdminPassword
     Set-PoolEnv 'Kb--BreakGlassPassword' $BreakGlassPassword
+    # SQLite: one file in App_Data. Without -Sqlite these are cleared, and appsettings.json's SQL Server is used.
+    Set-PoolEnv 'Kb__Database__Provider' $(if ($Sqlite) { 'Sqlite' } else { '' })
+    Set-PoolEnv 'Kb__Database__ConnectionString' $(if ($Sqlite) { "Data Source=$(Join-Path $SitePath 'App_Data\kb.db')" } else { '' })
 
     Write-Host '== Files =='
     New-Item -ItemType Directory -Force $SitePath, (Join-Path $SitePath 'App_Data') | Out-Null
@@ -83,15 +90,17 @@ try {
     netsh http add sslcert ipport=0.0.0.0:$Port certhash=$($cert.Thumbprint) appid='{4dc3e181-e14b-4a21-b022-59fc669b0914}' certstorename=MY | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'netsh sslcert binding failed' }
 
-    Write-Host '== SQL Express =='
-    $cn = New-Object System.Data.SqlClient.SqlConnection "Server=$SqlInstance;Database=master;Integrated Security=True;TrustServerCertificate=True"
-    $cn.Open()
-    $sql = @"
+    if (-not $Sqlite) {
+        Write-Host '== SQL Express =='
+        $cn = New-Object System.Data.SqlClient.SqlConnection "Server=$SqlInstance;Database=master;Integrated Security=True;TrustServerCertificate=True"
+        $cn.Open()
+        $sql = @"
 IF DB_ID(N'$Database') IS NULL CREATE DATABASE [$Database];
 IF SUSER_ID(N'$poolId') IS NULL CREATE LOGIN [$poolId] FROM WINDOWS;
 EXEC(N'USE [$Database]; IF USER_ID(N''$poolId'') IS NULL CREATE USER [$poolId] FOR LOGIN [$poolId]; ALTER ROLE db_owner ADD MEMBER [$poolId];');
 "@
-    $cmd = $cn.CreateCommand(); $cmd.CommandText = $sql; [void]$cmd.ExecuteNonQuery(); $cn.Close()
+        $cmd = $cn.CreateCommand(); $cmd.CommandText = $sql; [void]$cmd.ExecuteNonQuery(); $cn.Close()
+    }
 
     Write-Host '== Site =='
     $sites = & $appcmd list site /text:name
