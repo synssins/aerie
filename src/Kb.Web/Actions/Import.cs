@@ -14,11 +14,20 @@ namespace Kb.Web.Actions;
 public sealed record ImportBatchRequest(Guid? SpaceId, Guid? ParentId);
 public sealed record ImportBatchDto(Guid Id, DateTimeOffset CreatedAt, int Files, bool Started, bool Grouped, string? Error, int Queued, int Working, int Ready, int Failed, int Blocked, int Done);
 public sealed record ImportFileDto(Guid Id, string Name, string Path, long Size, string Kind, string? Note, bool Embedded, string Sha256);
-public sealed record ImportItemRowDto(Guid Id, Guid BatchId, string Title, string Status, string? Error, int Files, DateTimeOffset CreatedAt, Guid? PageId);
+/// <summary>
+/// Source: the first file's name (and how many more). SuggestedSpace: the space the AI suggested, by name. UpdatedAt: when a
+/// Working item started drafting. DraftMs: how long the model took.
+/// </summary>
+public sealed record ImportItemRowDto(Guid Id, Guid BatchId, string Title, string Status, string? Error, int Files, DateTimeOffset CreatedAt, Guid? PageId,
+    string? Source = null, string? SuggestedSpace = null, DateTimeOffset? UpdatedAt = null, long? DraftMs = null);
 /// <summary>CanImport, CanFormat: whether the AI features are open to the caller (the app shows them only then).</summary>
-public sealed record ImportListDto(IReadOnlyList<ImportBatchDto> Batches, IReadOnlyList<ImportItemRowDto> Items, bool CanImport = false, bool CanFormat = false);
+public sealed record ImportListDto(IReadOnlyList<ImportBatchDto> Batches, IReadOnlyList<ImportItemRowDto> Items, bool CanImport = false, bool CanFormat = false,
+    IReadOnlyList<ImportSpaceDto>? Spaces = null);
+/// <summary>A space the caller may add pages to, with its default review cycle: where an import may go.</summary>
+public sealed record ImportSpaceDto(Guid Id, string Name, bool IsSensitive, int? ReviewMonths);
 /// <summary>Proposal: the AI's draft and what the code found (JSON, see ImportService.ProposeAsync). Sources: the text read from each file.</summary>
-public sealed record ImportItemDto(Guid Id, string Title, string Status, string? Error, JsonNode? Proposal, IReadOnlyList<ImportFileDto> Files, IReadOnlyDictionary<Guid, string> Sources, Guid? PageId);
+public sealed record ImportItemDto(Guid Id, string Title, string Status, string? Error, JsonNode? Proposal, IReadOnlyList<ImportFileDto> Files, IReadOnlyDictionary<Guid, string> Sources, Guid? PageId,
+    IReadOnlyList<ImportSpaceDto>? Spaces = null);
 public sealed record ImportMergeRequest(IReadOnlyList<Guid>? ItemIds);
 public sealed record FormatRequest(string? ContentJson);
 public sealed record FormatDto(string ContentJson, IReadOnlyList<DiffLine> Diff);
@@ -72,6 +81,13 @@ public sealed record DiscardImport : IAction<Unit>
     public required Guid ItemId { get; init; }
 }
 
+/// <summary>Sets a draft aside: nothing is made, its files stay, and it can be drafted again.</summary>
+[Action("import.reject")]
+public sealed record RejectImport : IAction<Unit>
+{
+    public required Guid ItemId { get; init; }
+}
+
 [Action("import.retry")]
 public sealed record RetryImport : IAction<Unit>
 {
@@ -100,7 +116,21 @@ internal static class ImportGate
         : actor.TokenId is not null ? new Problem(403, "Import is done in the app, not with an API token.")
         : await imports.MayImportAsync(actor, ct) ? null : new Problem(403, "Import is not open to you.");
 
-    internal static ImportItemRowDto Row(ImportItem i, int files) => new(i.Id, i.BatchId, i.Title, i.Status.ToString(), i.Error, files, i.CreatedAt, i.PageId);
+    /// <summary>The spaces the caller may create pages in, whatever role gives them that (a built-in or a custom one).</summary>
+    internal static async Task<IReadOnlyList<ImportSpaceDto>> WritableAsync(KbDbContext db, IAccess access, Actor actor, CancellationToken ct)
+    {
+        var writable = new List<Guid>();
+        foreach (var s in await access.VisibleSpacesAsync(actor, ct)) if (await access.CanAsync(actor, s, SpaceAction.CreateEdit, ct)) writable.Add(s);
+        return await db.Spaces.AsNoTracking().Where(s => writable.Contains(s.Id)).OrderBy(s => s.Name)
+            .Select(s => new ImportSpaceDto(s.Id, s.Name, s.IsSensitive, s.ReviewMonths)).ToListAsync(ct);
+    }
+
+    internal static ImportItemRowDto Row(ImportItem i, int files, string? source = null, string? suggestedSpace = null)
+    {
+        long? ms = null;
+        if (i.ProposalJson is { } pj && JsonNode.Parse(pj)?["ms"] is JsonValue v && v.TryGetValue<long>(out var n)) ms = n;
+        return new(i.Id, i.BatchId, i.Title, i.Status.ToString(), i.Error, files, i.CreatedAt, i.PageId, source, suggestedSpace, i.UpdatedAt, ms);
+    }
 }
 
 internal sealed class CreateImportBatchHandler(KbDbContext db, ImportService imports, IAccess access, TimeProvider time) : IActionHandler<CreateImportBatch, ImportBatchDto>
@@ -182,7 +212,7 @@ internal sealed class StartImportBatchHandler(KbDbContext db, ImportService impo
     }
 }
 
-internal sealed class ListImportsHandler(KbDbContext db, ImportService imports) : IActionHandler<ListImports, ImportListDto>
+internal sealed class ListImportsHandler(KbDbContext db, ImportService imports, IAccess access) : IActionHandler<ListImports, ImportListDto>
 {
     public Task<Problem?> AuthorizeAsync(ActionContext<ListImports> ctx) => Task.FromResult(ctx.Actor.UserId is null ? Problem.Unauthorized : null);
 
@@ -191,6 +221,13 @@ internal sealed class ListImportsHandler(KbDbContext db, ImportService imports) 
         var me = ctx.Actor.UserId!.Value;
         var items = await db.ImportItems.AsNoTracking().Where(i => i.UserId == me && i.Status != ImportStatus.Discarded).OrderByDescending(i => i.CreatedAt).Take(500).ToListAsync(ctx.Cancel);
         var ids = items.Select(i => i.Id).ToList();
+        // What each item is, at a glance: its first file and the space the AI suggested.
+        var names = (await db.ImportFiles.AsNoTracking().Where(f => f.ItemId != null && ids.Contains(f.ItemId.Value) && !f.Embedded).Select(f => new { f.ItemId, f.Path, f.Name }).ToListAsync(ctx.Cancel))
+            .GroupBy(f => f.ItemId!.Value).ToDictionary(g => g.Key, g => { var first = g.OrderBy(f => f.Path, StringComparer.Ordinal).First().Name; return g.Count() > 1 ? $"{first} +{g.Count() - 1}" : first; });
+        Guid? Suggested(ImportItem i) => i.ProposalJson is { } pj && JsonNode.Parse(pj)?["suggestedDestination"]?["spaceId"] is JsonValue v && v.TryGetValue<Guid>(out var g) ? g : null;
+        var suggested = items.ToDictionary(i => i.Id, Suggested);
+        var spaceIds = suggested.Values.OfType<Guid>().Distinct().ToList();
+        var spaceNames = await db.Spaces.AsNoTracking().Where(s => spaceIds.Contains(s.Id)).ToDictionaryAsync(s => s.Id, s => s.Name, ctx.Cancel);
         var counts = await db.ImportFiles.AsNoTracking().Where(f => f.ItemId != null && ids.Contains(f.ItemId.Value) && !f.Embedded).GroupBy(f => f.ItemId).Select(g => new { g.Key, N = g.Count() })
             .ToDictionaryAsync(g => g.Key!.Value, g => g.N, ctx.Cancel);
         var batches = await db.ImportBatches.AsNoTracking().Where(b => b.UserId == me).OrderByDescending(b => b.CreatedAt).Take(20).ToListAsync(ctx.Cancel);
@@ -203,12 +240,14 @@ internal sealed class ListImportsHandler(KbDbContext db, ImportService imports) 
         return new ImportListDto(
             [.. batches.Select(b => new ImportBatchDto(b.Id, b.CreatedAt, fileCounts.GetValueOrDefault(b.Id), b.CompletedAt is not null, b.Grouped, b.Error,
                 N(b.Id, ImportStatus.Queued), N(b.Id, ImportStatus.Working), N(b.Id, ImportStatus.Ready), N(b.Id, ImportStatus.Failed), N(b.Id, ImportStatus.Blocked), N(b.Id, ImportStatus.Accepted, ImportStatus.Discarded)))],
-            [.. items.Select(i => ImportGate.Row(i, counts.GetValueOrDefault(i.Id)))],
-            ctx.Actor.TokenId is null && await imports.MayImportAsync(ctx.Actor, ctx.Cancel), await imports.MayAsync(ctx.Actor, AiFeatures.Format, ctx.Cancel));
+            [.. items.Select(i => ImportGate.Row(i, counts.GetValueOrDefault(i.Id), names.GetValueOrDefault(i.Id),
+                suggested[i.Id] is { } sid ? spaceNames.GetValueOrDefault(sid) : null))],
+            ctx.Actor.TokenId is null && await imports.MayImportAsync(ctx.Actor, ctx.Cancel), await imports.MayAsync(ctx.Actor, AiFeatures.Format, ctx.Cancel),
+            await ImportGate.WritableAsync(db, access, ctx.Actor, ctx.Cancel));
     }
 }
 
-internal sealed class ReadImportItemHandler(KbDbContext db) : IActionHandler<ReadImportItem, ImportItemDto>
+internal sealed class ReadImportItemHandler(KbDbContext db, IAccess access) : IActionHandler<ReadImportItem, ImportItemDto>
 {
     private ImportItem? _item;
 
@@ -224,7 +263,7 @@ internal sealed class ReadImportItemHandler(KbDbContext db) : IActionHandler<Rea
         var files = await db.ImportFiles.AsNoTracking().Where(f => f.ItemId == i.Id).OrderBy(f => f.Path).ToListAsync(ctx.Cancel);
         return new ImportItemDto(i.Id, i.Title, i.Status.ToString(), i.Error, i.ProposalJson is null ? null : JsonNode.Parse(i.ProposalJson),
             [.. files.Select(f => new ImportFileDto(f.Id, f.Name, f.Path, f.Size, f.Kind, f.Note, f.Embedded, f.Sha256))],
-            files.Where(f => f.Text is not null).ToDictionary(f => f.Id, f => f.Text!), i.PageId);
+            files.Where(f => f.Text is not null).ToDictionary(f => f.Id, f => f.Text!), i.PageId, await ImportGate.WritableAsync(db, access, ctx.Actor, ctx.Cancel));
     }
 }
 
@@ -287,7 +326,28 @@ internal sealed class DiscardImportHandler(KbDbContext db, ImportService imports
         if (i.Status is ImportStatus.Working) return Problem.Conflict("It is being drafted; try again in a moment.");
         (i.Status, i.UpdatedAt, i.ProposalJson) = (ImportStatus.Discarded, time.GetUtcNow(), null);
         await db.SaveChangesAsync(ctx.Cancel);
-        await imports.DropFilesAsync(i.Id, ctx.Cancel);
+        await imports.DropFilesAsync(i.Id, ctx.Actor.UserId, "discarded", ctx.Cancel);
+        return new Unit();
+    }
+}
+
+internal sealed class RejectImportHandler(KbDbContext db, TimeProvider time) : IActionHandler<RejectImport, Unit>
+{
+    private ImportItem? _item;
+
+    public async Task<Problem?> AuthorizeAsync(ActionContext<RejectImport> ctx)
+    {
+        if (ctx.Actor.UserId is not { } me) return Problem.Unauthorized;
+        return (_item = await db.ImportItems.FirstOrDefaultAsync(i => i.Id == ctx.Action.ItemId && i.UserId == me, ctx.Cancel)) is null ? Problem.NotFound : null;
+    }
+
+    public async Task<Outcome<Unit>> HandleAsync(ActionContext<RejectImport> ctx)
+    {
+        var i = _item!;
+        if (i.Status is not (ImportStatus.Ready or ImportStatus.Failed)) return Problem.Conflict("Only a ready or failed draft is rejected.");
+        (i.Status, i.UpdatedAt) = (ImportStatus.Rejected, time.GetUtcNow());
+        await db.SaveChangesAsync(ctx.Cancel);
+        ctx.Audit(AuditActions.ImportReject, "importItem", i.Id.ToString(), null, new Dictionary<string, string> { ["title"] = i.Title });
         return new Unit();
     }
 }
@@ -306,7 +366,7 @@ internal sealed class RetryImportHandler(KbDbContext db, ImportService imports, 
     public async Task<Outcome<Unit>> HandleAsync(ActionContext<RetryImport> ctx)
     {
         var i = _item!;
-        if (i.Status is not (ImportStatus.Failed or ImportStatus.Ready)) return Problem.Conflict("Only a failed or ready draft is drafted again.");
+        if (i.Status is not (ImportStatus.Failed or ImportStatus.Ready or ImportStatus.Rejected)) return Problem.Conflict("Only a failed, ready or rejected draft is drafted again.");
         (i.Status, i.Error, i.UpdatedAt) = (ImportStatus.Queued, null, time.GetUtcNow());
         await db.SaveChangesAsync(ctx.Cancel);
         return new Unit();

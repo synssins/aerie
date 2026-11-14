@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ChevronRight, Ellipsis, FileUp, House, Plus, Trash2 } from "lucide-react";
+import { Link, to } from "./Link";
 import { api, ApiError, type InvApp, type InvAppRow, type OwnerRef, type Principal, type SyncResult } from "./api";
 import { useDialogs } from "./Dialogs";
 import { MenuButton } from "./ui";
@@ -41,8 +42,8 @@ export function PrincipalPicker({ value, onChange, label }: { value: OwnerRef | 
 function Crumbs({ onHome, app, onList }: { onHome: () => void; app?: string; onList: () => void }) {
   return (
     <nav className="crumb" aria-label="Breadcrumb">
-      <button className="crumb-home" onClick={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></button><ChevronRight className="ic sm" aria-hidden />
-      {app ? <><button className="crumb-link" onClick={onList}>Inventory</button><ChevronRight className="ic sm" aria-hidden /><b>{app}</b></> : <b>Inventory</b>}
+      <Link href={to.home()} className="crumb-home" onNav={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></Link><ChevronRight className="ic sm" aria-hidden />
+      {app ? <><Link href={to.inventory()} className="crumb-link" onNav={onList}>Inventory</Link><ChevronRight className="ic sm" aria-hidden /><b title={app}>{app}</b></> : <b>Inventory</b>}
     </nav>
   );
 }
@@ -117,7 +118,7 @@ function AppList({ onOpen, onHome }: { onOpen: (id: string) => void; onHome: () 
             <tbody>
               {rows?.map((a) => (
                 <tr key={a.id} className="row" onClick={() => onOpen(a.id)}>
-                  <td><button type="button" className="link" onClick={(e) => { e.stopPropagation(); onOpen(a.id); }}>{a.name}</button></td>
+                  <td><Link href={to.inventory(a.id)} className="link" title={a.name} onClick={(e) => e.stopPropagation()} onNav={() => onOpen(a.id)}>{a.name}</Link></td>
                   <td className="muted">{a.vendor ?? ""}</td><td>{a.owner?.name ?? ""}</td><td className="muted">{a.installs}</td>
                 </tr>
               ))}
@@ -255,7 +256,7 @@ function AppDetail({ id, onList, onOpenPage, onHome, onGone }: { id: string; onL
           {app.pages.length === 0 ? <p className="muted">None</p> : (
             <ul className="plain-list">
               {app.pages.map((p) => (
-                <li key={p.id}><button type="button" className="link" onClick={() => onOpenPage(p.id)}>{p.title}</button>
+                <li key={p.id}><Link href={to.page(p.id)} className="link" title={p.title} onNav={() => onOpenPage(p.id)}>{p.title}</Link>
                   <span className="muted small"> · {p.spaceName}{p.servers.length ? ` · ${p.servers.join(", ")}` : ""}</span></li>
               ))}
             </ul>

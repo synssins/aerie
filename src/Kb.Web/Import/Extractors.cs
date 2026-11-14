@@ -80,7 +80,29 @@ public static partial class Extractors
         return ext;
     }
 
+    /// <summary>
+    /// What a file holds, its text normalized for every reader: line ends as LF (CRLF and a lone CR alike), control characters
+    /// other than tab and line end removed, so no check or model call sees them.
+    /// </summary>
     public static Extraction Extract(string name, byte[] data)
+    {
+        var x = Read(name, data);
+        return x.Text.Length == 0 ? x : x with { Text = Normalize(x.Text) };
+    }
+
+    public static string Normalize(string text)
+    {
+        var sb = new StringBuilder(text.Length);
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (c == '\r') { sb.Append('\n'); if (i + 1 < text.Length && text[i + 1] == '\n') i++; }
+            else if (c is '\n' or '\t' || (!char.IsControl(c) && c != '\uFEFF')) sb.Append(c);
+        }
+        return sb.ToString();
+    }
+
+    private static Extraction Read(string name, byte[] data)
     {
         var file = Path.GetFileName(name);
         if (Junk.Contains(file) || file.StartsWith("~$", StringComparison.Ordinal) || name.Contains("__MACOSX/", StringComparison.Ordinal) || file.StartsWith("._", StringComparison.Ordinal))
@@ -123,7 +145,9 @@ public static partial class Extractors
         }
         catch (Exception e) when (e is not OutOfMemoryException)
         {
-            return Extraction.Unsupported($"The file could not be read ({e.GetType().Name}).");
+            return Extraction.Unsupported(e is InvalidDataException or EndOfStreamException or FormatException || e.GetType().Name.EndsWith("FormatException", StringComparison.Ordinal)
+                ? "The file is damaged or not what its name says, so it could not be read. It is kept as an attachment."
+                : $"The file could not be read ({e.GetType().Name}). It is kept as an attachment.");
         }
     }
 

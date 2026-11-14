@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { Link, to } from "./Link";
 import { api, type AppliesTo, type InvApp, type InvAppRow, type PageDetails } from "./api";
 import { PrincipalPicker } from "./Inventory";
 
@@ -36,9 +37,13 @@ export function PageDetailsPanel({ details, updatedAt, editing, value, onChange,
           <dt>Applies to</dt>
           <dd className="tags">
             {d.appliesTo.map((a) => (
-              <button key={a.applicationId} type="button" className="chip" disabled={!onOpenApp} onClick={() => onOpenApp?.(a.applicationId)}>
-                {a.name}{a.servers.length ? ` · ${a.servers.join(", ")}` : ""}
-              </button>
+              onOpenApp ? (
+                <Link key={a.applicationId} href={to.inventory(a.applicationId)} className="chip" onNav={() => onOpenApp(a.applicationId)}>
+                  {a.name}{a.servers.length ? ` · ${a.servers.join(", ")}` : ""}
+                </Link>
+              ) : (
+                <span key={a.applicationId} className="chip">{a.name}{a.servers.length ? ` · ${a.servers.join(", ")}` : ""}</span>
+              )
             ))}
           </dd>
         </>

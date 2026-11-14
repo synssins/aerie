@@ -61,6 +61,8 @@ public static class AuditActions
     public const string AiCall = "ai.call";
     public const string ImportAccept = "import.accept";
     public const string ImportQuarantine = "import.quarantine";
+    public const string ImportPurge = "import.purge";
+    public const string ImportReject = "import.reject";
     public const string PageFormat = "page.format";
     public const string AiRefused = "ai.refused";
     public const string AiSettingsChange = "ai.settings.change";

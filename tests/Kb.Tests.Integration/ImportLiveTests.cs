@@ -33,14 +33,18 @@ public sealed class ImportLiveTests(ITestOutputHelper output)
         var root = Environment.GetEnvironmentVariable("KB_CORPUS");
         if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(root)) return;
         var files = Environment.GetEnvironmentVariable("KB_LIVE_FILES") is { Length: > 0 } list ? list.Split(';') : Sample;
-        await using var f = new KbAppFactory(KbAppFactory.NewDbPath());
+        // KB_LIVE_CONCURRENCY: drafts at once, run by the background worker as on a server; unset: one at a time, by hand.
+        var concurrency = int.TryParse(Environment.GetEnvironmentVariable("KB_LIVE_CONCURRENCY"), out var c) ? c : 0;
+        await using var f = new KbAppFactory(KbAppFactory.NewDbPath(), settings: concurrency > 0 ? new Dictionary<string, string> { ["Kb:Import:PollSeconds"] = "1" } : null);
+        if (Environment.GetEnvironmentVariable("KB_LIVE_DIR") is { Length: > 0 } dir)
+            files = [.. Directory.EnumerateFiles(Path.Combine(root, dir), "*", SearchOption.AllDirectories).Select(x => Path.GetRelativePath(root, x).Replace('\\', '/'))];
         var admin = await f.SignedInBreakGlassAsync();
         (await admin.PutAsJsonAsync("/api/v1/admin/ai", new
         {
             settings = new
             {
                 enabled = true, baseUrl = url, model = Environment.GetEnvironmentVariable("KB_AI_MODEL") ?? "", timeoutSeconds = 300, maxTokens = 8192, temperature = 0, reasoning = false,
-                ruleset = Kb.Core.Ai.AiGuard.DefaultRuleset, maxInputChars = 200000, userPerMinute = 100, tokenPerMinute = 100,
+                ruleset = Kb.Core.Ai.AiGuard.DefaultRuleset, maxInputChars = 200000, userPerMinute = 100, tokenPerMinute = 100, importConcurrency = Math.Max(1, concurrency),
                 features = new { import = "Everyone", format = "Everyone", search = "Off" },
             },
         }, Ct)).EnsureSuccessStatusCode();
@@ -59,7 +63,17 @@ public sealed class ImportLiveTests(ITestOutputHelper output)
         (await admin.PostAsync($"/api/v1/imports/{batch}/start", null, Ct)).EnsureSuccessStatusCode();
         var worker = f.Services.GetRequiredService<ImportWorker>();
         var started = DateTime.UtcNow;
-        for (var i = 0; i < 500 && await worker.RunOnceAsync(Ct); i++) { }
+        if (concurrency > 0)
+            for (var i = 0; i < 3600; i++)
+            {
+                await Task.Delay(1000, Ct);
+                var open = 0;
+                await f.WithDbAsync(async db => open = await db.ImportItems.CountAsync(x => x.Status == Kb.Core.Import.ImportStatus.Queued || x.Status == Kb.Core.Import.ImportStatus.Working, Ct)
+                    + await db.ImportBatches.CountAsync(b => !b.Grouped && b.Error == null, Ct));
+                if (open == 0) break;
+            }
+        else
+            for (var i = 0; i < 500 && await worker.RunOnceAsync(Ct); i++) { }
         output.WriteLine($"worker: {(DateTime.UtcNow - started).TotalSeconds:0}s");
 
         var items = (await admin.GetFromJsonAsync<JsonElement>("/api/v1/imports", Ct)).GetProperty("items").EnumerateArray().ToList();

@@ -41,7 +41,9 @@ describe("inventory", () => {
     });
     const onOpenApp = vi.fn();
     render(<DialogProvider><InventoryView appId={null} onOpenApp={onOpenApp} onOpenPage={() => {}} onHome={() => {}} /></DialogProvider>);
-    await userEvent.click(await screen.findByRole("button", { name: "Acme ERP" }));
+    const app = await screen.findByRole("link", { name: "Acme ERP" });
+    expect(app.getAttribute("href")).toBe("/inventory/a1");
+    await userEvent.click(app);
     expect(onOpenApp).toHaveBeenCalledWith("a1");
     expect(screen.queryByRole("button", { name: "New" })).toBeNull();
     await userEvent.selectOptions(screen.getByLabelText("Server"), "ERP02");
@@ -75,7 +77,8 @@ describe("inventory", () => {
     render(<DialogProvider><InventoryView appId="a1" onOpenApp={() => {}} onOpenPage={onOpenPage} onHome={() => {}} /></DialogProvider>);
     await userEvent.click(await screen.findByRole("button", { name: "ERP01" }));
     expect(screen.getByText("4.2 → 4.3")).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "ERP error 42" }));
+    expect(screen.getByRole("link", { name: "ERP error 42" }).getAttribute("href")).toBe("/p/p1");
+    await userEvent.click(screen.getByRole("link", { name: "ERP error 42" }));
     expect(onOpenPage).toHaveBeenCalledWith("p1");
     await userEvent.type(screen.getByLabelText("Server"), "ERP02");
     await userEvent.type(screen.getByLabelText("Version"), "4.3");
@@ -92,7 +95,7 @@ describe("page details", () => {
     render(<PageDetailsPanel details={details} updatedAt="2026-01-15T10:00:00Z" editing={false} value={details} onChange={() => {}} onOpenApp={onOpenApp} />);
     expect(screen.getByText("ERP Support Team")).toBeTruthy();
     expect(screen.getByText(/^6 months · /)).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "Acme ERP · ERP01" }));
+    await userEvent.click(screen.getByRole("link", { name: "Acme ERP · ERP01" }));
     expect(onOpenApp).toHaveBeenCalledWith("a1");
   });
 

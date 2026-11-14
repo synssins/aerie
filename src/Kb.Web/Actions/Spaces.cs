@@ -112,7 +112,7 @@ internal sealed class UpdateSpaceAdminHandler(KbDbContext db, IAccess access) : 
         var (req, s) = (ctx.Action, _space!);
         // The same update as an Owner's. An Admin needs no role in the space for it, except to lower a sensitive space's protection (above).
         var update = new UpdateSpace { SpaceId = req.SpaceId, Name = req.Name, Description = req.Description, IsSensitive = req.IsSensitive, Visibility = req.Visibility,
-            CommentsEnabled = req.CommentsEnabled, AgingDays = req.AgingDays, AgingAudience = req.AgingAudience, RecycleDays = req.RecycleDays };
+            CommentsEnabled = req.CommentsEnabled, AgingDays = req.AgingDays, AgingAudience = req.AgingAudience, RecycleDays = req.RecycleDays, ReviewMonths = req.ReviewMonths };
         if (await UpdateSpaceAsync(s, update, db, ctx) is { } problem) return problem;
         return ToDto(s, null);
     }

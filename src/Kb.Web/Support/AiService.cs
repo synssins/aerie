@@ -159,12 +159,12 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
             using var response = await http.CreateClient(ClientName).SendAsync(request, timeout.Token);
             var text = await response.Content.ReadAsStringAsync(timeout.Token);
             if (!response.IsSuccessStatusCode)
-                return await RefuseAsync("error", new Problem(502, $"The model server answered {(int)response.StatusCode}."), text.Length > 200 ? text[..200] : text);
+                return await RefuseAsync("error", new Problem(502, $"The model server answered {(int)response.StatusCode} ({response.ReasonPhrase}): it may be overloaded, or the content too large for it."), text.Length > 200 ? text[..200] : text);
             answer = JsonNode.Parse(text);
         }
         catch (Exception e) when (e is HttpRequestException or OperationCanceledException or JsonException or InvalidOperationException && !ct.IsCancellationRequested)
         {
-            return await RefuseAsync("error", new Problem(502, e is OperationCanceledException ? "The model server did not answer in time." : "The model server could not be reached."), e.Message);
+            return await RefuseAsync("error", new Problem(502, e is OperationCanceledException ? $"The model did not answer within {Math.Clamp(s.TimeoutSeconds, 5, 600)} seconds (the timeout in Administration > AI)." : "The model server could not be reached."), e.Message);
         }
         var ms = clock.ElapsedMilliseconds;
         var message = answer?["choices"]?[0]?["message"];
@@ -179,7 +179,9 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
         if (output is null || AiGuard.SchemaError(output, schema) is { } bad)
         {
             await AuditAsync(actor, feature, "invalid-output", inTokens, outTokens, ms, output is null ? "not JSON" : AiGuard.SchemaError(output, schema));
-            return new Problem(502, "The model's answer did not match what was asked for.");
+            var cut = answer?["choices"]?[0]?["finish_reason"]?.GetValue<string>() == "length";
+            return new Problem(502, cut ? $"The model's reply was cut off at the limit of {s.MaxTokens} tokens (Max tokens in Administration > AI)."
+                : output is null ? "The model's reply was not JSON." : "The model's reply didn't match the required structure.");
         }
         await AuditAsync(actor, feature, "ok", inTokens, outTokens, ms, null);
         return new AiResult(output, model, inTokens, outTokens, ms, string.IsNullOrWhiteSpace(reasoning));

@@ -36,6 +36,7 @@ internal static partial class SpaceSupport
     internal static async Task<Problem?> UpdateSpaceAsync(Space s, UpdateSpace req, KbDbContext db, ActionContext ctx)
     {
         if (req.AgingDays is < 1 or > 3650 || req.RecycleDays is < 1 or > 3650) return Problem.Invalid("days", "1-3650.");
+        if (req.ReviewMonths is { } rm && !ReviewChoices.Contains(rm)) return Problem.Invalid("reviewMonths", "0, 1, 3, 6, 12, 24 or 36.");
         if (req.Visibility is { } vis && !Enum.IsDefined(vis)) return Problem.Invalid("visibility", "Private, SignedIn or Anyone.");
         if ((req.IsSensitive ?? s.IsSensitive) && (req.Visibility ?? s.Visibility) != SpaceVisibility.Private) return SensitiveStaysPrivate;
 
@@ -47,6 +48,7 @@ internal static partial class SpaceSupport
         if (req.AgingDays is { } ad) s.AgingDays = ad;
         if (req.AgingAudience is { } aa) s.AgingAudience = aa;
         if (req.RecycleDays is { } rd) s.RecycleDays = rd;
+        if (req.ReviewMonths is { } rv) s.ReviewMonths = rv == 0 ? null : rv;
         if (req.Visibility is { } p) s.Visibility = p;
         var sensitiveChanged = req.IsSensitive is { } sens && sens != s.IsSensitive;
         if (req.IsSensitive is { } v) s.IsSensitive = v;
@@ -63,5 +65,7 @@ internal static partial class SpaceSupport
     }
 
     internal static SpaceDto ToDto(Space s, SpaceRole? role) => new(s.Id, s.Key, s.Name, s.Description, s.IsSensitive, s.Visibility.ToString(), role?.ToString(),
-        s.CommentsEnabled, s.AgingDays, s.AgingAudience.ToString(), s.RecycleDays, s.CreatedAt);
+        s.CommentsEnabled, s.AgingDays, s.AgingAudience.ToString(), s.RecycleDays, s.CreatedAt, s.ReviewMonths);
+
+    internal static readonly int[] ReviewChoices = [0, 1, 3, 6, 12, 24, 36];
 }

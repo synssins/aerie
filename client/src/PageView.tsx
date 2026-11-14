@@ -1,5 +1,6 @@
 import { detailsBody, detailsChanged, EMPTY_DETAILS, PageDetailsPanel } from "./PageDetails";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Link, to } from "./Link";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import type { EditorView } from "@tiptap/pm/view";
 import {
@@ -342,12 +343,12 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
     <main className="doc">
       <div className="col">
         <nav className="crumb" aria-label="Breadcrumb">
-          <button className="crumb-home" onClick={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></button><ChevronRight className="ic sm" aria-hidden />
-          <button className="crumb-link" onClick={() => onOpen(null)}>{spaceName}</button>
+          <Link href={to.home()} className="crumb-home" onNav={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></Link><ChevronRight className="ic sm" aria-hidden />
+          <Link href={to.space(page.spaceId)} className="crumb-link" title={spaceName} onNav={() => onOpen(null)}>{spaceName}</Link>
           {page.path.map((c) => (
-            <span key={c.id} className="crumb-part"><ChevronRight className="ic sm" aria-hidden /><button className="crumb-link" onClick={() => onOpen(c.id)}>{c.title}</button></span>
+            <span key={c.id} className="crumb-part"><ChevronRight className="ic sm" aria-hidden /><Link href={to.page(c.id)} className="crumb-link" title={c.title} onNav={() => onOpen(c.id)}>{c.title}</Link></span>
           ))}
-          {!isNew && <><ChevronRight className="ic sm" aria-hidden /><b>{page.title}</b></>}
+          {!isNew && <><ChevronRight className="ic sm" aria-hidden /><b title={page.title}>{page.title}</b></>}
         </nav>
         <div className="titlebar">
           {editing
@@ -420,7 +421,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
       <h3>Tags</h3>
       {editing
         ? <TagInput value={tags} onChange={setTags} />
-        : page.tags.length ? <div className="tags">{page.tags.map((t) => <button key={t} type="button" className="chip" onClick={() => onTag?.(t)}>{t}</button>)}</div> : <div className="muted">None</div>}
+        : page.tags.length ? <div className="tags">{page.tags.map((t) => (onTag ? <Link key={t} href={to.tag(t)} className="chip" title={t} onNav={() => onTag(t)}>{t}</Link> : <span key={t} className="chip" title={t}>{t}</span>))}</div> : <div className="muted">None</div>}
       {!isNew && (
         <>
           <h3>Attachments</h3>

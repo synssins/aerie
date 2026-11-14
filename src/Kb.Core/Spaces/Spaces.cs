@@ -84,6 +84,8 @@ public sealed class Space
     public AgingAudience AgingAudience { get; set; } = AgingAudience.Everyone;
     /// <summary>Recycle-bin retention override; null uses Kb:Retention:RecycleDays.</summary>
     public int? RecycleDays { get; set; }
+    /// <summary>The review cycle a new page placed here starts with (months, 0 none); null: none set.</summary>
+    public int? ReviewMonths { get; set; }
     /// <summary>
     /// Set when an Admin deleted the space: it is in the recycle bin, with everything in it. A deleted space is not there for anyone,
     /// by list or by id; its pages, files and roles stay as they were and give nothing until an Admin restores it.

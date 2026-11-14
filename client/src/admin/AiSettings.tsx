@@ -5,7 +5,7 @@ import { useDialogs } from "../Dialogs";
 export type AiAccess = "Off" | "Admins" | "Everyone";
 export type AiSettings = {
   enabled: boolean; baseUrl: string; model: string; timeoutSeconds: number; maxTokens: number; temperature: number; reasoning: boolean;
-  ruleset: string; maxInputChars: number; userPerMinute: number; tokenPerMinute: number; features: Record<string, AiAccess>;
+  ruleset: string; maxInputChars: number; userPerMinute: number; tokenPerMinute: number; importConcurrency?: number; features: Record<string, AiAccess>;
 };
 type Dto = { settings: AiSettings; apiKeySet: boolean; rulesetIsDefault: boolean; defaultRuleset: string };
 type TestResult = { ok: boolean; model: string | null; milliseconds: number; reasoningEmpty: boolean; error: string | null };
@@ -71,10 +71,10 @@ export function AiPanel() {
     finally { setBusy(false); }
   }
 
-  const num = (k: "timeoutSeconds" | "maxTokens" | "maxInputChars" | "userPerMinute" | "tokenPerMinute" | "temperature", label: string, step = 1) => (
+  const num = (k: "timeoutSeconds" | "maxTokens" | "maxInputChars" | "userPerMinute" | "tokenPerMinute" | "temperature" | "importConcurrency", label: string, step = 1) => (
     <>
       <label className="lbl" htmlFor={`ai-${k}`}>{label}</label>
-      <input id={`ai-${k}`} type="number" step={step} value={form[k]} onChange={(e) => set(k, Number(e.target.value))} className="narrow" />
+      <input id={`ai-${k}`} type="number" step={step} value={form[k] ?? ""} onChange={(e) => set(k, Number(e.target.value))} className="narrow" />
     </>
   );
 
@@ -110,6 +110,7 @@ export function AiPanel() {
         {num("maxInputChars", "Max input (characters)")}
         {num("userPerMinute", "Calls per person per minute")}
         {num("tokenPerMinute", "Calls per API token per minute")}
+        {num("importConcurrency", "Import drafts at once")}
         {FEATURES.map(([f, label]) => (
           <span key={f} className="contents">
             <span className="lbl">{label}</span>

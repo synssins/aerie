@@ -3,7 +3,8 @@ import { dialogBridge } from "./kit/host";
 
 /** In-app replacements for window.prompt/confirm/alert. Every dialog renders inside the page. */
 type AskOptions = { title: string; label: string; initial?: string; ok?: string; validate?: (v: string) => string | null };
-type ConfirmOptions = { title: string; body?: string; ok?: string; cancel?: string; danger?: boolean };
+/** focusCancel: Cancel is the button Enter presses (for what cannot be undone). */
+type ConfirmOptions = { title: string; body?: string; ok?: string; cancel?: string; danger?: boolean; focusCancel?: boolean };
 type Dialogs = {
   ask: (o: AskOptions) => Promise<string | null>;
   confirm: (o: ConfirmOptions) => Promise<boolean>;
@@ -48,7 +49,8 @@ function DialogView({ pending, done }: { pending: Pending; done: () => void }) {
   const [value, setValue] = useState(pending.kind === "ask" ? pending.o.initial ?? "" : "");
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => { ref.current?.showModal(); }, []);
+  // After showModal, which moves focus itself: the field, else the button meant to be pressed by Enter (Cancel, for what can't be undone).
+  useEffect(() => { ref.current?.showModal(); ref.current?.querySelector<HTMLElement>("[data-autofocus]")?.focus(); }, []);
 
   function cancel() {
     if (pending.kind === "ask") pending.resolve(null); else pending.resolve(false);
@@ -74,15 +76,15 @@ function DialogView({ pending, done }: { pending: Pending; done: () => void }) {
         {pending.kind === "ask" ? (
           <label>
             {pending.o.label}
-            <input autoFocus value={value} onChange={(e) => { setValue(e.target.value); setError(null); }} maxLength={200} />
+            <input data-autofocus value={value} onChange={(e) => { setValue(e.target.value); setError(null); }} maxLength={200} />
           </label>
         ) : (
           pending.o.body && <p className="muted">{pending.o.body}</p>
         )}
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="dlg-actions">
-          <button type="button" className="tb" onClick={cancel}>{(pending.kind === "confirm" && pending.o.cancel) || "Cancel"}</button>
-          <button type="submit" className={`tb ${pending.kind === "confirm" && pending.o.danger ? "danger" : "primary"}`} autoFocus={pending.kind === "confirm"}>
+          <button type="button" className="tb" onClick={cancel} data-autofocus={pending.kind === "confirm" && pending.o.focusCancel ? "" : undefined}>{(pending.kind === "confirm" && pending.o.cancel) || "Cancel"}</button>
+          <button type="submit" className={`tb ${pending.kind === "confirm" && pending.o.danger ? "danger" : "primary"}`} data-autofocus={pending.kind === "confirm" && !pending.o.focusCancel ? "" : undefined}>
             {o.ok ?? "OK"}
           </button>
         </div>

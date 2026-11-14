@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
-import { ChevronRight, FileUp, FolderUp, House } from "lucide-react";
-import { api, ApiError, type ImportFile, type ImportItem, type ImportList, type Space, type TreeNode } from "./api";
+import { ChevronDown, ChevronRight, FileUp, FolderUp, House, X } from "lucide-react";
+import { Link, to } from "./Link";
+import { api, ApiError, type ImportFile, type ImportItem, type ImportItemRow, type ImportList, type ImportSpace, type ImportStatus, type TreeNode } from "./api";
 import { useDialogs } from "./Dialogs";
 import { fromEditor, makeExtensions, toEditor } from "./editor/extensions";
 import { Toolbar } from "./PageView";
@@ -10,9 +11,19 @@ import { TagInput } from "./TagInput";
 
 const fmt = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 const problem = (e: unknown, fallback: string) => (e instanceof ApiError && (e.body?.detail || (e.body?.errors && Object.values(e.body.errors).flat()[0]))) || fallback;
-const WRITERS = ["Contributor", "Supervisor", "Owner"];
-const STATUS: Record<string, string> = { Queued: "Waiting", Working: "Drafting", Ready: "Ready to review", Failed: "Failed", Blocked: "Blocked", Accepted: "Accepted" };
+const STATUS: Record<ImportStatus, string> = {
+  Queued: "Waiting", Working: "Drafting", Ready: "Ready to review", Failed: "Failed", Blocked: "Blocked", Accepted: "Accepted", Discarded: "Discarded", Rejected: "Rejected",
+};
 const fileUrl = (id: string) => `/api/v1/imports/files/${id.replace(/-/g, "")}`;
+const seconds = (ms: number) => (ms < 60_000 ? `${Math.max(1, Math.round(ms / 1000))} s` : `${Math.floor(ms / 60_000)} min ${Math.round((ms % 60_000) / 1000)} s`);
+const size = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+
+/** What a row says of its state, in plain words; for a blocked or failed item, why. */
+export function statusText(i: Pick<ImportItemRow, "status" | "error" | "updatedAt" | "draftMs">, now = Date.now()) {
+  if (i.status === "Working" && i.updatedAt) return `Drafting · ${seconds(now - new Date(i.updatedAt).getTime())}`;
+  if (i.status === "Ready" && i.draftMs) return `Ready to review · drafted in ${seconds(i.draftMs)}`;
+  return i.error ? `${STATUS[i.status]}: ${i.error}` : STATUS[i.status];
+}
 
 type Picked = { path: string; file: File };
 
@@ -30,53 +41,67 @@ async function walk(entry: FileSystemEntry, prefix = ""): Promise<Picked[]> {
 }
 
 /** The import inbox: upload files (folders, zips) and the drafts that wait for review. Only the importer sees them. */
-export function ImportView({ itemId, spaces, onOpenItem, onOpenPage, onHome }: {
-  itemId: string | null; spaces: Space[]; onOpenItem: (id: string | null) => void; onOpenPage: (id: string) => void; onHome: () => void;
+export function ImportView({ itemId, onOpenItem, onOpenPage, onHome }: {
+  itemId: string | null; onOpenItem: (id: string | null) => void; onOpenPage: (id: string) => void; onHome: () => void;
 }) {
   return itemId
-    ? <ImportReview key={itemId} id={itemId} spaces={spaces} onBack={() => onOpenItem(null)} onOpenPage={onOpenPage} onHome={onHome} />
-    : <ImportInbox spaces={spaces} onOpen={(id) => onOpenItem(id)} onHome={onHome} />;
+    ? <ImportReview key={itemId} id={itemId} onBack={() => onOpenItem(null)} onOpenPage={onOpenPage} onHome={onHome} />
+    : <ImportInbox onOpen={(id) => onOpenItem(id)} onHome={onHome} />;
 }
 
 function Crumbs({ onHome, item, onInbox }: { onHome: () => void; item?: string; onInbox: () => void }) {
   return (
     <nav className="crumb" aria-label="Breadcrumb">
-      <button className="crumb-home" onClick={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></button><ChevronRight className="ic sm" aria-hidden />
-      {item ? <><button className="crumb-link" onClick={onInbox}>Import inbox</button><ChevronRight className="ic sm" aria-hidden /><b>{item}</b></> : <b>Import inbox</b>}
+      <Link href={to.home()} className="crumb-home" onNav={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></Link><ChevronRight className="ic sm" aria-hidden />
+      {item ? <><Link href={to.imports()} className="crumb-link" onNav={onInbox}>Import inbox</Link><ChevronRight className="ic sm" aria-hidden /><b title={item}>{item}</b></> : <b>Import inbox</b>}
     </nav>
   );
 }
 
-function ImportInbox({ spaces, onOpen, onHome }: { spaces: Space[]; onOpen: (id: string) => void; onHome: () => void }) {
+function ImportInbox({ onOpen, onHome }: { onOpen: (id: string) => void; onHome: () => void }) {
   const dialogs = useDialogs();
   const [list, setList] = useState<ImportList | null>(null);
   const [target, setTarget] = useState("");
+  const [queue, setQueue] = useState<Picked[]>([]);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [over, setOver] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const filesRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
-  const load = useCallback(() => api.get<ImportList>("/imports").then(setList).catch(() => setError("Not loaded.")), []);
+  // From the server every time this screen is shown (a link, Back, a new tab): never a copy kept in the page.
+  const load = useCallback(() => api.get<ImportList>("/imports").then((l) => { setList(l); setError(null); }).catch(() => setError("The inbox could not be loaded.")), []);
   useEffect(() => { void load(); }, [load]);
-  const busy = !!list?.batches.some((b) => b.started && (!b.grouped || b.queued > 0 || b.working > 0));
-  useEffect(() => { if (!busy) return; const t = setInterval(() => void load(), 3000); return () => clearInterval(t); }, [busy, load]);
+  useEffect(() => {
+    const again = () => { if (document.visibilityState === "visible") void load(); };
+    window.addEventListener("pageshow", again);
+    document.addEventListener("visibilitychange", again);
+    return () => { window.removeEventListener("pageshow", again); document.removeEventListener("visibilitychange", again); };
+  }, [load]);
+  const busy = !!list && (list.batches.some((b) => b.started && !b.grouped && !b.error) || list.items.some((i) => i.status === "Queued" || i.status === "Working"));
+  useEffect(() => { if (!busy) return; const t = setInterval(() => { void load(); setNow(Date.now()); }, 2000); return () => clearInterval(t); }, [busy, load]);
   useEffect(() => { folderRef.current?.setAttribute("webkitdirectory", ""); }, []);
 
-  async function upload(files: Picked[]) {
-    if (files.length === 0) return;
+  const add = (files: Picked[]) => { setQueue((q) => [...q, ...files.filter((f) => !q.some((x) => x.path === f.path))]); setError(null); };
+
+  async function start() {
+    if (queue.length === 0) return;
     setError(null);
+    const failed: string[] = [];
     try {
       const batch = await api.post<{ id: string }>("/imports", { spaceId: target || null });
-      for (let i = 0; i < files.length; i++) {
-        setProgress(`Uploading ${i + 1} of ${files.length}`);
+      for (let i = 0; i < queue.length; i++) {
+        setProgress(`Uploading ${i + 1} of ${queue.length}`);
         const res = await fetch(`/api/v1/imports/${batch.id}/files`, {
-          method: "POST", credentials: "same-origin", body: files[i].file,
-          headers: { "Content-Type": "application/octet-stream", "X-File-Name": encodeURIComponent(files[i].path) },
+          method: "POST", credentials: "same-origin", body: queue[i].file,
+          headers: { "Content-Type": "application/octet-stream", "X-File-Name": encodeURIComponent(queue[i].path) },
         });
-        if (!res.ok) { const b = await res.json().catch(() => null); setError(`${files[i].path}: ${b?.detail ?? (b?.errors && Object.values(b.errors).flat()[0]) ?? "not uploaded"}`); }
+        if (!res.ok) { const b = await res.json().catch(() => null); failed.push(`${queue[i].path}: ${b?.detail ?? (b?.errors && Object.values(b.errors).flat()[0]) ?? "not uploaded"}`); }
       }
       await api.post(`/imports/${batch.id}/start`);
+      setQueue([]);
+      if (failed.length) setError(failed.join("\n"));
       await load();
     } catch (e) { setError(problem(e, "Not uploaded.")); }
     finally { setProgress(null); }
@@ -85,8 +110,8 @@ function ImportInbox({ spaces, onOpen, onHome }: { spaces: Space[]; onOpen: (id:
   async function drop(e: DragEvent) {
     e.preventDefault();
     setOver(false);
-    const entries = [...e.dataTransfer.items].map((i) => i.webkitGetAsEntry()).filter((x): x is FileSystemEntry => !!x);
-    await upload(entries.length ? (await Promise.all(entries.map((x) => walk(x)))).flat() : [...e.dataTransfer.files].map((f) => ({ path: f.name, file: f })));
+    const entries = [...e.dataTransfer.items].map((i) => i.webkitGetAsEntry?.()).filter((x): x is FileSystemEntry => !!x);
+    add(entries.length ? (await Promise.all(entries.map((x) => walk(x)))).flat() : [...e.dataTransfer.files].map((f) => ({ path: f.name, file: f })));
   }
 
   async function merge() {
@@ -95,69 +120,98 @@ function ImportInbox({ spaces, onOpen, onHome }: { spaces: Space[]; onOpen: (id:
     catch (e) { setError(problem(e, "Not merged.")); }
   }
 
-  async function discard(id: string) {
-    if (!await dialogs.confirm({ title: "Discard this draft?", ok: "Discard", danger: true })) return;
-    try { await api.del(`/imports/items/${id}`); await load(); } catch (e) { setError(problem(e, "Not discarded.")); }
+  async function discard(i: ImportItemRow) {
+    if (!await dialogs.confirm({ title: `Discard “${i.title}”?`, body: "The draft and its original files are deleted permanently. This can't be undone.", ok: "Discard", danger: true, focusCancel: true })) return;
+    try { await api.del(`/imports/items/${i.id}`); await load(); } catch (e) { setError(problem(e, "Not discarded.")); }
   }
 
-  const writable = spaces.filter((s) => s.myRole && WRITERS.includes(s.myRole));
+  const spaces = list?.spaces ?? [];
   const items = list?.items.filter((i) => i.status !== "Accepted") ?? [];
+  const mergeable = (s: ImportStatus) => s === "Ready" || s === "Failed" || s === "Queued" || s === "Rejected";
   return (
     <>
       <main className="doc wide">
         <div className="col">
           <Crumbs onHome={onHome} onInbox={() => {}} />
           <div className="titlebar"><h1>Import inbox</h1></div>
-          {error && <p className="form-error" role="alert">{error}</p>}
+          {error && <p className="form-error pre" role="alert">{error}</p>}
           {list && !list.canImport ? <p className="muted">Import is not open to you.</p> : (
-            <div className={`drop-zone ${over ? "over" : ""}`} onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(e) => void drop(e)}>
-              <label className="inline">Destination
-                <select className="sel" value={target} onChange={(e) => setTarget(e.target.value)}>
-                  <option value="">Import inbox</option>
-                  {writable.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </label>
-              <button type="button" className="tb primary" disabled={!!progress} onClick={() => filesRef.current?.click()}><FileUp className="ic" aria-hidden />Files</button>
-              <button type="button" className="tb" disabled={!!progress} onClick={() => folderRef.current?.click()}><FolderUp className="ic" aria-hidden />Folder</button>
-              <input ref={filesRef} type="file" multiple hidden aria-label="Files" onChange={(e) => { void upload([...e.target.files ?? []].map((f) => ({ path: f.name, file: f }))); e.target.value = ""; }} />
-              <input ref={folderRef} type="file" multiple hidden aria-label="Folder" onChange={(e) => { void upload([...e.target.files ?? []].map((f) => ({ path: f.webkitRelativePath || f.name, file: f }))); e.target.value = ""; }} />
-              {progress && <span className="muted" role="status">{progress}</span>}
-            </div>
-          )}
-          {list?.batches.filter((b) => b.started && (!b.grouped || b.queued + b.working > 0)).map((b) => {
-            const total = b.queued + b.working + b.ready + b.failed + b.blocked + b.done;
-            const done = total - b.queued - b.working;
-            return (
-              <div key={b.id} className="import-progress" role="status">
-                <span>{b.grouped ? `Drafting ${done} of ${total}` : `Reading ${b.files} files`}</span>
-                <progress max={total || 1} value={b.grouped ? done : 0} aria-label="Import progress" />
+            <>
+              <div className={`drop-zone ${over ? "over" : ""}`} role="region" aria-label="Drop files here"
+                onDragEnter={(e) => { e.preventDefault(); setOver(true); }} onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false); }} onDrop={(e) => void drop(e)}>
+                <FileUp className="ic lg" aria-hidden />
+                <span className="drop-text">Drop files, folders or zips here, or{" "}
+                  <button type="button" className="link" onClick={() => filesRef.current?.click()}>browse</button>
+                </span>
+                <button type="button" className="tb" onClick={() => folderRef.current?.click()}><FolderUp className="ic" aria-hidden />Folder</button>
+                <input ref={filesRef} type="file" multiple hidden aria-label="Files" onChange={(e) => { add([...e.target.files ?? []].map((f) => ({ path: f.name, file: f }))); e.target.value = ""; }} />
+                <input ref={folderRef} type="file" multiple hidden aria-label="Folder" onChange={(e) => { add([...e.target.files ?? []].map((f) => ({ path: f.webkitRelativePath || f.name, file: f }))); e.target.value = ""; }} />
               </div>
-            );
-          })}
+              {queue.length > 0 && (
+                <section className="import-queue" aria-label="Files to import">
+                  <div className="queue-head">
+                    <b>{queue.length === 1 ? "1 file" : `${queue.length} files`}</b><span className="muted">{size(queue.reduce((n, f) => n + f.file.size, 0))}</span>
+                    <label className="inline">Destination
+                      <select className="sel" value={target} onChange={(e) => setTarget(e.target.value)}>
+                        <option value="">Import inbox</option>
+                        {spaces.map((s) => <option key={s.id} value={s.id}>{s.name}{s.isSensitive ? " (sensitive)" : ""}</option>)}
+                      </select>
+                    </label>
+                    <span className="grow" />
+                    <button type="button" className="tb" disabled={!!progress} onClick={() => setQueue([])}>Clear</button>
+                    <button type="button" className="tb primary" disabled={!!progress} onClick={() => void start()}>{progress ?? "Start import"}</button>
+                  </div>
+                  <ul className="rows">
+                    {queue.map((f) => (
+                      <li key={f.path} className="row-line">
+                        <span className="grow" title={f.path}>{f.path}</span><span className="muted small">{size(f.file.size)}</span>
+                        <button type="button" className="tb icon" aria-label={`Remove ${f.path}`} title="Remove" disabled={!!progress}
+                          onClick={() => setQueue((q) => q.filter((x) => x.path !== f.path))}><X className="ic" aria-hidden /></button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </>
+          )}
+          {list?.batches.filter((b) => b.started && !b.grouped && !b.error).map((b) => (
+            <p key={b.id} className="import-progress muted" role="status">Reading {b.files === 1 ? "1 file" : `${b.files} files`}…</p>
+          ))}
+          {list?.batches.filter((b) => b.error).map((b) => <p key={b.id} className="form-error" role="alert">{b.error}</p>)}
           <div className="bar-row">
+            <h2 className="s">Drafts</h2>
+            <span className="grow" />
             <button type="button" className="tb" disabled={picked.size < 2} onClick={() => void merge()}>Merge</button>
           </div>
-          <table className="grid-table">
-            <thead><tr><th /><th>Draft</th><th>Files</th><th>Status</th><th>Added</th><th /></tr></thead>
-            <tbody>
-              {items.map((i) => (
-                <tr key={i.id}>
-                  <td><input type="checkbox" className="chk" aria-label={`Select ${i.title}`} disabled={!["Ready", "Failed", "Queued"].includes(i.status)} checked={picked.has(i.id)}
-                    onChange={(e) => { const n = new Set(picked); if (e.target.checked) n.add(i.id); else n.delete(i.id); setPicked(n); }} /></td>
-                  <td><button type="button" className="link" onClick={() => onOpen(i.id)}>{i.title}</button></td>
-                  <td className="muted">{i.files}</td>
-                  <td>{STATUS[i.status] ?? i.status}{i.error && <span className="muted small"> · {i.error}</span>}</td>
-                  <td className="muted">{fmt(i.createdAt)}</td>
-                  <td><button type="button" className="tb" onClick={() => void discard(i.id)}>Discard</button></td>
-                </tr>
-              ))}
-              {items.length === 0 && <tr><td colSpan={6} className="muted">No drafts.</td></tr>}
-            </tbody>
-          </table>
+          <ul className="rows import-rows" aria-label="Drafts">
+            {items.map((i) => {
+              const can = mergeable(i.status);
+              const why = statusText(i, now);
+              return (
+                <li key={i.id} className={`row-line ${i.status === "Failed" || i.status === "Blocked" ? "bad" : ""}`}>
+                  <input type="checkbox" className="chk" aria-label={`Select ${i.title}`} disabled={!can} title={can ? "Select to merge" : `Can't be merged: ${why}`}
+                    checked={picked.has(i.id)} onChange={(e) => { const n = new Set(picked); if (e.target.checked) n.add(i.id); else n.delete(i.id); setPicked(n); }} />
+                  <Link href={to.imports(i.id)} className="row-title" title={i.title} onNav={() => onOpen(i.id)}>{i.title}</Link>
+                  <span className="row-meta muted" title={[i.source, why, i.suggestedSpace && `Suggested: ${i.suggestedSpace}`].filter(Boolean).join(" · ")}>
+                    {i.source && <span>{i.source}</span>}
+                    <span className={`st st-${i.status.toLowerCase()}`}>{why}</span>
+                    {i.suggestedSpace && <span>→ {i.suggestedSpace}</span>}
+                  </span>
+                  <span className="muted small nowrap">{fmt(i.createdAt)}</span>
+                  <button type="button" className="tb" disabled={i.status === "Working"} onClick={() => void discard(i)}>Discard</button>
+                </li>
+              );
+            })}
+            {list && items.length === 0 && <li className="row-line muted">No drafts.</li>}
+          </ul>
         </div>
       </main>
       <aside className="side" aria-label="Details">
         <h3>Drafts</h3><div>{items.length}</div>
+        {items.some((i) => i.status === "Queued" || i.status === "Working") && (
+          <><h3>In progress</h3><div>{items.filter((i) => i.status === "Working").length} drafting · {items.filter((i) => i.status === "Queued").length} waiting</div></>
+        )}
       </aside>
     </>
   );
@@ -200,20 +254,60 @@ export function mergeDrafts(drafts: Draft[], key: number): Draft {
   return { key, title: drafts[0].title, json: JSON.stringify({ type: "doc", content }) };
 }
 
-function ImportReview({ id, spaces, onBack, onOpenPage, onHome }: { id: string; spaces: Space[]; onBack: () => void; onOpenPage: (id: string) => void; onHome: () => void }) {
+const KIND: Record<string, string> = {
+  doc: "Word", docx: "Word", odt: "OpenDocument", rtf: "RTF", pdf: "PDF", txt: "text", md: "Markdown", log: "log", html: "web page", htm: "web page", mht: "web archive",
+  eml: "mail", msg: "Outlook mail", xls: "Excel", xlsx: "Excel", xlsb: "Excel", ods: "spreadsheet", csv: "CSV", tsv: "TSV", ppt: "PowerPoint", pptx: "PowerPoint",
+  json: "JSON", xml: "XML", yaml: "YAML", yml: "YAML", ini: "INI", one: "OneNote", zip: "zip", png: "picture", jpg: "picture", jpeg: "picture", gif: "picture", webp: "picture",
+};
+const kindOf = (f: ImportFile) => (f.kind === "Image" ? "picture" : KIND[f.name.split(".").pop()?.toLowerCase() ?? ""] ?? (f.name.includes(".") ? f.name.split(".").pop()!.toUpperCase() : "file"));
+
+/** Facts about what was read, from the files and the draft: no prose of the model's, except the conflicts it noted, said as such. */
+function Summary({ item }: { item: ImportItem }) {
+  const files = item.files.filter((f) => !f.embedded);
+  const pictures = item.files.filter((f) => f.embedded && f.kind === "Image").length;
+  const kinds = Object.entries(files.reduce<Record<string, number>>((a, f) => ({ ...a, [kindOf(f)]: (a[kindOf(f)] ?? 0) + 1 }), {}));
+  const found = item.proposal?.found;
+  const sensitive = item.proposal?.sensitive ?? [];
+  const facts: [string, string[]][] = found ? [["People", found.people], ["Servers", found.servers], ["Applications", found.applications], ["Tickets and cases", found.tickets], ["Versions", found.versions]] : [];
+  return (
+    <section className="import-summary" aria-label="Summary">
+      <h2 className="s">Summary</h2>
+      <p>{files.length === 1 ? "1 file" : `${files.length} files`}: {kinds.map(([k, n]) => `${n} ${k}`).join(", ")}{pictures > 0 ? `; ${pictures} picture${pictures === 1 ? "" : "s"} inside` : ""}.</p>
+      <ul className="plain-list small">
+        {files.map((f) => (
+          <li key={f.id}><span className="clip" title={f.path}>{f.path}</span> <span className="muted">· {kindOf(f)}, {size(f.size)}{item.sources[f.id] ? `, ${item.sources[f.id].length.toLocaleString()} characters read` : ""}{f.note ? ` · ${f.note}` : ""}</span></li>
+        ))}
+      </ul>
+      {facts.some(([, v]) => v.length > 0) && (
+        <dl className="kv small">
+          {facts.filter(([, v]) => v.length > 0).map(([k, v]) => <div key={k} className="contents"><dt>{k}</dt><dd>{v.join(", ")}</dd></div>)}
+        </dl>
+      )}
+      {found && found.conflicts.length > 0 && (
+        <div className="note-row" role="note"><span><b>Conflicts the model noted:</b> {found.conflicts.join(" ")}</span></div>
+      )}
+      {sensitive.length > 0 && <p className="small"><b>Sensitive data flagged:</b> {sensitive.map((s) => `${s.kind} (${s.sample})`).join(", ")}</p>}
+    </section>
+  );
+}
+
+function ImportReview({ id, onBack, onOpenPage, onHome }: { id: string; onBack: () => void; onOpenPage: (id: string) => void; onHome: () => void }) {
+  const dialogs = useDialogs();
   const [item, setItem] = useState<ImportItem | null>(null);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [redact, setRedact] = useState(true);
   const [shown, setShown] = useState<ImportFile | null>(null);
+  const [sourceOpen, setSourceOpen] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
   const [useApplies, setUseApplies] = useState(true);
   const [useOwner, setUseOwner] = useState(true);
   const [review, setReview] = useState<number | null>(null);
+  const [reviewTouched, setReviewTouched] = useState(false);
   const [mode, setMode] = useState<string>("new");
   const [space, setSpace] = useState("");
   const [folder, setFolder] = useState("");
   const [folders, setFolders] = useState<TreeNode[]>([]);
-  const [attach, setAttach] = useState(true);
+  const [attach, setAttach] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const keyRef = useRef(0);
@@ -222,17 +316,27 @@ function ImportReview({ id, spaces, onBack, onOpenPage, onHome }: { id: string; 
   const load = useCallback(() => api.get<ImportItem>(`/imports/items/${id}`).then((it) => {
     setItem(it);
     const p = it.proposal;
-    if (!p) return;
+    setShown((s) => s ?? it.files.find((f) => f.kind === "Text" && !f.embedded) ?? it.files[0] ?? null);
+    if (!p) { setDrafts([]); return; }
     setDrafts(p.pages.map((pg) => ({ key: next(), title: pg.title, json: pg.redactedJson })));
     setTags(p.tags);
-    setReview(p.reviewMonths);
-    setSpace(p.destination?.spaceId ?? "");
+    const sp = p.destination?.spaceId ?? "";
+    setSpace(sp);
     setFolder(p.destination?.parentId ?? "");
-    setShown(it.files.find((f) => f.kind === "Text") ?? it.files[0] ?? null);
-  }).catch(() => setError("Not found.")), [id]);
+    setReview(it.spaces?.find((s) => s.id === sp)?.reviewMonths ?? p.reviewMonths);
+  }).catch(() => setError("This draft was not found.")), [id]);
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { if (item && ["Queued", "Working"].includes(item.status)) { const t = setTimeout(() => void load(), 3000); return () => clearTimeout(t); } }, [item, load]);
+  useEffect(() => { if (item && ["Queued", "Working"].includes(item.status)) { const t = setTimeout(() => void load(), 2000); return () => clearTimeout(t); } }, [item, load]);
   useEffect(() => { if (!space) { setFolders([]); return; } void api.get<TreeNode[]>(`/spaces/${space}/tree`).then((t) => setFolders(t.filter((n) => n.kind === "Folder"))).catch(() => setFolders([])); }, [space]);
+
+  const spaces: ImportSpace[] = item?.spaces ?? [];
+  function pickSpace(sid: string) {
+    setSpace(sid);
+    setFolder("");
+    // A space's own review cycle is where a page placed there starts, unless it was chosen here already.
+    const d = spaces.find((s) => s.id === sid)?.reviewMonths;
+    if (!reviewTouched && d != null) setReview(d);
+  }
 
   function toggleRedact(on: boolean) {
     if (!item?.proposal) return;
@@ -261,13 +365,20 @@ function ImportReview({ id, spaces, onBack, onOpenPage, onHome }: { id: string; 
     finally { setBusy(false); }
   }
 
-  async function retry() {
-    try { await api.post(`/imports/items/${id}/retry`); await load(); } catch (e) { setError(problem(e, "Not started.")); }
+  async function act(path: string, fallback: string) {
+    setError(null);
+    try { await api.post(`/imports/items/${id}/${path}`); await load(); } catch (e) { setError(problem(e, fallback)); }
   }
 
-  const writable = spaces.filter((s) => s.myRole && WRITERS.includes(s.myRole));
+  async function discard() {
+    if (!item || !await dialogs.confirm({ title: `Discard “${item.title}”?`, body: "The draft and its original files are deleted permanently. This can't be undone.", ok: "Discard", danger: true, focusCancel: true })) return;
+    try { await api.del(`/imports/items/${id}`); onBack(); } catch (e) { setError(problem(e, "Not discarded.")); }
+  }
+
   if (!item) return <main className="doc wide"><div className="col"><Crumbs onHome={onHome} onInbox={onBack} />{error && <p className="form-error" role="alert">{error}</p>}</div></main>;
   const p = item.proposal;
+  const ready = item.status === "Ready";
+  const source = shown && item.sources[shown.id];
   return (
     <>
       <main className="doc wide">
@@ -276,103 +387,115 @@ function ImportReview({ id, spaces, onBack, onOpenPage, onHome }: { id: string; 
           <div className="titlebar">
             <h1>{item.title}</h1>
             <div className="ptools">
-              {["Ready", "Failed"].includes(item.status) && <button className="tb" onClick={() => void retry()}>Draft again</button>}
-              {item.status === "Ready" && <button className="tb primary" disabled={busy || drafts.length === 0 || (mode === "new" && !space)} onClick={() => void accept()}>{busy ? "Accepting…" : "Accept"}</button>}
+              {(ready || item.status === "Failed") && <button className="tb" onClick={() => void act("reject", "Not rejected.")}>Reject</button>}
+              {item.status !== "Working" && item.status !== "Accepted" && <button className="tb" onClick={() => void discard()}>Discard</button>}
+              {["Ready", "Failed", "Rejected"].includes(item.status) && <button className="tb" onClick={() => void act("retry", "Not started.")}>Draft again</button>}
+              {ready && <button className="tb primary" disabled={busy || drafts.length === 0 || (mode === "new" && !space)} onClick={() => void accept()}>{busy ? "Accepting…" : "Accept"}</button>}
             </div>
           </div>
           {error && <p className="form-error" role="alert">{error}</p>}
-          {item.status !== "Ready" && <p className={item.status === "Failed" || item.status === "Blocked" ? "form-error" : "muted"} role="status">{STATUS[item.status] ?? item.status}{item.error ? ` · ${item.error}` : ""}</p>}
-          {p?.warnings.map((w) => <p key={w} className="note-row" role="status">{w}</p>)}
-          {p && item.status === "Ready" && (
-            <section className="review-options" aria-label="Review">
+          {!ready && <p className={item.status === "Failed" || item.status === "Blocked" ? "form-error" : "muted"} role="status">{statusText(item)}</p>}
+          {p?.warnings.map((w) => <p key={w} className="note-row" role="status"><span>{w}</span></p>)}
 
-            {p.sensitive.length > 0 && (
-              <>
-                <h3>Sensitive data</h3>
-                <ul className="plain-list small">{p.sensitive.map((s, i) => <li key={i}>{s.kind}: <code>{s.sample}</code></li>)}</ul>
-                <label className="check"><input type="checkbox" className="chk" checked={redact} onChange={(e) => toggleRedact(e.target.checked)} />Redact</label>
-              </>
-            )}
-            <h3>Where</h3>
-            <label className="check"><input type="radio" name="dest" checked={mode === "new"} onChange={() => setMode("new")} />New page</label>
-            {mode === "new" && (
-              <div className="field">
-                <select className="sel" aria-label="Space" value={space} onChange={(e) => { setSpace(e.target.value); setFolder(""); }}>
-                  <option value="" />{writable.map((s) => <option key={s.id} value={s.id}>{s.name}{s.isSensitive ? " (sensitive)" : ""}</option>)}
+          <Summary item={item} />
+
+          {p && ready && (
+            <section className="review-options" aria-label="Placement and details">
+              <h3>Placement</h3>
+              <div className="place-row">
+                <label className="check"><input type="radio" name="dest" checked={mode === "new"} onChange={() => setMode("new")} />New page</label>
+                <select className="sel" aria-label="Space" value={space} disabled={mode !== "new"} onChange={(e) => pickSpace(e.target.value)}>
+                  <option value="">{spaces.length ? "Choose a space" : "No space you can add pages to"}</option>
+                  {spaces.map((s) => <option key={s.id} value={s.id}>{s.name}{s.isSensitive ? " (sensitive)" : ""}</option>)}
                 </select>
-                <select className="sel" aria-label="Folder" value={folder} onChange={(e) => setFolder(e.target.value)}>
+                <select className="sel" aria-label="Level" value={folder} disabled={mode !== "new" || !space} onChange={(e) => setFolder(e.target.value)}>
                   <option value="">Top level</option>{folders.map((f) => <option key={f.id} value={f.id}>{f.title}</option>)}
                 </select>
-                {p.suggestedDestination && p.suggestedDestination.spaceId !== space && (
-                  <button type="button" className="link small" onClick={() => { setSpace(p.suggestedDestination!.spaceId); setFolder(p.suggestedDestination!.parentId ?? ""); }}>
+                {p.suggestedDestination && p.suggestedDestination.spaceId !== space && spaces.some((s) => s.id === p.suggestedDestination!.spaceId) && (
+                  <button type="button" className="link small" onClick={() => { setMode("new"); pickSpace(p.suggestedDestination!.spaceId); setFolder(p.suggestedDestination!.parentId ?? ""); }}>
                     Suggested: {spaces.find((s) => s.id === p.suggestedDestination!.spaceId)?.name}
                   </button>
                 )}
               </div>
-            )}
-            {p.duplicates.map((d) => (
-              <label key={d.pageId} className="check"><input type="radio" name="dest" checked={mode === `update:${d.pageId}`} disabled={drafts.length !== 1} onChange={() => setMode(`update:${d.pageId}`)} />Update “{d.title}”</label>
-            ))}
-            <h3>Tags</h3>
-            <TagInput value={tags} onChange={setTags} />
-            {p.appliesTo.length > 0 && (
-              <>
-                <h3>Applies to</h3>
-                <label className="check"><input type="checkbox" className="chk" checked={useApplies} onChange={(e) => setUseApplies(e.target.checked)} />
-                  {p.appliesTo.map((a) => `${a.name}${a.servers.length ? ` (${a.servers.join(", ")})` : ""}`).join("; ")}</label>
-              </>
-            )}
-            {p.owner && (
-              <>
-                <h3>Owner</h3>
-                <label className="check"><input type="checkbox" className="chk" checked={useOwner} onChange={(e) => setUseOwner(e.target.checked)} />{p.owner.name}</label>
-              </>
-            )}
-            <h3>Review cycle</h3>
-            <select className="sel" aria-label="Review cycle" value={review ?? ""} onChange={(e) => setReview(e.target.value ? Number(e.target.value) : null)}>
-              <option value="">None</option>{REVIEW_CHOICES.map((m) => <option key={m} value={m}>{m} months</option>)}
-            </select>
-            <h3>Originals</h3>
-            <label className="check"><input type="checkbox" className="chk" checked={attach} onChange={(e) => setAttach(e.target.checked)} />Attach to the page</label>
-            </section>
-          )}
-          <div className="review-split">
-            <section className="review-source" aria-label="Source">
-              <h2 className="s">Source</h2>
-              <ul className="plain-list">
-                {item.files.filter((f) => !f.embedded).map((f) => (
-                  <li key={f.id}>
-                    <button type="button" className={`link ${shown?.id === f.id ? "cur" : ""}`} onClick={() => setShown(f)}>{f.path}</button>
-                    <span className="muted small"> · {f.kind === "Blocked" ? "blocked" : f.kind === "Unsupported" ? "not read" : f.kind.toLowerCase()}{f.note ? ` · ${f.note}` : ""}</span>
-                  </li>
-                ))}
-              </ul>
-              {shown && (shown.kind === "Image"
-                ? <img className="review-image" src={fileUrl(shown.id)} alt={shown.name} />
-                : item.sources[shown.id] && <pre className="review-text">{item.sources[shown.id]}</pre>)}
-            </section>
-            <section className="review-draft" aria-label="Proposed pages">
-              <h2 className="s">Proposed {drafts.length === 1 ? "page" : `pages (${drafts.length})`}</h2>
-              {p && (
-                <div className="bar-row">
-                  {drafts.length > 1 && <button type="button" className="tb" onClick={() => setDrafts([mergeDrafts(drafts, next())])}>Merge pages</button>}
-                  {drafts.length === 1 && <button type="button" className="tb" onClick={() => setDrafts(splitAtHeadings(drafts[0], next))}>Split at headings</button>}
-                </div>
-              )}
-              {drafts.map((d, n) => (
-                <div key={d.key} className="draft">
-                  <input type="text" className="title-input" aria-label={`Title of page ${n + 1}`} value={d.title} maxLength={200}
-                    onChange={(e) => setDrafts(drafts.map((x) => (x.key === d.key ? { ...x, title: e.target.value } : x)))} />
-                  <DraftEditor draft={d} onChange={(json) => setDrafts((all) => all.map((x) => (x.key === d.key ? { ...x, json } : x)))} />
+              {p.duplicates.map((d) => (
+                <div key={d.pageId} className="place-row">
+                  <label className="check"><input type="radio" name="dest" checked={mode === `update:${d.pageId}`} disabled={drafts.length !== 1} onChange={() => setMode(`update:${d.pageId}`)} />Update existing page</label>
+                  <a href={to.page(d.pageId)} className="link clip" title={d.title} target="_blank" rel="noopener">{d.title}</a>
                 </div>
               ))}
+              <h3>Tags</h3>
+              <TagInput value={tags} onChange={setTags} />
+              <h3>Review cycle</h3>
+              <select className="sel" aria-label="Review cycle" value={review ?? ""} onChange={(e) => { setReviewTouched(true); setReview(e.target.value ? Number(e.target.value) : null); }}>
+                <option value="">None</option>{REVIEW_CHOICES.map((m) => <option key={m} value={m}>{m === 1 ? "1 month" : `${m} months`}</option>)}
+              </select>
+              {p.appliesTo.length > 0 && (
+                <>
+                  <h3>Applies to</h3>
+                  <label className="check"><input type="checkbox" className="chk" checked={useApplies} onChange={(e) => setUseApplies(e.target.checked)} />
+                    {p.appliesTo.map((a) => `${a.name}${a.servers.length ? ` (${a.servers.join(", ")})` : ""}`).join("; ")}</label>
+                </>
+              )}
+              {p.owner && (
+                <>
+                  <h3>Owner</h3>
+                  <label className="check"><input type="checkbox" className="chk" checked={useOwner} onChange={(e) => setUseOwner(e.target.checked)} />{p.owner.name}</label>
+                </>
+              )}
+              {p.sensitive.length > 0 && (
+                <>
+                  <h3>Sensitive data</h3>
+                  <label className="check"><input type="checkbox" className="chk" checked={redact} onChange={(e) => toggleRedact(e.target.checked)} />Redact the {p.sensitive.length === 1 ? "value" : `${p.sensitive.length} values`} flagged</label>
+                </>
+              )}
+              <h3>Originals</h3>
+              <label className="check"><input type="checkbox" className="chk" checked={attach} onChange={(e) => setAttach(e.target.checked)} />Attach to the page</label>
             </section>
-          </div>
+          )}
+
+          <section className="review-source" aria-label="Source">
+            <div className="bar-row">
+              <h2 className="s">Source</h2>
+              <span className="grow" />
+              <button type="button" className="tb" aria-expanded={sourceOpen} onClick={() => setSourceOpen(!sourceOpen)}>
+                {sourceOpen ? <ChevronDown className="ic" aria-hidden /> : <ChevronRight className="ic" aria-hidden />}{sourceOpen ? "Collapse" : "Expand"}
+              </button>
+            </div>
+            {item.files.filter((f) => !f.embedded).length > 1 && (
+              <div className="file-tabs" role="tablist" aria-label="Files">
+                {item.files.filter((f) => !f.embedded).map((f) => (
+                  <button key={f.id} type="button" role="tab" aria-selected={shown?.id === f.id} className={`chip ${shown?.id === f.id ? "on" : ""}`} title={f.path} onClick={() => setShown(f)}>{f.name}</button>
+                ))}
+              </div>
+            )}
+            {shown && (shown.kind === "Image"
+              ? <img className={`review-image ${sourceOpen ? "open" : ""}`} src={fileUrl(shown.id)} alt={shown.name} />
+              : source ? <pre className={`review-text ${sourceOpen ? "open" : ""}`} tabIndex={0}>{source}</pre>
+              : <p className="muted">{shown.note ?? "No text was read from this file."}</p>)}
+          </section>
+
+          <section className="review-draft" aria-label="Proposed pages">
+            <div className="bar-row">
+              <h2 className="s">Proposed {drafts.length === 1 ? "page" : `pages (${drafts.length})`}</h2>
+              <span className="grow" />
+              {drafts.length > 1 && <button type="button" className="tb" onClick={() => setDrafts([mergeDrafts(drafts, next())])}>Merge pages</button>}
+              {drafts.length === 1 && <button type="button" className="tb" onClick={() => setDrafts(splitAtHeadings(drafts[0], next))}>Split at headings</button>}
+            </div>
+            {drafts.map((d, n) => (
+              <div key={d.key} className="draft">
+                <input type="text" className="title-input" aria-label={`Title of page ${n + 1}`} value={d.title} maxLength={200}
+                  onChange={(e) => setDrafts(drafts.map((x) => (x.key === d.key ? { ...x, title: e.target.value } : x)))} />
+                <DraftEditor draft={d} onChange={(json) => setDrafts((all) => all.map((x) => (x.key === d.key ? { ...x, json } : x)))} />
+              </div>
+            ))}
+            {drafts.length === 0 && <p className="muted">No proposed page.</p>}
+          </section>
         </div>
       </main>
       <aside className="side" aria-label="Details">
         <h3>Files</h3><div>{item.files.filter((f) => !f.embedded).length}</div>
-        {p && <><h3>Drafted by</h3><div>{p.model}</div></>}
+        {p && <><h3>Drafted by</h3><div className="clip" title={p.model}>{p.model}</div></>}
+        {p?.ms ? <><h3>Drafting took</h3><div>{seconds(p.ms)}</div></> : null}
       </aside>
     </>
   );

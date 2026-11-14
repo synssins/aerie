@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, Bell, ChevronRight, House, KeyRound, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { Link, to } from "./Link";
 import { api } from "./api";
 import { CodeSetup } from "./Codes";
 import type { NotifyPref, Space, UserSettings } from "./api";
@@ -78,23 +79,23 @@ export function SettingsView({ section, settings, isAdmin, ownsSpaces, spaces, o
       <nav className="tree" aria-label="Settings">
         <button className="node" onClick={onExit}><ArrowLeft className="ic" aria-hidden /><span className="grow">Back to spaces</span></button>
         <div className="tree-head admin-head">Settings</div>
-        <button className={`node ${section === "preferences" ? "cur" : ""}`} onClick={() => onSection("preferences")} aria-current={section === "preferences" ? "page" : undefined}>
+        <Link href={to.settings("preferences")} className={`node ${section === "preferences" ? "cur" : ""}`} onNav={() => onSection("preferences")} aria-current={section === "preferences" ? "page" : undefined}>
           <SlidersHorizontal className="ic" aria-hidden /><span className="grow">Preferences</span>
-        </button>
-        <button className={`node ${section === "notifications" ? "cur" : ""}`} onClick={() => onSection("notifications")} aria-current={section === "notifications" ? "page" : undefined}>
+        </Link>
+        <Link href={to.settings("notifications")} className={`node ${section === "notifications" ? "cur" : ""}`} onNav={() => onSection("notifications")} aria-current={section === "notifications" ? "page" : undefined}>
           <Bell className="ic" aria-hidden /><span className="grow">Notifications</span>
-        </button>
-        <button className={`node ${section === "tokens" ? "cur" : ""}`} onClick={() => onSection("tokens")} aria-current={section === "tokens" ? "page" : undefined}>
+        </Link>
+        <Link href={to.settings("tokens")} className={`node ${section === "tokens" ? "cur" : ""}`} onNav={() => onSection("tokens")} aria-current={section === "tokens" ? "page" : undefined}>
           <KeyRound className="ic" aria-hidden /><span className="grow">API tokens</span>
-        </button>
-        <button className={`node ${section === "signin" ? "cur" : ""}`} onClick={() => onSection("signin")} aria-current={section === "signin" ? "page" : undefined}>
+        </Link>
+        <Link href={to.settings("signin")} className={`node ${section === "signin" ? "cur" : ""}`} onNav={() => onSection("signin")} aria-current={section === "signin" ? "page" : undefined}>
           <ShieldCheck className="ic" aria-hidden /><span className="grow">Sign-in</span>
-        </button>
+        </Link>
       </nav>
 
       <main className="doc wide">
         <div className="col">
-          <nav className="crumb" aria-label="Breadcrumb"><button className="crumb-home" onClick={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></button><ChevronRight className="ic sm" aria-hidden /><span>Settings</span></nav>
+          <nav className="crumb" aria-label="Breadcrumb"><Link href={to.home()} className="crumb-home" onNav={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></Link><ChevronRight className="ic sm" aria-hidden /><span>Settings</span></nav>
           <div className="titlebar"><h1>{section === "preferences" ? "Preferences" : section === "tokens" ? "API tokens" : section === "signin" ? "Sign-in" : "Notifications"}</h1></div>
 
           {section === "tokens" ? <TokensPanel admin={false} spaces={spaces} /> : section === "signin" ? <MyCodesPanel /> : section === "preferences" ? (

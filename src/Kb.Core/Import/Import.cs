@@ -2,9 +2,10 @@ namespace Kb.Core.Import;
 
 /// <summary>
 /// New: just uploaded. Working: being read and grouped, or the AI is drafting. Ready: a draft waits in the importer's inbox.
-/// Failed and Blocked say why. Accepted: it became one or more pages. Discarded: the importer threw it away.
+/// Failed and Blocked say why. Accepted: it became one or more pages. Discarded: the importer threw it away (its files purged).
+/// Rejected: the importer set the draft aside; its files stay, and it can be drafted again.
 /// </summary>
-public enum ImportStatus { Queued, Working, Ready, Failed, Blocked, Accepted, Discarded }
+public enum ImportStatus { Queued, Working, Ready, Failed, Blocked, Accepted, Discarded, Rejected }
 
 /// <summary>One upload: the files someone dropped at once. Grouped once read; each group becomes an item.</summary>
 public sealed class ImportBatch

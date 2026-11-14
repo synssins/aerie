@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ChevronRight, FileText, Folder, House, Megaphone, RotateCcw, Trash2, X } from "lucide-react";
+import { Link, to } from "./Link";
 import { api, fmtDateTime, type Announcement, type BinItem, type DiffLine, type Home, type Me, type Page, type PageVersion, type SearchResponse, type Space } from "./api";
 import { useDialogs } from "./Dialogs";
 
@@ -8,7 +9,7 @@ const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { d
 function Crumbs({ onHome, children }: { onHome: () => void; children?: ReactNode }) {
   return (
     <nav className="crumb" aria-label="Breadcrumb">
-      <button className="crumb-home" onClick={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></button>
+      <Link href={to.home()} className="crumb-home" onNav={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></Link>
       {children}
     </nav>
   );
@@ -100,10 +101,10 @@ export function SearchView({ query, tag = null, onHome, onOpen, onTag }: { query
             {result?.hits.map((h) => (
               // The title opens the page; a tag opens the list of pages with that tag. Two separate buttons, so neither click is the other's.
               <div key={h.id} className="result">
-                <button type="button" className="result-title" onClick={() => onOpen(h.id)}>{h.kind === "Folder" ? <Folder className="ic ft" aria-hidden /> : <FileText className="ic pg" aria-hidden />}{h.title}</button>
+                <Link href={to.page(h.id)} className="result-title" onNav={() => onOpen(h.id)}>{h.kind === "Folder" ? <Folder className="ic ft" aria-hidden /> : <FileText className="ic pg" aria-hidden />}{h.title}</Link>
                 <span className="muted small">{[h.spaceName, ...h.path].join(" / ")} · {fmtDate(h.updatedAt)}</span>
                 {h.snippet && <span className="result-snippet">{h.snippet}</span>}
-                {h.tags.length > 0 && <span className="tags flat">{h.tags.map((t) => <button key={t} type="button" className="chip" disabled={!onTag} onClick={() => onTag?.(t)}>{t}</button>)}</span>}
+                {h.tags.length > 0 && <span className="tags flat">{h.tags.map((t) => (onTag ? <Link key={t} href={to.tag(t)} className="chip" title={t} onNav={() => onTag(t)}>{t}</Link> : <span key={t} className="chip">{t}</span>))}</span>}
               </div>
             ))}
           </div>
@@ -322,7 +323,7 @@ export function HomeView({ me, spaces, viewed, onOpenSpace, onOpenPage }: {
             <section>
               <h2 className="s">Your spaces</h2>
               <div className="listing">
-                {spaces.map((s) => <button key={s.id} className="node" onClick={() => onOpenSpace(s)}><Folder className="ic ft" aria-hidden /><span className="grow">{s.name}</span></button>)}
+                {spaces.map((s) => <Link key={s.id} href={to.space(s.id)} className="node" title={s.name} onNav={() => onOpenSpace(s)}><Folder className="ic ft" aria-hidden /><span className="grow">{s.name}</span></Link>)}
                 {spaces.length === 0 && <p className="muted">No spaces.</p>}
               </div>
             </section>
@@ -330,7 +331,7 @@ export function HomeView({ me, spaces, viewed, onOpenSpace, onOpenPage }: {
               <section>
                 <h2 className="s">Recently viewed</h2>
                 <div className="listing">
-                  {viewed.map((v) => <button key={v.id} className="node" onClick={() => onOpenPage(v.id)}><FileText className="ic pg" aria-hidden /><span className="grow">{v.title}</span></button>)}
+                  {viewed.map((v) => <Link key={v.id} href={to.page(v.id)} className="node" title={v.title} onNav={() => onOpenPage(v.id)}><FileText className="ic pg" aria-hidden /><span className="grow">{v.title}</span></Link>)}
                 </div>
               </section>
             )}
@@ -339,10 +340,10 @@ export function HomeView({ me, spaces, viewed, onOpenSpace, onOpenPage }: {
                 <h2 className="s">Recently updated</h2>
                 <div className="listing">
                   {home.recent.map((r) => (
-                    <button key={r.id} className="node two" onClick={() => onOpenPage(r.id)}>
+                    <Link key={r.id} href={to.page(r.id)} className="node two" title={r.title} onNav={() => onOpenPage(r.id)}>
                       <FileText className="ic pg" aria-hidden />
                       <span className="grow">{r.title}<small>{r.spaceName} · {r.updatedBy} · {fmtDate(r.updatedAt)}</small></span>
-                    </button>
+                    </Link>
                   ))}
                 </div>
               </section>

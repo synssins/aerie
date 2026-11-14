@@ -8,13 +8,14 @@ import { SearchView } from "./Views";
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("tags", () => {
-  it("a tag on a page is a button that opens the list of pages with it", async () => {
+  it("a tag on a page is a link that opens the list of pages with it", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200 })));
     const onTag = vi.fn();
     const page = { id: "p1", spaceId: "s1", parentId: null, kind: "Page", title: "VPN", contentJson: JSON.stringify({ type: "doc", content: [] }), version: "1.0",
       updatedAt: "2026-11-12T10:00:00Z", updatedBy: "Pat", path: [], history: [], canEdit: false, tags: ["vpn", "windows"], canDelete: false, draft: null, attachments: [], maxAttachmentBytes: 1000 };
     render(<DialogProvider><PageView page={page as never} spaceName="Desk" role="Reader" onTag={onTag} onSaved={() => {}} onOpen={() => {}} onHome={() => {}} onDirty={() => {}} onHistory={() => {}} onMove={() => {}} onDelete={() => {}} /></DialogProvider>);
-    await userEvent.click(screen.getByRole("button", { name: "windows" }));
+    expect(screen.getByRole("link", { name: "windows" }).getAttribute("href")).toBe("/search?tag=windows");
+    await userEvent.click(screen.getByRole("link", { name: "windows" }));
     expect(onTag).toHaveBeenCalledWith("windows");
   });
 
@@ -26,7 +27,7 @@ describe("tags", () => {
     }));
     const onOpen = vi.fn();
     render(<SearchView query="" tag="vpn" onHome={() => {}} onOpen={onOpen} />);
-    await userEvent.click(await screen.findByRole("button", { name: /Reset VPN/ }));
+    await userEvent.click(await screen.findByRole("link", { name: /Reset VPN/ }));
     expect(onOpen).toHaveBeenCalledWith("p1");
     expect(urls[0]).toBe("/api/v1/search?q=&tag=vpn&limit=20&offset=0");
     await waitFor(() => expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Tag vpn"));
@@ -38,10 +39,11 @@ describe("tags", () => {
     const onOpen = vi.fn();
     const onTag = vi.fn();
     render(<SearchView query="" tag="identity" onHome={() => {}} onOpen={onOpen} onTag={onTag} />);
-    await userEvent.click(await screen.findByRole("button", { name: "mfa" }));
+    await userEvent.click(await screen.findByRole("link", { name: "mfa" }));
     expect(onTag).toHaveBeenCalledWith("mfa");
     expect(onOpen).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole("button", { name: "Reset MFA" }));
+    expect(screen.getByRole("link", { name: "Reset MFA" }).getAttribute("href")).toBe("/p/p1");
+    await userEvent.click(screen.getByRole("link", { name: "Reset MFA" }));
     expect(onOpen).toHaveBeenCalledWith("p1");
     expect(onTag).toHaveBeenCalledTimes(1);
   });

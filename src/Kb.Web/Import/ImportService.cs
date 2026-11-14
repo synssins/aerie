@@ -30,7 +30,8 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
 {
     public const int MaxFilesPerBatch = 1000;
     public const string FileUrl = "/api/v1/imports/files/";
-    private const int MaxSourceChars = 120_000, MaxPictures = 8, MaxPictureBytes = 4 * 1024 * 1024;
+    // shortcut: the model reads at most the first 60,000 characters of an item (about 15,000 tokens); a longer one is cut, with a warning.
+    private const int MaxSourceChars = 60_000, MaxPictures = 8, MaxPictureBytes = 4 * 1024 * 1024;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public static string Key(Guid fileId) => $"imports/{fileId:N}";
@@ -85,7 +86,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             var allBlocked = members.All(m => m.Kind is "Blocked");
             var item = new ImportItem
             {
-                BatchId = batch.Id, UserId = batch.UserId, Title = Trim(Path.GetFileNameWithoutExtension(main.Name), 300), CreatedAt = now, UpdatedAt = now,
+                BatchId = batch.Id, UserId = batch.UserId, Title = CleanTitle(main.Name), CreatedAt = now, UpdatedAt = now,
                 Status = allBlocked ? ImportStatus.Blocked : ImportStatus.Queued, Error = allBlocked ? main.Note : null,
             };
             db.ImportItems.Add(item);
@@ -269,10 +270,23 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             ["owner"] = new JsonObject { ["type"] = "string" },
             ["reviewMonths"] = new JsonObject { ["enum"] = new JsonArray(0, 1, 3, 6, 12, 24, 36) },
             ["destination"] = new JsonObject { ["type"] = "string" },
+            ["found"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["people"] = Strings(20, 100), ["servers"] = Strings(20, 100), ["applications"] = Strings(20, 100), ["tickets"] = Strings(20, 100),
+                    ["versions"] = Strings(20, 100), ["conflicts"] = Strings(5, 200),
+                },
+                ["additionalProperties"] = false,
+            },
         },
         ["required"] = new JsonArray("pages", "tags", "apps", "owner", "reviewMonths", "destination"),
         ["additionalProperties"] = false,
     };
+
+    private static JsonObject Strings(int items, int length) =>
+        new() { ["type"] = "array", ["maxItems"] = items, ["items"] = new JsonObject { ["type"] = "string", ["maxLength"] = length } };
 
     private const string ProposalTask =
         "Bring the documents in the data into this knowledge base as standardized page(s). Keep every fact, value, command and step exactly; " +
@@ -282,7 +296,9 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         "Use one page unless the documents clearly cover separate topics. " +
         "Suggest up to 8 short lower-case topic tags. In \"apps\" name the applications the content is about, using the exact names from \"inventory\" when one matches, " +
         "with the version if the content says it and the servers it names. In \"owner\" give the team or person who owns the process or escalation path if the content names one, else an empty string. " +
-        "Suggest \"reviewMonths\" (0 for none). In \"destination\" give the key of the best place from \"destinations\", or \"inbox\" if none fits.";
+        "Suggest \"reviewMonths\" (0 for none). In \"destination\" give the key of the best place from \"destinations\", or \"inbox\" if none fits. " +
+        "In \"found\" list the people, servers, applications, ticket or case numbers and versions the content names, each exactly as written, " +
+        "and in \"conflicts\" any fact the documents state in different ways (for example two versions for one upgrade), in a short sentence each.";
 
     /// <summary>Has the AI draft the item's page(s), then adds what the code finds itself: secrets, duplicates, added words.</summary>
     public async Task ProposeAsync(ImportItem item, CancellationToken ct)
@@ -298,8 +314,9 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             return;
         }
 
-        var source = string.Join("\n\n", docs.Select(d => $"=== {d.Path} ===\n{d.Text}"));
-        if (source.Length > MaxSourceChars) source = source[..MaxSourceChars];
+        var source = string.Join("\n\n", docs.Select(d => $"=== {d.Path} ===\n{Compact(d.Text!)}"));
+        var cut = source.Length > MaxSourceChars;
+        if (cut) source = source[..MaxSourceChars];
         var visible = await access.VisibleSpacesAsync(actor, ct);
         var writable = new List<Guid>();
         foreach (var s in visible) if (await access.CanAsync(actor, s, SpaceAction.CreateEdit, ct)) writable.Add(s);
@@ -344,6 +361,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
 
         var findings = Sensitive.Find(source);
         var warnings = files.Where(f => f.Note is not null && f.Kind != "Blocked").Select(f => $"{f.Name}: {f.Note}").ToList();
+        if (cut) warnings.Add($"Only the first {MaxSourceChars:N0} characters were given to the model; the draft does not cover the rest. Split the file, or add the rest by hand.");
         var outWords = pages.SelectMany(p => AiGuard.Words(DocText.Plain(p["doc"]!.ToJsonString()))).Select(w => w.ToLowerInvariant()).ToList();
         var inWords = new HashSet<string>(AiGuard.Words(source).Select(w => w.ToLowerInvariant()));
         var added = outWords.Where(w => !inWords.Contains(w) && w.Length > 3).Distinct().ToList();
@@ -423,7 +441,9 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             ["warnings"] = new JsonArray([.. warnings.Select(w => (JsonNode)w)]),
             ["model"] = r.Value.Model,
         };
-        item.Title = Trim(title, 300);
+        proposal["ms"] = r.Value.Milliseconds;
+        proposal["found"] = Found(output["found"] as JsonObject, source);
+        item.Title = CleanTitle(title, fileName: false);
         item.ProposalJson = proposal.ToJsonString();
         (item.Status, item.Error) = (ImportStatus.Ready, null);
     }
@@ -498,7 +518,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             }
         (item.Status, item.PageId, item.UpdatedAt) = (ImportStatus.Accepted, made[0], time.GetUtcNow());
         await db.SaveChangesAsync(ct);
-        await DropFilesAsync(item.Id, ct);
+        await DropFilesAsync(item.Id, actor.UserId, req.AttachOriginals ? "accepted, attached to the page" : "accepted, not attached", ct);
         return Outcome.List<Guid>(made);
     }
 
@@ -512,13 +532,79 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         }
     }
 
-    /// <summary>The stored originals of an item go once it is accepted or discarded: copies live on as attachments and images.</summary>
-    public async Task DropFilesAsync(Guid itemId, CancellationToken ct)
+    /// <summary>
+    /// The stored originals of an item and the text read from them are deleted for good (no recycle bin) once it is accepted or
+    /// discarded; only what the importer kept lives on (attachments, images). The names and hashes stay for provenance. Audited.
+    /// </summary>
+    public async Task DropFilesAsync(Guid itemId, Guid? by, string reason, CancellationToken ct)
     {
         var files = await db.ImportFiles.Where(f => f.ItemId == itemId).ToListAsync(ct);
         foreach (var f in files) await store.DeleteAsync(Key(f.Id), ct);
         foreach (var f in files) f.Text = null;
         await db.SaveChangesAsync(ct);
+        if (files.Count > 0)
+            await audit.AppendAsync(new AuditEvent(AuditActions.ImportPurge, by, "importItem", itemId.ToString(), Data: new Dictionary<string, string>
+            {
+                ["reason"] = reason, ["files"] = string.Join("; ", files.Select(f => $"{f.Path} sha256:{f.Sha256}")).Truncate(3000), ["count"] = files.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            }), ct);
+    }
+
+    /// <summary>
+    /// The text the model reads: a line repeated over and over (a log, a pasted runbook) once, with how many times; runs of blank
+    /// lines as one. It is what costs the model time and says nothing more.
+    /// </summary>
+    public static string Compact(string text)
+    {
+        var sb = new StringBuilder(text.Length);
+        string? last = null;
+        var repeats = 0;
+        var blank = 0;
+        void Flush() { if (repeats > 0) sb.Append(System.Globalization.CultureInfo.InvariantCulture, $"(the line above {repeats} more time{(repeats == 1 ? "" : "s")})\n"); repeats = 0; }
+        foreach (var line in text.Split('\n'))
+        {
+            if (line.Trim().Length == 0) { Flush(); if (++blank == 1) sb.Append('\n'); last = null; continue; }
+            blank = 0;
+            if (line == last) { repeats++; continue; }
+            Flush();
+            sb.Append(line).Append('\n');
+            last = line;
+        }
+        Flush();
+        return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    /// What the model says the files name, kept only where the source says it too (a name, server, version it made up is dropped),
+    /// with the change, incident and case numbers the code finds itself. Conflicts are the model's own words, shown as such.
+    /// </summary>
+    public static JsonObject Found(JsonObject? found, string source)
+    {
+        JsonArray Present(string key, IEnumerable<string>? extra = null) => new([.. (found?[key] as JsonArray ?? []).Select(x => x?.GetValue<string>()?.Trim() ?? "")
+            .Where(x => x.Length > 0 && source.Contains(x, StringComparison.OrdinalIgnoreCase)).Concat(extra ?? [])
+            .Distinct(StringComparer.OrdinalIgnoreCase).Take(20).Select(x => (JsonNode)x)]);
+        return new JsonObject
+        {
+            ["people"] = Present("people"), ["servers"] = Present("servers"), ["applications"] = Present("applications"),
+            ["tickets"] = Present("tickets", Identifier().Matches(source).Select(m => m.Value)), ["versions"] = Present("versions"),
+            ["conflicts"] = new JsonArray([.. (found?["conflicts"] as JsonArray ?? []).Select(x => x?.GetValue<string>()?.Trim() ?? "").Where(x => x.Length > 0).Take(5).Select(x => (JsonNode)x)]),
+        };
+    }
+
+    /// <summary>
+    /// A page title from a file name: no extension, separators as spaces, a run of one character kept to three, at most 100
+    /// characters (cut at a word). The file's own name stays in the import's files, for provenance.
+    /// </summary>
+    public static string CleanTitle(string name, bool fileName = true)
+    {
+        var t = fileName ? Path.GetFileNameWithoutExtension(name.Trim()) : name.Trim();
+        if (t.Length == 0) t = name.Trim();
+        t = System.Text.RegularExpressions.Regex.Replace(t, @"[_]+", " ");
+        t = System.Text.RegularExpressions.Regex.Replace(t, @"(.)\1{3,}", "$1$1$1");
+        t = System.Text.RegularExpressions.Regex.Replace(t, @"\s+", " ").Trim();
+        if (t.Length <= 100) return t.Length > 0 ? t : "Untitled";
+        var cut = t[..100];
+        var space = cut.LastIndexOf(' ');
+        return (space >= 60 ? cut[..space] : cut).TrimEnd() + "…";
     }
 }
 
@@ -528,7 +614,7 @@ public sealed record AcceptPage(string Title, string ContentJson, IReadOnlyList<
 /// Pages: what the importer reviewed (title, content, tags). Either UpdatePageId (a new version of that page) or SpaceId and ParentId.
 /// Details: Applies to, owner and review cycle to set, or null. AttachOriginals: attach the original files to the first page.
 /// </summary>
-public sealed record AcceptRequest(IReadOnlyList<AcceptPage>? Pages, Guid? SpaceId, Guid? ParentId, Guid? UpdatePageId, Kb.Web.Actions.PageDetailsRequest? Details, bool AttachOriginals = true);
+public sealed record AcceptRequest(IReadOnlyList<AcceptPage>? Pages, Guid? SpaceId, Guid? ParentId, Guid? UpdatePageId, Kb.Web.Actions.PageDetailsRequest? Details, bool AttachOriginals = false);
 
 internal static class StringExtensions
 {

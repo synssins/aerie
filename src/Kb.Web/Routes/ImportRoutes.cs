@@ -29,6 +29,9 @@ public static class ImportRoutes
         imp.MapPost("/items/{id:guid}/accept", (Guid id, AcceptRequest req, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new AcceptImport { ItemId = id, Request = req }, ct).ToHttp()).WithAction<AcceptImport>();
 
+        imp.MapPost("/items/{id:guid}/reject", (Guid id, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new RejectImport { ItemId = id }, ct).ToHttp()).WithAction<RejectImport>();
+
         imp.MapPost("/items/{id:guid}/retry", (Guid id, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new RetryImport { ItemId = id }, ct).ToHttp()).WithAction<RetryImport>();
 

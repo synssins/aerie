@@ -54,6 +54,14 @@
     "scope": "server"
   },
   {
+    "action": "import.reject",
+    "method": "POST",
+    "path": "/api/v1/imports/items/{newGuid}/reject",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 404, "contributor": 404, "supervisor": 404, "owner": 404, "admin": 404},
+    "scope": "server",
+    "note": "Setting one's own draft aside needs no AI; anyone else's is not found."
+  },
+  {
     "action": "import.retry",
     "method": "POST",
     "path": "/api/v1/imports/items/{newGuid}/retry",

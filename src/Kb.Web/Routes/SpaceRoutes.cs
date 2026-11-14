@@ -3,7 +3,7 @@ namespace Kb.Web;
 
 public sealed record CreateSpaceRequest(string Name, string? Key, string? Description, bool IsSensitive = false, SpaceVisibility Visibility = SpaceVisibility.Private);
 public sealed record UpdateSpaceRequest(string? Name, string? Description, bool? IsSensitive, SpaceVisibility? Visibility,
-    bool? CommentsEnabled = null, int? AgingDays = null, AgingAudience? AgingAudience = null, int? RecycleDays = null);
+    bool? CommentsEnabled = null, int? AgingDays = null, AgingAudience? AgingAudience = null, int? RecycleDays = null, int? ReviewMonths = null);
 public sealed record GrantRoleRequest(PrincipalType PrincipalType, string PrincipalId, SpaceRole? Role = null, Guid? RoleId = null);
 public sealed record DeleteSpaceRequest(string? Confirm);
 
@@ -23,7 +23,7 @@ public static class SpaceRoutes
 
         api.MapPatch("/spaces/{id:guid}", (Guid id, UpdateSpaceRequest req, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new UpdateSpace { SpaceId = id, Name = req.Name, Description = req.Description, IsSensitive = req.IsSensitive, Visibility = req.Visibility,
-                CommentsEnabled = req.CommentsEnabled, AgingDays = req.AgingDays, AgingAudience = req.AgingAudience, RecycleDays = req.RecycleDays }, ct).ToHttp()).WithAction<UpdateSpace>();
+                CommentsEnabled = req.CommentsEnabled, AgingDays = req.AgingDays, AgingAudience = req.AgingAudience, RecycleDays = req.RecycleDays, ReviewMonths = req.ReviewMonths }, ct).ToHttp()).WithAction<UpdateSpace>();
 
         api.MapGet("/spaces/{id:guid}/roles", (Guid id, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new ListSpaceRoles { SpaceId = id }, ct).ToHttp()).WithAction<ListSpaceRoles>();
@@ -62,6 +62,6 @@ public static class SpaceRoutes
 
         admin.MapPatch("/spaces/{id:guid}", (Guid id, UpdateSpaceRequest req, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new UpdateSpaceAdmin { SpaceId = id, Name = req.Name, Description = req.Description, IsSensitive = req.IsSensitive, Visibility = req.Visibility,
-                CommentsEnabled = req.CommentsEnabled, AgingDays = req.AgingDays, AgingAudience = req.AgingAudience, RecycleDays = req.RecycleDays }, ct).ToHttp()).WithAction<UpdateSpaceAdmin>();
+                CommentsEnabled = req.CommentsEnabled, AgingDays = req.AgingDays, AgingAudience = req.AgingAudience, RecycleDays = req.RecycleDays, ReviewMonths = req.ReviewMonths }, ct).ToHttp()).WithAction<UpdateSpaceAdmin>();
     }
 }

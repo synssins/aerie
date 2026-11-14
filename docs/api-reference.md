@@ -103,6 +103,7 @@ API token: the scope a token needs to call the route. "No" means the route answe
 | DELETE | `/api/v1/imports/items/{id:guid}` | `import.discard` | Yes | Needed | No |
 | GET | `/api/v1/imports/items/{id:guid}` | `import.read` | No | Needed | No |
 | POST | `/api/v1/imports/items/{id:guid}/accept` | `import.accept` | Yes | Needed | No |
+| POST | `/api/v1/imports/items/{id:guid}/reject` | `import.reject` | Yes | Needed | No |
 | POST | `/api/v1/imports/items/{id:guid}/retry` | `import.retry` | Yes | Needed | No |
 | POST | `/api/v1/imports/merge` | `import.merge` | Yes | Needed | No |
 | POST | `/api/v1/imports/{id:guid}/files` | `import.file.add` | Yes | Needed | No |

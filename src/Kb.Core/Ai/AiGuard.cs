@@ -25,6 +25,8 @@ public sealed record AiSettings
     public int MaxInputChars { get; init; } = 200_000;
     public int UserPerMinute { get; init; } = 10;
     public int TokenPerMinute { get; init; } = 10;
+    /// <summary>Import drafts sent to the model at once (1-8). A model server with one slot answers them in turn.</summary>
+    public int ImportConcurrency { get; init; } = 2;
     public Dictionary<string, AiAccess> Features { get; init; } = AiFeatures.All.ToDictionary(f => f, _ => AiAccess.Off);
 }
 

@@ -1268,6 +1268,9 @@ namespace Kb.Data.Sqlite.Migrations
                     b.Property<int?>("RecycleDays")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("ReviewMonths")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("Visibility")
                         .HasColumnType("INTEGER");
 

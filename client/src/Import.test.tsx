@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ImportItem, Space } from "./api";
+import type { ImportItem } from "./api";
 import { DialogProvider } from "./Dialogs";
-import { ImportView, mergeDrafts, splitAtHeadings } from "./Import";
+import { ImportView, mergeDrafts, splitAtHeadings, statusText } from "./Import";
 import { PageView } from "./PageView";
 
 HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) { this.setAttribute("open", ""); };
 HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) { this.removeAttribute("open"); };
 
-const space = { id: "s1", key: "iam", name: "IAM", description: null, isSensitive: false, visibility: "Private", myRole: "Contributor", commentsEnabled: true, agingDays: 180, agingAudience: "Everyone", recycleDays: null, createdAt: "2026-11-01T00:00:00Z" } as Space;
+const spaces = [{ id: "s1", name: "IAM", isSensitive: false, reviewMonths: 12 }, { id: "s2", name: "Vault", isSensitive: true, reviewMonths: null }];
 const doc = (...texts: [string, string][]) => JSON.stringify({ type: "doc", content: texts.map(([t, x]) => t === "h" ? { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: x }] } : { type: "paragraph", content: [{ type: "text", text: x }] }) });
 
 type Call = { key: string; body: unknown; headers?: Record<string, string> };
@@ -27,45 +27,113 @@ function server(routes: Record<string, (body: unknown) => unknown>) {
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-describe("import", () => {
-  it("uploads files into one batch, each with its path, then starts it", async () => {
-    const list = { batches: [], items: [{ id: "i1", batchId: "b1", title: "Reset MFA", status: "Ready", error: null, files: 2, createdAt: "2026-11-14T10:00:00Z", pageId: null }], canImport: true, canFormat: true };
+const row = (o: Record<string, unknown>) => ({ batchId: "b1", error: null, files: 1, createdAt: "2026-11-14T10:00:00Z", pageId: null, source: null, suggestedSpace: null, updatedAt: null, draftMs: null, ...o });
+
+describe("import inbox", () => {
+  it("queues dropped or browsed files, lists them before the start, then uploads each with its path", async () => {
+    const list = { batches: [], items: [row({ id: "i1", title: "Reset MFA", status: "Ready" })], canImport: true, canFormat: true, spaces };
     const calls = server({ "GET /imports": () => list, "POST /imports": () => ({ id: "b1" }), "POST /imports/b1/files": () => ({}), "POST /imports/b1/start": () => ({}) });
-    const onOpenItem = vi.fn();
-    render(<DialogProvider><ImportView itemId={null} spaces={[space]} onOpenItem={onOpenItem} onOpenPage={() => {}} onHome={() => {}} /></DialogProvider>);
-    await userEvent.selectOptions(await screen.findByLabelText("Destination"), "IAM");
+    render(<DialogProvider><ImportView itemId={null} onOpenItem={() => {}} onOpenPage={() => {}} onHome={() => {}} /></DialogProvider>);
+    expect(await screen.findByRole("region", { name: "Drop files here" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "browse" })).toBeTruthy();
     await userEvent.upload(screen.getByLabelText("Files"), [new File(["# Reset"], "reset.md"), new File(["x"], "shot.png")]);
+    const queue = screen.getByRole("region", { name: "Files to import" });
+    expect(within(queue).getByText("reset.md")).toBeTruthy();
+    expect(calls.some((c) => c.key === "POST /imports")).toBe(false); // nothing is sent before Start
+    await userEvent.click(within(queue).getByRole("button", { name: "Remove shot.png" }));
+    await userEvent.selectOptions(within(queue).getByLabelText("Destination"), "IAM");
+    await userEvent.click(within(queue).getByRole("button", { name: "Start import" }));
     await waitFor(() => expect(calls.map((c) => c.key)).toContain("POST /imports/b1/start"));
     expect(calls.find((c) => c.key === "POST /imports")?.body).toEqual({ spaceId: "s1" });
-    expect(calls.filter((c) => c.key === "POST /imports/b1/files").map((c) => c.headers?.["X-File-Name"])).toEqual(["reset.md", "shot.png"]);
-    await userEvent.click(screen.getByRole("button", { name: "Reset MFA" }));
+    expect(calls.filter((c) => c.key === "POST /imports/b1/files").map((c) => c.headers?.["X-File-Name"])).toEqual(["reset.md"]);
+  });
+
+  it("shows each draft as one line with its facts, as a link, and says why a box cannot be ticked", async () => {
+    const list = {
+      batches: [], canImport: true, canFormat: true, spaces,
+      items: [
+        row({ id: "i1", title: "Reset MFA", status: "Ready", source: "reset.md +1", suggestedSpace: "IAM", draftMs: 14000 }),
+        row({ id: "i2", title: "incident-report", status: "Blocked", error: "It holds text addressed to the AI, so it was not sent.", source: "incident-report.docx" }),
+      ],
+    };
+    server({ "GET /imports": () => list });
+    const onOpenItem = vi.fn();
+    render(<DialogProvider><ImportView itemId={null} onOpenItem={onOpenItem} onOpenPage={() => {}} onHome={() => {}} /></DialogProvider>);
+    const link = await screen.findByRole("link", { name: "Reset MFA" });
+    expect(link.getAttribute("href")).toBe("/import/i1");
+    expect(screen.getByText("reset.md +1")).toBeTruthy();
+    expect(screen.getByText("Ready to review · drafted in 14 s")).toBeTruthy();
+    expect(screen.getByText("→ IAM")).toBeTruthy();
+    const blocked = screen.getByLabelText("Select incident-report") as HTMLInputElement;
+    expect(blocked.disabled).toBe(true);
+    expect(blocked.title).toBe("Can't be merged: Blocked: It holds text addressed to the AI, so it was not sent.");
+    expect(screen.getByText("Blocked: It holds text addressed to the AI, so it was not sent.")).toBeTruthy();
+    await userEvent.click(link);
     expect(onOpenItem).toHaveBeenCalledWith("i1");
   });
 
-  it("reviews a draft: redacted by default, source beside it, accepted with the chosen place and metadata", async () => {
-    const item: ImportItem = {
-      id: "i1", title: "Reset MFA", status: "Ready", error: null, pageId: null,
-      files: [{ id: "f1", name: "reset.md", path: "reset.md", size: 10, kind: "Text", note: null, embedded: false, sha256: "a" }],
-      sources: { f1: "# Reset MFA\npassword: Hunter2" },
-      proposal: {
-        pages: [{ title: "Reset MFA", contentJson: doc(["p", "password: Hunter2"]), redactedJson: doc(["p", "password: [REDACTED]"]) }],
-        tags: ["mfa"], appliesTo: [{ applicationId: "a1", name: "Acme ERP", servers: ["ERP01"] }], owner: { type: "Group", id: "local:g1", name: "ERP Support Team" }, reviewMonths: 6,
-        destination: { spaceId: "s1", parentId: null }, suggestedDestination: null, sensitive: [{ kind: "Password", sample: "Hu•••r2" }],
-        duplicates: [{ pageId: "p9", title: "Reset MFA (old)", score: 0.6, spaceId: "s1" }], warnings: [], model: "stub",
-      },
-    };
-    const calls = server({ "GET /imports/items/i1": () => item, "GET /spaces/s1/tree": () => [], "POST /imports/items/i1/accept": () => ["p1"] });
+  it("says how long a draft has been drafting", () => {
+    expect(statusText({ status: "Working", error: null, updatedAt: "2026-11-14T10:00:00Z", draftMs: null }, Date.parse("2026-11-14T10:00:42Z"))).toBe("Drafting · 42 s");
+    expect(statusText({ status: "Failed", error: "The model did not answer within 120 seconds.", updatedAt: null, draftMs: null })).toBe("Failed: The model did not answer within 120 seconds.");
+  });
+});
+
+describe("import review", () => {
+  const item: ImportItem = {
+    id: "i1", title: "Reset MFA", status: "Ready", error: null, pageId: null, spaces,
+    files: [{ id: "f1", name: "reset.md", path: "reset.md", size: 10, kind: "Text", note: null, embedded: false, sha256: "a" }],
+    sources: { f1: "# Reset MFA\npassword: Hunter2" },
+    proposal: {
+      pages: [{ title: "Reset MFA", contentJson: doc(["p", "password: Hunter2"]), redactedJson: doc(["p", "password: [REDACTED]"]) }],
+      tags: ["mfa"], appliesTo: [{ applicationId: "a1", name: "Acme ERP", servers: ["ERP01"] }], owner: { type: "Group", id: "local:g1", name: "ERP Support Team" }, reviewMonths: 6,
+      destination: null, suggestedDestination: { spaceId: "s1", parentId: null }, sensitive: [{ kind: "Password", sample: "Hu•••r2" }],
+      duplicates: [{ pageId: "p9", title: "Reset MFA (old)", score: 0.6, spaceId: "s1" }], warnings: [], model: "stub", ms: 9000,
+      found: { people: ["Lena Kowalski"], servers: ["ERP01"], applications: [], tickets: ["CHG0041234"], versions: ["4.2"], conflicts: ["4.1 and 4.2 are both named."] },
+    },
+  };
+
+  it("in order: summary, placement filled with the writable spaces, details, source above the proposed page; originals not attached", async () => {
+    const calls = server({ "GET /imports/items/i1": () => item, "GET /spaces/s1/tree": () => [{ id: "f9", kind: "Folder", title: "Runbooks", parentId: null }], "POST /imports/items/i1/accept": () => ["p1"] });
     const onOpenPage = vi.fn();
-    render(<DialogProvider><ImportView itemId="i1" spaces={[space]} onOpenItem={() => {}} onOpenPage={onOpenPage} onHome={() => {}} /></DialogProvider>);
+    render(<DialogProvider><ImportView itemId="i1" onOpenItem={() => {}} onOpenPage={onOpenPage} onHome={() => {}} /></DialogProvider>);
+    const summary = await screen.findByRole("region", { name: "Summary" });
+    expect(within(summary).getByText("Lena Kowalski")).toBeTruthy();
+    expect(within(summary).getByText("CHG0041234")).toBeTruthy();
+    expect(within(summary).getByText(/4.1 and 4.2 are both named/)).toBeTruthy();
+    const order = ["Summary", "Placement and details", "Source", "Proposed pages"].map((n) => screen.getByRole("region", { name: n }));
+    for (let k = 1; k < order.length; k++) expect(order[k - 1].compareDocumentPosition(order[k]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(expect.arrayContaining(["IAM", "Vault (sensitive)"]));
+    expect((screen.getByLabelText("Attach to the page") as HTMLInputElement).checked).toBe(false);
     expect(await screen.findByText(/\[REDACTED\]/)).toBeTruthy();
-    expect(screen.getByText(/password: Hunter2/, { selector: "pre" })).toBeTruthy(); // the source, unredacted, on the left
-    expect(screen.getByLabelText("Update “Reset MFA (old)”")).toBeTruthy();
+    expect(screen.getByText(/password: Hunter2/, { selector: "pre" })).toBeTruthy(); // the source, unredacted
+    // Picking the suggested space takes its review cycle (12) over the model's (6).
+    await userEvent.click(screen.getByRole("button", { name: "Suggested: IAM" }));
+    expect((screen.getByLabelText("Review cycle") as HTMLSelectElement).value).toBe("12");
+    await userEvent.selectOptions(await screen.findByLabelText("Level"), "Runbooks");
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
     await waitFor(() => expect(onOpenPage).toHaveBeenCalledWith("p1"));
     const body = calls.find((c) => c.key === "POST /imports/items/i1/accept")!.body as Record<string, unknown>;
-    expect(body).toMatchObject({ spaceId: "s1", updatePageId: null, attachOriginals: true, details: { ownerType: "Group", ownerId: "local:g1", reviewMonths: 6, appliesTo: [{ applicationId: "a1", servers: ["ERP01"] }] } });
-    expect(JSON.stringify(body.pages)).toContain("[REDACTED]");
+    expect(body).toMatchObject({ spaceId: "s1", parentId: "f9", updatePageId: null, attachOriginals: false, details: { reviewMonths: 12, ownerType: "Group", appliesTo: [{ applicationId: "a1" }] } });
     expect(JSON.stringify(body.pages)).not.toContain("Hunter2");
+  });
+
+  it("Reject keeps the draft for Draft again; Discard asks first, with Cancel as the default", async () => {
+    let status = "Ready";
+    const calls = server({ "GET /imports/items/i1": () => ({ ...item, status }), "POST /imports/items/i1/reject": () => { status = "Rejected"; return null; }, "DELETE /imports/items/i1": () => null });
+    const onOpenItem = vi.fn();
+    render(<DialogProvider><ImportView itemId="i1" onOpenItem={onOpenItem} onOpenPage={() => {}} onHome={() => {}} /></DialogProvider>);
+    await userEvent.click(await screen.findByRole("button", { name: "Reject" }));
+    expect(await screen.findByRole("button", { name: "Draft again" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/deleted permanently/)).toBeTruthy();
+    expect(document.activeElement?.textContent).toBe("Cancel");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(calls.some((c) => c.key === "DELETE /imports/items/i1")).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+    await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Discard" }));
+    await waitFor(() => expect(calls.some((c) => c.key === "DELETE /imports/items/i1")).toBe(true));
+    expect(onOpenItem).toHaveBeenCalledWith(null);
   });
 
   it("splits a page at its headings and merges pages back", () => {
@@ -88,9 +156,21 @@ describe("format", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Format" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("+ ## Restart steps")).toBeTruthy();
-    expect(calls.some((c) => c.key.startsWith("PUT /pages/p1 "))).toBe(false);
     await userEvent.click(within(dialog).getByRole("button", { name: "Accept" }));
     await waitFor(() => expect(screen.getByRole("heading", { level: 2, name: "Restart steps" })).toBeTruthy());
     expect(calls.filter((c) => c.key === "PUT /pages/p1")).toHaveLength(0); // nothing saved until Save
+  });
+
+  it("a page with a 180-character unbroken title keeps it whole in the tooltip of its breadcrumb", async () => {
+    window.matchMedia ??= ((q: string) => ({ matches: false, media: q, addEventListener: () => {}, removeEventListener: () => {} })) as never;
+    server({});
+    const long = "a".repeat(180);
+    const page = { id: "p1", spaceId: "s1", parentId: null, kind: "Page", title: long, contentJson: doc(["p", "x"]), version: "1.0", updatedAt: "2026-11-12T10:00:00Z", updatedBy: "Pat",
+      path: [{ id: "f1", title: "b".repeat(180) }], history: [], canEdit: true, tags: ["c".repeat(180)], canDelete: true, draft: null, attachments: [], maxAttachmentBytes: 1000 };
+    render(<DialogProvider><PageView page={page as never} spaceName="IAM" role="Owner" onTag={() => {}} onSaved={() => {}} onOpen={() => {}} onHome={() => {}} onDirty={() => {}} onHistory={() => {}} onMove={() => {}} onDelete={() => {}} /></DialogProvider>);
+    const crumb = screen.getByRole("navigation", { name: "Breadcrumb" });
+    expect(within(crumb).getByText(long).getAttribute("title")).toBe(long);
+    expect(within(crumb).getByRole("link", { name: "b".repeat(180) }).getAttribute("title")).toBe("b".repeat(180));
+    expect(screen.getByRole("link", { name: "c".repeat(180) }).getAttribute("href")).toBe(`/search?tag=${"c".repeat(180)}`);
   });
 });

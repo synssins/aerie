@@ -195,6 +195,32 @@ public sealed class ImportExtractTests
     }
 
     [Fact]
+    public void Text_IsNormalized_Compacted_AndTitlesCleaned()
+    {
+        // CRLF, LF and a lone CR alike; control characters (NUL, BEL) gone; tabs kept.
+        Assert.Equal("a\nb\nc\nd\te", Extractors.Extract("x.txt", U("a\r\nb\nc\rd\te\0\a")).Text);
+        Assert.Equal("one\ntwo", Extractors.Extract("cr.txt", U("one\rtwo")).Text);
+        Assert.Equal("Start\nretry\n(the line above 2 more times)\n\nEnd", ImportService.Compact("Start\nretry\nretry\nretry\n\n\n\nEnd"));
+        Assert.Equal("runbook final v2", ImportService.CleanTitle("runbook_final_v2.docx"));
+        var longName = new string('a', 40) + " very long file name " + new string('b', 150) + ".txt";
+        var t = ImportService.CleanTitle(longName);
+        Assert.True(t.Length <= 101, t);
+        Assert.StartsWith("aaa very long file name bbb", t, StringComparison.Ordinal);
+        Assert.Equal("Restart A/B", ImportService.CleanTitle("Restart A/B", fileName: false));
+    }
+
+    [Fact]
+    public void Found_KeepsOnlyWhatTheSourceSays_AndAddsTheNumbersItFinds()
+    {
+        var found = JsonNode.Parse("""{"people":["Lena Kowalski","Made Up"],"servers":["APP02"],"versions":["4.0.2","9.9"],"conflicts":["4.0.1 and 4.0.2 are both named for the upgrade."]}""")!.AsObject();
+        var f = ImportService.Found(found, "Lena Kowalski upgrades APP02 to 4.0.2 under CHG0095447.");
+        Assert.Equal(["Lena Kowalski"], f["people"]!.AsArray().Select(x => x!.GetValue<string>()));
+        Assert.Equal(["4.0.2"], f["versions"]!.AsArray().Select(x => x!.GetValue<string>()));
+        Assert.Equal(["CHG0095447"], f["tickets"]!.AsArray().Select(x => x!.GetValue<string>()));
+        Assert.Single(f["conflicts"]!.AsArray());
+    }
+
+    [Fact]
     public void Misnamed_Junk_Empty_AndMoreFormats()
     {
         // Old Office: single-byte and UTF-16 text both read, numbers kept, ASCII pairs not taken for CJK.

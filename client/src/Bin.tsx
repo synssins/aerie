@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
+import { Link, to } from "./Link";
 import { ChevronRight, FileText, Folder, House, Lock, RotateCcw, Trash2 } from "lucide-react";
 import { api, byTreeOrder, fmtDateTime, type TreeNode } from "./api";
 import { editorExtensions, makeExtensions, toEditor } from "./editor/extensions";
@@ -37,7 +38,7 @@ export function BinTree({ spaceId, spaces = [], selectedId, reloadKey, onSelect 
 
   if (!nodes) return null;
   const toggle = (id: string) => setOpen((o) => ({ ...o, [id]: !o[id] }));
-  const tree = (of: BinNode[]) => <PageTree nodes={of} parentId={null} selectedId={selectedId} open={open} onToggle={toggle} onSelect={(n) => onSelect(n.id)} />;
+  const tree = (of: BinNode[]) => <PageTree nodes={of} parentId={null} selectedId={selectedId} open={open} onToggle={toggle} onSelect={(n) => onSelect(n.id)} hrefOf={() => null} />;
   if (spaceId) return nodes.length > 0 ? tree(nodes) : <Empty />;
 
   const groups = [
@@ -92,7 +93,7 @@ export function BinPageView({ id, onHome, onBin, onOpen, onRestored }: { id: str
       <main className="doc">
         <div className="col">
           <nav className="crumb" aria-label="Breadcrumb">
-            <button className="crumb-home" onClick={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></button><ChevronRight className="ic sm" aria-hidden />
+            <Link href={to.home()} className="crumb-home" onNav={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></Link><ChevronRight className="ic sm" aria-hidden />
             <button className="crumb-link" onClick={onBin}>Recycle bin</button>
             {page.path.map((t, i) => <span key={i} className="crumb-part"><ChevronRight className="ic sm" aria-hidden /><span>{t}</span></span>)}
             <ChevronRight className="ic sm" aria-hidden /><b>{page.title}</b>

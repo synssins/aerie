@@ -228,6 +228,64 @@ public sealed class ImportFlowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Reject_KeepsTheFilesForADraftAgain_Discard_AndAcceptWithoutAttaching_PurgeThem()
+    {
+        var (cara, _) = await UserAsync("cara", "Contributor");
+        await UploadAsync(cara, ("a/printers.txt", U("Printers are on floor 2.")), ("b/vpn.txt", U("VPN uses the new gateway.")), ("c/mail.txt", U("Mail moves on Friday.")));
+        await WorkAsync();
+        var items = await ItemsAsync(cara);
+        Assert.All(items, i => Assert.False(string.IsNullOrEmpty(i.GetProperty("source").GetString())));
+        Guid Id(string source) => items.Single(i => i.GetProperty("source").GetString() == source).GetProperty("id").GetGuid();
+        var (a, b, c) = (Id("printers.txt"), Id("vpn.txt"), Id("mail.txt"));
+        async Task<int> StoredAsync(Guid item)
+        {
+            var files = (await cara.GetFromJsonAsync<JsonElement>($"/api/v1/imports/items/{item}", Ct)).GetProperty("files").EnumerateArray().ToList();
+            var n = 0;
+            foreach (var f in files) if ((await cara.GetAsync($"{ImportService.FileUrl}{f.GetProperty("id").GetGuid():N}", Ct)).StatusCode == HttpStatusCode.OK) n++;
+            return n;
+        }
+
+        // Reject: set aside, files kept, and it can be drafted again.
+        Assert.True((await cara.PostAsync($"/api/v1/imports/items/{a}/reject", null, Ct)).IsSuccessStatusCode);
+        Assert.Equal("Rejected", (await ItemsAsync(cara)).Single(i => i.GetProperty("id").GetGuid() == a).GetProperty("status").GetString());
+        Assert.Equal(1, await StoredAsync(a));
+        Assert.True((await cara.PostAsync($"/api/v1/imports/items/{a}/retry", null, Ct)).IsSuccessStatusCode);
+        await WorkAsync();
+        Assert.Equal("Ready", (await ItemsAsync(cara)).Single(i => i.GetProperty("id").GetGuid() == a).GetProperty("status").GetString());
+
+        // Discard: the files are deleted for good, and the purge is audited.
+        Assert.Equal(1, await StoredAsync(b));
+        Assert.True((await cara.DeleteAsync($"/api/v1/imports/items/{b}", Ct)).IsSuccessStatusCode);
+        await _f.WithDbAsync(async db =>
+        {
+            Assert.Null((await db.ImportFiles.SingleAsync(f => f.ItemId == b, Ct)).Text);
+            var purge = await db.AuditEntries.SingleAsync(e => e.Action == AuditActions.ImportPurge && e.TargetId == b.ToString(), Ct);
+            Assert.Contains("discarded", purge.DataJson, StringComparison.Ordinal);
+            Assert.Contains("vpn.txt sha256:", purge.DataJson, StringComparison.Ordinal);
+        });
+
+        // Accept without attaching (the default): the page is made, the originals are purged and nothing is attached.
+        var doc = """{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Mail moves on Friday."}]}]}""";
+        var r = await cara.PostAsJsonAsync($"/api/v1/imports/items/{c}/accept", new { pages = new[] { new { title = "Mail", contentJson = doc, tags = (string[]?)null } }, spaceId = _space }, Ct);
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var page = await cara.GetFromJsonAsync<JsonElement>($"/api/v1/pages/{(await r.Content.ReadFromJsonAsync<Guid[]>(Ct))![0]}", Ct);
+        Assert.Empty(page.GetProperty("attachments").EnumerateArray());
+        await _f.WithDbAsync(async db =>
+            Assert.Contains("not attached", (await db.AuditEntries.SingleAsync(e => e.Action == AuditActions.ImportPurge && e.TargetId == c.ToString(), Ct)).DataJson, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ASpacesReviewCycle_IsSetByItsOwner_AndShownWithTheSpace()
+    {
+        var r = await _admin.PatchAsJsonAsync($"/api/v1/spaces/{_space}", new { reviewMonths = 12 }, Ct);
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        Assert.Equal(12, (await r.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("reviewMonths").GetInt32());
+        Assert.Equal(HttpStatusCode.BadRequest, (await _admin.PatchAsJsonAsync($"/api/v1/spaces/{_space}", new { reviewMonths = 5 }, Ct)).StatusCode);
+        var cleared = await _admin.PatchAsJsonAsync($"/api/v1/spaces/{_space}", new { reviewMonths = 0 }, Ct);
+        Assert.Equal(JsonValueKind.Null, (await cleared.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("reviewMonths").ValueKind);
+    }
+
+    [Fact]
     public async Task IntoTheInbox_TheModelsSuggestedSpace_IsTheDestinationAndTheSuggestion()
     {
         var (cara, _) = await UserAsync("cara", "Contributor");

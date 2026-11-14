@@ -1,5 +1,7 @@
 import { Sparkles } from "lucide-react";
 import { AiPanel } from "./admin/AiSettings";
+import { REVIEW_CHOICES } from "./PageDetails";
+import { Link, to } from "./Link";
 import { InventoryAccess } from "./admin/InventoryAccess";
 import { AuditLog } from "./admin/AuditLog";
 import { Roles } from "./admin/Roles";
@@ -120,9 +122,9 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
           {open.spaces && (
             <div className="kids sub">
               {spaces.map((s) => (
-                <button key={s.id} className={`node ${space?.id === s.id ? "cur" : ""}`} onClick={() => onNavigate("spaces", s.id)}>
+                <Link key={s.id} href={to.admin("spaces", s.id)} className={`node ${space?.id === s.id ? "cur" : ""}`} onNav={() => onNavigate("spaces", s.id)}>
                   <span className="grow">{s.name}</span>{s.isSensitive && <Lock className="ic sm muted" aria-label="Sensitive" />}
-                </button>
+                </Link>
               ))}
             </div>
           )}
@@ -135,14 +137,14 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
               </button>
               {open.security && (
                 <div className="kids sub">
-                  <button className={`node ${section === "users" ? "cur" : ""}`} onClick={() => onNavigate("users")}><span className="grow">Users</span></button>
-                  <button className={`node ${section === "groups" ? "cur" : ""}`} onClick={() => onNavigate("groups")}><span className="grow">Groups</span></button>
-                  <button className={`node ${section === "roles" ? "cur" : ""}`} onClick={() => onNavigate("roles")}><span className="grow">Roles</span></button>
-                  <button className={`node ${section === "inventory" ? "cur" : ""}`} onClick={() => onNavigate("inventory")}><span className="grow">Inventory access</span></button>
-                  <button className={`node ${section === "signin" ? "cur" : ""}`} onClick={() => onNavigate("signin")}><span className="grow">Sign-in</span></button>
-                  <button className={`node ${section === "tokens" ? "cur" : ""}`} onClick={() => onNavigate("tokens")}><span className="grow">API tokens</span></button>
-                  <button className={`node ${section === "audit" ? "cur" : ""}`} onClick={() => onNavigate("audit")}><span className="grow">Audit log</span></button>
-                  <button className={`node ${section === "logs" ? "cur" : ""}`} onClick={() => onNavigate("logs")}><span className="grow">Log shipping</span></button>
+                  <Link href={to.admin("users")} className={`node ${section === "users" ? "cur" : ""}`} onNav={() => onNavigate("users")}><span className="grow">Users</span></Link>
+                  <Link href={to.admin("groups")} className={`node ${section === "groups" ? "cur" : ""}`} onNav={() => onNavigate("groups")}><span className="grow">Groups</span></Link>
+                  <Link href={to.admin("roles")} className={`node ${section === "roles" ? "cur" : ""}`} onNav={() => onNavigate("roles")}><span className="grow">Roles</span></Link>
+                  <Link href={to.admin("inventory")} className={`node ${section === "inventory" ? "cur" : ""}`} onNav={() => onNavigate("inventory")}><span className="grow">Inventory access</span></Link>
+                  <Link href={to.admin("signin")} className={`node ${section === "signin" ? "cur" : ""}`} onNav={() => onNavigate("signin")}><span className="grow">Sign-in</span></Link>
+                  <Link href={to.admin("tokens")} className={`node ${section === "tokens" ? "cur" : ""}`} onNav={() => onNavigate("tokens")}><span className="grow">API tokens</span></Link>
+                  <Link href={to.admin("audit")} className={`node ${section === "audit" ? "cur" : ""}`} onNav={() => onNavigate("audit")}><span className="grow">Audit log</span></Link>
+                  <Link href={to.admin("logs")} className={`node ${section === "logs" ? "cur" : ""}`} onNav={() => onNavigate("logs")}><span className="grow">Log shipping</span></Link>
                 </div>
               )}
             </div>
@@ -156,7 +158,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
                   {section === "bin" && (
                     <div className="kids sub"><BinTree spaceId={null} spaces={allSpaces} selectedId={binItem} reloadKey={binKey} onSelect={setBinItem} /></div>
                   )}
-                  <button className={`node ${section === "storage" ? "cur" : ""}`} onClick={() => onNavigate("storage")}><span className="grow">Document storage</span></button>
+                  <Link href={to.admin("storage")} className={`node ${section === "storage" ? "cur" : ""}`} onNav={() => onNavigate("storage")}><span className="grow">Document storage</span></Link>
                 </div>
               )}
             </div>
@@ -166,14 +168,14 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
               </button>
               {open.appearance && (
                 <div className="kids sub">
-                  <button className={`node ${section === "branding" ? "cur" : ""}`} onClick={() => onNavigate("branding")}><span className="grow">Branding</span></button>
+                  <Link href={to.admin("branding")} className={`node ${section === "branding" ? "cur" : ""}`} onNav={() => onNavigate("branding")}><span className="grow">Branding</span></Link>
                 </div>
               )}
             </div>
-            <button className={`node ${section === "ai" ? "cur" : ""}`} onClick={() => onNavigate("ai")}><Sparkles className="ic" aria-hidden /><span className="grow">AI</span></button>
-            <button className={`node ${section === "search" ? "cur" : ""}`} onClick={() => onNavigate("search")}><Search className="ic" aria-hidden /><span className="grow">Search</span></button>
-            <button className={`node ${section === "uploads" ? "cur" : ""}`} onClick={() => onNavigate("uploads")}><Paperclip className="ic" aria-hidden /><span className="grow">Uploads</span></button>
-            <button className={`node ${section === "plugins" ? "cur" : ""}`} onClick={() => onNavigate("plugins")}><Plug className="ic" aria-hidden /><span className="grow">Plugins</span></button>
+            <Link href={to.admin("ai")} className={`node ${section === "ai" ? "cur" : ""}`} onNav={() => onNavigate("ai")}><Sparkles className="ic" aria-hidden /><span className="grow">AI</span></Link>
+            <Link href={to.admin("search")} className={`node ${section === "search" ? "cur" : ""}`} onNav={() => onNavigate("search")}><Search className="ic" aria-hidden /><span className="grow">Search</span></Link>
+            <Link href={to.admin("uploads")} className={`node ${section === "uploads" ? "cur" : ""}`} onNav={() => onNavigate("uploads")}><Paperclip className="ic" aria-hidden /><span className="grow">Uploads</span></Link>
+            <Link href={to.admin("plugins")} className={`node ${section === "plugins" ? "cur" : ""}`} onNav={() => onNavigate("plugins")}><Plug className="ic" aria-hidden /><span className="grow">Plugins</span></Link>
           </>
         )}
       </nav>
@@ -199,7 +201,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
         <>
           <main className="doc wide">
             <div className="col">
-              <nav className="crumb" aria-label="Breadcrumb"><button className="crumb-home" onClick={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></button><ChevronRight className="ic sm" aria-hidden /><span>{area}</span>{section === "branding" && <><ChevronRight className="ic sm" aria-hidden /><span>Appearance</span></>}</nav>
+              <nav className="crumb" aria-label="Breadcrumb"><Link href={to.home()} className="crumb-home" onNav={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></Link><ChevronRight className="ic sm" aria-hidden /><span>{area}</span>{section === "branding" && <><ChevronRight className="ic sm" aria-hidden /><span>Appearance</span></>}</nav>
               <div className="titlebar">
                 <h1>{title}</h1>
                 <div className="ptools">
@@ -219,7 +221,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
                   <tbody>
                     {spaces.map((s) => (
                       <tr key={s.id} className="row" onClick={() => onNavigate("spaces", s.id)}>
-                        <td>{s.name}{s.isSensitive && <Lock className="ic sm muted" aria-label="Sensitive" />}</td>
+                        <td><Link href={to.admin("spaces", s.id)} className="cell-link" onNav={() => onNavigate("spaces", s.id)} onClick={(e) => e.stopPropagation()}>{s.name}</Link>{s.isSensitive && <Lock className="ic sm muted" aria-label="Sensitive" />}</td>
                         <td className="muted">{s.description}</td>
                         <td className="muted">{fmtDate(s.createdAt)}</td>
                       </tr>
@@ -370,7 +372,7 @@ export function SpaceEditor({ space, isAdmin, area, onBack, onSaved, onHome, onD
       ? { description: form.description ?? "", ...(isAdmin ? { name: form.name } : {}) }
       : {
           commentsEnabled: form.commentsEnabled, agingDays: form.agingDays, agingAudience: form.agingAudience,
-          recycleDays: form.recycleDays ?? undefined, ...(isAdmin ? { isSensitive: form.isSensitive, visibility: form.visibility } : {}),
+          recycleDays: form.recycleDays ?? undefined, reviewMonths: form.reviewMonths ?? 0, ...(isAdmin ? { isSensitive: form.isSensitive, visibility: form.visibility } : {}),
         };
     try {
       await api.patch(isAdmin ? `/admin/spaces/${space.id}` : `/spaces/${space.id}`, body);
@@ -389,7 +391,7 @@ export function SpaceEditor({ space, isAdmin, area, onBack, onSaved, onHome, onD
       <main className="doc wide">
         <div className="col">
           <nav className="crumb" aria-label="Breadcrumb">
-            <button className="crumb-home" onClick={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></button><ChevronRight className="ic sm" aria-hidden /><span>{area}</span><ChevronRight className="ic sm" aria-hidden />
+            <Link href={to.home()} className="crumb-home" onNav={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></Link><ChevronRight className="ic sm" aria-hidden /><span>{area}</span><ChevronRight className="ic sm" aria-hidden />
             <button className="crumb-link" onClick={onBack}>Spaces</button><ChevronRight className="ic sm" aria-hidden /><b>{space.name}</b>
           </nav>
           <div className="titlebar">
@@ -431,6 +433,10 @@ export function SpaceEditor({ space, isAdmin, area, onBack, onSaved, onHome, onD
                 </div>
                 <label className="lbl" htmlFor="sp-recycle">Recycle bin retention</label>
                 <span className="days"><input id="sp-recycle" type="number" min={1} max={3650} placeholder="90" value={form.recycleDays ?? ""} onChange={(e) => set("recycleDays", e.target.value ? Number(e.target.value) : null)} />days</span>
+                <label className="lbl" htmlFor="sp-review">Review cycle for new pages</label>
+                <select id="sp-review" className="sel narrow" value={form.reviewMonths ?? ""} onChange={(e) => set("reviewMonths", e.target.value ? Number(e.target.value) : null)}>
+                  <option value="">None</option>{REVIEW_CHOICES.map((m) => <option key={m} value={m}>{m === 1 ? "1 month" : `${m} months`}</option>)}
+                </select>
                 {isAdmin && (
                   <>
                     <span className="lbl">Sensitive space</span>

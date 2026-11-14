@@ -418,6 +418,14 @@ Read. `ReadImportItem`, answers `ImportItemDto`. Core only.
 |---|---|---|
 | ItemId | `Guid` | required |
 
+## import.reject
+
+Write. `RejectImport`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| ItemId | `Guid` | required |
+
 ## import.retry
 
 Write. `RetryImport`, answers `Unit`. Core only.
@@ -1068,6 +1076,7 @@ Write. `UpdateSpace`, answers `SpaceDto`.
 | AgingDays | `int?` |  |
 | AgingAudience | `AgingAudience?` |  |
 | RecycleDays | `int?` |  |
+| ReviewMonths | `int?` |  |
 
 ## space.update.admin
 
@@ -1084,6 +1093,7 @@ Write. `UpdateSpaceAdmin`, answers `SpaceDto`.
 | AgingDays | `int?` |  |
 | AgingAudience | `AgingAudience?` |  |
 | RecycleDays | `int?` |  |
+| ReviewMonths | `int?` |  |
 
 ## storage.move.cancel
 

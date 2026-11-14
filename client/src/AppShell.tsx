@@ -1,5 +1,6 @@
 import { ImportView } from "./Import";
 import { InventoryView } from "./Inventory";
+import { Link, to } from "./Link";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   Bell, ChevronDown, ChevronRight, Ellipsis, House, KeyRound, FilePlus, FileText, Folder, FolderCog, FolderInput, FolderPlus, Link as LinkIcon, Plus, Search, Settings,
@@ -460,7 +461,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
                   <div className="menu" role="menu">
                     <button role="menuitem" onClick={() => void startNew("Page")}><FilePlus className="ic" aria-hidden />Page</button>
                     <button role="menuitem" onClick={() => void startNew("Folder")}><FolderPlus className="ic" aria-hidden />Folder</button>
-                    {ai.canImport && <button role="menuitem" onClick={() => void openImport(null)}><FileUp className="ic" aria-hidden />Import</button>}
+                    {ai.canImport && <Link role="menuitem" href={to.imports()} onNav={() => void openImport(null)}><FileUp className="ic" aria-hidden />Import</Link>}
                   </div>
                 )}
               </div>
@@ -497,16 +498,16 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
               {showGear && (
                 <div className="menu right" role="menu">
                   <div className="menu-grp">Settings</div>
-                  <button role="menuitem" onClick={() => void openSettings("preferences")}><SlidersHorizontal className="ic" aria-hidden />Preferences</button>
-                  <button role="menuitem" onClick={() => void openSettings("notifications")}><Bell className="ic" aria-hidden />Notifications</button>
-                  <button role="menuitem" onClick={() => void openSettings("tokens")}><KeyRound className="ic" aria-hidden />API tokens</button>
+                  <Link role="menuitem" href={to.settings("preferences")} onNav={() => void openSettings("preferences")}><SlidersHorizontal className="ic" aria-hidden />Preferences</Link>
+                  <Link role="menuitem" href={to.settings("notifications")} onNav={() => void openSettings("notifications")}><Bell className="ic" aria-hidden />Notifications</Link>
+                  <Link role="menuitem" href={to.settings("tokens")} onNav={() => void openSettings("tokens")}><KeyRound className="ic" aria-hidden />API tokens</Link>
                   {(canManageCurrent || me.isAdmin) && <div className="menu-sep" />}
                   {canManageCurrent && (
-                    <button role="menuitem" onClick={() => void openAdmin("spaces", current!.id)}>
+                    <Link role="menuitem" href={to.admin("spaces", current!.id)} onNav={() => void openAdmin("spaces", current!.id)}>
                       <FolderCog className="ic" aria-hidden /><span className="menu-two">Manage space<small>{current!.name}</small></span>
-                    </button>
+                    </Link>
                   )}
-                  {me.isAdmin && <button role="menuitem" onClick={() => void openAdmin("spaces")}><ShieldCheck className="ic" aria-hidden />Administration</button>}
+                  {me.isAdmin && <Link role="menuitem" href={to.admin("spaces")} onNav={() => void openAdmin("spaces")}><ShieldCheck className="ic" aria-hidden />Administration</Link>}
                   <SlotMenuItems slot="header.gear" ctx={GEAR_CTX} onPick={() => setShowGear(false)} />
                 </div>
               )}
@@ -562,16 +563,17 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
                 {spaces.length === 0 && <p className="muted small pad">No spaces.</p>}
                 {spaces.map((s) => (
                   <div key={s.id}>
-                    <button
+                    <Link
+                      href={to.space(s.id)} title={s.name}
                       className={`node ${current?.id === s.id && !page && !binOf && !home && !pluginAt && searchQ === null ? "cur" : ""} ${open[s.id] ? "open" : ""}`}
-                      onClick={() => void openSpace(s)}
+                      onNav={() => void openSpace(s)}
                       aria-expanded={!!open[s.id]}
                     >
                       <ChevronRight className="ic tw" aria-hidden />
                       <Folder className="ic ft" aria-hidden />
                       <span className="grow">{s.name}</span>
                       {s.isSensitive && <Lock className="ic muted" aria-label="Sensitive space" />}
-                    </button>
+                    </Link>
                     {open[s.id] && trees[s.id] && (
                       <div className="kids">
                         <PageTree
@@ -585,10 +587,10 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
                         />
                         {s.myRole && BIN_ROLES.includes(s.myRole) && (
                           <>
-                            <button className={`node ${binOf && !binItem && current?.id === s.id ? "cur" : ""} ${binOf && current?.id === s.id ? "open" : ""}`}
-                              aria-expanded={binOf && current?.id === s.id} onClick={() => void openBin(s)}>
+                            <Link href={to.bin(s.id)} className={`node ${binOf && !binItem && current?.id === s.id ? "cur" : ""} ${binOf && current?.id === s.id ? "open" : ""}`}
+                              aria-expanded={binOf && current?.id === s.id} onNav={() => void openBin(s)}>
                               <ChevronRight className="ic tw" aria-hidden /><Trash2 className="ic pg" aria-hidden /><span className="grow">Recycle bin</span>
-                            </button>
+                            </Link>
                             {binOf && current?.id === s.id && (
                               <div className="kids"><BinTree spaceId={s.id} selectedId={binItem} reloadKey={binKey} onSelect={setBinItem} /></div>
                             )}
@@ -599,19 +601,19 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
                   </div>
                 ))}
                 {ai.canImport && (
-                  <button className={`node ${importAt ? "cur" : ""}`} onClick={() => void openImport(null)}>
+                  <Link href={to.imports()} className={`node ${importAt ? "cur" : ""}`} onNav={() => void openImport(null)}>
                     <Inbox className="ic ft" aria-hidden /><span className="grow">Import inbox</span>
-                  </button>
+                  </Link>
                 )}
                 {invView && (
-                  <button className={`node ${inventoryAt ? "cur" : ""}`} onClick={() => void openInventory(null)}>
+                  <Link href={to.inventory()} className={`node ${inventoryAt ? "cur" : ""}`} onNav={() => void openInventory(null)}>
                     <Boxes className="ic ft" aria-hidden /><span className="grow">Inventory</span>
-                  </button>
+                  </Link>
                 )}
               </nav>
 
               {importAt ? (
-                <ImportView itemId={importAt.itemId} spaces={spaces} onOpenItem={(id) => void openImport(id)} onOpenPage={(id) => void openPageById(id)} onHome={onHome} />
+                <ImportView itemId={importAt.itemId} onOpenItem={(id) => void openImport(id)} onOpenPage={(id) => void openPageById(id)} onHome={onHome} />
               ) : inventoryAt ? (
                 <InventoryView appId={inventoryAt.appId} onOpenApp={(id) => void openInventory(id)} onOpenPage={(id) => void openPageById(id)} onHome={onHome} />
               ) : pluginAt ? (
@@ -664,12 +666,12 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
                   <main className="doc wide">
                     <div className="col">
                           <nav className="crumb" aria-label="Breadcrumb">
-                            <button className="crumb-home" onClick={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></button><ChevronRight className="ic sm" aria-hidden />
-                            {page ? <button className="crumb-link" onClick={() => void openItem(null)}>{current.name}</button> : <b>{current.name}</b>}
+                            <Link href={to.home()} className="crumb-home" onNav={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></Link><ChevronRight className="ic sm" aria-hidden />
+                            {page ? <Link href={to.space(current.id)} className="crumb-link" title={current.name} onNav={() => void openItem(null)}>{current.name}</Link> : <b title={current.name}>{current.name}</b>}
                             {page?.path.map((c) => (
-                              <span key={c.id} className="crumb-part"><ChevronRight className="ic sm" aria-hidden /><button className="crumb-link" onClick={() => void openItem(c.id)}>{c.title}</button></span>
+                              <span key={c.id} className="crumb-part"><ChevronRight className="ic sm" aria-hidden /><Link href={to.page(c.id)} className="crumb-link" title={c.title} onNav={() => void openItem(c.id)}>{c.title}</Link></span>
                             ))}
-                            {page && <><ChevronRight className="ic sm" aria-hidden /><b>{page.title}</b></>}
+                            {page && <><ChevronRight className="ic sm" aria-hidden /><b title={page.title}>{page.title}</b></>}
                           </nav>
                           <div className="titlebar">
                             <h1>{page?.title ?? current.name}</h1>
@@ -687,10 +689,10 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
                           {!page && current.description && <p>{current.description}</p>}
                           <div className="listing">
                             {listed.map((n) => (
-                              <button key={n.id} className="node" onClick={() => void openItem(n.id)}>
+                              <Link key={n.id} href={to.page(n.id)} className="node" title={n.title} onNav={() => void openItem(n.id)}>
                                 {n.kind === "Folder" ? <Folder className="ic ft" aria-hidden /> : <FileText className="ic pg" aria-hidden />}
                                 <span className="grow">{n.title}</span>
-                              </button>
+                              </Link>
                             ))}
                             {listed.length === 0 && <p className="muted">Empty.</p>}
                           </div>

@@ -1277,6 +1277,9 @@ namespace Kb.Data.Migrations
                     b.Property<int?>("RecycleDays")
                         .HasColumnType("int");
 
+                    b.Property<int?>("ReviewMonths")
+                        .HasColumnType("int");
+
                     b.Property<int>("Visibility")
                         .HasColumnType("int");
 

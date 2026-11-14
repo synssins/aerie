@@ -48,7 +48,7 @@ export type Me = { id: string; userName: string; displayName: string; isAdmin: b
 export type Brand = { productName: string; logoLightUrl: string | null; logoDarkUrl: string | null; primaryColor: string; signInNote?: string | null };
 export type Space = {
   id: string; key: string; name: string; description: string | null; isSensitive: boolean; visibility: "Private" | "SignedIn" | "Anyone"; myRole: string | null;
-  commentsEnabled: boolean; agingDays: number; agingAudience: "Everyone" | "Supervisors"; recycleDays: number | null; createdAt: string;
+  commentsEnabled: boolean; agingDays: number; agingAudience: "Everyone" | "Supervisors"; recycleDays: number | null; createdAt: string; reviewMonths?: number | null;
 };
 export type NotifyPref = { inApp: boolean; email: boolean };
 export type UserSettings = { theme: "light" | "dark" | "system"; width: "boxed" | "full"; startPage: string; codeLanguage: string; notify: Record<string, NotifyPref> };
@@ -163,9 +163,15 @@ export type ImportProposal = {
   tags: string[]; appliesTo: AppliesTo[]; owner: OwnerRef | null; reviewMonths: number | null;
   destination: { spaceId: string; parentId: string | null } | null; suggestedDestination: { spaceId: string; parentId: string | null } | null;
   sensitive: { kind: string; sample: string }[]; duplicates: { pageId: string; title: string; score: number; spaceId: string }[]; warnings: string[]; model: string;
+  ms?: number; found?: { people: string[]; servers: string[]; applications: string[]; tickets: string[]; versions: string[]; conflicts: string[] };
 };
 export type ImportFile = { id: string; name: string; path: string; size: number; kind: "Text" | "Image" | "Container" | "Blocked" | "Unsupported" | "Pending"; note: string | null; embedded: boolean; sha256: string };
-export type ImportItemRow = { id: string; batchId: string; title: string; status: "Queued" | "Working" | "Ready" | "Failed" | "Blocked" | "Accepted" | "Discarded"; error: string | null; files: number; createdAt: string; pageId: string | null };
+export type ImportStatus = "Queued" | "Working" | "Ready" | "Failed" | "Blocked" | "Accepted" | "Discarded" | "Rejected";
+/** source: the first file's name; updatedAt: when a Working item started; draftMs: how long the model took. */
+export type ImportItemRow = { id: string; batchId: string; title: string; status: ImportStatus; error: string | null; files: number; createdAt: string; pageId: string | null;
+  source?: string | null; suggestedSpace?: string | null; updatedAt?: string | null; draftMs?: number | null };
+export type ImportSpace = { id: string; name: string; isSensitive: boolean; reviewMonths: number | null };
 export type ImportBatch = { id: string; createdAt: string; files: number; started: boolean; grouped: boolean; error: string | null; queued: number; working: number; ready: number; failed: number; blocked: number; done: number };
-export type ImportList = { batches: ImportBatch[]; items: ImportItemRow[]; canImport: boolean; canFormat: boolean };
-export type ImportItem = { id: string; title: string; status: ImportItemRow["status"]; error: string | null; proposal: ImportProposal | null; files: ImportFile[]; sources: Record<string, string>; pageId: string | null };
+export type ImportList = { batches: ImportBatch[]; items: ImportItemRow[]; canImport: boolean; canFormat: boolean; spaces?: ImportSpace[] };
+export type ImportItem = { id: string; title: string; status: ImportStatus; error: string | null; proposal: ImportProposal | null; files: ImportFile[]; sources: Record<string, string>; pageId: string | null;
+  spaces?: ImportSpace[] };

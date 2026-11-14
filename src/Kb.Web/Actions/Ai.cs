@@ -56,6 +56,7 @@ internal sealed class SaveAiSettingsHandler(AiService ai, IAccess access) : IAct
         if (s.Temperature is < 0 or > 2) return Problem.Invalid("temperature", "0-2.");
         if (s.MaxInputChars is < 1000 or > 5_000_000) return Problem.Invalid("maxInputChars", "1000-5000000.");
         if (s.UserPerMinute is < 1 or > 1000 || s.TokenPerMinute is < 1 or > 1000) return Problem.Invalid("perMinute", "1-1000.");
+        if (s.ImportConcurrency is < 1 or > 8) return Problem.Invalid("importConcurrency", "1-8.");
         if (string.IsNullOrWhiteSpace(s.Ruleset) || s.Ruleset.Length > 20_000) return Problem.Invalid("ruleset", "1-20000 characters.");
         if (s.Features.Keys.Any(k => !AiFeatures.All.Contains(k)) || s.Features.Values.Any(v => !Enum.IsDefined(v))) return Problem.Invalid("features", "Unknown feature or access.");
         if ((req.ApiKey?.Length ?? 0) > 2000) return Problem.Invalid("apiKey", "2000 characters at most.");
