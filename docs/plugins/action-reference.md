@@ -245,6 +245,35 @@ Write. `UpdateBrand`, answers `Unit`.
 |---|---|---|
 | ProductName | `string` | required |
 
+## dc.user.groups
+
+Read. `DcUserGroups`, answers `DcGroupPage` ([DcGroupPage](#dcgrouppage)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Key | `string?` |  |
+| UserName | `string?` |  |
+| Start | `int` | required |
+| Limit | `int` | required |
+
+## dc.user.list
+
+Read. `DcListUsers`, answers `DcUserPage` ([DcUserPage](#dcuserpage)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Start | `int` | required |
+| Limit | `int` | required |
+
+## dc.user.read
+
+Read. `DcReadUser`, answers `DcUser` ([DcUser](#dcuser)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Key | `string?` |  |
+| UserName | `string?` |  |
+
 ## draft.discard
 
 Write. `DiscardDraft`, answers `Unit`.
@@ -2204,6 +2233,64 @@ Enum: `Off`, `Admins`, `Everyone`.
 {
   "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
   "title": "text"
+}
+```
+
+### DcGroupPage
+
+| Field | Type |
+|---|---|
+| names | `IReadOnlyList<string>` |
+| more | `bool` |
+
+```json
+{
+  "names": [
+    "text"
+  ],
+  "more": false
+}
+```
+
+### DcUser
+
+| Field | Type |
+|---|---|
+| id | `Guid` |
+| userName | `string` |
+| displayName | `string` |
+| deactivated | `bool` |
+| deleted | `bool` |
+
+```json
+{
+  "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "userName": "text",
+  "displayName": "text",
+  "deactivated": false,
+  "deleted": false
+}
+```
+
+### DcUserPage
+
+| Field | Type |
+|---|---|
+| users | `IReadOnlyList<DcUser>` ([DcUser](#dcuser)) |
+| more | `bool` |
+
+```json
+{
+  "users": [
+    {
+      "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "userName": "text",
+      "displayName": "text",
+      "deactivated": false,
+      "deleted": false
+    }
+  ],
+  "more": false
 }
 ```
 

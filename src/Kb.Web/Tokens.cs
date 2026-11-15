@@ -101,11 +101,14 @@ public static class ApiTokenAuth
                 Data: new Dictionary<string, string> { ["method"] = method, ["route"] = route, ["ip"] = ip, [AuditData.TokenKey] = token.Name, [AuditData.TokenIdKey] = token.Id.ToString("D") }), http.RequestAborted);
 
             var read = HttpMethods.IsGet(method) || HttpMethods.IsHead(method);
-            if (!Open.Contains($"{method} {route}") || (!read && !token.Scopes().Any(s => s.Access == TokenAccess.Write)))
+            // Every route of the Data Center compatible surface decides access through the permission service, so all of them are open to tokens.
+            var dc = http.GetEndpoint()?.Metadata.GetMetadata<Kb.Web.DataCenter.DcRoute>() is not null;
+            var open = dc || Open.Contains($"{method} {route}");
+            if (!open || (!read && !token.Scopes().Any(s => s.Access == TokenAccess.Write)))
             {
                 // Says which: the route is not one for tokens, or this one needs a Write scope.
-                await Results.Problem(Open.Contains($"{method} {route}") ? "This token needs the Write scope." : "API tokens can't call this route.", statusCode: StatusCodes.Status403Forbidden)
-                    .ExecuteAsync(http);
+                var message = open ? "This token needs the Write scope." : "API tokens can't call this route.";
+                await (dc ? Kb.Web.DataCenter.DcRest.Fail(403, message) : Results.Problem(message, statusCode: StatusCodes.Status403Forbidden)).ExecuteAsync(http);
                 return;
             }
         }
