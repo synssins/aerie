@@ -42,6 +42,6 @@ public static class ImportRoutes
             bus.SendAsync(new MergeImports { ItemIds = req.ItemIds ?? [] }, ct).ToHttp()).WithAction<MergeImports>();
 
         api.MapPost("/pages/{id:guid}/format", (Guid id, FormatRequest req, IActionBus bus, CancellationToken ct) =>
-            bus.SendAsync(new FormatPage { PageId = id, ContentJson = req.ContentJson ?? "" }, ct).ToHttp()).WithAction<FormatPage>();
+            bus.SendAsync(new FormatPage { PageId = id, ContentJson = req.ContentJson ?? "", Roles = req.Roles, Keep = req.Keep }, ct).ToHttp()).WithAction<FormatPage>();
     }
 }

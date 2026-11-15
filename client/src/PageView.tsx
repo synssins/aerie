@@ -284,12 +284,13 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
   ];
 
   const [formatting, setFormatting] = useState(false);
-  const [formatted, setFormatted] = useState<{ contentJson: string; diff: DiffLine[] } | null>(null);
+  const [formatted, setFormatted] = useState<{ before: string; result: FormatResult } | null>(null);
   async function runFormat() {
     if (!editor) return;
     setFormatting(true);
     setError(null);
-    try { setFormatted(await api.post<{ contentJson: string; diff: DiffLine[] }>(`/pages/${page.id}/format`, { contentJson: fromEditor(editor) })); }
+    const before = fromEditor(editor);
+    try { setFormatted({ before, result: await api.post<FormatResult>(`/pages/${page.id}/format`, { contentJson: before }) }); }
     catch (e) { setError(e instanceof ApiError && e.body?.detail ? e.body.detail : "Not formatted."); }
     finally { setFormatting(false); }
   }
@@ -380,8 +381,8 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
           </div>
         </div>
         {formatted && editor && (
-          <FormatDialog diff={formatted.diff} onClose={() => setFormatted(null)}
-            onAccept={() => { editor.commands.setContent(toEditor(formatted.contentJson, extensions)); setFormatted(null); }} />
+          <FormatDialog pageId={page.id} before={formatted.before} first={formatted.result} extensions={extensions} onClose={() => setFormatted(null)}
+            onAccept={(json) => { editor.commands.setContent(toEditor(json, extensions)); setFormatted(null); }} />
         )}
         <PageDetailsPanel details={page.details} updatedAt={page.updatedAt} editing={editing} value={details} onChange={setDetails} onOpenApp={onOpenApp} />
         {error && <p className="form-error" role="alert">{error}</p>}
@@ -557,18 +558,70 @@ export function Toolbar({ editor, onImages }: { editor: Editor; onImages: (files
   );
 }
 
-/** The formatting the AI proposes, as changed lines: accepted or rejected whole. Accepting changes the editor only; Save saves. */
-function FormatDialog({ diff, onAccept, onClose }: { diff: DiffLine[]; onAccept: () => void; onClose: () => void }) {
+/** What Format answers: the proposed page, its changed lines, the duplicates it took out, and the roles to build it again. */
+type FormatResult = { contentJson: string; diff: DiffLine[]; removed: { units: number[]; text: string; sameAs: string }[]; roles: { n: number; role: string }[] };
+
+/** A page's content drawn as the page draws it, not to edit. */
+function Rendered({ json, extensions }: { json: string; extensions: ReturnType<typeof makeExtensions> }) {
+  const editor = useEditor({ extensions, content: toEditor(json, extensions), editable: false, editorProps: { attributes: { class: "prose", "aria-label": "Proposed page" } } });
+  useEffect(() => { editor?.commands.setContent(toEditor(json, extensions)); }, [editor, json, extensions]);
+  return editor ? <EditorContent editor={editor} /> : null;
+}
+
+/**
+ * The formatting the AI proposes: the page as it would read, or the changed lines; and each duplicate it took out, which the
+ * person can keep (built again from the same roles, without the model). Accepting changes the editor only; Save saves.
+ */
+function FormatDialog({ pageId, before, first, extensions, onAccept, onClose }: {
+  pageId: string; before: string; first: FormatResult; extensions: ReturnType<typeof makeExtensions>; onAccept: (json: string) => void; onClose: () => void;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => { ref.current?.showModal(); }, []);
+  const [result, setResult] = useState(first);
+  const [view, setView] = useState<"page" | "changes">("page");
+  const [keep, setKeep] = useState<number[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const mark = (op: DiffLine["op"]) => (op === "Add" ? "+" : op === "Del" ? "−" : " ");
+
+  async function toggle(units: number[], kept: boolean) {
+    const next = kept ? [...new Set([...keep, ...units])] : keep.filter((n) => !units.includes(n));
+    setBusy(true);
+    setError(null);
+    try { setResult(await api.post<FormatResult>(`/pages/${pageId}/format`, { contentJson: before, roles: first.roles, keep: next })); setKeep(next); }
+    catch (e) { setError(e instanceof ApiError && e.body?.detail ? e.body.detail : "Not built again."); }
+    finally { setBusy(false); }
+  }
+
   return (
     <dialog ref={ref} className="dlg wide format-dlg" onCancel={(e) => { e.preventDefault(); onClose(); }} aria-labelledby="fmt-title">
       <h2 id="fmt-title">Format</h2>
-      <pre className="diff-lines">{diff.map((l, i) => <div key={i} className={`diff-${l.op.toLowerCase()}`}>{mark(l.op)} {l.text}</div>)}</pre>
+      <div className="seg" role="tablist" aria-label="View">
+        <button type="button" role="tab" aria-selected={view === "page"} className={view === "page" ? "on" : ""} onClick={() => setView("page")}>Proposed page</button>
+        <button type="button" role="tab" aria-selected={view === "changes"} className={view === "changes" ? "on" : ""} onClick={() => setView("changes")}>Changes</button>
+      </div>
+      {first.removed.length > 0 && (
+        <ul className="removed-list" aria-label="Duplicates">
+          {first.removed.map((r) => {
+            const kept = r.units.every((n) => keep.includes(n));
+            return (
+              <li key={r.units.join(",")}>
+                <span className="grow"><b>{kept ? "Kept duplicate" : "Removed duplicate"}:</b> {r.text} <span className="muted">· same as {r.sameAs}</span></span>
+                <button type="button" className="tb" disabled={busy} onClick={() => void toggle(r.units, !kept)}>{kept ? "Remove" : "Keep"}</button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <div className="format-view">
+        {view === "page"
+          ? <Rendered json={result.contentJson} extensions={extensions} />
+          : <pre className="diff-lines">{result.diff.map((l, i) => <div key={i} className={`diff-${l.op.toLowerCase()}`}>{mark(l.op)} {l.text}</div>)}</pre>}
+      </div>
       <div className="dlg-actions">
         <button type="button" className="tb" onClick={onClose}>Reject</button>
-        <button type="button" className="tb primary" onClick={onAccept} autoFocus>Accept</button>
+        <button type="button" className="tb primary" disabled={busy} onClick={() => onAccept(result.contentJson)} autoFocus>Accept</button>
       </div>
     </dialog>
   );

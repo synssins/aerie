@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Kb.Core.Audit;
 using Kb.Web.Import;
 using Microsoft.EntityFrameworkCore;
@@ -99,9 +100,22 @@ public sealed class ImportLiveTests(ITestOutputHelper output)
         var space = (await (await admin.PostAsJsonAsync("/api/v1/spaces", new { key = "ops", name = "Ops" }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("id").GetGuid();
         string P(string t) => $$"""{"type":"paragraph","content":[{"type":"text","text":"{{t}}"}]}""";
         var flat = $$"""{"type":"doc","content":[{{P("Restart the print spooler on PRN02")}},{{P("Steps")}},{{P("1. Open services.msc on PRN02")}},{{P("2. Stop Print Spooler then start it")}},{{P("3. Print a test page. If it fails check event ID 372 in PrintService/Admin")}},{{P("Note: do not reboot during business hours")}}]}""";
+        // KB_LIVE_FORMAT_DOC: a file with a page's editor JSON to format instead.
+        if (Environment.GetEnvironmentVariable("KB_LIVE_FORMAT_DOC") is { Length: > 0 } docFile) flat = await File.ReadAllTextAsync(docFile, Ct);
         var created = await (await admin.PostAsJsonAsync($"/api/v1/spaces/{space}/pages", new { kind = "Page", title = "Spooler", contentJson = flat }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct);
         var fr = await admin.PostAsJsonAsync($"/api/v1/pages/{created.GetProperty("id").GetGuid()}/format", new { contentJson = flat }, Ct);
-        output.WriteLine($"\nformat: {(int)fr.StatusCode} {await fr.Content.ReadAsStringAsync(Ct)}");
+        var answer = await fr.Content.ReadAsStringAsync(Ct);
+        output.WriteLine($"\nformat: {(int)fr.StatusCode}");
+        if (fr.IsSuccessStatusCode)
+        {
+            var result = JsonDocument.Parse(answer).RootElement;
+            foreach (var r in result.GetProperty("removed").EnumerateArray()) output.WriteLine($"removed: {r.GetProperty("text")} | same as {r.GetProperty("sameAs")}");
+            foreach (var n in JsonNode.Parse(result.GetProperty("contentJson").GetString()!)!["content"]!.AsArray())
+            {
+                var text = Kb.Core.Content.DocText.Plain(new JsonObject { ["type"] = "doc", ["content"] = new JsonArray(n!.DeepClone()) }.ToJsonString()).Replace('\n', ' ');
+                output.WriteLine($"  block {n["type"]}: {text[..Math.Min(100, text.Length)]}");
+            }
+        }
         Assert.True(fr.StatusCode is System.Net.HttpStatusCode.OK or (System.Net.HttpStatusCode)422);
 
         await f.WithDbAsync(async db =>

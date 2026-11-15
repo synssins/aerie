@@ -718,6 +718,8 @@ Write. `FormatPage`, answers `FormatDto` ([FormatDto](#formatdto)). Core only.
 |---|---|---|
 | PageId | `Guid` | required |
 | ContentJson | `string` | required |
+| Roles | `IReadOnlyList<FormatRoleDto>?` ([FormatRoleDto](#formatroledto)) |  |
+| Keep | `IReadOnlyList<int>?` |  |
 
 ## page.markdown
 
@@ -2254,6 +2256,8 @@ Enum: `Same`, `Add`, `Del`.
 |---|---|
 | contentJson | `string` |
 | diff | `IReadOnlyList<DiffLine>` ([DiffLine](#diffline)) |
+| removed | `IReadOnlyList<FormatRemovedDto>?` ([FormatRemovedDto](#formatremoveddto)) |
+| roles | `IReadOnlyList<FormatRoleDto>?` ([FormatRoleDto](#formatroledto)) |
 
 ```json
 {
@@ -2263,7 +2267,40 @@ Enum: `Same`, `Add`, `Del`.
       "op": "Same",
       "text": "text"
     }
+  ],
+  "removed": [
+    {
+      "units": [
+        0
+      ],
+      "text": "text",
+      "sameAs": "text"
+    }
+  ],
+  "roles": [
+    {
+      "n": 0,
+      "role": "text"
+    }
   ]
+}
+```
+
+### FormatRemovedDto
+
+| Field | Type |
+|---|---|
+| units | `IReadOnlyList<int>` |
+| text | `string` |
+| sameAs | `string` |
+
+```json
+{
+  "units": [
+    0
+  ],
+  "text": "text",
+  "sameAs": "text"
 }
 ```
 
@@ -2272,10 +2309,35 @@ Enum: `Same`, `Add`, `Del`.
 | Field | Type |
 |---|---|
 | contentJson | `string?` |
+| roles | `IReadOnlyList<FormatRoleDto>?` ([FormatRoleDto](#formatroledto)) |
+| keep | `IReadOnlyList<int>?` |
 
 ```json
 {
-  "contentJson": "text"
+  "contentJson": "text",
+  "roles": [
+    {
+      "n": 0,
+      "role": "text"
+    }
+  ],
+  "keep": [
+    0
+  ]
+}
+```
+
+### FormatRoleDto
+
+| Field | Type |
+|---|---|
+| n | `int` |
+| role | `string` |
+
+```json
+{
+  "n": 0,
+  "role": "text"
 }
 ```
 

@@ -41,11 +41,14 @@ public sealed class ImportFlowTests : IAsyncLifetime
             string content;
             if (system.Contains("Group the numbers", StringComparison.Ordinal))
                 content = """{"groups":[{"documents":[0]},{"documents":[1]}]}""";
-            else if (system.Contains("holds the paragraphs of a document", StringComparison.Ordinal))
+            else if (system.Contains("holds the parts of a document", StringComparison.Ordinal))
             {
-                // The first paragraph a heading, the rest steps; with ChangeWords, the heading's number is one that does not exist.
-                var count = data["lines"]!.GetValue<string>().Split('\n').Length;
-                var roles = new JsonArray([.. Enumerable.Range(0, count).Select(n => (JsonNode)new JsonObject { ["n"] = n, ["role"] = n == 0 ? "heading2" : "step" })]);
+                // The first part a heading, the rest steps, a part whose text came before a duplicate; with ChangeWords, the
+                // heading's number is one that does not exist.
+                var lines = data["lines"]!.GetValue<string>().Split('\n');
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                string Text(string line) => line[(line.IndexOf(") ", StringComparison.Ordinal) + 2)..].TrimStart('1', '.', ' ').TrimEnd('.');
+                var roles = new JsonArray([.. lines.Select((line, n) => (JsonNode)new JsonObject { ["n"] = n, ["role"] = !seen.Add(Text(line)) ? "duplicate" : n == 0 ? "heading2" : "step" })]);
                 if (ChangeWords) roles[0]!["n"] = 99;
                 content = new JsonObject { ["roles"] = roles }.ToJsonString();
             }
@@ -383,7 +386,7 @@ public sealed class ImportFlowTests : IAsyncLifetime
         var page = (await (await _admin.PostAsJsonAsync($"/api/v1/spaces/{_space}/pages", new
         {
             kind = "Page", title = "Restart",
-            contentJson = """{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Restart steps"}]},{"type":"paragraph","content":[{"type":"text","text":"1. Stop the service then "},{"type":"text","marks":[{"type":"bold"}],"text":"start"},{"type":"text","text":" it"}]}]}""",
+            contentJson = """{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Restart steps"}]},{"type":"paragraph","content":[{"type":"text","text":"1. Stop the service then "},{"type":"text","marks":[{"type":"bold"}],"text":"start"},{"type":"text","text":" it"}]},{"type":"paragraph","content":[{"type":"text","text":"Stop the service then start it."}]}]}""",
         }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct));
         var id = page.GetProperty("id").GetGuid();
         var r = await _admin.PostAsJsonAsync($"/api/v1/pages/{id}/format", new { contentJson = page.GetProperty("contentJson").GetString() }, Ct);
@@ -395,6 +398,18 @@ public sealed class ImportFlowTests : IAsyncLifetime
         Assert.Contains("\"bold\"", formatted, StringComparison.Ordinal); // a paragraph keeps its own marks
         Assert.DoesNotContain("1. Stop", formatted, StringComparison.Ordinal); // the typed number goes with the list
         Assert.NotEmpty(preview.GetProperty("diff").EnumerateArray());
+        // The repeated step is removed and listed, with what says the same; the person can keep it, without another model call.
+        var removed = preview.GetProperty("removed").EnumerateArray().Single();
+        Assert.Equal([2], removed.GetProperty("units").EnumerateArray().Select(u => u.GetInt32()));
+        Assert.Equal("Stop the service then start it.", removed.GetProperty("text").GetString());
+        Assert.Equal("1. Stop the service then start it", removed.GetProperty("sameAs").GetString());
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(Kb.Core.Content.DocText.Plain(formatted), "Stop the service"));
+        var calls = _model.Calls;
+        var keep = await _admin.PostAsJsonAsync($"/api/v1/pages/{id}/format", new { contentJson = page.GetProperty("contentJson").GetString(), roles = preview.GetProperty("roles"), keep = new[] { 2 } }, Ct);
+        var kept = await keep.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        Assert.Empty(kept.GetProperty("removed").EnumerateArray());
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Count(Kb.Core.Content.DocText.Plain(kept.GetProperty("contentJson").GetString()), "Stop the service"));
+        Assert.Equal(calls, _model.Calls);
         Assert.Equal("1.0", (await _admin.GetFromJsonAsync<JsonElement>($"/api/v1/pages/{id}", Ct)).GetProperty("version").GetString()); // nothing saved
 
         // A role for a paragraph that is not there changes nothing: the words are the page's own.

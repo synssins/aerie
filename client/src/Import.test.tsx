@@ -162,18 +162,36 @@ describe("import review", () => {
 });
 
 describe("format", () => {
-  it("shows the changed lines and puts the formatting in the editor only when accepted", async () => {
+  it("shows the proposed page as a page, the changed lines on request, each duplicate removed with Keep, and changes the editor only when accepted", async () => {
     window.matchMedia ??= ((q: string) => ({ matches: false, media: q, addEventListener: () => {}, removeEventListener: () => {} })) as never;
     const formatted = doc(["h", "Restart steps"], ["p", "Stop then start"]);
-    const calls = server({ "POST /pages/p1/format": () => ({ contentJson: formatted, diff: [{ op: "Del", text: "Restart steps" }, { op: "Add", text: "## Restart steps" }] }) });
-    const page = { id: "p1", spaceId: "s1", parentId: null, kind: "Page", title: "Restart", contentJson: doc(["p", "Restart steps"], ["p", "Stop then start"]), version: "1.0",
+    const withCopy = doc(["h", "Restart steps"], ["p", "Stop then start"], ["p", "Stop then start."]);
+    const roles = [{ n: 0, role: "heading2" }, { n: 1, role: "keep" }, { n: 2, role: "duplicate" }];
+    const calls = server({
+      "POST /pages/p1/format": (body) => (body as { keep?: number[] }).keep?.includes(2)
+        ? { contentJson: withCopy, diff: [], removed: [], roles }
+        : { contentJson: formatted, diff: [{ op: "Del", text: "Restart steps" }, { op: "Add", text: "## Restart steps" }, { op: "Del", text: "Stop then start." }], removed: [{ units: [2], text: "Stop then start.", sameAs: "Stop then start" }], roles },
+    });
+    const page = { id: "p1", spaceId: "s1", parentId: null, kind: "Page", title: "Restart", contentJson: doc(["p", "Restart steps"], ["p", "Stop then start"], ["p", "Stop then start."]), version: "1.0",
       updatedAt: "2026-11-12T10:00:00Z", updatedBy: "Pat", path: [], history: [], canEdit: true, tags: [], canDelete: true, draft: null, attachments: [], maxAttachmentBytes: 1000 };
     render(<DialogProvider><PageView page={page as never} spaceName="IAM" role="Owner" autoEdit canFormat onSaved={() => {}} onOpen={() => {}} onHome={() => {}} onDirty={() => {}} onHistory={() => {}} onMove={() => {}} onDelete={() => {}} /></DialogProvider>);
     await userEvent.click(await screen.findByRole("button", { name: "Format" }));
     const dialog = await screen.findByRole("dialog");
+    // The page as it would read: a heading, not "## Restart steps".
+    expect(await within(dialog).findByRole("heading", { level: 2, name: "Restart steps" })).toBeTruthy();
+    expect(within(dialog).queryByText("+ ## Restart steps")).toBeNull();
+    expect(within(dialog).getByText(/Removed duplicate:/).parentElement!.textContent).toContain("Stop then start. · same as Stop then start");
+    await userEvent.click(within(dialog).getByRole("tab", { name: "Changes" }));
     expect(within(dialog).getByText("+ ## Restart steps")).toBeTruthy();
+
+    // Keep: built again from the same roles, with the duplicate kept.
+    await userEvent.click(within(dialog).getByRole("button", { name: "Keep" }));
+    await waitFor(() => expect(calls.filter((c) => c.key === "POST /pages/p1/format").at(-1)?.body).toMatchObject({ roles, keep: [2] }));
+    expect(await within(dialog).findByText(/Kept duplicate:/)).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole("tab", { name: "Proposed page" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Accept" }));
     await waitFor(() => expect(screen.getByRole("heading", { level: 2, name: "Restart steps" })).toBeTruthy());
+    expect(screen.getByText("Stop then start.")).toBeTruthy(); // the kept copy is in the editor
     expect(calls.filter((c) => c.key === "PUT /pages/p1")).toHaveLength(0); // nothing saved until Save
   });
 
