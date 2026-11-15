@@ -32,6 +32,12 @@ internal static class DcKit
         return (await scope.ServiceProvider.GetRequiredService<UserManager<KbUser>>().FindByNameAsync(name))?.Id;
     }
 
+    public static async Task<T> WithDbValueAsync<T>(this KbAppFactory f, Func<Kb.Data.KbDbContext, Task<T>> read)
+    {
+        await using var scope = f.Services.CreateAsyncScope();
+        return await read(scope.ServiceProvider.GetRequiredService<Kb.Data.KbDbContext>());
+    }
+
     public static HttpClient Basic(KbAppFactory f, string name, string password = Password)
     {
         var c = f.NewClient();

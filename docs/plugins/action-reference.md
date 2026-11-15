@@ -245,6 +245,137 @@ Write. `UpdateBrand`, answers `Unit`.
 |---|---|---|
 | ProductName | `string` | required |
 
+## dc.body.convert
+
+Read. `DcConvertBody`, answers `JsonObject`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| To | `string` | required |
+| Value | `string?` |  |
+| Representation | `string?` |  |
+| ContentId | `string?` |  |
+| Expand | `string` | required |
+
+## dc.content.children
+
+Read. `DcContentChildren`, answers `JsonObject`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| Descendants | `bool` | required |
+| Type | `string?` |  |
+| Start | `int` | required |
+| Limit | `int` | required |
+| Expand | `string` | required |
+
+## dc.content.count
+
+Read. `DcCountDescendants`, answers `long`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+
+## dc.content.create
+
+Write. `DcCreateContent`, answers `JsonObject`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Body | `JsonObject` | required |
+| Status | `string?` |  |
+| Expand | `string` | required |
+
+## dc.content.delete
+
+Write. `DcDeleteContent`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| Status | `string` | required |
+
+## dc.content.history
+
+Read. `DcContentHistory`, answers `JsonObject`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| Expand | `string` | required |
+
+## dc.content.list
+
+Read. `DcListContent`, answers `DcJsonPage` ([DcJsonPage](#dcjsonpage)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Type | `string` | required |
+| SpaceKey | `string?` |  |
+| Title | `string?` |  |
+| Statuses | `IReadOnlyList<string>` | required |
+| Ids | `IReadOnlyList<string>?` |  |
+| Start | `int` | required |
+| Limit | `int` | required |
+| Expand | `string` | required |
+
+## dc.content.macro
+
+Read. `DcReadMacro`, answers `JsonObject`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| Version | `int` | required |
+| MacroId | `string?` |  |
+| Hash | `string?` |  |
+
+## dc.content.read
+
+Read. `DcReadContent`, answers `JsonObject`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| Statuses | `IReadOnlyList<string>` | required |
+| Version | `int?` |  |
+| Expand | `string` | required |
+
+## dc.content.scan
+
+Read. `DcScanContent`, answers `DcCursorPage` ([DcCursorPage](#dccursorpage)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Cursor | `string?` |  |
+| Type | `string` | required |
+| SpaceKey | `string?` |  |
+| Statuses | `IReadOnlyList<string>` | required |
+| Limit | `int` | required |
+| Expand | `string` | required |
+
+## dc.content.update
+
+Write. `DcUpdateContent`, answers `JsonObject`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| Body | `JsonObject` | required |
+| Status | `string` | required |
+| Expand | `string` | required |
+
+## dc.content.version.remove
+
+Write. `DcRemoveVersion`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| Number | `int` | required |
+
 ## dc.longtask.list
 
 Read. `DcListLongTasks`, answers `DcLongTaskPage` ([DcLongTaskPage](#dclongtaskpage)). Core only.
@@ -270,6 +401,19 @@ Write. `DcArchiveSpace`, answers `Unit`. Core only.
 |---|---|---|
 | Key | `string` | required |
 | Archive | `bool` | required |
+
+## dc.space.content
+
+Read. `DcSpaceContent`, answers `JsonObject`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Key | `string` | required |
+| Type | `string?` |  |
+| RootOnly | `bool` | required |
+| Start | `int` | required |
+| Limit | `int` | required |
+| Expand | `string` | required |
 
 ## dc.space.create
 
@@ -322,6 +466,25 @@ Read. `DcReadSpace`, answers `DcSpaceView` ([DcSpaceView](#dcspaceview)). Core o
 | Field | Type | |
 |---|---|---|
 | Key | `string` | required |
+
+## dc.space.trash.empty
+
+Write. `DcEmptyTrash`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Key | `string` | required |
+
+## dc.space.trash.list
+
+Read. `DcListTrash`, answers `DcCursorPage` ([DcCursorPage](#dccursorpage)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Key | `string` | required |
+| Cursor | `string?` |  |
+| Limit | `int` | required |
+| Expand | `string` | required |
 
 ## dc.space.update
 
@@ -2325,6 +2488,48 @@ Enum: `Off`, `Admins`, `Everyone`.
 }
 ```
 
+### DcConvertBody
+
+| Field | Type |
+|---|---|
+| to | `string` |
+| value | `string?` |
+| representation | `string?` |
+| contentId | `string?` |
+| expand | `string` |
+
+```json
+{
+  "to": "text",
+  "value": "text",
+  "representation": "text",
+  "contentId": "text",
+  "expand": "text"
+}
+```
+
+### DcCursorPage
+
+| Field | Type |
+|---|---|
+| items | `IReadOnlyList<JsonObject>` |
+| cursor | `string?` |
+| next | `string?` |
+| prev | `string?` |
+
+```json
+{
+  "items": [
+    {
+      "key": {}
+    }
+  ],
+  "cursor": "text",
+  "next": "text",
+  "prev": "text"
+}
+```
+
 ### DcGroupPage
 
 | Field | Type |
@@ -2336,6 +2541,24 @@ Enum: `Off`, `Admins`, `Everyone`.
 {
   "names": [
     "text"
+  ],
+  "more": false
+}
+```
+
+### DcJsonPage
+
+| Field | Type |
+|---|---|
+| items | `IReadOnlyList<JsonObject>` |
+| more | `bool` |
+
+```json
+{
+  "items": [
+    {
+      "key": {}
+    }
   ],
   "more": false
 }

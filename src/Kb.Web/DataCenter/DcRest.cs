@@ -252,6 +252,16 @@ public sealed class Expand
             : new(defaults);
     }
 
+    /// <summary>The expand parameter as the route passed it on to an action.</summary>
+    public static Expand Parse(string? raw) => new([.. (raw ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)]);
+
+    /// <summary>What a route passes on: the parameter as sent, or the defaults when it is absent.</summary>
+    public static string Raw(HttpRequest request, string defaults = "")
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return request.Query.TryGetValue("expand", out var v) ? string.Join(',', v.ToArray()) : defaults;
+    }
+
     public bool Has(string name) => _paths.Any(p => p == name || p.StartsWith(name + ".", StringComparison.Ordinal));
 
     /// <summary>What is asked for inside one field: "body.storage" in this is "storage" in the result for "body".</summary>

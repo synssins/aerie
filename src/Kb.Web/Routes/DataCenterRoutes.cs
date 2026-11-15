@@ -20,6 +20,7 @@ public static class DcRoutes
         var dc = app.MapGroup(options.ContextPath + DcRest.Root).AllowAnonymous().WithMetadata(DcRoute.Marker);
         dc.MapDcUsers();
         dc.MapDcSpaces();
+        dc.MapDcContent();
 
         dc.MapGet("/server-information", (HttpContext http) =>
         {

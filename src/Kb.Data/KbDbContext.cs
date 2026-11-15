@@ -104,6 +104,9 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     public DbSet<UserPermission> UserPermissions => Set<UserPermission>();
     public DbSet<Kb.Core.DataCenter.DcSpace> DcSpaces => Set<Kb.Core.DataCenter.DcSpace>();
     public DbSet<Kb.Core.DataCenter.DcLongTask> DcLongTasks => Set<Kb.Core.DataCenter.DcLongTask>();
+    public DbSet<Kb.Core.DataCenter.DcContent> DcContents => Set<Kb.Core.DataCenter.DcContent>();
+    public DbSet<Kb.Core.DataCenter.DcVersion> DcVersions => Set<Kb.Core.DataCenter.DcVersion>();
+    public DbSet<Kb.Core.DataCenter.DcLabel> DcLabels => Set<Kb.Core.DataCenter.DcLabel>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -263,6 +266,25 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
             e.Property(x => x.Name).HasMaxLength(100);
             e.Property(x => x.Subject).HasMaxLength(300);
             e.HasIndex(x => new { x.UserId, x.StartedAt });
+        });
+        builder.Entity<Kb.Core.DataCenter.DcContent>(e =>
+        {
+            e.Property(x => x.Id).ValueGeneratedOnAdd();
+            e.Property(x => x.Kind).HasMaxLength(20);
+            e.HasIndex(x => x.AerieId).IsUnique();
+        });
+        builder.Entity<Kb.Core.DataCenter.DcVersion>(e =>
+        {
+            e.HasKey(x => x.PageVersionId);
+            e.Property(x => x.PageVersionId).ValueGeneratedNever();
+            e.HasIndex(x => new { x.PageId, x.Number }).IsUnique();
+        });
+        builder.Entity<Kb.Core.DataCenter.DcLabel>(e =>
+        {
+            e.Property(x => x.Id).ValueGeneratedOnAdd();
+            e.Property(x => x.Prefix).HasMaxLength(10);
+            e.Property(x => x.Name).HasMaxLength(255);
+            e.HasIndex(x => new { x.Prefix, x.Name }).IsUnique();
         });
     }
 

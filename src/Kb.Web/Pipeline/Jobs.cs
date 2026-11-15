@@ -9,7 +9,8 @@ namespace Kb.Web.Pipeline;
 /// (so two servers never run one together), runs it in its own scope as its plugin, and sets its next slot.
 /// A job that throws has its error recorded and reported as a failure of its plugin; it runs again at its next slot.
 /// </summary>
-public sealed class JobRunner(IServiceScopeFactory scopes, IRegistrations registrations, PluginRegistry registry, IPluginFailures failures, TimeProvider time, ILogger<JobRunner> log)
+public sealed class JobRunner(IServiceScopeFactory scopes, IRegistrations registrations, PluginRegistry registry, IPluginFailures failures, TimeProvider time, ILogger<JobRunner> log,
+    IConfiguration config)
     : BackgroundService
 {
     private static readonly TimeSpan ShortestClaim = TimeSpan.FromMinutes(5);
@@ -19,7 +20,10 @@ public sealed class JobRunner(IServiceScopeFactory scopes, IRegistrations regist
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30), time);
+        // Kb:Plugins:JobPollSeconds 0 turns the timer off: tests run the runner by hand with RunOnceAsync, so a tick cannot run a job first.
+        var seconds = config.GetValue("Kb:Plugins:JobPollSeconds", 30);
+        if (seconds <= 0) return;
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(seconds), time);
         try
         {
             while (await timer.WaitForNextTickAsync(stoppingToken))

@@ -469,6 +469,56 @@ namespace Kb.Data.Migrations
                     b.ToTable("StoragePlaces");
                 });
 
+            modelBuilder.Entity("Kb.Core.DataCenter.DcContent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<Guid>("AerieId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AerieId")
+                        .IsUnique();
+
+                    b.ToTable("DcContents");
+                });
+
+            modelBuilder.Entity("Kb.Core.DataCenter.DcLabel", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("Prefix")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Prefix", "Name")
+                        .IsUnique();
+
+                    b.ToTable("DcLabels");
+                });
+
             modelBuilder.Entity("Kb.Core.DataCenter.DcLongTask", b =>
                 {
                     b.Property<Guid>("Id")
@@ -532,6 +582,28 @@ namespace Kb.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("DcSpaces");
+                });
+
+            modelBuilder.Entity("Kb.Core.DataCenter.DcVersion", b =>
+                {
+                    b.Property<long>("PageVersionId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Number")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("PageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("Removed")
+                        .HasColumnType("bit");
+
+                    b.HasKey("PageVersionId");
+
+                    b.HasIndex("PageId", "Number")
+                        .IsUnique();
+
+                    b.ToTable("DcVersions");
                 });
 
             modelBuilder.Entity("Kb.Core.Identity.ApiToken", b =>
