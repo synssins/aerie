@@ -79,6 +79,10 @@ The server tests run on SQLite and need no database server.
 
 Code uses the prefix `Kb` rather than the product name, so a rename doesn't touch it.
 
+## How changes are made
+
+Aerie is being redeveloped under a clean-room method: contracts first, then code, then tests, with a human review on every merge. [CLEAN_ROOM.md](CLEAN_ROOM.md) says what may and may not come into this repository, and [PROVENANCE.md](PROVENANCE.md) records where every fixture, asset and outside reference came from. [contracts/](contracts/README.md) is where the API contracts are pinned.
+
 ## License
 
-None yet. All rights reserved until one is added.
+Aerie is licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE) for attributions; the bundled fonts keep their own SIL Open Font License.
