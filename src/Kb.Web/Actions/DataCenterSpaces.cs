@@ -215,8 +215,9 @@ internal sealed class DcCreateSpaceHandler(KbDbContext db, IAccess access, IActi
         if (req.Name.Trim().Length > 200) return new Problem(400, "name is at most 200 characters.");
         var key = DcSpaceData.Stored(req.Key);
         if (!SpaceSupport.SpaceKeyPattern().IsMatch(key)) return new Problem(400, "A key is 2 to 32 letters, digits or hyphens, starting with a letter or digit.");
-        // Both kinds are private: only those given a role see them (docs/spec-questions/space-visibility-on-create.md).
-        var created = await bus.SendAsync(new CreateSpace { Name = req.Name.Trim(), Key = key, Description = req.Description, Visibility = SpaceVisibility.Private }, CancellationToken.None);
+        // spaces.md (Who sees the new space): a global space is read by everyone signed in; one made with _private only by those given a role.
+        var visibility = req.Private ? SpaceVisibility.Private : SpaceVisibility.SignedIn;
+        var created = await bus.SendAsync(new CreateSpace { Name = req.Name.Trim(), Key = key, Description = req.Description, Visibility = visibility }, CancellationToken.None);
         if (created.Problem is { } p) return DcSpaceData.AsSurface(p);
         await DcSpaceData.EnsureIdsAsync(db, CancellationToken.None);
         var dc = await db.DcSpaces.FirstAsync(d => d.SpaceId == created.Value!.Id, CancellationToken.None);
@@ -230,7 +231,7 @@ internal sealed class DcCreatePersonalSpaceHandler(KbDbContext db, IAccess acces
 {
     private KbUser? _me;
 
-    // Aerie's rule is that only an Admin creates spaces; a personal space is one too (docs/spec-questions/personal-spaces.md).
+    // Only an Admin creates spaces in aerie; in T1 a personal space is one too (spaces.md).
     public async Task<Problem?> AuthorizeAsync(ActionContext<DcCreatePersonalSpace> ctx)
     {
         if (ctx.Actor.UserId is not { } me) return Problem.Unauthorized;

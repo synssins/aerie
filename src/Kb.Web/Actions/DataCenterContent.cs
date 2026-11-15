@@ -14,7 +14,7 @@ namespace Kb.Web.Actions;
 
 // Content on the Data Center compatible surface (contracts/behaviour/content.md, spaces.md, representations.md). Reads shape aerie's pages
 // and folders through DcContentService; writes are aerie's own page actions sent from inside, so their checks, plugin hooks and audit apply.
-// Aerie holds no blog posts, comments or unpublished drafts (docs/spec-questions/blog-posts-comments-drafts.md): lists of them are empty,
+// Aerie holds no blog posts, comments or unpublished drafts in T1 (content.md, What T1 leaves out): lists of them are empty,
 // and creating one is refused with 400.
 
 public sealed record DcJsonPage(IReadOnlyList<JsonObject> Items, bool More);

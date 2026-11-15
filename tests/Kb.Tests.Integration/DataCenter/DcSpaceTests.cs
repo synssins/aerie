@@ -64,8 +64,12 @@ public sealed class DcSpaceTests : IAsyncLifetime
 
         var p = await (await _admin.PostJsonAsync("/rest/api/space/_private", new { key = "team-a", name = "Team A" })).JsonAsync(HttpStatusCode.OK);
         Assert.Equal("TEAM-A", p.GetProperty("key").GetString());
-        // Neither is visible to someone without a role.
-        Assert.Empty(Keys(await Basic(_f, "ravi").GetJsonAsync("/rest/api/space")));
+        // spaces.md: a global space is read by everyone signed in; a _private one only by those given a role.
+        Assert.Equal(["LAB"], Keys(await Basic(_f, "ravi").GetJsonAsync("/rest/api/space")));
+        await (await Basic(_f, "ravi").GetAsync("/rest/api/space/TEAM-A", Ct)).ErrorAsync(HttpStatusCode.NotFound);
+        await (await _f.NewClient().GetAsync("/rest/api/space/LAB", Ct)).ErrorAsync(HttpStatusCode.NotFound);
+        await _f.WithDbAsync(async db => Assert.Equal((Kb.Plugins.SpaceVisibility.SignedIn, Kb.Plugins.SpaceVisibility.Private),
+            ((await db.Spaces.SingleAsync(x => x.Key == "lab", Ct)).Visibility, (await db.Spaces.SingleAsync(x => x.Key == "team-a", Ct)).Visibility)));
     }
 
     [Fact]

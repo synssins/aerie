@@ -6,8 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Kb.Web.DataCenter;
 
 // Users on the Data Center compatible surface (contracts/behaviour/users.md). A user's key is aerie's user id as 32 lower-case hex digits.
-// Who may read whom follows aerie's own rule for looking people up (ListPrincipalsHandler.MayBrowseAsync);
-// see docs/spec-questions/user-directory-visibility.md.
+// Who may read whom follows aerie's own rule for looking people up (ListPrincipalsHandler.MayBrowseAsync), as users.md (Who may look people up) states.
 
 public sealed record DcUser(Guid Id, string UserName, string DisplayName, bool Deactivated, bool Deleted);
 public sealed record DcUserPage(IReadOnlyList<DcUser> Users, bool More);
