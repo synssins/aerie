@@ -462,6 +462,69 @@ namespace Kb.Data.Sqlite.Migrations
                     b.ToTable("StoragePlaces");
                 });
 
+            modelBuilder.Entity("Kb.Core.DataCenter.DcLongTask", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("FinishedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("StartedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Successful")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "StartedAt");
+
+                    b.ToTable("DcLongTasks");
+                });
+
+            modelBuilder.Entity("Kb.Core.DataCenter.DcSpace", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("ArchivedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("PersonalOwnerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SpaceId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PersonalOwnerId");
+
+                    b.HasIndex("SpaceId")
+                        .IsUnique();
+
+                    b.ToTable("DcSpaces");
+                });
+
             modelBuilder.Entity("Kb.Core.Identity.ApiToken", b =>
                 {
                     b.Property<Guid>("Id")

@@ -245,6 +245,95 @@ Write. `UpdateBrand`, answers `Unit`.
 |---|---|---|
 | ProductName | `string` | required |
 
+## dc.longtask.list
+
+Read. `DcListLongTasks`, answers `DcLongTaskPage` ([DcLongTaskPage](#dclongtaskpage)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Start | `int` | required |
+| Limit | `int` | required |
+
+## dc.longtask.read
+
+Read. `DcReadLongTask`, answers `DcLongTaskView` ([DcLongTaskView](#dclongtaskview)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+
+## dc.space.archive
+
+Write. `DcArchiveSpace`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Key | `string` | required |
+| Archive | `bool` | required |
+
+## dc.space.create
+
+Write. `DcCreateSpace`, answers `DcSpaceView` ([DcSpaceView](#dcspaceview)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Key | `string?` |  |
+| Name | `string?` |  |
+| Description | `string?` |  |
+| Private | `bool` |  |
+
+## dc.space.delete
+
+Write. `DcDeleteSpace`, answers `DcLongTaskView` ([DcLongTaskView](#dclongtaskview)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Key | `string` | required |
+
+## dc.space.list
+
+Read. `DcListSpaces`, answers `DcSpacePage` ([DcSpacePage](#dcspacepage)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Keys | `IReadOnlyList<string>?` |  |
+| Ids | `IReadOnlyList<long>?` |  |
+| Type | `string?` |  |
+| Status | `string?` |  |
+| Labels | `IReadOnlyList<string>?` |  |
+| ContentLabels | `IReadOnlyList<string>?` |  |
+| NoneCanMatch | `bool` |  |
+| Start | `int` | required |
+| Limit | `int` | required |
+
+## dc.space.personal.create
+
+Write. `DcCreatePersonalSpace`, answers `DcSpaceView` ([DcSpaceView](#dcspaceview)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Description | `string?` |  |
+| Private | `bool` |  |
+
+## dc.space.read
+
+Read. `DcReadSpace`, answers `DcSpaceView` ([DcSpaceView](#dcspaceview)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Key | `string` | required |
+
+## dc.space.update
+
+Write. `DcUpdateSpace`, answers `DcSpaceView` ([DcSpaceView](#dcspaceview)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Key | `string` | required |
+| BodyKey | `string?` |  |
+| Name | `string?` |  |
+| Description | `string?` |  |
+
 ## dc.user.groups
 
 Read. `DcUserGroups`, answers `DcGroupPage` ([DcGroupPage](#dcgrouppage)). Core only.
@@ -2249,6 +2338,117 @@ Enum: `Off`, `Admins`, `Everyone`.
     "text"
   ],
   "more": false
+}
+```
+
+### DcLongTaskPage
+
+| Field | Type |
+|---|---|
+| tasks | `IReadOnlyList<DcLongTaskView>` ([DcLongTaskView](#dclongtaskview)) |
+| more | `bool` |
+
+```json
+{
+  "tasks": [
+    {
+      "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "name": "text",
+      "subject": "text",
+      "startedAt": "2026-11-14T10:00:00\u002B00:00",
+      "finishedAt": "2026-11-14T10:00:00\u002B00:00",
+      "successful": false
+    }
+  ],
+  "more": false
+}
+```
+
+### DcLongTaskView
+
+| Field | Type |
+|---|---|
+| id | `Guid` |
+| name | `string` |
+| subject | `string` |
+| startedAt | `DateTimeOffset` |
+| finishedAt | `DateTimeOffset?` |
+| successful | `bool` |
+
+```json
+{
+  "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "name": "text",
+  "subject": "text",
+  "startedAt": "2026-11-14T10:00:00\u002B00:00",
+  "finishedAt": "2026-11-14T10:00:00\u002B00:00",
+  "successful": false
+}
+```
+
+### DcSpacePage
+
+| Field | Type |
+|---|---|
+| spaces | `IReadOnlyList<DcSpaceView>` ([DcSpaceView](#dcspaceview)) |
+| more | `bool` |
+
+```json
+{
+  "spaces": [
+    {
+      "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "dcId": 0,
+      "key": "text",
+      "name": "text",
+      "description": "text",
+      "personal": false,
+      "archived": false,
+      "creator": {
+        "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+        "userName": "text",
+        "displayName": "text",
+        "deactivated": false,
+        "deleted": false
+      },
+      "createdAt": "2026-11-14T10:00:00\u002B00:00"
+    }
+  ],
+  "more": false
+}
+```
+
+### DcSpaceView
+
+| Field | Type |
+|---|---|
+| id | `Guid` |
+| dcId | `long` |
+| key | `string` |
+| name | `string` |
+| description | `string?` |
+| personal | `bool` |
+| archived | `bool` |
+| creator | `DcUser?` ([DcUser](#dcuser)) |
+| createdAt | `DateTimeOffset` |
+
+```json
+{
+  "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "dcId": 0,
+  "key": "text",
+  "name": "text",
+  "description": "text",
+  "personal": false,
+  "archived": false,
+  "creator": {
+    "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+    "userName": "text",
+    "displayName": "text",
+    "deactivated": false,
+    "deleted": false
+  },
+  "createdAt": "2026-11-14T10:00:00\u002B00:00"
 }
 ```
 

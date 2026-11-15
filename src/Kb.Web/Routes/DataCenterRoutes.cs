@@ -19,6 +19,7 @@ public static class DcRoutes
         var options = app.Services.GetRequiredService<IOptions<KbOptions>>().Value.DataCenter;
         var dc = app.MapGroup(options.ContextPath + DcRest.Root).AllowAnonymous().WithMetadata(DcRoute.Marker);
         dc.MapDcUsers();
+        dc.MapDcSpaces();
 
         dc.MapGet("/server-information", (HttpContext http) =>
         {

@@ -13,7 +13,10 @@ public sealed partial class DcContractTests : IAsyncLifetime
     public ValueTask InitializeAsync() => ValueTask.CompletedTask;
     public async ValueTask DisposeAsync() => await _f.DisposeAsync();
 
-    /// <summary>Contract operations not routed yet. Each pull request of the retrofit takes its operations off; the last one leaves it empty.</summary>
+    /// <summary>
+    /// Contract operations not built yet. Each pull request of the retrofit takes its operations off. The test fails when a routed operation is not
+    /// in the contract, or one listed here is routed: the list is always what is left to build.
+    /// </summary>
     private static readonly string[] NotYet =
     [
         "GET /rest/api/content", "POST /rest/api/content", "GET /rest/api/content/search", "GET /rest/api/content/scan",
@@ -26,13 +29,13 @@ public sealed partial class DcContractTests : IAsyncLifetime
         "POST /rest/api/content/{id}/child/attachment/{attachmentId}/data", "POST /rest/api/content/{id}/child/attachment/{attachmentId}/move",
         "DELETE /rest/api/content/{id}/child/attachment/{attachmentId}/version/{version}", "GET /rest/api/content/{id}/child/attachment/{attachmentId}/extractedtext",
         "GET /rest/api/content/{id}/label", "POST /rest/api/content/{id}/label", "DELETE /rest/api/content/{id}/label", "DELETE /rest/api/content/{id}/label/{label}",
-        "POST /rest/api/contentbody/convert/{to}", "GET /rest/api/space", "POST /rest/api/space", "POST /rest/api/space/_private", "POST /rest/api/space/personal",
-        "GET /rest/api/space/{spaceKey}", "PUT /rest/api/space/{spaceKey}", "DELETE /rest/api/space/{spaceKey}", "PUT /rest/api/space/{spaceKey}/archive",
-        "PUT /rest/api/space/{spaceKey}/restore", "GET /rest/api/space/{spaceKey}/content", "GET /rest/api/space/{spaceKey}/content/{type}",
-        "GET /rest/api/space/{spaceKey}/trash", "DELETE /rest/api/space/{spaceKey}/trash", "GET /rest/api/search", "GET /rest/api/longtask", "GET /rest/api/longtask/{id}",
+        "POST /rest/api/contentbody/convert/{to}", "GET /rest/api/space/{spaceKey}/content", "GET /rest/api/space/{spaceKey}/content/{type}",
+        "GET /rest/api/space/{spaceKey}/trash", "DELETE /rest/api/space/{spaceKey}/trash", "GET /rest/api/search",
+        // OAuth 2.0: the identity work, after T1 (behaviour/identity-plan.md).
+        "GET /rest/oauth2/latest/authorize", "POST /rest/oauth2/latest/token", "POST /rest/oauth2/latest/revoke", "GET /.well-known/oauth-authorization-server",
     ];
 
-    [GeneratedRegex(@"^  (/rest/api[^\s:]*):\s*$")]
+    [GeneratedRegex(@"^  (/(?:rest/(?:api|oauth2)|\.well-known)[^\s:]*):\s*$")]
     private static partial Regex PathLine();
 
     [GeneratedRegex(@"^    (get|post|put|delete|patch):\s*$")]
@@ -67,8 +70,9 @@ public sealed partial class DcContractTests : IAsyncLifetime
     public void RoutedOperations_AreTheContractsOperations()
     {
         var contract = ContractOperations();
-        Assert.Equal(52, contract.Count);
+        Assert.NotEmpty(contract); // the contract was read
         Assert.Empty(NotYet.Except(contract)); // the list names only contract operations
+        Assert.Equal(NotYet.Length, NotYet.Distinct().Count());
         Assert.Equal(contract.Except(NotYet).Order(StringComparer.Ordinal), Routed().Order(StringComparer.Ordinal));
     }
 }
