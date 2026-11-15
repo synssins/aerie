@@ -10,21 +10,62 @@ namespace Kb.Web.DataCenter;
 /// <summary>Attachments and labels (contracts/behaviour/attachments.md, labels-properties.md), and the download link attachments carry.</summary>
 public static class DcAttachmentRoutes
 {
-    /// <summary>
-    /// The multipart parts of an upload. The web server's own cap is raised to the most an Admin may allow; the action holds each file to the
-    /// configured limit (413). Null for a body that is not multipart.
-    /// </summary>
-    private static async Task<IFormCollection?> FormAsync(HttpRequest request)
+    /// <summary>The parts of a multipart upload: every part named file, and the text of the others.</summary>
+    private sealed record Upload(List<DcFilePart> Files, Dictionary<string, List<string>> Fields)
     {
-        if (!request.HasFormContentType || !(request.ContentType ?? "").StartsWith("multipart/form-data", StringComparison.OrdinalIgnoreCase)) return null;
-        var cap = (long)UploadLimits.MaxMb * 1_048_576 + 1_048_576;
-        if (request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } feature) feature.MaxRequestBodySize = cap;
-        return await request.ReadFormAsync(new Microsoft.AspNetCore.Http.Features.FormOptions { MultipartBodyLengthLimit = cap }, request.HttpContext.RequestAborted);
+        public string? Text(string name) => Fields.TryGetValue(name, out var v) && v.Count > 0 ? v[0] : null;
+        public bool Flag(string name) => bool.TryParse(Text(name), out var b) && b;
+        public List<string> All(string name) => Fields.TryGetValue(name, out var v) ? v : [];
     }
 
-    private static DcFilePart Part(IFormFile f) => new(Path.GetFileName(f.FileName), f.ContentType, f.Length, f.OpenReadStream);
+    /// <summary>
+    /// Reads a multipart upload section by section. A part named file is a file whether or not it has a file name (attachments.md, Q-0018):
+    /// its bytes, as received, go to a temporary file, never through a text decoder. The web server's own cap is raised to the most an Admin
+    /// may allow; the action holds each file to the configured limit (413). Null for a body that is not multipart, or that cannot be read.
+    /// </summary>
+    private static async Task<Upload?> ReadUploadAsync(HttpRequest request)
+    {
+        if (!Microsoft.Net.Http.Headers.MediaTypeHeaderValue.TryParse(request.ContentType, out var type) || !type.MediaType.Equals("multipart/form-data", StringComparison.OrdinalIgnoreCase)) return null;
+        var boundary = Microsoft.Net.Http.Headers.HeaderUtilities.RemoveQuotes(type.Boundary).Value;
+        if (string.IsNullOrEmpty(boundary)) return null;
+        var cap = (long)UploadLimits.MaxMb * 1_048_576 + 1_048_576;
+        if (request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } feature) feature.MaxRequestBodySize = cap;
+        var reader = new Microsoft.AspNetCore.WebUtilities.MultipartReader(boundary, request.Body) { BodyLengthLimit = cap };
+        var upload = new Upload([], new Dictionary<string, List<string>>(StringComparer.Ordinal));
+        try
+        {
+            while (await reader.ReadNextSectionAsync(request.HttpContext.RequestAborted) is { } section)
+            {
+                if (!Microsoft.Net.Http.Headers.ContentDispositionHeaderValue.TryParse(section.ContentDisposition, out var disposition)) continue;
+                var name = Microsoft.Net.Http.Headers.HeaderUtilities.RemoveQuotes(disposition.Name).Value ?? "";
+                if (name == "file")
+                {
+                    var path = Path.GetTempFileName();
+                    request.HttpContext.Response.RegisterForDispose(new TempFile(path));
+                    long length;
+                    await using (var target = File.Create(path)) { await section.Body.CopyToAsync(target, request.HttpContext.RequestAborted); length = target.Length; }
+                    var fileName = Microsoft.Net.Http.Headers.HeaderUtilities.RemoveQuotes(disposition.FileNameStar.HasValue ? disposition.FileNameStar : disposition.FileName).Value;
+                    upload.Files.Add(new DcFilePart(string.IsNullOrWhiteSpace(fileName) ? null : Path.GetFileName(fileName), section.ContentType, length, () => File.OpenRead(path)));
+                    continue;
+                }
+                using var text = new StreamReader(section.Body, System.Text.Encoding.UTF8);
+                var value = await text.ReadToEndAsync(request.HttpContext.RequestAborted);
+                if (!upload.Fields.TryGetValue(name, out var list)) upload.Fields[name] = list = [];
+                list.Add(value);
+            }
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException) { return null; }
+        return upload;
+    }
 
-    private static bool Flag(IFormCollection form, string name) => bool.TryParse(form[name].ToString(), out var b) && b;
+    /// <summary>A part's temporary file, deleted when the response is done.</summary>
+    private sealed class TempFile(string path) : IDisposable
+    {
+        public void Dispose()
+        {
+            try { File.Delete(path); } catch (IOException) { } // a file still open is removed by the system's temp cleanup
+        }
+    }
 
     private static IResult NotMultipart => DcRest.Fail(415, "Send the files as multipart/form-data.");
 
@@ -46,11 +87,11 @@ public static class DcAttachmentRoutes
             var status = http.Request.Query["status"].ToString();
             if (status.Length > 0 && status is not ("current" or "draft")) return DcRest.Fail(400, "status is current or draft.");
             if (status == "draft") return DcRest.Fail(404, "Aerie has no drafts to attach to.");
-            if (await FormAsync(http.Request) is not { } form) return NotMultipart;
+            if (await ReadUploadAsync(http.Request) is not { } form) return NotMultipart;
             return await bus.SendAsync(new DcCreateAttachments
             {
-                Id = id, Files = [.. form.Files.GetFiles("file").Select(Part)], Comments = [.. form["comment"].Select(c => c ?? "")],
-                MinorEdit = Flag(form, "minorEdit"), AllowDuplicated = bool.TryParse(http.Request.Query["allowDuplicated"].ToString(), out var dup) && dup,
+                Id = id, Files = form.Files, Comments = form.All("comment"),
+                MinorEdit = form.Flag("minorEdit"), AllowDuplicated = bool.TryParse(http.Request.Query["allowDuplicated"].ToString(), out var dup) && dup,
                 Expand = Expand.Raw(http.Request),
             }, ct).Rest(o => DcRest.Json(o));
         }).WithAction<DcCreateAttachments>();
@@ -66,12 +107,11 @@ public static class DcAttachmentRoutes
 
         dc.MapPost("/content/{id}/child/attachment/{attachmentId}/data", async (HttpContext http, string id, string attachmentId, IActionBus bus, CancellationToken ct) =>
         {
-            if (await FormAsync(http.Request) is not { } form) return NotMultipart;
-            var parts = form.Files.GetFiles("file");
-            if (parts.Count != 1) return DcRest.Fail(400, "Exactly one file part is needed.");
+            if (await ReadUploadAsync(http.Request) is not { } form) return NotMultipart;
+            if (form.Files.Count != 1) return DcRest.Fail(400, "Exactly one file part is needed.");
             return await bus.SendAsync(new DcAttachmentData
             {
-                Id = id, AttachmentId = attachmentId, File = Part(parts[0]), Comment = form["comment"].ToString() is { Length: > 0 } c ? c : null, MinorEdit = Flag(form, "minorEdit"),
+                Id = id, AttachmentId = attachmentId, File = form.Files[0], Comment = form.Text("comment") is { Length: > 0 } c ? c : null, MinorEdit = form.Flag("minorEdit"),
             }, ct).Rest(o => DcRest.Json(o));
         }).WithAction<DcAttachmentData>();
 

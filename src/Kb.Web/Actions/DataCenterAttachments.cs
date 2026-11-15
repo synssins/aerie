@@ -16,8 +16,8 @@ namespace Kb.Web.Actions;
 // aerie's own (attachment.add, sent from inside); a new version, new properties, a move and a version removal are written here, audited,
 // with the current file kept under the attachment's own id so aerie's download keeps serving it. Labels are aerie's page tags.
 
-/// <summary>One file part of a multipart upload.</summary>
-public sealed class DcFilePart(string fileName, string? contentType, long length, Func<Stream> open) : UploadContent
+/// <summary>One file part of a multipart upload. Its file name is null when the part named none (attachments.md, Q-0018).</summary>
+public sealed class DcFilePart(string? fileName, string? contentType, long length, Func<Stream> open) : UploadContent
 {
     public override string? FileName => fileName;
     public string? ContentType => contentType;
@@ -192,20 +192,22 @@ internal sealed class DcCreateAttachmentsHandler(KbDbContext db, IAccess access,
         var (req, page, me) = (ctx.Action, _page!, ctx.Actor.UserId!.Value);
         if (req.Files.Count == 0) return new Problem(400, "At least one file part is needed.");
         if (req.Comments.Count > 0 && req.Comments.Count != req.Files.Count) return new Problem(400, "Send one comment per file, or none.");
-        if (req.Files.Any(f => string.IsNullOrWhiteSpace(f.FileName))) return new Problem(400, "Every file part needs a file name.");
         var max = await UploadLimits.AttachmentBytesAsync(db, ctx.Cancel);
         if (req.Files.Any(f => f.Length > max)) return DcAttachmentRules.TooLarge(max);
         var existing = await files.OfPageAsync(page.Id, ctx.Cancel);
-        if (!req.AllowDuplicated && req.Files.FirstOrDefault(f => existing.Any(a => a.FileName == f.FileName)) is { } clash)
+        // A part without a file name gets a name of its own after it is made, so it never clashes (Q-0018).
+        var named = req.Files.Where(f => f.FileName is not null).ToList();
+        if (!req.AllowDuplicated && named.FirstOrDefault(f => existing.Any(a => a.FileName == f.FileName)) is { } clash)
             return new Problem(400, $"{clash.FileName} is already attached; send allowDuplicated=true for a new version.");
-        if (req.Files.Select(f => f.FileName).Distinct().Count() < req.Files.Count) return new Problem(400, "Two files in the request have the same name.");
+        if (named.Select(f => f.FileName).Distinct().Count() < named.Count) return new Problem(400, "Two files in the request have the same name.");
 
         var made = new List<Attachment>();
         for (var i = 0; i < req.Files.Count; i++)
         {
             var (file, comment) = (req.Files[i], req.Comments.Count > 0 ? req.Comments[i] : "");
-            var media = DcAttachmentService.MediaType(file.ContentType, file.FileName!);
-            if (existing.FirstOrDefault(a => a.FileName == file.FileName) is { } same)
+            // Without a file name the part's Content-Type is ignored: the media type is application/octet-stream (attachments.md).
+            var media = file.FileName is null ? "application/octet-stream" : DcAttachmentService.MediaType(file.ContentType, file.FileName);
+            if (file.FileName is not null && existing.FirstOrDefault(a => a.FileName == file.FileName) is { } same)
             {
                 if (await NewVersionAsync(ctx, files, db, same, page, file, file.FileName!, media, comment, req.MinorEdit, max) is { } p) return p;
                 made.Add(same);
@@ -222,6 +224,12 @@ internal sealed class DcCreateAttachmentsHandler(KbDbContext db, IAccess access,
             else return DcAttachmentRules.TooLarge(max);
             db.DcAttachmentVersions.Add(new DcAttachmentVersion { AttachmentId = a.Id, Number = 1, BlobId = a.Id, Size = a.Size, MediaType = media, Comment = comment, MinorEdit = req.MinorEdit, CreatedBy = me, CreatedAt = a.CreatedAt });
             await db.SaveChangesAsync(CancellationToken.None);
+            if (file.FileName is null)
+            {
+                // "attachment-" and the new attachment's id: it never clashes with a name already there; the client can rename it later.
+                a.FileName = "attachment-" + (await content.IdOfAsync(a.Id, CancellationToken.None)).ToString(CultureInfo.InvariantCulture);
+                await db.SaveChangesAsync(CancellationToken.None);
+            }
             made.Add(a);
         }
         var results = new JsonArray();
@@ -235,7 +243,8 @@ internal sealed class DcCreateAttachmentsHandler(KbDbContext db, IAccess access,
     /// </summary>
     private async Task<Attachment?> ToFolderAsync(ActionContext ctx, Page folder, DcFilePart file, long max)
     {
-        var a = new Attachment { PageId = folder.Id, FileName = file.FileName![..Math.Min(file.FileName!.Length, 255)], CreatedBy = ctx.Actor.UserId!.Value, CreatedAt = time.GetUtcNow() };
+        var name = file.FileName ?? "attachment";
+        var a = new Attachment { PageId = folder.Id, FileName = name[..Math.Min(name.Length, 255)], CreatedBy = ctx.Actor.UserId!.Value, CreatedAt = time.GetUtcNow() };
         a.Size = await store.SaveAsync(a.Id.ToString("N"), await file.OpenReadAsync(CancellationToken.None), max, CancellationToken.None);
         if (a.Size < 0) return null;
         db.Attachments.Add(a);
@@ -282,12 +291,14 @@ internal sealed class DcAttachmentDataHandler(KbDbContext db, IAccess access, Dc
     public async Task<Outcome<JsonObject>> HandleAsync(ActionContext<DcAttachmentData> ctx)
     {
         var (req, page, a) = (ctx.Action, _page!, _attachment!);
-        if (req.File is not { } file || string.IsNullOrWhiteSpace(file.FileName)) return new Problem(400, "Exactly one file part, with a file name, is needed.");
+        if (req.File is not { } file) return new Problem(400, "Exactly one file part is needed.");
         var max = await UploadLimits.AttachmentBytesAsync(db, ctx.Cancel);
         if (file.Length > max) return DcAttachmentRules.TooLarge(max);
-        // The file name in the part becomes the title; it may not take another attachment's name on this content.
-        if (file.FileName != a.FileName && (await files.OfPageAsync(page.Id, ctx.Cancel)).Any(x => x.FileName == file.FileName)) return new Problem(400, $"{file.FileName} is already attached here.");
-        if (await DcCreateAttachmentsHandler.NewVersionAsync(ctx, files, db, a, page, file, file.FileName!, DcAttachmentService.MediaType(file.ContentType, file.FileName!), req.Comment ?? "", req.MinorEdit, max) is { } p)
+        // The file name in the part becomes the title; it may not take another attachment's name on this content. A part without one keeps the
+        // title and the media type as they are, and its Content-Type is ignored (attachments.md, Q-0018).
+        if (file.FileName is not null && file.FileName != a.FileName && (await files.OfPageAsync(page.Id, ctx.Cancel)).Any(x => x.FileName == file.FileName)) return new Problem(400, $"{file.FileName} is already attached here.");
+        var (name, media) = file.FileName is { } given ? (given, DcAttachmentService.MediaType(file.ContentType, given)) : (a.FileName, (await files.VersionsAsync(a, ctx.Cancel))[^1].MediaType);
+        if (await DcCreateAttachmentsHandler.NewVersionAsync(ctx, files, db, a, page, file, name, media, req.Comment ?? "", req.MinorEdit, max) is { } p)
             return p;
         return await files.JsonAsync(ctx.Actor, a, page, Expand.None, CancellationToken.None, top: true);
     }

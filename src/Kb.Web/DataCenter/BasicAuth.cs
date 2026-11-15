@@ -18,12 +18,20 @@ namespace Kb.Web.DataCenter;
 /// audited and announced to the Admins like one through the sign-in page.
 /// </summary>
 public sealed class BasicAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder,
-    UserManager<KbUser> users, SignInManager<KbUser> signIn, KbDbContext db, IAuditLog audit)
+    UserManager<KbUser> users, SignInManager<KbUser> signIn, KbDbContext db, IAuditLog audit, BasicThrottle throttle)
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     public const string SchemeName = "KbBasic";
 
+    /// <summary>Every refused attempt counts against the caller's address (BasicThrottle).</summary>
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        var result = await CheckAsync();
+        if (result.Failure is not null) throttle.Fail(BasicThrottle.AddressOf(Context));
+        return result;
+    }
+
+    private async Task<AuthenticateResult> CheckAsync()
     {
         if (!DcRest.HasBasic(Request)) return AuthenticateResult.NoResult();
         string text;
@@ -69,5 +77,54 @@ public sealed class BasicAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions
     {
         Response.StatusCode = StatusCodes.Status401Unauthorized;
         return Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// The limit on failed Basic attempts per address (identity.md, Failed Basic attempts): the same number a minute as aerie's sign-in page
+/// (Kb:Auth:SignInsPerMinutePerAddress). Past it, <see cref="GateAsync"/> answers 429 before any credential is looked at, so a limited
+/// caller cannot go on testing passwords. Only failures count; right credentials and calls without Basic are not held back until then.
+/// </summary>
+public sealed class BasicThrottle(IOptions<Kb.Core.Config.KbOptions> options, TimeProvider time)
+{
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Window, int Count)> _failures = new(StringComparer.Ordinal);
+
+    private long Window => time.GetUtcNow().ToUnixTimeSeconds() / 60;
+
+    public static string AddressOf(HttpContext http)
+    {
+        ArgumentNullException.ThrowIfNull(http);
+        return http.Connection.RemoteIpAddress?.ToString() ?? "";
+    }
+
+    public void Fail(string address)
+    {
+        var window = Window;
+        _failures.AddOrUpdate(address, (window, 1), (_, e) => e.Window == window ? (window, e.Count + 1) : (window, 1));
+        // shortcut: counted on each server, in memory, like aerie's other limits; old windows are dropped once many addresses are held.
+        if (_failures.Count > 10_000) foreach (var (key, e) in _failures) if (e.Window != window) _failures.TryRemove(key, out _);
+    }
+
+    /// <summary>Seconds until the address may try again, or null when it is not limited.</summary>
+    public int? RetryAfter(string address)
+    {
+        var limit = options.Value.Auth.SignInsPerMinutePerAddress;
+        if (!_failures.TryGetValue(address, out var e) || e.Window != Window || e.Count < limit) return null;
+        return (int)Math.Max(1, (Window + 1) * 60 - time.GetUtcNow().ToUnixTimeSeconds());
+    }
+
+    /// <summary>Runs before authentication: a limited address gets 429 with Retry-After and its credentials are not checked.</summary>
+    public static async Task GateAsync(HttpContext http, RequestDelegate next)
+    {
+        ArgumentNullException.ThrowIfNull(http);
+        ArgumentNullException.ThrowIfNull(next);
+        if (DcRest.HasBasic(http.Request) && DcRest.IsUnderRoot(http)
+            && http.RequestServices.GetRequiredService<BasicThrottle>().RetryAfter(AddressOf(http)) is { } wait)
+        {
+            http.Response.Headers.RetryAfter = wait.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            await DcRest.Fail(429, "Too many failed sign-ins from this address; try again later.").ExecuteAsync(http);
+            return;
+        }
+        await next(http);
     }
 }

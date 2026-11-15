@@ -196,6 +196,69 @@ public sealed class DcLabFindingsTests : IAsyncLifetime
         await (await t.PostAsync(path, new StringContent("42", Encoding.UTF8, "application/json"), Ct)).ErrorAsync(HttpStatusCode.BadRequest);
     }
 
+    // Q-0018: a part named file is a file whether or not it has a file name, as clients generated from the published files send it.
+    [Fact]
+    public async Task FilePartWithoutAFileName_IsAFile()
+    {
+        var (token, _) = await AdminTokenAsync();
+        var t = Bearer(token);
+        await t.PostJsonAsync("/rest/api/space", new { key = "LAB", name = "Lab" });
+        var page = (await (await t.PostJsonAsync("/rest/api/content", new { type = "page", title = "P", space = new { key = "LAB" } })).JsonAsync(HttpStatusCode.OK)).GetProperty("id").GetString();
+        byte[] bytes = [0x89, 0x50, 0x4E, 0x47, 0x00, 0xFF, 0xFE, 0x0D, 0x0A, 0x80];
+        async Task<HttpResponseMessage> PostAsync(string path, byte[] data, string? type = null, string? fileName = null, params (string Name, string Value)[] fields)
+        {
+            var form = new MultipartFormDataContent();
+            var part = new ByteArrayContent(data);
+            if (type is not null) part.Headers.ContentType = new MediaTypeHeaderValue(type);
+            if (fileName is null) form.Add(part, "file"); else form.Add(part, "file", fileName);
+            foreach (var (name, value) in fields) form.Add(new StringContent(value), name);
+            var req = new HttpRequestMessage(HttpMethod.Post, path) { Content = form };
+            req.Headers.Add("X-Atlassian-Token", "no-check");
+            return await t.SendAsync(req, Ct);
+        }
+        var path = $"/rest/api/content/{page}/child/attachment";
+        var made = (await (await PostAsync(path, bytes, "image/png", null, ("comment", "unnamed"))).JsonAsync(HttpStatusCode.OK)).GetProperty("results")[0];
+        var id = made.GetProperty("id").GetString();
+        Assert.Equal($"attachment-{id}", made.GetProperty("title").GetString());
+        Assert.Equal("application/octet-stream", made.GetProperty("extensions").GetProperty("mediaType").GetString()); // the part's type is ignored
+        Assert.Equal(("unnamed", bytes.Length), (made.GetProperty("extensions").GetProperty("comment").GetString(), made.GetProperty("extensions").GetProperty("fileSize").GetInt32()));
+        var download = made.GetProperty("_links").GetProperty("download").GetString()!;
+        Assert.Equal(bytes, await t.GetByteArrayAsync(download, Ct)); // as received, not through a text decoder
+        // A second unnamed part never clashes.
+        Assert.NotEqual(id, (await (await PostAsync(path, [1, 2], null)).JsonAsync(HttpStatusCode.OK)).GetProperty("results")[0].GetProperty("id").GetString());
+
+        // New bytes without a file name keep the title and the media type.
+        var named = (await (await PostAsync(path, [7], "text/csv", "data.csv")).JsonAsync(HttpStatusCode.OK)).GetProperty("results")[0];
+        var nid = named.GetProperty("id").GetString();
+        var v2 = await (await PostAsync($"{path}/{nid}/data", bytes, "image/png")).JsonAsync(HttpStatusCode.OK);
+        Assert.Equal(("data.csv", "text/csv"), (v2.GetProperty("title").GetString(), v2.GetProperty("extensions").GetProperty("mediaType").GetString()));
+        Assert.Equal(bytes, await t.GetByteArrayAsync(v2.GetProperty("_links").GetProperty("download").GetString()!, Ct));
+        // Zero file parts, or two, give 400.
+        var none = new MultipartFormDataContent { { new StringContent("x"), "comment" } };
+        var noneReq = new HttpRequestMessage(HttpMethod.Post, $"{path}/{nid}/data") { Content = none };
+        noneReq.Headers.Add("X-Atlassian-Token", "no-check");
+        await (await t.SendAsync(noneReq, Ct)).ErrorAsync(HttpStatusCode.BadRequest);
+        var two = new MultipartFormDataContent { { new ByteArrayContent([1]), "file" }, { new ByteArrayContent([2]), "file" } };
+        var twoReq = new HttpRequestMessage(HttpMethod.Post, $"{path}/{nid}/data") { Content = two };
+        twoReq.Headers.Add("X-Atlassian-Token", "no-check");
+        await (await t.SendAsync(twoReq, Ct)).ErrorAsync(HttpStatusCode.BadRequest);
+    }
+
+    // Q-0017: scan cursors are always strings.
+    [Fact]
+    public async Task ScanCursors_AreStrings()
+    {
+        var (token, _) = await AdminTokenAsync();
+        var t = Bearer(token);
+        await t.PostJsonAsync("/rest/api/space", new { key = "LAB", name = "Lab" });
+        for (var i = 0; i < 3; i++) await t.PostJsonAsync("/rest/api/content", new { type = "page", title = $"P{i}", space = new { key = "LAB" } });
+        var first = await t.GetJsonAsync("/rest/api/content/scan?limit=1");
+        Assert.Equal(JsonValueKind.String, first.GetProperty("nextCursor").ValueKind);
+        var second = await t.GetJsonAsync("/rest/api/content/scan?limit=1&cursor=" + first.GetProperty("nextCursor").GetString());
+        Assert.Equal((JsonValueKind.String, JsonValueKind.String, JsonValueKind.String),
+            (second.GetProperty("cursor").ValueKind, second.GetProperty("nextCursor").ValueKind, second.GetProperty("prevCursor").ValueKind));
+    }
+
     // 6. Basic with a token in the password field acts like Bearer; the user name must be the owner's.
     [Fact]
     public async Task BasicWithAToken_ActsLikeBearer_EvenWithSignInCodes()
@@ -212,19 +275,33 @@ public sealed class DcLabFindingsTests : IAsyncLifetime
         await _f.WithDbAsync(async db => Assert.True(await db.AuditEntries.AnyAsync(a => a.Action == Kb.Core.Audit.AuditActions.TokenUse, Ct)));
     }
 
-    // 6. Failed Basic attempts count against the sign-in limit per address; past it 429 with Retry-After, and nothing broader.
+    // 6. Failed Basic attempts count against the sign-in limit per address; past it 429 with Retry-After before any credential check.
     [Fact]
-    public async Task FailedBasic_IsLimitedLikeSignIn_AndNoMore()
+    public async Task FailedBasic_IsLimited_BeforeAnyCredentialCheck_AndNoMore()
     {
         await using var f = new KbAppFactory(KbAppFactory.NewDbPath(), settings: new Dictionary<string, string> { ["Kb:Auth:SignInsPerMinutePerAddress"] = "3" });
         await UserAsync(f, "ravi");
+        // Right credentials go through and do not count.
+        Assert.Equal("ravi", (await Basic(f, "ravi").GetJsonAsync("/rest/api/user/current")).GetProperty("username").GetString());
         var wrong = Basic(f, "ravi", "wrong-password");
         for (var i = 0; i < 3; i++) await (await wrong.GetAsync("/rest/api/user/current", Ct)).ErrorAsync(HttpStatusCode.Unauthorized);
-        var limited = await wrong.GetAsync("/rest/api/user/current", Ct);
-        await limited.ErrorAsync(HttpStatusCode.TooManyRequests);
-        Assert.NotNull(limited.Headers.RetryAfter);
-        // Right credentials from the same address, and calls without credentials, are not held back by the failures.
-        Assert.Equal("ravi", (await Basic(f, "ravi").GetJsonAsync("/rest/api/user/current")).GetProperty("username").GetString());
+        for (var i = 0; i < 3; i++)
+        {
+            var limited = await wrong.GetAsync("/rest/api/user/current", Ct);
+            await limited.ErrorAsync(HttpStatusCode.TooManyRequests);
+            Assert.NotNull(limited.Headers.RetryAfter);
+        }
+        // Past the limit nothing is checked: the account saw three wrong passwords, not six, and right credentials wait too.
+        await f.WithDbAsync(async db =>
+        {
+            Assert.Equal(3, (await db.Users.SingleAsync(u => u.UserName == "ravi", Ct)).AccessFailedCount);
+            Assert.Equal(3, await db.AuditEntries.CountAsync(a => a.Action == Kb.Core.Audit.AuditActions.SignInFailed && a.DataJson.Contains("basic"), Ct));
+        });
+        await (await Basic(f, "ravi").GetAsync("/rest/api/user/current", Ct)).ErrorAsync(HttpStatusCode.TooManyRequests);
+        // No more broadly: calls without Basic from the same address, and other sign-ins, are not held back.
         Assert.Equal("anonymous", (await f.NewClient().GetJsonAsync("/rest/api/user/anonymous")).GetProperty("type").GetString());
+        var session = f.NewClient();
+        Assert.Equal(HttpStatusCode.OK, (await session.PostAsJsonAsync("/api/v1/auth/local/signin", new { userName = "ravi", password = Password }, Ct)).StatusCode);
+        Assert.Equal("ravi", (await session.GetJsonAsync("/rest/api/user/current")).GetProperty("username").GetString());
     }
 }
