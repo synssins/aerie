@@ -48,4 +48,4 @@ Stop, and do not merge. Remove the material, record what happened and which comm
 
 ## The existing code
 
-Aerie's code up to commit `eea7e023` was written for aerie by its author with AI assistance, before this policy, as original work. It contains no vendor documentation, vendor specs or vendor code, and does not mention Confluence. This attestation is recorded in [PROVENANCE.md](PROVENANCE.md).
+Aerie's code up to commit `eea7e023` was written for aerie by its author with AI assistance, before this policy, as original work. It contains no vendor documentation, vendor specs or vendor code. This attestation is recorded in [PROVENANCE.md](PROVENANCE.md).
