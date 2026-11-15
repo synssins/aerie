@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent } from "react";
 import { Trash2, Upload } from "lucide-react";
+import { ThemeColors } from "./admin/ThemeColors";
 import { api, ApiError, type Brand } from "./api";
 
 /** Aerie's own icon: the logo until an Admin uploads one. It reads on light and dark alike. */
@@ -50,7 +51,7 @@ function LogoField({ variant, label, url, onChanged }: { variant: "light" | "dar
   );
 }
 
-/** Administration › Branding: product name and logos. */
+/** Administration › Branding: product name, logos and theme colors. */
 export function BrandingPanel({ brand, onChanged }: { brand: Brand; onChanged: () => Promise<void> }) {
   const [name, setName] = useState(brand.productName);
   const [status, setStatus] = useState<string | null>(null);
@@ -66,6 +67,7 @@ export function BrandingPanel({ brand, onChanged }: { brand: Brand; onChanged: (
   }
 
   return (
+    <>
     <form className="form" onSubmit={save}>
       <label className="lbl" htmlFor="brand-name">Product name</label>
       <input id="brand-name" type="text" value={name} maxLength={60} onChange={(e) => { setName(e.target.value); setStatus(null); }} />
@@ -76,5 +78,7 @@ export function BrandingPanel({ brand, onChanged }: { brand: Brand; onChanged: (
       <LogoField variant="light" label="Logo, light background" url={brand.logoLightUrl} onChanged={onChanged} />
       <LogoField variant="dark" label="Logo, dark background" url={brand.logoDarkUrl} onChanged={onChanged} />
     </form>
+    <ThemeColors brand={brand} onChanged={onChanged} />
+    </>
   );
 }

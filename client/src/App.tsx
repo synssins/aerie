@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type Brand, type Me } from "./api";
+import { applyTheme } from "./themeTokens";
 import { AppShell } from "./AppShell";
 import { SignIn } from "./SignIn";
 import { Setup, type SetupStatus } from "./Setup";
@@ -10,7 +11,8 @@ import { passwordLinkAt, SetPassword } from "./SetPassword";
 export function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [brand, setBrand] = useState<Brand | null>(null);
-  const loadBrand = () => api.get<Brand>("/brand").then((b) => { setBrand(b); document.title = b.productName; }).catch(() => undefined);
+  // The brand comes before sign-in: its theme colors are on the sign-in page too.
+  const loadBrand = () => api.get<Brand>("/brand").then((b) => { setBrand(b); document.title = b.productName; applyTheme(b.theme); }).catch(() => undefined);
   const [setup, setSetup] = useState<SetupStatus | null>(null);
   // Someone not signed in reads the spaces open to Anyone, when there are any, until they choose Sign in.
   const [openSpaces, setOpenSpaces] = useState<number | null>(null);

@@ -76,7 +76,7 @@ public sealed class BrandingPipelineTests : IAsyncLifetime
         var brand = await anonymous.GetAsync("/api/v1/brand", Ct);
         Assert.Equal((HttpStatusCode.OK, "brand.read"), (brand.StatusCode, Action(brand)));
         var json = await brand.Content.ReadFromJsonAsync<JsonElement>(Ct);
-        Assert.Equal(["productName", "logoLightUrl", "logoDarkUrl", "primaryColor", "signInNote"], json.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["productName", "logoLightUrl", "logoDarkUrl", "primaryColor", "signInNote", "theme"], json.EnumerateObject().Select(p => p.Name));
         Assert.Equal("Help Hub", json.GetProperty("productName").GetString());
         Assert.StartsWith("/api/v1/brand/logo/light?v=", json.GetProperty("logoLightUrl").GetString(), StringComparison.Ordinal);
         Assert.Equal(JsonValueKind.Null, json.GetProperty("logoDarkUrl").ValueKind);

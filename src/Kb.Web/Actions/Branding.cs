@@ -20,7 +20,8 @@ internal sealed class ReadBrandHandler(KbDbContext db, IOptions<KbOptions> optio
         var name = await db.GetAsync(BrandingEndpoints.ProductNameKey, ctx.Cancel) ?? brand.ProductName;
         var logos = await db.BrandAssets.AsNoTracking().Select(a => new { a.Variant, a.UpdatedAt }).ToListAsync(ctx.Cancel);
         string? Url(string v) => logos.FirstOrDefault(l => l.Variant == v) is { } l ? $"/api/v1/brand/logo/{v}?v={l.UpdatedAt.ToUnixTimeSeconds()}" : null;
-        return new BrandDto(name, Url("light"), Url("dark"), brand.PrimaryColor, string.IsNullOrWhiteSpace(brand.SignInNote) ? null : brand.SignInNote);
+        return new BrandDto(name, Url("light"), Url("dark"), brand.PrimaryColor, string.IsNullOrWhiteSpace(brand.SignInNote) ? null : brand.SignInNote,
+            await ThemeTokens.ReadAsync(db, ctx.Cancel));
     }
 }
 

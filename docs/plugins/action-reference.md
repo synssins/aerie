@@ -229,6 +229,14 @@ Write. `SetBrandLogo`, answers `Unit`.
 
 Read. `ReadBrand`, answers `BrandDto` ([BrandDto](#branddto)).
 
+## brand.theme.save
+
+Write. `SaveTheme`, answers `ThemeDto` ([ThemeDto](#themedto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Theme | `ThemeDto` ([ThemeDto](#themedto)) | required |
+
 ## brand.update
 
 Write. `UpdateBrand`, answers `Unit`.
@@ -1886,6 +1894,7 @@ Enum: `Off`, `Admins`, `Everyone`.
 | logoDarkUrl | `string?` |
 | primaryColor | `string` |
 | signInNote | `string?` |
+| theme | `ThemeDto?` ([ThemeDto](#themedto)) |
 
 ```json
 {
@@ -1893,7 +1902,15 @@ Enum: `Off`, `Admins`, `Everyone`.
   "logoLightUrl": "text",
   "logoDarkUrl": "text",
   "primaryColor": "text",
-  "signInNote": "text"
+  "signInNote": "text",
+  "theme": {
+    "day": {
+      "key": "text"
+    },
+    "night": {
+      "key": "text"
+    }
+  }
 }
 ```
 
@@ -4447,6 +4464,24 @@ Enum: `Active`, `Target`, `Old`.
 ```json
 {
   "text": "text"
+}
+```
+
+### ThemeDto
+
+| Field | Type |
+|---|---|
+| day | `IReadOnlyDictionary<string, string>` |
+| night | `IReadOnlyDictionary<string, string>` |
+
+```json
+{
+  "day": {
+    "key": "text"
+  },
+  "night": {
+    "key": "text"
+  }
 }
 ```
 

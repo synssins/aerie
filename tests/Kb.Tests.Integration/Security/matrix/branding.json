@@ -22,6 +22,15 @@
     "scope": "server"
   },
   {
+    "action": "brand.theme.save",
+    "method": "PUT",
+    "path": "/api/v1/admin/brand/theme",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": "allowed"},
+    "scope": "server",
+    "note": "An empty body is the default theme."
+  },
+  {
     "action": "brand.logo.set",
     "method": "PUT",
     "path": "/api/v1/admin/brand/logo/light",

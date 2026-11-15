@@ -41,6 +41,9 @@ public static class BrandingRoutes
         admin.MapPut("/brand/logo/{variant}", (string variant, HttpContext http, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new SetBrandLogo { Variant = variant, File = new BrandingUpload(http.Request) }, ct).ToHttp(_ => Results.Ok())).WithAction<SetBrandLogo>();
 
+        admin.MapPut("/brand/theme", (ThemeDto req, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new SaveTheme { Theme = req }, ct).ToHttp()).WithAction<SaveTheme>();
+
         admin.MapDelete("/brand/logo/{variant}", (string variant, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new RemoveBrandLogo { Variant = variant }, ct).ToHttp()).WithAction<RemoveBrandLogo>();
     }

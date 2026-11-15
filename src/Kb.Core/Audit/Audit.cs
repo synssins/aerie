@@ -33,6 +33,7 @@ public static class AuditActions
     public const string BreakGlass = "auth.breakglass";
     public const string SetupAdminCreate = "setup.admin.create";
     public const string BrandUpdate = "brand.update";
+    public const string BrandTheme = "brand.theme";
     public const string PageMove = "page.move";
     public const string PageDelete = "page.delete";
     public const string PageRestore = "page.restore";

@@ -37,4 +37,8 @@ public sealed record RemoveBrandLogo : IAction<Unit>
     public required string Variant { get; init; }
 }
 
-public sealed record BrandDto(string ProductName, string? LogoLightUrl, string? LogoDarkUrl, string PrimaryColor, string? SignInNote = null);
+/// <summary>Theme: the theme colors an Admin set (only what differs from the default), or null for the default theme.</summary>
+public sealed record BrandDto(string ProductName, string? LogoLightUrl, string? LogoDarkUrl, string PrimaryColor, string? SignInNote = null, ThemeDto? Theme = null);
+
+/// <summary>Theme colors that differ from the default: CSS variable name to #rrggbb, for Day and for Night.</summary>
+public sealed record ThemeDto(IReadOnlyDictionary<string, string> Day, IReadOnlyDictionary<string, string> Night);

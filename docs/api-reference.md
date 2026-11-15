@@ -37,6 +37,7 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | PUT | `/api/v1/admin/brand` | `brand.update` | `RenameProductRequest` ([RenameProductRequest](plugins/action-reference.md#renameproductrequest)) | `Unit` | Yes | Needed | No |
 | DELETE | `/api/v1/admin/brand/logo/{variant}` | `brand.logo.remove` |  | `Unit` | Yes | Needed | No |
 | PUT | `/api/v1/admin/brand/logo/{variant}` | `brand.logo.set` |  | `Unit` | Yes | Needed | No |
+| PUT | `/api/v1/admin/brand/theme` | `brand.theme.save` | `ThemeDto` ([ThemeDto](plugins/action-reference.md#themedto)) | `ThemeDto` ([ThemeDto](plugins/action-reference.md#themedto)) | Yes | Needed | No |
 | GET | `/api/v1/admin/groups` | `group.list` |  | `IReadOnlyList<GroupDto>` ([GroupDto](plugins/action-reference.md#groupdto)) | No | Needed | No |
 | POST | `/api/v1/admin/groups` | `group.create` | `GroupNameRequest` ([GroupNameRequest](plugins/action-reference.md#groupnamerequest)) | `GroupDto` ([GroupDto](plugins/action-reference.md#groupdto)) | Yes | Needed | No |
 | DELETE | `/api/v1/admin/groups/{id:guid}` | `group.delete` |  | `Unit` | Yes | Needed | No |
