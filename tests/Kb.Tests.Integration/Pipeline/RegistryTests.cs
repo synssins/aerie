@@ -87,7 +87,11 @@ public sealed partial class RegistryTests : IAsyncLifetime
             .Select(r => $"{r.Method} {r.Template}").ToList();
         Assert.Empty(unnamed);
         // And the other way round: an action nothing sends is dead weight, or a route forgot to name it.
-        var sent = routes.Select(r => r.Endpoint.Metadata.GetMetadata<ActionAttribute>()!.Name).ToHashSet(StringComparer.Ordinal);
+        // The Data Center compatible surface (/rest/api) sends actions too.
+        var sent = routes.Select(r => r.Endpoint.Metadata.GetMetadata<ActionAttribute>()!.Name)
+            .Concat(_f.Services.GetRequiredService<EndpointDataSource>().Endpoints.Where(e => e.Metadata.GetMetadata<Kb.Web.DataCenter.DcRoute>() is not null)
+                .Select(e => e.Metadata.GetMetadata<ActionAttribute>()?.Name).OfType<string>())
+            .ToHashSet(StringComparer.Ordinal);
         Assert.Empty(actions.Except(sent));
     }
 
