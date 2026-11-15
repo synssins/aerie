@@ -74,25 +74,46 @@ public sealed class DcPlumbingTests : IAsyncLifetime
     {
         await (await _f.NewClient().GetAsync("/rest/api/no-such-thing", Ct)).ErrorAsync(HttpStatusCode.NotFound);
         await (await _f.NewClient().GetAsync("/rest/api/no-such-thing.json", Ct)).ErrorAsync(HttpStatusCode.NotFound);
+        await (await _f.NewClient().GetAsync("/rest/api/", Ct)).ErrorAsync(HttpStatusCode.NotFound);
+        await (await _f.NewClient().PostAsJsonAsync("/rest/api/content/1/anything", new { }, Ct)).ErrorAsync(HttpStatusCode.NotFound);
+        // The OAuth 2.0 surface is not built yet; its paths answer JSON too, never the web app.
+        await (await _f.NewClient().GetAsync("/rest/oauth2/latest/authorize", Ct)).ErrorAsync(HttpStatusCode.NotFound);
+        await (await _f.NewClient().PostAsJsonAsync("/rest/oauth2/latest/token", new { }, Ct)).ErrorAsync(HttpStatusCode.NotFound);
     }
 
     [Fact]
-    public async Task MultipartWrite_NeedsTheXsrfHeader()
+    public async Task WrongMethod_Is405RestError()
     {
-        await UserAsync(_f, "ravi");
-        var c = Basic(_f, "ravi");
-        using var form = new MultipartFormDataContent { { new StringContent("x"), "comment" } };
-        await (await c.PostAsync("/rest/api/user/current", form, Ct)).ErrorAsync(HttpStatusCode.Forbidden);
-
-        // With the header (either spelling) the request goes on: this path takes no POST.
-        foreach (var value in new[] { "no-check", "nocheck" })
+        foreach (var method in new[] { HttpMethod.Delete, HttpMethod.Put, HttpMethod.Patch })
         {
-            using var req = new HttpRequestMessage(HttpMethod.Post, "/rest/api/user/current") { Content = new MultipartFormDataContent { { new StringContent("x"), "comment" } } };
-            req.Headers.Add("X-Atlassian-Token", value);
-            await (await c.SendAsync(req, Ct)).ErrorAsync(HttpStatusCode.MethodNotAllowed);
+            using var req = new HttpRequestMessage(method, "/rest/api/user/list") { Content = JsonContent.Create(new { }) };
+            await (await _f.NewClient().SendAsync(req, Ct)).ErrorAsync(HttpStatusCode.MethodNotAllowed);
         }
-        // A JSON write does not need it.
-        await (await c.PostAsJsonAsync("/rest/api/user/current", new { }, Ct)).ErrorAsync(HttpStatusCode.MethodNotAllowed);
+    }
+
+    [Fact]
+    public async Task Health_IsOpenToAnyone()
+    {
+        Assert.Equal(HttpStatusCode.OK, (await _f.NewClient().GetAsync("/health/live", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await _f.NewClient().GetAsync("/health/ready", Ct)).StatusCode);
+    }
+
+    /// <summary>No route takes multipart yet (attachments will, and test it over HTTP); the rule itself is checked here.</summary>
+    [Theory]
+    [InlineData("POST", "multipart/form-data; boundary=x", null, false)]
+    [InlineData("PUT", "application/x-www-form-urlencoded", null, false)]
+    [InlineData("DELETE", "multipart/form-data; boundary=x", "other", false)]
+    [InlineData("POST", "multipart/form-data; boundary=x", "no-check", true)]
+    [InlineData("POST", "multipart/form-data; boundary=x", "nocheck", true)]
+    [InlineData("POST", "application/json", null, true)]
+    [InlineData("GET", "multipart/form-data; boundary=x", null, true)]
+    public void MultipartAndFormWrites_NeedTheXsrfHeader(string method, string type, string? header, bool ok)
+    {
+        var http = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        http.Request.Method = method;
+        http.Request.ContentType = type;
+        if (header is not null) http.Request.Headers["X-Atlassian-Token"] = header;
+        Assert.Equal(ok, Kb.Web.DataCenter.DcRest.XsrfOk(http.Request));
     }
 
     [Fact]

@@ -19,6 +19,8 @@ public sealed class DcRoute
 public static class DcRest
 {
     public const string Root = "/rest/api";
+    /// <summary>Reserved for the OAuth 2.0 surface (not built yet): nothing under it may fall through to the web app either.</summary>
+    public const string OAuthRoot = "/rest/oauth2";
 
     /// <summary>True for a request under the surface's root, wherever the context prefix puts it.</summary>
     public static bool IsUnderRoot(HttpContext http)
@@ -26,6 +28,9 @@ public static class DcRest
         ArgumentNullException.ThrowIfNull(http);
         return http.Request.Path.StartsWithSegments(http.RequestServices.GetRequiredService<IOptions<KbOptions>>().Value.DataCenter.ContextPath + Root);
     }
+
+    private static bool IsUnderOAuth(HttpContext http) =>
+        http.Request.Path.StartsWithSegments(http.RequestServices.GetRequiredService<IOptions<KbOptions>>().Value.DataCenter.ContextPath + OAuthRoot);
 
     public static bool HasBasic(HttpRequest request) =>
         request.Headers.Authorization.ToString().StartsWith("Basic ", StringComparison.OrdinalIgnoreCase);
@@ -71,6 +76,11 @@ public static class DcRest
     {
         ArgumentNullException.ThrowIfNull(http);
         ArgumentNullException.ThrowIfNull(next);
+        if (IsUnderOAuth(http))
+        {
+            await Fail(404, "No such resource.").ExecuteAsync(http);
+            return;
+        }
         if (!IsUnderRoot(http))
         {
             await next(http);
@@ -83,12 +93,11 @@ public static class DcRest
             await Fail(401, "The user name or password is not valid.").ExecuteAsync(http);
             return;
         }
-        // A route of another kind matched (the UI's fallback page), or none did: this path is not part of the surface.
-        // (A method the path does not take matched the framework's 405 endpoint, which is not a route: it answers 405 below.)
-        var endpoint = http.GetEndpoint();
-        if (endpoint is null || endpoint is RouteEndpoint && endpoint.Metadata.GetMetadata<DcRoute>() is null)
+        // No route of the surface matched. A path of the surface asked with a method it does not take is 405; anything else
+        // (no route, the UI's fallback page, or the framework's 405 for the UI's page) is not part of the surface: 404.
+        if (http.GetEndpoint()?.Metadata.GetMetadata<DcRoute>() is null)
         {
-            await Fail(404, "No such resource.").ExecuteAsync(http);
+            await (HasRouteFor(http) ? Fail(405, "This resource does not take " + http.Request.Method + ".") : Fail(404, "No such resource.")).ExecuteAsync(http);
             return;
         }
         if (!XsrfOk(http.Request))
@@ -106,6 +115,15 @@ public static class DcRest
         }
         if (!res.HasStarted && res.StatusCode >= 400 && res.ContentLength is null && string.IsNullOrEmpty(res.ContentType))
             await Fail(res.StatusCode).ExecuteAsync(http);
+    }
+
+    private static bool HasRouteFor(HttpContext http)
+    {
+        var path = http.Request.Path;
+        return http.RequestServices.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
+            .Where(e => e.Metadata.GetMetadata<DcRoute>() is not null)
+            .Any(e => new Microsoft.AspNetCore.Routing.Template.TemplateMatcher(Microsoft.AspNetCore.Routing.Template.TemplateParser.Parse(e.RoutePattern.RawText!), new RouteValueDictionary())
+                .TryMatch(path, new RouteValueDictionary()));
     }
 
     /// <summary>A write that carries a form or multipart body needs X-Atlassian-Token: no-check (or nocheck). JSON writes do not.</summary>
