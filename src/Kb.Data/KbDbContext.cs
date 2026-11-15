@@ -102,6 +102,8 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     public DbSet<JobRun> JobRuns => Set<JobRun>();
     public DbSet<PluginPermissionRole> PluginPermissionRoles => Set<PluginPermissionRole>();
     public DbSet<UserPermission> UserPermissions => Set<UserPermission>();
+    public DbSet<Kb.Core.DataCenter.DcSpace> DcSpaces => Set<Kb.Core.DataCenter.DcSpace>();
+    public DbSet<Kb.Core.DataCenter.DcLongTask> DcLongTasks => Set<Kb.Core.DataCenter.DcLongTask>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -249,6 +251,19 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
         builder.Entity<ApiToken>().Property(t => t.Hash).HasMaxLength(32);
         builder.Entity<ApiToken>().HasIndex(t => t.Hash).IsUnique();
         builder.Entity<ApiToken>().HasIndex(t => t.OwnerUserId);
+        // The Data Center compatible surface: compatible ids and the facts aerie does not hold itself.
+        builder.Entity<Kb.Core.DataCenter.DcSpace>(e =>
+        {
+            e.Property(x => x.Id).ValueGeneratedOnAdd();
+            e.HasIndex(x => x.SpaceId).IsUnique();
+            e.HasIndex(x => x.PersonalOwnerId);
+        });
+        builder.Entity<Kb.Core.DataCenter.DcLongTask>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(100);
+            e.Property(x => x.Subject).HasMaxLength(300);
+            e.HasIndex(x => new { x.UserId, x.StartedAt });
+        });
     }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)

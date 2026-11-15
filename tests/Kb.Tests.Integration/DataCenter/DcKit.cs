@@ -25,6 +25,13 @@ internal static class DcKit
         return u.Id;
     }
 
+    /// <summary>The id of an existing account, or null.</summary>
+    public static async Task<Guid?> UserIdAsync(KbAppFactory f, string name)
+    {
+        await using var scope = f.Services.CreateAsyncScope();
+        return (await scope.ServiceProvider.GetRequiredService<UserManager<KbUser>>().FindByNameAsync(name))?.Id;
+    }
+
     public static HttpClient Basic(KbAppFactory f, string name, string password = Password)
     {
         var c = f.NewClient();

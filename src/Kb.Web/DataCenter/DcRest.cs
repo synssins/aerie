@@ -68,6 +68,37 @@ public static class DcRest
 
     public static IResult Json(JsonNode node, int status = 200) => Results.Json(node, statusCode: status);
 
+    /// <summary>The JSON object a write carries; null (answer 400) when the body is missing, not JSON, or not an object.</summary>
+    public static async Task<JsonObject?> BodyAsync(HttpRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        try { return await JsonNode.ParseAsync(request.Body, cancellationToken: request.HttpContext.RequestAborted) as JsonObject; }
+        catch (System.Text.Json.JsonException) { return null; }
+    }
+
+    public static IResult BadBody => Fail(400, "The body must be a JSON object.");
+
+    /// <summary>A string at a dotted path in a body (description.plain.value); null when absent or not a string.</summary>
+    public static string? Text(JsonObject? body, string path)
+    {
+        JsonNode? node = body;
+        foreach (var part in path.Split('.')) node = (node as JsonObject)?[part];
+        return node is JsonValue v && v.TryGetValue<string>(out var text) ? text : null;
+    }
+
+    /// <summary>A boolean at a top-level field of a body; null when absent or not a boolean.</summary>
+    public static bool? Flag(JsonObject? body, string name) => body?[name] is JsonValue v && v.TryGetValue<bool>(out var b) ? b : null;
+
+    /// <summary>Every value of a repeatable query parameter, plus the comma-separated values of its list form.</summary>
+    public static List<string> Values(HttpRequest request, string repeated, string? commaList = null)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var all = request.Query[repeated].Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v!.Trim()).ToList();
+        if (commaList is not null)
+            all.AddRange(request.Query[commaList].SelectMany(v => (v ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)));
+        return all;
+    }
+
     /// <summary>
     /// Runs for every request under the root, after authentication. Unknown paths answer 404, refused Basic credentials 401 (never served as
     /// nobody), a multipart or form write without the XSRF header 403, and any error without a body gets the RestError body.

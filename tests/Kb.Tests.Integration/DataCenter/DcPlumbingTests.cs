@@ -55,11 +55,27 @@ public sealed class DcPlumbingTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Basic_IsRefused_ForAccountsThatUseCodes_AndForBreakGlass()
+    public async Task Basic_IsRefused_ForAccountsThatUseCodes_WithTheWrongPasswordAnswer()
     {
-        await UserAsync(_f, "coded", u => u.CodesRequired = true);
-        await (await Basic(_f, "coded").GetAsync("/rest/api/user/current", Ct)).ErrorAsync(HttpStatusCode.Unauthorized);
-        await (await Basic(_f, "breakglass", KbAppFactory.BreakGlassPassword).GetAsync("/rest/api/user/current", Ct)).ErrorAsync(HttpStatusCode.Unauthorized);
+        var coded = await UserAsync(_f, "coded", u => u.CodesRequired = true);
+        var right = await Basic(_f, "coded").GetAsync("/rest/api/user/current", Ct);
+        var wrong = await Basic(_f, "coded", "not-the-password").GetAsync("/rest/api/user/current", Ct);
+        Assert.Equal(await wrong.Content.ReadAsStringAsync(Ct), await right.Content.ReadAsStringAsync(Ct));
+        await right.ErrorAsync(HttpStatusCode.Unauthorized);
+        await _f.WithDbAsync(async db => Assert.True(await db.AuditEntries.AnyAsync(a => a.Action == AuditActions.SignInFailed && a.ActorId == coded && a.DataJson.Contains("codes required"), Ct)));
+        // An Admin uses codes by policy.
+        await UserAsync(_f, "boss", u => u.IsAdmin = true);
+        await (await Basic(_f, "boss").GetAsync("/rest/api/user/current", Ct)).ErrorAsync(HttpStatusCode.Unauthorized);
+        // An account an Admin exempted from codes uses Basic.
+        await UserAsync(_f, "demo", u => u.CodesExempt = true);
+        Assert.Equal("demo", (await Basic(_f, "demo").GetJsonAsync("/rest/api/user/current")).GetProperty("username").GetString());
+    }
+
+    [Fact]
+    public async Task Basic_BreakGlass_SignsIn_AndAlertsTheAdmins()
+    {
+        Assert.Equal("breakglass", (await Basic(_f, "breakglass", KbAppFactory.BreakGlassPassword).GetJsonAsync("/rest/api/user/current")).GetProperty("username").GetString());
+        await _f.WithDbAsync(async db => Assert.True(await db.AuditEntries.AnyAsync(a => a.Action == AuditActions.BreakGlass, Ct)));
     }
 
     [Fact]

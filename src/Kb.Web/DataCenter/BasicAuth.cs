@@ -13,8 +13,9 @@ namespace Kb.Web.DataCenter;
 
 /// <summary>
 /// HTTP Basic on the Data Center compatible surface only (contracts/behaviour/common.md, Authentication). Each request proves the password again,
-/// with Identity's lockout counting the failures. An account that must use one-time codes, and the break-glass account, cannot sign in this way:
-/// a password alone would skip the code. See docs/spec-questions/basic-auth-and-one-time-codes.md.
+/// with Identity's lockout counting the failures. An account that must use one-time codes cannot sign in this way: a password alone would skip
+/// the code (common.md, Accounts with sign-in codes). Every other account can, the break-glass account too: each of its requests is a sign-in,
+/// audited and announced to the Admins like one through the sign-in page.
 /// </summary>
 public sealed class BasicAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder,
     UserManager<KbUser> users, SignInManager<KbUser> signIn, KbDbContext db, IAuditLog audit)
@@ -37,12 +38,14 @@ public sealed class BasicAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions
         // Same refusal for every reason, as at sign-in; each is audited so a SIEM sees password guessing.
         if (user is null || user.DeactivatedAt is not null)
             return await RefuseAsync(user, name, user is null ? "unknown user" : "deactivated", ip);
-        if (await db.GetAsync(RuntimeSettingKeys.LocalSignInDisabled, Context.RequestAborted) == "true") return await RefuseAsync(user, name, "local sign-in disabled", ip);
+        if (!user.IsBreakGlass && await db.GetAsync(RuntimeSettingKeys.LocalSignInDisabled, Context.RequestAborted) == "true") return await RefuseAsync(user, name, "local sign-in disabled", ip);
         var result = await signIn.CheckPasswordSignInAsync(user, password, lockoutOnFailure: true);
         if (!result.Succeeded) return await RefuseAsync(user, name, result.IsLockedOut ? "locked out" : "wrong password", ip);
         // Checked after the password, so the answer tells nothing to someone who does not know it.
-        if (user.IsBreakGlass || await Context.RequestServices.GetRequiredService<CodeSignIn>().NeededAsync(user, Context.RequestAborted))
-            return await RefuseAsync(user, name, user.IsBreakGlass ? "break-glass" : "codes required", ip);
+        // The same 401 as a wrong password; the audit entry says why.
+        if (await Context.RequestServices.GetRequiredService<CodeSignIn>().NeededAsync(user, Context.RequestAborted))
+            return await RefuseAsync(user, name, "codes required", ip);
+        if (user.IsBreakGlass) await Context.RequestServices.GetRequiredService<BreakGlassService>().OnSignInAsync(user, ip);
 
         // shortcut: one audit entry per request, as for API tokens; batch them per account if call volume makes the audit lock a bottleneck.
         await audit.AppendAsync(new AuditEvent(AuditActions.BasicUse, user.Id, "user", user.Id.ToString(), Data: new Dictionary<string, string>

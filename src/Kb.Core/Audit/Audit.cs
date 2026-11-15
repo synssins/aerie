@@ -57,6 +57,9 @@ public static class AuditActions
     public const string SpaceCreate = "space.create";
     public const string SpaceUpdate = "space.update";
     public const string SpaceDelete = "space.delete";
+    /// <summary>A space archived or restored through the Data Center compatible surface.</summary>
+    public const string SpaceArchive = "space.archive";
+    public const string SpaceUnarchive = "space.unarchive";
     public const string SpaceRestore = "space.restore";
     public const string SpaceSensitiveSet = "space.sensitive.set";
     public const string SpaceRoleGrant = "space.role.grant";
