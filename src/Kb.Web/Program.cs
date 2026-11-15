@@ -100,6 +100,14 @@ services.Configure<Microsoft.AspNetCore.Authentication.AuthenticationOptions>(o 
 services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // Past a limit: 429 with Retry-After; on the Data Center compatible surface with its RestError body (identity.md, Failed Basic attempts).
+    o.OnRejected = async (rejected, ct) =>
+    {
+        var http = rejected.HttpContext;
+        var wait = rejected.Lease.TryGetMetadata(System.Threading.RateLimiting.MetadataName.RetryAfter, out var after) ? after : TimeSpan.FromMinutes(1);
+        http.Response.Headers.RetryAfter = ((int)Math.Ceiling(wait.TotalSeconds)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (Kb.Web.DataCenter.DcRest.IsUnderRoot(http)) await Kb.Web.DataCenter.DcRest.Fail(429, "Too many attempts; try again later.").ExecuteAsync(http);
+    };
     // Sign-in attempts are counted by the address they come from; a token is counted by itself. The route that matched decides, not
     // the text of the address (a trailing slash reaches the same route), and it decides first (a refused token does not buy a higher limit).
     // Guessing a password link, a one-time code or a recovery code is counted like guessing a password.
@@ -167,7 +175,8 @@ services.AddScoped<ISpaceAccessData, SpaceAccessData>();
 services.AddScoped<SpacePermissionService>();
 services.AddScoped<ISpacePermissionService, TokenScopedPermissions>();
 services.AddScoped<IPluginPermissionData, Kb.Data.Plugins.PluginPermissionData>();
-services.AddScoped<IAccess, SpaceAccess>();
+services.AddScoped<SpaceAccess>();
+services.AddScoped<IAccess, Kb.Web.DataCenter.DcAccess>();
 // ---- the action pipeline ----
 services.AddSingleton<ActionCatalog>();
 services.AddScoped<ActorAccessor>();

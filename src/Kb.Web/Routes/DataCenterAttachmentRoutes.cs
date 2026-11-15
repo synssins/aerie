@@ -38,7 +38,7 @@ public static class DcAttachmentRoutes
             {
                 Id = id, FileName = q["filename"].ToString() is { Length: > 0 } f ? f : null, MediaType = q["mediaType"].ToString() is { Length: > 0 } m ? m : null,
                 Start = paging.Start, Limit = paging.Limit, Expand = Expand.Raw(http.Request),
-            }, ct).Rest(o => DcRest.Json(o));
+            }, ct).Rest(o => DcRest.Json(links.Repage(o, paging)));
         }).WithAction<DcListAttachments>();
 
         dc.MapPost("/content/{id}/child/attachment", async (HttpContext http, string id, IActionBus bus, CancellationToken ct) =>
@@ -105,15 +105,13 @@ public static class DcAttachmentRoutes
         {
             var links = DcLinks.Of(http);
             if (Paging.Read(http.Request, 200, links.MaxLimit) is not { } paging) return Task.FromResult(Paging.Invalid);
-            return bus.SendAsync(new DcListLabels { Id = id, Prefixes = DcRest.Values(http.Request, "prefix"), Start = paging.Start, Limit = paging.Limit }, ct).Rest(o => DcRest.Json(o));
+            return bus.SendAsync(new DcListLabels { Id = id, Prefixes = DcRest.Values(http.Request, "prefix"), Start = paging.Start, Limit = paging.Limit }, ct).Rest(o => DcRest.Json(links.Repage(o, paging)));
         }).WithAction<DcListLabels>();
 
         dc.MapPost("/content/{id}/label", async (HttpContext http, string id, IActionBus bus, CancellationToken ct) =>
         {
-            JsonNode? body;
-            try { body = await JsonNode.ParseAsync(http.Request.Body, cancellationToken: ct); }
-            catch (System.Text.Json.JsonException) { return DcRest.BadBody; }
-            if (body is null) return DcRest.BadBody;
+            // The contract's body is one label or a list of them (labels-properties.md). A client may also send that JSON as a JSON string.
+            if (await LabelsBodyAsync(http.Request, ct) is not { } body) return DcRest.Fail(400, "The body is a label object or a list of label objects, as JSON.");
             return await bus.SendAsync(new DcAddLabels { Id = id, Body = body }, ct).Rest(o => DcRest.Json(o));
         }).WithAction<DcAddLabels>();
 
@@ -125,6 +123,19 @@ public static class DcAttachmentRoutes
 
         dc.MapDelete("/content/{id}/label/{label}", (string id, string label, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new DcRemoveLabel { Id = id, Label = label }, ct).Rest(_ => Results.NoContent())).WithAction<DcRemoveLabel>();
+    }
+
+    private static async Task<JsonNode?> LabelsBodyAsync(HttpRequest request, CancellationToken ct)
+    {
+        using var reader = new StreamReader(request.Body, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        var text = (await reader.ReadToEndAsync(ct)).Trim().TrimStart('﻿');
+        try
+        {
+            var node = JsonNode.Parse(text);
+            if (node is JsonValue v && v.TryGetValue<string>(out var inner)) node = JsonNode.Parse(inner);
+            return node is JsonObject or JsonArray ? node : null;
+        }
+        catch (System.Text.Json.JsonException) { return null; }
     }
 
     /// <summary>The bytes of an attachment (its _links.download). Outside /rest/api: it is a file, not an operation; the same sign-ins reach it.</summary>
