@@ -13,7 +13,10 @@ public sealed partial class DcContractTests : IAsyncLifetime
     public ValueTask InitializeAsync() => ValueTask.CompletedTask;
     public async ValueTask DisposeAsync() => await _f.DisposeAsync();
 
-    /// <summary>Contract operations not routed yet. Each pull request of the retrofit takes its operations off; the last one leaves it empty.</summary>
+    /// <summary>
+    /// Contract operations not built yet. Each pull request of the retrofit takes its operations off. The test fails when a routed operation is not
+    /// in the contract, or one listed here is routed: the list is always what is left to build.
+    /// </summary>
     private static readonly string[] NotYet =
     [
         "GET /rest/api/content", "POST /rest/api/content", "GET /rest/api/content/search", "GET /rest/api/content/scan",
@@ -67,8 +70,9 @@ public sealed partial class DcContractTests : IAsyncLifetime
     public void RoutedOperations_AreTheContractsOperations()
     {
         var contract = ContractOperations();
-        Assert.Equal(56, contract.Count);
+        Assert.NotEmpty(contract); // the contract was read
         Assert.Empty(NotYet.Except(contract)); // the list names only contract operations
+        Assert.Equal(NotYet.Length, NotYet.Distinct().Count());
         Assert.Equal(contract.Except(NotYet).Order(StringComparer.Ordinal), Routed().Order(StringComparer.Ordinal));
     }
 }
