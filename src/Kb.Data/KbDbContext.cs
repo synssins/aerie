@@ -107,6 +107,7 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     public DbSet<Kb.Core.DataCenter.DcContent> DcContents => Set<Kb.Core.DataCenter.DcContent>();
     public DbSet<Kb.Core.DataCenter.DcVersion> DcVersions => Set<Kb.Core.DataCenter.DcVersion>();
     public DbSet<Kb.Core.DataCenter.DcLabel> DcLabels => Set<Kb.Core.DataCenter.DcLabel>();
+    public DbSet<Kb.Core.DataCenter.DcAttachmentVersion> DcAttachmentVersions => Set<Kb.Core.DataCenter.DcAttachmentVersion>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -285,6 +286,12 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
             e.Property(x => x.Prefix).HasMaxLength(10);
             e.Property(x => x.Name).HasMaxLength(255);
             e.HasIndex(x => new { x.Prefix, x.Name }).IsUnique();
+        });
+        builder.Entity<Kb.Core.DataCenter.DcAttachmentVersion>(e =>
+        {
+            e.Property(x => x.MediaType).HasMaxLength(255);
+            e.Property(x => x.Comment).HasMaxLength(2000);
+            e.HasIndex(x => new { x.AttachmentId, x.Number }).IsUnique();
         });
     }
 

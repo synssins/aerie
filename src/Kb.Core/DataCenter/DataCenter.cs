@@ -63,3 +63,24 @@ public sealed class DcLabel
     public required string Prefix { get; set; }
     public required string Name { get; set; }
 }
+
+/// <summary>
+/// One version of an attachment's file (attachments.md). Aerie's own attachment row always holds the current file under its own id, so aerie's
+/// download keeps serving it; an older version's bytes are kept under <see cref="BlobId"/>. A version removed through the surface keeps its row,
+/// marked removed, and its file (aerie keeps the files of removed attachments too).
+/// </summary>
+public sealed class DcAttachmentVersion
+{
+    public long Id { get; set; }
+    public Guid AttachmentId { get; set; }
+    public int Number { get; set; }
+    /// <summary>The file store key of this version's bytes; the attachment's own id for the current version.</summary>
+    public Guid BlobId { get; set; }
+    public long Size { get; set; }
+    public required string MediaType { get; set; }
+    public string Comment { get; set; } = "";
+    public bool MinorEdit { get; set; }
+    public Guid CreatedBy { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public bool Removed { get; set; }
+}

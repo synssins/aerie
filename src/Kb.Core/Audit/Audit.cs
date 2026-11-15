@@ -45,6 +45,13 @@ public static class AuditActions
     public const string PagePurge = "page.purge";
     /// <summary>A version taken off the Data Center compatible surface (aerie's own history keeps it).</summary>
     public const string PageVersionRemove = "page.version.remove";
+    /// <summary>The labels of a page changed through the Data Center compatible surface.</summary>
+    public const string PageLabels = "page.labels";
+    /// <summary>Attachments changed through the Data Center compatible surface: a new file, new properties, a move, a version removed.</summary>
+    public const string AttachmentVersion = "attachment.version";
+    public const string AttachmentUpdate = "attachment.update";
+    public const string AttachmentMove = "attachment.move";
+    public const string AttachmentVersionRemove = "attachment.version.remove";
     public const string PageRestore = "page.restore";
     public const string PageVersionRestore = "page.version.restore";
     public const string PageExport = "page.export";

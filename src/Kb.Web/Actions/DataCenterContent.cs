@@ -202,15 +202,22 @@ internal static partial class DcContentRules
     public static Problem AsSurface(Problem p) => p.Status == 409 && p.Message is null ? new Problem(409, "The content changed since this version.") : p;
 }
 
-internal sealed class DcReadContentHandler(DcContentService content) : IActionHandler<DcReadContent, JsonObject>
+internal sealed class DcReadContentHandler(DcContentService content, DcAttachmentService files) : IActionHandler<DcReadContent, JsonObject>
 {
     private Page? _page;
+    private (Attachment Attachment, Page Page)? _file;
 
-    public async Task<Problem?> AuthorizeAsync(ActionContext<DcReadContent> ctx) =>
-        (_page = await content.FindAsync(ctx.Actor, ctx.Action.Id, ctx.Action.Statuses, track: false, ctx.Cancel)) is null ? DcContentRules.NotFound : null;
+    // An id may name an attachment too: it is content, read here like a page (attachments.md).
+    public async Task<Problem?> AuthorizeAsync(ActionContext<DcReadContent> ctx)
+    {
+        if ((_page = await content.FindAsync(ctx.Actor, ctx.Action.Id, ctx.Action.Statuses, track: false, ctx.Cancel)) is not null) return null;
+        _file = await files.FindAsync(ctx.Actor, ctx.Action.Id, null, trashedToo: ctx.Action.Statuses.Contains("trashed"), ctx.Cancel);
+        return _file is { } f && (f.Attachment.DeletedAt is null ? ctx.Action.Statuses.Contains("current") : ctx.Action.Statuses.Contains("trashed")) ? null : DcContentRules.NotFound;
+    }
 
     public async Task<Outcome<JsonObject>> HandleAsync(ActionContext<DcReadContent> ctx)
     {
+        if (_file is { } file) return await files.JsonAsync(ctx.Actor, file.Attachment, file.Page, Expand.Parse(ctx.Action.Expand), ctx.Cancel, top: true);
         var page = _page!;
         if (ctx.Action.Version is { } n && (await content.VersionsAsync(page.Id, ctx.Cancel)).All(v => v.Number != n) && !(n == 1 && page.Kind == PageKind.Folder))
             return new Problem(404, "No such version.");
@@ -585,7 +592,13 @@ internal sealed class DcContentChildrenHandler(DcContentService content) : IActi
         var paging = new Paging(req.Start, req.Limit);
         var expand = Expand.Parse(req.Expand);
         if (req.Type is null) return content.Links.Top(await content.ByTypeAsync(ctx.Actor, page, expand, req.Descendants, paging, ctx.Cancel));
-        // Comments and blog posts: aerie has none. Attachments are listed by their own operation, built in the attachments slice.
+        if (req.Type == "attachment")
+        {
+            var files = ctx.Services.GetRequiredService<DcAttachmentService>();
+            var at = $"/rest/api/content/{await content.IdOfAsync(page.Id, ctx.Cancel)}/{(req.Descendants ? "descendant" : "child")}/attachment";
+            return await files.PageOfAsync(ctx.Actor, page, await files.OfPageAsync(page.Id, ctx.Cancel), paging, expand, at, ctx.Cancel);
+        }
+        // Comments and blog posts: aerie has none.
         var items = req.Type == "page" ? (req.Descendants ? await content.DescendantsAsync(page, ctx.Cancel) : await content.ChildrenAsync(page, ctx.Cancel)) : [];
         var path = $"/rest/api/content/{await content.IdOfAsync(page.Id, ctx.Cancel)}/{(req.Descendants ? "descendant" : "child")}/{req.Type}";
         var o = await content.PageOfAsync(ctx.Actor, items, paging, expand, path, ctx.Cancel);

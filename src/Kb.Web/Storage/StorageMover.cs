@@ -145,7 +145,11 @@ public sealed class StorageMover(IServiceScopeFactory scopes, ActiveFileStore st
         return true;
     }
 
-    /// <summary>Every stored file: images, and attachments including those removed from their page (their files are kept).</summary>
+    /// <summary>
+    /// Every stored file: images, attachments including those removed from their page (their files are kept), and the older versions of
+    /// attachments kept by the Data Center compatible surface.
+    /// </summary>
     private static async Task<List<Guid>> FileIdsAsync(KbDbContext db, CancellationToken ct) =>
-        [.. await db.SpaceImages.AsNoTracking().Select(i => i.Id).ToListAsync(ct), .. await db.Attachments.AsNoTracking().Select(a => a.Id).ToListAsync(ct)];
+        [.. await db.SpaceImages.AsNoTracking().Select(i => i.Id).ToListAsync(ct), .. await db.Attachments.AsNoTracking().Select(a => a.Id).ToListAsync(ct),
+            .. await db.DcAttachmentVersions.AsNoTracking().Where(v => v.BlobId != v.AttachmentId).Select(v => v.BlobId).ToListAsync(ct)];
 }

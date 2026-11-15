@@ -245,6 +245,103 @@ Write. `UpdateBrand`, answers `Unit`.
 |---|---|---|
 | ProductName | `string` | required |
 
+## dc.attachment.create
+
+Write. `DcCreateAttachments`, answers `JsonObject`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| Files | `IReadOnlyList<DcFilePart>` ([DcFilePart](#dcfilepart)) | never logged |
+| Comments | `IReadOnlyList<string>` |  |
+| MinorEdit | `bool` |  |
+| AllowDuplicated | `bool` |  |
+| Expand | `string` | required |
+
+## dc.attachment.data
+
+Write. `DcAttachmentData`, answers `JsonObject`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| AttachmentId | `string` | required |
+| File | `DcFilePart?` ([DcFilePart](#dcfilepart)) | never logged |
+| Comment | `string?` |  |
+| MinorEdit | `bool` |  |
+
+## dc.attachment.download
+
+Read. `DcDownloadAttachment`, answers `FileOut`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| AttachmentId | `string` | required |
+| Version | `int?` |  |
+
+## dc.attachment.list
+
+Read. `DcListAttachments`, answers `JsonObject`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| FileName | `string?` |  |
+| MediaType | `string?` |  |
+| Start | `int` | required |
+| Limit | `int` | required |
+| Expand | `string` | required |
+
+## dc.attachment.move
+
+Write. `DcMoveAttachment`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| AttachmentId | `string` | required |
+| NewContentId | `string?` |  |
+| NewName | `string?` |  |
+
+## dc.attachment.remove
+
+Write. `DcRemoveAttachment`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| AttachmentId | `string` | required |
+
+## dc.attachment.text
+
+Read. `DcAttachmentText`, answers `string`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| AttachmentId | `string` | required |
+| Limit | `long?` |  |
+
+## dc.attachment.update
+
+Write. `DcUpdateAttachment`, answers `JsonObject`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| AttachmentId | `string` | required |
+| Body | `JsonObject` | required |
+
+## dc.attachment.version.remove
+
+Write. `DcRemoveAttachmentVersion`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| AttachmentId | `string` | required |
+| Number | `int` | required |
+
 ## dc.body.convert
 
 Read. `DcConvertBody`, answers `JsonObject`. Core only.
@@ -376,6 +473,35 @@ Write. `DcRemoveVersion`, answers `Unit`. Core only.
 | Id | `string` | required |
 | Number | `int` | required |
 
+## dc.label.add
+
+Write. `DcAddLabels`, answers `JsonObject`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| Body | `JsonNode` | required |
+
+## dc.label.list
+
+Read. `DcListLabels`, answers `JsonObject`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| Prefixes | `IReadOnlyList<string>` |  |
+| Start | `int` | required |
+| Limit | `int` | required |
+
+## dc.label.remove
+
+Write. `DcRemoveLabel`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `string` | required |
+| Label | `string` | required |
+
 ## dc.longtask.list
 
 Read. `DcListLongTasks`, answers `DcLongTaskPage` ([DcLongTaskPage](#dclongtaskpage)). Core only.
@@ -392,6 +518,21 @@ Read. `DcReadLongTask`, answers `DcLongTaskView` ([DcLongTaskView](#dclongtaskvi
 | Field | Type | |
 |---|---|---|
 | Id | `string` | required |
+
+## dc.search
+
+Read. `DcSearch`, answers `JsonObject`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Cql | `string` | required |
+| CqlContext | `string?` |  |
+| Results | `bool` | required |
+| IncludeArchivedSpaces | `bool` |  |
+| Excerpt | `string` |  |
+| Start | `int` | required |
+| Limit | `int` | required |
+| Expand | `string` | required |
 
 ## dc.space.archive
 
@@ -2527,6 +2668,22 @@ Enum: `Off`, `Admins`, `Everyone`.
   "cursor": "text",
   "next": "text",
   "prev": "text"
+}
+```
+
+### DcFilePart
+
+| Field | Type |
+|---|---|
+| fileName | `string?` |
+| contentType | `string?` |
+| length | `long?` |
+
+```json
+{
+  "fileName": "text",
+  "contentType": "text",
+  "length": 0
 }
 ```
 

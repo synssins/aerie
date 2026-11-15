@@ -1,6 +1,6 @@
 # Removing a version, and purging from the trash
 
-- **Building:** `DELETE /rest/api/content/{id}/version/{versionNumber}` (`deleteContentVersion`), `DELETE /rest/api/content/{id}?status=trashed` (`deleteContent`, purge) and `DELETE /rest/api/space/{spaceKey}/trash` (`emptySpaceTrash`).
+- **Building:** `DELETE /rest/api/content/{id}/version/{versionNumber}` (`deleteContentVersion`), `DELETE .../child/attachment/{attachmentId}/version/{version}` (`deleteAttachmentVersion`), `DELETE /rest/api/content/{id}?status=trashed` (`deleteContent`, purge) and `DELETE /rest/api/space/{spaceKey}/trash` (`emptySpaceTrash`).
 
 ## Question
 
@@ -9,6 +9,7 @@
 ## What aerie does until answered
 
 - A removed version leaves the surface: it is not listed, not readable with `version=`, and its number is never used again. Aerie's own history keeps it, and the removal is audited (`page.version.remove`).
+- A removed attachment version leaves the surface; its file is kept, as aerie keeps the files of removed attachments (audited `attachment.version.remove`).
 - A purge and an emptied trash are aerie's own "empty bin": the items leave the space's trash and every read of the surface; the Admins' bin keeps them. A purge is audited (`page.purge`), an emptied trash as aerie's `bin.empty`.
 
 See `src/Kb.Web/Actions/DataCenterContent.cs`.
