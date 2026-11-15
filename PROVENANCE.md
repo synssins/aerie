@@ -33,7 +33,7 @@ Public documents and standards consulted while building, with the version read. 
 
 | Reference | Version or date | Used for |
 |---|---|---|
-| | | |
+| `aerie-spec` contract release, https://github.com/synssins/aerie-spec/releases/tag/contracts-v1 | `contracts-v1`, 2026-11-15, checksums in `contracts/SHA256SUMS` | Pinned unchanged in `contracts/`: aerie's own API, the Data Center compatible T1 contract, the behaviour specs |
 
 ## Incidents
 
