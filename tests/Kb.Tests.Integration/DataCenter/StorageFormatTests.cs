@@ -86,3 +86,29 @@ public sealed class StorageFormatTests
         Assert.Equal(("panel", "<p>in</p>", "T"), (name, body, parameters["title"]));
     }
 }
+
+/// <summary>Every message object the surface makes (common.md, Message objects; Q-0019).</summary>
+public sealed class DcMessageTests
+{
+    [Fact]
+    public void AMessage_HasEmptyArgs_AndItsValuesInTheText()
+    {
+        var m = Kb.Web.DataCenter.DcRest.Message("aerie.longtask.space.delete", "Deleting space DS16");
+        Assert.Equal("aerie.longtask.space.delete", m["key"]!.GetValue<string>());
+        Assert.Empty(m["args"]!.AsArray());
+        Assert.Equal("Deleting space DS16", m["translation"]!.GetValue<string>());
+    }
+
+    /// <summary>No code builds a message object by hand: an args list with items cannot come back.</summary>
+    [Fact]
+    public void NoOtherCode_WritesArgs()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Kb.sln"))) dir = dir.Parent;
+        var hits = Directory.GetFiles(Path.Combine(dir!.FullName, "src", "Kb.Web"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .SelectMany(f => File.ReadAllLines(f).Select(l => (File: Path.GetFileName(f), Line: l)))
+            .Where(x => x.Line.Contains("[\"args\"]", StringComparison.Ordinal) && x.File != "DcRest.cs").ToList();
+        Assert.Empty(hits);
+    }
+}

@@ -73,12 +73,7 @@ public static class DcSpaceJson
         return new JsonObject
         {
             ["id"] = t.Id.ToString("N"),
-            ["name"] = new JsonObject
-            {
-                ["key"] = "aerie.longtask." + t.Name,
-                ["args"] = new JsonArray(t.Subject),
-                ["translation"] = t.Name == "space.delete" ? $"Delete space {t.Subject}" : t.Name,
-            },
+            ["name"] = DcRest.Message("aerie.longtask." + t.Name, t.Name == "space.delete" ? $"Deleting space {t.Subject}" : $"{t.Name} {t.Subject}".Trim()),
             ["elapsedTime"] = (long)((t.FinishedAt ?? now) - t.StartedAt).TotalMilliseconds,
             ["percentageComplete"] = done ? 100 : 0,
             ["successful"] = done && t.Successful,

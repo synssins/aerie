@@ -58,6 +58,12 @@ public static class DcRest
         ["reason"] = Reason(status),
     };
 
+    /// <summary>
+    /// A message object (common.md, Message objects; Q-0019): a stable key, the full text with every value filled in, and args always empty.
+    /// Every message the surface answers with is made here.
+    /// </summary>
+    public static JsonObject Message(string key, string translation) => new() { ["key"] = key, ["args"] = new JsonArray(), ["translation"] = translation };
+
     public static IResult Fail(int status, string? message = null) => Results.Json(Error(status, message), statusCode: status);
 
     /// <summary>
