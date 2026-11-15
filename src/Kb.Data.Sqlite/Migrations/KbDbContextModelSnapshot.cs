@@ -462,6 +462,52 @@ namespace Kb.Data.Sqlite.Migrations
                     b.ToTable("StoragePlaces");
                 });
 
+            modelBuilder.Entity("Kb.Core.DataCenter.DcContent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("AerieId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AerieId")
+                        .IsUnique();
+
+                    b.ToTable("DcContents");
+                });
+
+            modelBuilder.Entity("Kb.Core.DataCenter.DcLabel", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Prefix")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Prefix", "Name")
+                        .IsUnique();
+
+                    b.ToTable("DcLabels");
+                });
+
             modelBuilder.Entity("Kb.Core.DataCenter.DcLongTask", b =>
                 {
                     b.Property<Guid>("Id")
@@ -523,6 +569,28 @@ namespace Kb.Data.Sqlite.Migrations
                         .IsUnique();
 
                     b.ToTable("DcSpaces");
+                });
+
+            modelBuilder.Entity("Kb.Core.DataCenter.DcVersion", b =>
+                {
+                    b.Property<long>("PageVersionId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Number")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("PageId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Removed")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("PageVersionId");
+
+                    b.HasIndex("PageId", "Number")
+                        .IsUnique();
+
+                    b.ToTable("DcVersions");
                 });
 
             modelBuilder.Entity("Kb.Core.Identity.ApiToken", b =>

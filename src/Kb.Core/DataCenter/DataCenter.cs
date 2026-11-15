@@ -30,3 +30,36 @@ public sealed class DcLongTask
     public DateTimeOffset? FinishedAt { get; set; }
     public bool Successful { get; set; }
 }
+
+/// <summary>
+/// The compatible id of a piece of content: a page or folder, or an attachment (common.md, Identifiers). All content shares this one sequence,
+/// so a page and an attachment never have the same id.
+/// </summary>
+public sealed class DcContent
+{
+    public long Id { get; set; }
+    /// <summary>The aerie id of the page, folder or attachment.</summary>
+    public Guid AerieId { get; set; }
+    /// <summary>"page" or "attachment".</summary>
+    public required string Kind { get; set; }
+}
+
+/// <summary>
+/// The compatible number of one version of a page: 1, 2, 3 in the order aerie made them. A number is never shifted or reused; a version
+/// removed through the surface keeps its row, marked removed, and aerie keeps the version itself (its history is append-only).
+/// </summary>
+public sealed class DcVersion
+{
+    public long PageVersionId { get; set; }
+    public Guid PageId { get; set; }
+    public int Number { get; set; }
+    public bool Removed { get; set; }
+}
+
+/// <summary>The compatible id of a label: one per prefix and name on the site (labels-properties.md).</summary>
+public sealed class DcLabel
+{
+    public long Id { get; set; }
+    public required string Prefix { get; set; }
+    public required string Name { get; set; }
+}

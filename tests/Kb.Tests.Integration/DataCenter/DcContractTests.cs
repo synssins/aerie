@@ -19,18 +19,12 @@ public sealed partial class DcContractTests : IAsyncLifetime
     /// </summary>
     private static readonly string[] NotYet =
     [
-        "GET /rest/api/content", "POST /rest/api/content", "GET /rest/api/content/search", "GET /rest/api/content/scan",
-        "GET /rest/api/content/{id}", "DELETE /rest/api/content/{id}", "PUT /rest/api/content/{id}", "GET /rest/api/content/{id}/history",
-        "GET /rest/api/content/{id}/history/{version}/macro/hash/{hash}", "GET /rest/api/content/{id}/history/{version}/macro/id/{macroId}",
-        "DELETE /rest/api/content/{id}/version/{versionNumber}", "GET /rest/api/content/{id}/child", "GET /rest/api/content/{id}/child/comment",
-        "GET /rest/api/content/{id}/child/{type}", "GET /rest/api/content/{id}/descendant", "GET /rest/api/content/{id}/descendant/{type}",
-        "GET /rest/api/content/{id}/descendant/page/count", "GET /rest/api/content/{id}/child/attachment", "POST /rest/api/content/{id}/child/attachment",
+        "GET /rest/api/content/search", "GET /rest/api/search",
+        "GET /rest/api/content/{id}/child/attachment", "POST /rest/api/content/{id}/child/attachment",
         "PUT /rest/api/content/{id}/child/attachment/{attachmentId}", "DELETE /rest/api/content/{id}/child/attachment/{attachmentId}",
         "POST /rest/api/content/{id}/child/attachment/{attachmentId}/data", "POST /rest/api/content/{id}/child/attachment/{attachmentId}/move",
         "DELETE /rest/api/content/{id}/child/attachment/{attachmentId}/version/{version}", "GET /rest/api/content/{id}/child/attachment/{attachmentId}/extractedtext",
         "GET /rest/api/content/{id}/label", "POST /rest/api/content/{id}/label", "DELETE /rest/api/content/{id}/label", "DELETE /rest/api/content/{id}/label/{label}",
-        "POST /rest/api/contentbody/convert/{to}", "GET /rest/api/space/{spaceKey}/content", "GET /rest/api/space/{spaceKey}/content/{type}",
-        "GET /rest/api/space/{spaceKey}/trash", "DELETE /rest/api/space/{spaceKey}/trash", "GET /rest/api/search",
         // OAuth 2.0: the identity work, after T1 (behaviour/identity-plan.md).
         "GET /rest/oauth2/latest/authorize", "POST /rest/oauth2/latest/token", "POST /rest/oauth2/latest/revoke", "GET /.well-known/oauth-authorization-server",
     ];

@@ -39,6 +39,12 @@ public static class AuditActions
     public const string PageAssist = "page.assist";
     public const string PageMove = "page.move";
     public const string PageDelete = "page.delete";
+    /// <summary>A page became a folder because a child was put under it through the Data Center compatible surface.</summary>
+    public const string PageToFolder = "page.folder";
+    /// <summary>A trashed page purged from its space's trash through the Data Center compatible surface (aerie's admin bin keeps it).</summary>
+    public const string PagePurge = "page.purge";
+    /// <summary>A version taken off the Data Center compatible surface (aerie's own history keeps it).</summary>
+    public const string PageVersionRemove = "page.version.remove";
     public const string PageRestore = "page.restore";
     public const string PageVersionRestore = "page.version.restore";
     public const string PageExport = "page.export";
