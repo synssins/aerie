@@ -19,12 +19,6 @@ public sealed partial class DcContractTests : IAsyncLifetime
     /// </summary>
     private static readonly string[] NotYet =
     [
-        "GET /rest/api/content/search", "GET /rest/api/search",
-        "GET /rest/api/content/{id}/child/attachment", "POST /rest/api/content/{id}/child/attachment",
-        "PUT /rest/api/content/{id}/child/attachment/{attachmentId}", "DELETE /rest/api/content/{id}/child/attachment/{attachmentId}",
-        "POST /rest/api/content/{id}/child/attachment/{attachmentId}/data", "POST /rest/api/content/{id}/child/attachment/{attachmentId}/move",
-        "DELETE /rest/api/content/{id}/child/attachment/{attachmentId}/version/{version}", "GET /rest/api/content/{id}/child/attachment/{attachmentId}/extractedtext",
-        "GET /rest/api/content/{id}/label", "POST /rest/api/content/{id}/label", "DELETE /rest/api/content/{id}/label", "DELETE /rest/api/content/{id}/label/{label}",
         // OAuth 2.0: the identity work, after T1 (behaviour/identity-plan.md).
         "GET /rest/oauth2/latest/authorize", "POST /rest/oauth2/latest/token", "POST /rest/oauth2/latest/revoke", "GET /.well-known/oauth-authorization-server",
     ];

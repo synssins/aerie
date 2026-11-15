@@ -382,6 +382,13 @@ internal sealed class DcContentService(KbDbContext db, IAccess access, IHttpCont
         foreach (var type in new[] { "page", "comment", "attachment" })
         {
             if (!expand.Has(type)) { expandable[type] = path + "/" + type; continue; }
+            if (type == "attachment")
+            {
+                // Attachments on the content itself, for children and descendants alike (content.md).
+                var files = http.HttpContext!.RequestServices.GetRequiredService<DcAttachmentService>();
+                o[type] = await files.PageOfAsync(actor, p, await files.OfPageAsync(p.Id, ct), paging, expand.Inside(type), path + "/" + type, ct);
+                continue;
+            }
             var items = type == "page" ? (descendants ? await DescendantsAsync(p, ct) : await ChildrenAsync(p, ct)) : [];
             o[type] = await PageOfAsync(actor, items, paging, expand.Inside(type), path + "/" + type, ct);
         }

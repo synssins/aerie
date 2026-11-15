@@ -102,7 +102,7 @@ public static class ApiTokenAuth
 
             var read = HttpMethods.IsGet(method) || HttpMethods.IsHead(method);
             // Every route of the Data Center compatible surface decides access through the permission service, so all of them are open to tokens.
-            var dc = http.GetEndpoint()?.Metadata.GetMetadata<Kb.Web.DataCenter.DcRoute>() is not null;
+            var dc = http.GetEndpoint()?.Metadata.GetMetadata<Kb.Web.DataCenter.DcRoute>() is not null || http.GetEndpoint()?.Metadata.GetMetadata<Kb.Web.DataCenter.DcDownloadRoute>() is not null;
             var open = dc || Open.Contains($"{method} {route}");
             if (!open || (!read && !token.Scopes().Any(s => s.Access == TokenAccess.Write)))
             {

@@ -6,6 +6,12 @@ using Microsoft.Extensions.Options;
 
 namespace Kb.Web.DataCenter;
 
+/// <summary>Marks the download of attachment bytes: not an operation of the contract, a link its attachments carry.</summary>
+public sealed class DcDownloadRoute
+{
+    public static readonly DcDownloadRoute Marker = new();
+}
+
 /// <summary>Marks a route of the Data Center compatible surface (contracts/datacenter/openapi.yaml).</summary>
 public sealed class DcRoute
 {
@@ -19,6 +25,8 @@ public sealed class DcRoute
 public static class DcRest
 {
     public const string Root = "/rest/api";
+    /// <summary>Where the bytes of an attachment are fetched (its _links.download), with the same credentials as the surface.</summary>
+    public const string DownloadRoot = "/download/attachments";
     /// <summary>Reserved for the OAuth 2.0 surface (not built yet): nothing under it may fall through to the web app either.</summary>
     public const string OAuthRoot = "/rest/oauth2";
 
@@ -26,7 +34,8 @@ public static class DcRest
     public static bool IsUnderRoot(HttpContext http)
     {
         ArgumentNullException.ThrowIfNull(http);
-        return http.Request.Path.StartsWithSegments(http.RequestServices.GetRequiredService<IOptions<KbOptions>>().Value.DataCenter.ContextPath + Root);
+        var context = http.RequestServices.GetRequiredService<IOptions<KbOptions>>().Value.DataCenter.ContextPath;
+        return http.Request.Path.StartsWithSegments(context + Root) || http.Request.Path.StartsWithSegments(context + DownloadRoot);
     }
 
     private static bool IsUnderOAuth(HttpContext http) =>
@@ -126,7 +135,7 @@ public static class DcRest
         }
         // No route of the surface matched. A path of the surface asked with a method it does not take is 405; anything else
         // (no route, the UI's fallback page, or the framework's 405 for the UI's page) is not part of the surface: 404.
-        if (http.GetEndpoint()?.Metadata.GetMetadata<DcRoute>() is null)
+        if (http.GetEndpoint()?.Metadata.GetMetadata<DcRoute>() is null && http.GetEndpoint()?.Metadata.GetMetadata<DcDownloadRoute>() is null)
         {
             await (HasRouteFor(http) ? Fail(405, "This resource does not take " + http.Request.Method + ".") : Fail(404, "No such resource.")).ExecuteAsync(http);
             return;

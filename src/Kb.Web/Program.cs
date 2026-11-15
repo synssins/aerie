@@ -191,6 +191,7 @@ services.AddScoped<AiService>();
 services.AddSingleton<AiRateLimiter>();
 services.AddScoped<Kb.Web.Import.ImportService>();
 services.AddScoped<Kb.Web.DataCenter.DcContentService>();
+services.AddScoped<Kb.Web.DataCenter.DcAttachmentService>();
 services.AddSingleton<Kb.Web.Import.ImportWorker>();
 services.AddHostedService(sp => sp.GetRequiredService<Kb.Web.Import.ImportWorker>());
 // The model server is the one an Admin names (often on the local network): no address guard; the time limit is per call.

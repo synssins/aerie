@@ -21,6 +21,9 @@ public static class DcRoutes
         dc.MapDcUsers();
         dc.MapDcSpaces();
         dc.MapDcContent();
+        dc.MapDcAttachments();
+        dc.MapDcSearch();
+        app.MapDcDownload();
 
         dc.MapGet("/server-information", (HttpContext http) =>
         {
