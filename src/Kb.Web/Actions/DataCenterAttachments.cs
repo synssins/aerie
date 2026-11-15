@@ -177,7 +177,7 @@ internal sealed class DcListAttachmentsHandler(DcContentService content, DcAttac
     }
 }
 
-internal sealed class DcCreateAttachmentsHandler(KbDbContext db, IAccess access, DcContentService content, DcAttachmentService files, IActionBus bus) : IActionHandler<DcCreateAttachments, JsonObject>
+internal sealed class DcCreateAttachmentsHandler(KbDbContext db, IAccess access, DcContentService content, DcAttachmentService files, IActionBus bus, IFileStore store, TimeProvider time) : IActionHandler<DcCreateAttachments, JsonObject>
 {
     private Page? _page;
 
@@ -193,8 +193,6 @@ internal sealed class DcCreateAttachmentsHandler(KbDbContext db, IAccess access,
         if (req.Files.Count == 0) return new Problem(400, "At least one file part is needed.");
         if (req.Comments.Count > 0 && req.Comments.Count != req.Files.Count) return new Problem(400, "Send one comment per file, or none.");
         if (req.Files.Any(f => string.IsNullOrWhiteSpace(f.FileName))) return new Problem(400, "Every file part needs a file name.");
-        // Attachments are on pages in aerie; a folder holds none of its own (docs/spec-questions/attachments-on-folders.md).
-        if (page.Kind != PageKind.Page) return new Problem(400, "Aerie keeps attachments on pages, not on folders.");
         var max = await UploadLimits.AttachmentBytesAsync(db, ctx.Cancel);
         if (req.Files.Any(f => f.Length > max)) return DcAttachmentRules.TooLarge(max);
         var existing = await files.OfPageAsync(page.Id, ctx.Cancel);
@@ -213,9 +211,15 @@ internal sealed class DcCreateAttachmentsHandler(KbDbContext db, IAccess access,
                 made.Add(same);
                 continue;
             }
-            var added = await bus.SendAsync(new AddAttachment { PageId = page.Id, File = file }, CancellationToken.None);
-            if (added.Problem is { } ap) return ap.Fields?.ContainsKey("file") == true && ap.Fields["file"][0].Contains("MB", StringComparison.Ordinal) ? DcAttachmentRules.TooLarge(max) : ap;
-            var a = await db.Attachments.FirstAsync(x => x.Id == added.Value!.Id, CancellationToken.None);
+            Attachment a;
+            if (page.Kind == PageKind.Page)
+            {
+                var added = await bus.SendAsync(new AddAttachment { PageId = page.Id, File = file }, CancellationToken.None);
+                if (added.Problem is { } ap) return ap.Fields?.ContainsKey("file") == true && ap.Fields["file"][0].Contains("MB", StringComparison.Ordinal) ? DcAttachmentRules.TooLarge(max) : ap;
+                a = await db.Attachments.FirstAsync(x => x.Id == added.Value!.Id, CancellationToken.None);
+            }
+            else if (await ToFolderAsync(ctx, page, file, max) is { } folderFile) a = folderFile;
+            else return DcAttachmentRules.TooLarge(max);
             db.DcAttachmentVersions.Add(new DcAttachmentVersion { AttachmentId = a.Id, Number = 1, BlobId = a.Id, Size = a.Size, MediaType = media, Comment = comment, MinorEdit = req.MinorEdit, CreatedBy = me, CreatedAt = a.CreatedAt });
             await db.SaveChangesAsync(CancellationToken.None);
             made.Add(a);
@@ -223,6 +227,21 @@ internal sealed class DcCreateAttachmentsHandler(KbDbContext db, IAccess access,
         var results = new JsonArray();
         foreach (var a in made) results.Add(await files.JsonAsync(ctx.Actor, a, page, Expand.Parse(req.Expand), CancellationToken.None));
         return content.Links.Top(new JsonObject { ["results"] = results, ["start"] = 0, ["limit"] = results.Count, ["size"] = results.Count });
+    }
+
+    /// <summary>
+    /// A file attached to a folder (attachments.md, Q-0006: clients cannot tell folders from pages, so both take attachments). Aerie's own
+    /// attachment.add takes pages only, so the file is stored here, as that action stores it, and audited the same way. Null when too large.
+    /// </summary>
+    private async Task<Attachment?> ToFolderAsync(ActionContext ctx, Page folder, DcFilePart file, long max)
+    {
+        var a = new Attachment { PageId = folder.Id, FileName = file.FileName![..Math.Min(file.FileName!.Length, 255)], CreatedBy = ctx.Actor.UserId!.Value, CreatedAt = time.GetUtcNow() };
+        a.Size = await store.SaveAsync(a.Id.ToString("N"), await file.OpenReadAsync(CancellationToken.None), max, CancellationToken.None);
+        if (a.Size < 0) return null;
+        db.Attachments.Add(a);
+        await db.SaveChangesAsync(CancellationToken.None);
+        ctx.Audit(AuditActions.AttachmentAdd, "attachment", a.Id.ToString(), folder.SpaceId, new Dictionary<string, string> { ["name"] = a.FileName, ["page"] = folder.Id.ToString() });
+        return a;
     }
 
     /// <summary>A new version of an attachment with this file: the current one is set aside under a key of its own, the new one takes the attachment's key.</summary>
@@ -302,7 +321,6 @@ internal sealed class DcUpdateAttachmentHandler(KbDbContext db, IAccess access, 
         if (containerId is not null)
         {
             if (await content.FindAsync(ctx.Actor, containerId, ["current"], track: false, ctx.Cancel) is not { } to) return new Problem(404, "No content with that id is visible to you.");
-            if (to.Kind != PageKind.Page) return new Problem(400, "Aerie keeps attachments on pages, not on folders.");
             if (await content.ArchivedAsync(to.SpaceId, ctx.Cancel) || !await access.CanAsync(ctx.Actor, to.SpaceId, SpaceAction.CreateEdit, ctx.Cancel)) return new Problem(403, "You may not add attachments there.");
             target = to;
         }
@@ -349,7 +367,6 @@ internal sealed class DcMoveAttachmentHandler(KbDbContext db, IAccess access, Dc
         if (req.NewContentId is { } to)
         {
             if (await content.FindAsync(ctx.Actor, to, ["current"], track: false, ctx.Cancel) is not { } found) return new Problem(404, "No content with that id is visible to you.");
-            if (found.Kind != PageKind.Page) return new Problem(400, "Aerie keeps attachments on pages, not on folders.");
             if (await content.ArchivedAsync(found.SpaceId, ctx.Cancel) || !await access.CanAsync(ctx.Actor, found.SpaceId, SpaceAction.CreateEdit, ctx.Cancel)) return new Problem(403, "You may not add attachments there.");
             target = found;
         }
@@ -516,7 +533,7 @@ internal sealed class DcAddLabelsHandler(KbDbContext db, IAccess access, DcConte
             var (prefix, name) = DcAttachmentRules.Split(raw.Trim(), DcRest.Text(o, "prefix"));
             name = name.ToLowerInvariant();
             if (prefix is not ("global" or "my" or "team")) return new Problem(400, $"{prefix} is not a label prefix.");
-            // Aerie's tags are shared by everyone (docs/spec-questions/label-prefixes-and-limits.md).
+            // Aerie's tags are shared by everyone: T1 holds global labels only (labels-properties.md).
             if (prefix != "global") return new Problem(400, "Aerie keeps global labels only.");
             if (!DcAttachmentRules.LabelName().IsMatch(name)) return new Problem(400, $"\"{name}\" is not a valid label name.");
             if (name.Length > 50) return new Problem(400, "A label is at most 50 characters in aerie.");

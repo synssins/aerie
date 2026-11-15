@@ -44,8 +44,7 @@ public static class DcRoutes
     }
 
     /// <summary>
-    /// A build number made from the version (9.2.4 is 9002004) until the spec room states the real table.
-    /// See docs/spec-questions/server-information-build-numbers.md.
+    /// A build number made from the version (9.2.4 is 9002004), as common.md (Server information) states it: it grows with the version.
     /// </summary>
     internal static int Derived(string version)
     {

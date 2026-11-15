@@ -156,12 +156,21 @@ public sealed class DcFilesTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Upload_IsRefused_OnFolders_AndOverTheLimit()
+    public async Task Folders_TakeAttachments_AndTheLimitHolds()
     {
+        // attachments.md: clients cannot tell folders from pages, so both take attachments.
         var folder = await PageAsync("Folder");
         await PageAsync("Inside", parent: folder);
-        await (await UploadAsync(_cora, $"/rest/api/content/{folder}/child/attachment", Files(("a.txt", "x", null)))).ErrorAsync(HttpStatusCode.BadRequest);
+        var path = $"/rest/api/content/{folder}/child/attachment";
+        var made = await (await UploadAsync(_cora, path, Files(("f.txt", "folder file", null)))).JsonAsync(HttpStatusCode.OK);
+        Assert.Equal(["f.txt"], Titles(await _rita.GetJsonAsync(path)));
+        Assert.Equal("folder file", await _rita.GetStringAsync(made.GetProperty("results")[0].GetProperty("_links").GetProperty("download").GetString()!, Ct));
+        await _f.WithDbAsync(async db => Assert.True(await db.AuditEntries.AnyAsync(a => a.Action == AuditActions.AttachmentAdd, Ct)));
+        // And one moves onto a folder.
         var page = await PageAsync("Small");
+        var other = (await (await UploadAsync(_cora, $"/rest/api/content/{page}/child/attachment", Files(("p.txt", "page file", null)))).JsonAsync(HttpStatusCode.OK)).GetProperty("results")[0].GetProperty("id").GetString();
+        Assert.Equal(HttpStatusCode.NoContent, (await _cora.PostAsync($"/rest/api/content/{page}/child/attachment/{other}/move?newContentId={folder}", null, Ct)).StatusCode);
+        Assert.Equal(["f.txt", "p.txt"], Titles(await _rita.GetJsonAsync(path)));
         (await _admin.PutAsJsonAsync("/api/v1/admin/uploads", new { attachmentMb = 1 }, Ct)).EnsureSuccessStatusCode();
         await (await UploadAsync(_cora, $"/rest/api/content/{page}/child/attachment", Files(("big.txt", new string('x', 1_100_000), null)))).ErrorAsync(HttpStatusCode.RequestEntityTooLarge);
         await (await UploadAsync(_cora, $"/rest/api/content/{page}/child/attachment", new StringContent("{}", Encoding.UTF8, "application/json"))).ErrorAsync(HttpStatusCode.UnsupportedMediaType);

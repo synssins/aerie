@@ -124,7 +124,7 @@ public sealed class DataCenterOptions
     public int MaxLimit { get; set; } = 200;
     /// <summary>The Data Center version aerie presents itself as.</summary>
     public string Version { get; set; } = "9.2.4";
-    /// <summary>Build numbers reported with the version; 0 derives them from it. See docs/spec-questions/server-information-build-numbers.md.</summary>
+    /// <summary>Build numbers reported with the version; 0 derives them from it. See contracts/behaviour/common.md (Server information).</summary>
     public int BuildNumber { get; set; }
     public int MarketplaceBuildNumber { get; set; }
     public string BuildDate { get; set; } = "2026-01-01T00:00:00.000Z";
