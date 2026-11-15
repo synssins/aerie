@@ -115,9 +115,9 @@ services.AddRateLimiter(o =>
         HttpMethods.IsPost(http.Request.Method) && (http.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText is "/api/v1/auth/local/signin" or "/api/v1/auth/local/password"
             or "/api/v1/auth/local/code" or "/api/v1/auth/codes" or "/api/v1/auth/codes/key"
             ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("signin:" + http.Connection.RemoteIpAddress, _ => new() { PermitLimit = kb.Auth.SignInsPerMinutePerAddress, Window = TimeSpan.FromMinutes(1) })
-        // Refused Basic credentials on the Data Center compatible surface are password guesses: counted like sign-ins.
+        // Refused Basic credentials on the Data Center compatible surface are limited before authentication instead (BasicThrottle.GateAsync).
         : http.User.Identity?.IsAuthenticated != true && Kb.Web.DataCenter.DcRest.HasBasic(http.Request) && Kb.Web.DataCenter.DcRest.IsUnderRoot(http)
-            ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("signin:" + http.Connection.RemoteIpAddress, _ => new() { PermitLimit = kb.Auth.SignInsPerMinutePerAddress, Window = TimeSpan.FromMinutes(1) })
+            ? System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter("")
         : ApiTokenAuth.PresentedId(http) is { } tokenId
             ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("token:" + tokenId, _ => new() { PermitLimit = kb.Tokens.RequestsPerMinute, Window = TimeSpan.FromMinutes(1) })
         // Someone not signed in (reading Anyone spaces) is counted by address; the limiter runs after authentication, so a session is known.
@@ -201,6 +201,7 @@ services.AddSingleton<AiRateLimiter>();
 services.AddScoped<Kb.Web.Import.ImportService>();
 services.AddScoped<Kb.Web.DataCenter.DcContentService>();
 services.AddScoped<Kb.Web.DataCenter.DcAttachmentService>();
+services.AddSingleton<Kb.Web.DataCenter.BasicThrottle>();
 services.AddSingleton<Kb.Web.Import.ImportWorker>();
 services.AddHostedService(sp => sp.GetRequiredService<Kb.Web.Import.ImportWorker>());
 // The model server is the one an Admin names (often on the local network): no address guard; the time limit is per call.
@@ -247,6 +248,7 @@ app.UseStaticFiles(new StaticFileOptions
     // Static UI shell is served before auth so the sign-in page can load; all data comes from authenticated /api.
     OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "no-cache",
 });
+app.Use(Kb.Web.DataCenter.BasicThrottle.GateAsync); // before authentication: a limited address's credentials are not checked
 app.UseAuthentication();
 app.UseRateLimiter();
 app.Use(Kb.Web.DataCenter.DcRest.GuardAsync);
