@@ -188,6 +188,8 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
         builder.Entity<RuntimeSetting>().HasKey(s => s.Key);
         builder.Entity<Page>().Ignore(p => p.Version);
         builder.Entity<Page>().Property(p => p.Title).HasMaxLength(200);
+        builder.Entity<Page>().Property(p => p.AiFlag).HasMaxLength(300);
+        builder.Entity<Page>().Property(p => p.AiReviewed).HasMaxLength(64);
         builder.Entity<Page>().HasIndex(p => new { p.SpaceId, p.ParentId });
         builder.Entity<PageVersion>().Property(v => v.Title).HasMaxLength(200);
         builder.Entity<PageVersion>().HasIndex(v => new { v.PageId, v.Major, v.Minor }).IsUnique();

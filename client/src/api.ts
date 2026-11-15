@@ -62,6 +62,8 @@ export type Page = {
   updatedAt: string; updatedBy: string; path: { id: string; title: string }[]; history: PageVersion[]; canEdit: boolean; tags: string[];
   canDelete: boolean; draft: { mine: boolean; by: string; updatedAt: string } | null; attachments: Attachment[]; maxAttachmentBytes: number;
   details?: PageDetails | null;
+  /** Set when the page holds text addressed to an AI (what and where): AI features leave it alone until it is gone or reviewed. */
+  aiFlag?: string | null;
 };
 /** Who owns a process or escalation path: a person (user id) or a group (its key). */
 export type OwnerRef = { type: "User" | "Group"; id: string; name: string };
@@ -174,6 +176,6 @@ export type ImportItemRow = { id: string; batchId: string; title: string; status
   source?: string | null; suggestedSpace?: string | null; updatedAt?: string | null; draftMs?: number | null };
 export type ImportSpace = { id: string; name: string; isSensitive: boolean; reviewMonths: number | null };
 export type ImportBatch = { id: string; createdAt: string; files: number; started: boolean; grouped: boolean; error: string | null; queued: number; working: number; ready: number; failed: number; blocked: number; done: number };
-export type ImportList = { batches: ImportBatch[]; items: ImportItemRow[]; canImport: boolean; canFormat: boolean; spaces?: ImportSpace[] };
+export type ImportList = { batches: ImportBatch[]; items: ImportItemRow[]; canImport: boolean; canFormat: boolean; spaces?: ImportSpace[]; canAssist?: boolean };
 export type ImportItem = { id: string; title: string; status: ImportStatus; error: string | null; proposal: ImportProposal | null; files: ImportFile[]; sources: Record<string, string>; pageId: string | null;
   spaces?: ImportSpace[] };

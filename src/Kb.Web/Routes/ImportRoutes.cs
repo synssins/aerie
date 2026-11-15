@@ -41,6 +41,10 @@ public static class ImportRoutes
         imp.MapPost("/merge", (ImportMergeRequest req, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new MergeImports { ItemIds = req.ItemIds ?? [] }, ct).ToHttp()).WithAction<MergeImports>();
 
+        api.MapPost("/spaces/{id:guid}/assist", (Guid id, AssistRequest req, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new AssistPage { SpaceId = id, PageId = req.PageId, Title = req.Title, ContentJson = req.ContentJson ?? "", Text = req.Text, Files = req.Files }, ct).ToHttp())
+            .WithAction<AssistPage>();
+
         api.MapPost("/pages/{id:guid}/format", (Guid id, FormatRequest req, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new FormatPage { PageId = id, ContentJson = req.ContentJson ?? "", Roles = req.Roles, Keep = req.Keep }, ct).ToHttp()).WithAction<FormatPage>();
     }

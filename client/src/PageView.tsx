@@ -1,5 +1,6 @@
 import { detailsBody, detailsChanged, EMPTY_DETAILS, PageDetailsPanel } from "./PageDetails";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { AssistDialog } from "./Assist";
 import { Link, to } from "./Link";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import type { EditorView } from "@tiptap/pm/view";
@@ -106,7 +107,9 @@ function headingsOf(json: string): Heading[] {
 
 const fmt = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
-export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDirty, onCancelNew, onHistory, onMove, onDelete, autoEdit = false, codeLanguage = "plaintext", guest = false, onTag, onOpenApp, canFormat = false }: {
+export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDirty, onCancelNew, onHistory, onMove, onDelete, autoEdit = false, codeLanguage = "plaintext", guest = false, onTag, onOpenApp, canFormat = false, canAssist = false }: {
+  /** AI assist: material pasted in is built into the page or merged into it; shown only in the editor, applied only by accepting. */
+  canAssist?: boolean;
   /** The AI Format button: a preview of the same words with better structure, applied only if accepted, saved only with Save. */
   canFormat?: boolean;
   /** An application the page applies to was clicked: open it in the inventory. */
@@ -283,6 +286,13 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
     ...exports.code.map((lang, i): MenuItem => ({ label: `Code ${i + 1} · ${lang}`, href: `/api/v1/pages/${page.id}/export/code/${i + 1}` })),
   ];
 
+  const [assisting, setAssisting] = useState(false);
+  const [aiFlag, setAiFlag] = useState(page.aiFlag ?? null);
+  useEffect(() => { setAiFlag(page.aiFlag ?? null); }, [page.aiFlag]);
+  async function markReviewed() {
+    try { const p = await api.post<Page>(`/pages/${page.id}/ai-review`); setAiFlag(p.aiFlag ?? null); }
+    catch (e) { setError(e instanceof ApiError && e.body?.detail ? e.body.detail : "Not marked."); }
+  }
   const [formatting, setFormatting] = useState(false);
   const [formatted, setFormatted] = useState<{ before: string; result: FormatResult } | null>(null);
   async function runFormat() {
@@ -359,6 +369,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
             {editing ? (
               <>
                 {savedAt && <span className="muted small draft-at" role="status">Draft saved {new Date(savedAt).toLocaleTimeString(undefined, { timeStyle: "short" })}</span>}
+                {canAssist && <button className="tb" onClick={() => setAssisting(true)} disabled={busy}>AI assist</button>}
                 {canFormat && !isNew && <button className="tb" onClick={() => void runFormat()} disabled={busy || formatting}>{formatting ? "Formatting…" : "Format"}</button>}
                 <button className="tb" onClick={cancel} disabled={busy}>Cancel</button>
                 <button className="tb primary" onClick={save} disabled={busy || !title.trim()}>{busy ? "Saving…" : "Save"}</button>
@@ -380,6 +391,22 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
             )}
           </div>
         </div>
+        {aiFlag && (
+          <div className="note-row" role="status">
+            <span>This page holds text addressed to an AI ({aiFlag}). AI features leave it alone until the text is gone or an Owner marks the page reviewed.</span>
+            {role === "Owner" && !isNew && <button type="button" className="tb" onClick={() => void markReviewed()}>Mark reviewed</button>}
+          </div>
+        )}
+        {assisting && editor && (
+          <AssistDialog spaceId={page.spaceId} pageId={isNew ? null : page.id} title={title} contentJson={fromEditor(editor)} onClose={() => setAssisting(false)}
+            onApply={(r) => {
+              editor.commands.setContent(toEditor(r.contentJson, extensions));
+              if (!title.trim() && r.title) setTitle(r.title);
+              if (r.tags.length) setTags((t) => [...new Set([...t, ...r.tags])]);
+              if (r.appliesTo.length) setDetails((d) => ({ ...d, appliesTo: [...d.appliesTo, ...r.appliesTo.filter((a) => !d.appliesTo.some((x) => x.applicationId === a.applicationId))] }));
+              setAssisting(false);
+            }} />
+        )}
         {formatted && editor && (
           <FormatDialog pageId={page.id} before={formatted.before} first={formatted.result} extensions={extensions} onClose={() => setFormatted(null)}
             onAccept={(json) => { editor.commands.setContent(toEditor(json, extensions)); setFormatted(null); }} />

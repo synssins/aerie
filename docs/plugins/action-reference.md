@@ -642,6 +642,27 @@ Write. `MarkNotification`, answers `Unit`.
 
 Write. `MarkAllNotifications`, answers `Unit`.
 
+## page.ai.review
+
+Write. `ReviewPageAi`, answers `PageDto` ([PageDto](#pagedto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+
+## page.assist
+
+Write. `AssistPage`, answers `AssistDto` ([AssistDto](#assistdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| SpaceId | `Guid` | required |
+| PageId | `Guid?` |  |
+| Title | `string?` |  |
+| ContentJson | `string` | required |
+| Text | `string?` |  |
+| Files | `IReadOnlyList<AssistFile>?` ([AssistFile](#assistfile)) | never logged |
+
 ## page.create
 
 Write. `CreatePage`, answers `PageDto` ([PageDto](#pagedto)).
@@ -1730,6 +1751,119 @@ Enum: `Off`, `Admins`, `Everyone`.
 }
 ```
 
+### AssistChangeDto
+
+| Field | Type |
+|---|---|
+| from | `string` |
+| to | `string` |
+
+```json
+{
+  "from": "text",
+  "to": "text"
+}
+```
+
+### AssistDto
+
+| Field | Type |
+|---|---|
+| title | `string` |
+| contentJson | `string` |
+| diff | `IReadOnlyList<DiffLine>` ([DiffLine](#diffline)) |
+| removed | `IReadOnlyList<FormatRemovedDto>` ([FormatRemovedDto](#formatremoveddto)) |
+| changed | `IReadOnlyList<AssistChangeDto>` ([AssistChangeDto](#assistchangedto)) |
+| invented | `IReadOnlyList<string>` |
+| warnings | `IReadOnlyList<string>` |
+| tags | `IReadOnlyList<string>` |
+| appliesTo | `IReadOnlyList<AppliesToDto>` ([AppliesToDto](#appliestodto)) |
+
+```json
+{
+  "title": "text",
+  "contentJson": "text",
+  "diff": [
+    {
+      "op": "Same",
+      "text": "text"
+    }
+  ],
+  "removed": [
+    {
+      "units": [
+        0
+      ],
+      "text": "text",
+      "sameAs": "text"
+    }
+  ],
+  "changed": [
+    {
+      "from": "text",
+      "to": "text"
+    }
+  ],
+  "invented": [
+    "text"
+  ],
+  "warnings": [
+    "text"
+  ],
+  "tags": [
+    "text"
+  ],
+  "appliesTo": [
+    {
+      "applicationId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "name": "text",
+      "servers": [
+        "text"
+      ]
+    }
+  ]
+}
+```
+
+### AssistFile
+
+| Field | Type |
+|---|---|
+| name | `string` |
+| data | `string` |
+
+```json
+{
+  "name": "text",
+  "data": "text"
+}
+```
+
+### AssistRequest
+
+| Field | Type |
+|---|---|
+| pageId | `Guid?` |
+| title | `string?` |
+| contentJson | `string?` |
+| text | `string?` |
+| files | `IReadOnlyList<AssistFile>?` ([AssistFile](#assistfile)) |
+
+```json
+{
+  "pageId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "title": "text",
+  "contentJson": "text",
+  "text": "text",
+  "files": [
+    {
+      "name": "text",
+      "data": "text"
+    }
+  ]
+}
+```
+
 ### AttachmentDto
 
 | Field | Type |
@@ -2632,6 +2766,7 @@ Enum: `Same`, `Add`, `Del`.
 | canImport | `bool` |
 | canFormat | `bool` |
 | spaces | `IReadOnlyList<ImportSpaceDto>?` ([ImportSpaceDto](#importspacedto)) |
+| canAssist | `bool` |
 
 ```json
 {
@@ -2676,7 +2811,8 @@ Enum: `Same`, `Add`, `Del`.
       "isSensitive": false,
       "reviewMonths": 0
     }
-  ]
+  ],
+  "canAssist": false
 }
 ```
 
@@ -3381,6 +3517,7 @@ Enum: `Same`, `Add`, `Del`.
 | attachments | `IReadOnlyList<AttachmentDto>` ([AttachmentDto](#attachmentdto)) |
 | maxAttachmentBytes | `long` |
 | details | `PageDetailsDto?` ([PageDetailsDto](#pagedetailsdto)) |
+| aiFlag | `string?` |
 
 ```json
 {
@@ -3441,7 +3578,8 @@ Enum: `Same`, `Add`, `Del`.
       "name": "text"
     },
     "reviewMonths": 0
-  }
+  },
+  "aiFlag": "text"
 }
 ```
 

@@ -46,7 +46,7 @@ public sealed class ImportLiveTests(ITestOutputHelper output)
             {
                 enabled = true, baseUrl = url, model = Environment.GetEnvironmentVariable("KB_AI_MODEL") ?? "", timeoutSeconds = 300, maxTokens = 8192, temperature = 0, reasoning = false,
                 ruleset = Kb.Core.Ai.AiGuard.DefaultRuleset, maxInputChars = 200000, userPerMinute = 100, tokenPerMinute = 100, importConcurrency = Math.Max(1, concurrency),
-                features = new { import = "Everyone", format = "Everyone", search = "Off" },
+                features = new { import = "Everyone", format = "Everyone", assist = "Everyone", search = "Off" },
             },
         }, Ct)).EnsureSuccessStatusCode();
         var app = (await (await admin.PostAsJsonAsync("/api/v1/inventory/apps", new { name = "Flibbertigibbet Controller" }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("id").GetGuid();
@@ -117,6 +117,25 @@ public sealed class ImportLiveTests(ITestOutputHelper output)
             }
         }
         Assert.True(fr.StatusCode is System.Net.HttpStatusCode.OK or (System.Net.HttpStatusCode)422);
+
+        // AI assist: a step pasted into the page, merged where it belongs.
+        var assist = await admin.PostAsJsonAsync($"/api/v1/spaces/{space}/assist", new
+        {
+            pageId = created.GetProperty("id").GetGuid(), title = "Spooler", contentJson = flat,
+            text = "4. Check that the print queue is empty before you print the test page.",
+        }, Ct);
+        var assisted = await assist.Content.ReadAsStringAsync(Ct);
+        output.WriteLine($"\nassist: {(int)assist.StatusCode} {(assist.IsSuccessStatusCode ? "" : assisted)}");
+        if (assist.IsSuccessStatusCode)
+        {
+            var result = JsonDocument.Parse(assisted).RootElement;
+            output.WriteLine($"  warnings {result.GetProperty("warnings")} removed {result.GetProperty("removed").GetArrayLength()} changed {result.GetProperty("changed")} invented {result.GetProperty("invented")}");
+            foreach (var n in JsonNode.Parse(result.GetProperty("contentJson").GetString()!)!["content"]!.AsArray())
+            {
+                var text = Kb.Core.Content.DocText.Plain(new JsonObject { ["type"] = "doc", ["content"] = new JsonArray(n!.DeepClone()) }.ToJsonString()).Replace('\n', ' ');
+                output.WriteLine($"  assisted {n["type"]}: {text[..Math.Min(110, text.Length)]}");
+            }
+        }
 
         await f.WithDbAsync(async db =>
         {

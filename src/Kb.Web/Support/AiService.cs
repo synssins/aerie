@@ -60,6 +60,8 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
         catch (JsonException) { s = new AiSettings(); }
         // A feature added later starts Off.
         foreach (var f in AiFeatures.All) s.Features.TryAdd(f, AiAccess.Off);
+        // A prompt that is an earlier default was never customized: it is the default of now.
+        if (AiGuard.IsPreviousDefault(s.Ruleset)) s = s with { Ruleset = AiGuard.DefaultRuleset };
         return s;
     }
 
@@ -221,6 +223,25 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
         var start = t.IndexOf('\n');
         var end = t.LastIndexOf("```", StringComparison.Ordinal);
         return start > 0 && end > start ? t[(start + 1)..end].Trim() : t;
+    }
+
+    /// <summary>A refusal a feature decides before calling (the page it would send holds text addressed to the AI): audited as ai.refused.</summary>
+    public Task RefusedAsync(Actor actor, string feature, string detail) => AuditAsync(actor, feature, "refused", 0, 0, 0, detail.Length > 300 ? detail[..300] : detail);
+
+    /// <summary>
+    /// Page content is input to the AI as much as anything pasted: a flagged page, or content with instruction-like text that is not
+    /// what an Owner marked reviewed, refuses the call before it is made. Null when the content may go.
+    /// </summary>
+    public async Task<Problem?> PageRefusalAsync(Actor actor, string feature, Kb.Core.Content.Page? page, string contentJson)
+    {
+        var findings = PageScan.Scan(contentJson);
+        if (findings.Count > 0 && (page?.AiReviewed is null || page.AiReviewed != PageScan.Hash(findings)))
+        {
+            var where = PageScan.Describe(findings);
+            await RefusedAsync(actor, feature, $"page: {where}");
+            return Problem.Refused($"The page holds text addressed to the AI ({where}), so it was not sent. Remove it, or an Owner marks the page reviewed.");
+        }
+        return null;
     }
 
     private async Task AuditAsync(Actor actor, string feature, string outcome, int inTokens, int outTokens, long ms, string? detail)

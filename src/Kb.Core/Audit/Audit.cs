@@ -34,6 +34,9 @@ public static class AuditActions
     public const string SetupAdminCreate = "setup.admin.create";
     public const string BrandUpdate = "brand.update";
     public const string BrandTheme = "brand.theme";
+    public const string PageAiFlag = "page.ai.flag";
+    public const string PageAiReview = "page.ai.review";
+    public const string PageAssist = "page.assist";
     public const string PageMove = "page.move";
     public const string PageDelete = "page.delete";
     public const string PageRestore = "page.restore";

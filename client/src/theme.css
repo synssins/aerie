@@ -286,6 +286,12 @@ h2.s { font-size: 17px; margin: 22px 0 8px; }
 .format-dlg .seg { margin-bottom: 10px; }
 .format-view { max-height: 60vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; background: var(--paper); }
 .format-view .diff-lines { max-height: none; margin: 0; }
+.assist-drop { display: flex; flex-direction: column; gap: 8px; }
+.assist-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--ink2); }
+.assist-label textarea { width: 100%; min-height: 180px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; color: var(--ink); background: var(--paper); }
+.assist-sections { border: 1px solid var(--line); border-radius: 8px; margin: 10px 0 0; padding: 6px 10px; display: flex; flex-wrap: wrap; gap: 2px 18px; }
+.assist-sections legend { font-size: 12px; color: var(--ink2); padding: 0 4px; }
+.assist-sections .check { margin: 2px 0; }
 .removed-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .removed-list li { display: flex; align-items: center; gap: 10px; padding: 4px 8px; background: var(--warn-bg); color: var(--warn-ink); border: 1px solid var(--warn-line); border-radius: 6px; }
 .removed-list .muted { color: inherit; opacity: .8; }

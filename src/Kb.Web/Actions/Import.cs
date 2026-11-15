@@ -22,7 +22,7 @@ public sealed record ImportItemRowDto(Guid Id, Guid BatchId, string Title, strin
     string? Source = null, string? SuggestedSpace = null, DateTimeOffset? UpdatedAt = null, long? DraftMs = null);
 /// <summary>CanImport, CanFormat: whether the AI features are open to the caller (the app shows them only then).</summary>
 public sealed record ImportListDto(IReadOnlyList<ImportBatchDto> Batches, IReadOnlyList<ImportItemRowDto> Items, bool CanImport = false, bool CanFormat = false,
-    IReadOnlyList<ImportSpaceDto>? Spaces = null);
+    IReadOnlyList<ImportSpaceDto>? Spaces = null, bool CanAssist = false);
 /// <summary>A space the caller may add pages to, with its default review cycle: where an import may go.</summary>
 public sealed record ImportSpaceDto(Guid Id, string Name, bool IsSensitive, int? ReviewMonths);
 /// <summary>Proposal: the AI's draft and what the code found (JSON, see ImportService.ProposeAsync). Sources: the text read from each file.</summary>
@@ -249,7 +249,7 @@ internal sealed class ListImportsHandler(KbDbContext db, ImportService imports, 
             [.. items.Select(i => ImportGate.Row(i, counts.GetValueOrDefault(i.Id), names.GetValueOrDefault(i.Id),
                 suggested[i.Id] is { } sid ? spaceNames.GetValueOrDefault(sid) : null))],
             ctx.Actor.TokenId is null && await imports.MayImportAsync(ctx.Actor, ctx.Cancel), await imports.MayAsync(ctx.Actor, AiFeatures.Format, ctx.Cancel),
-            await ImportGate.WritableAsync(db, access, ctx.Actor, ctx.Cancel));
+            await ImportGate.WritableAsync(db, access, ctx.Actor, ctx.Cancel), ctx.Actor.TokenId is null && await imports.MayAsync(ctx.Actor, AiFeatures.Assist, ctx.Cancel));
     }
 }
 
@@ -430,6 +430,7 @@ internal sealed class FormatPageHandler(KbDbContext db, IAccess access, ImportSe
     {
         var before = ctx.Action.ContentJson;
         if (!PageSupport.IsEditorDoc(before)) return Problem.Invalid("contentJson", "Not an editor document.");
+        if (await ai.PageRefusalAsync(ctx.Actor, AiFeatures.Format, _page, before) is { } refused) return refused;
         var source = JsonNode.Parse(before)!.AsObject();
         var units = DocFormat.Units(source);
         if (units.Count == 0) return new Problem(422, "There is nothing to format.");

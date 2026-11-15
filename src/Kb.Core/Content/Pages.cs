@@ -30,6 +30,10 @@ public sealed class Page
     public bool BinHidden { get; set; }
     /// <summary>Plain text of title, tags and body, for search snippets.</summary>
     public string SearchText { get; set; } = "";
+    /// <summary>Set when the page holds text addressed to an AI (what and where): AI features leave it alone until it is gone or reviewed.</summary>
+    public string? AiFlag { get; set; }
+    /// <summary>What an Owner or Admin marked reviewed (a hash of the findings): a page that documents prompt injection on purpose.</summary>
+    public string? AiReviewed { get; set; }
     /// <summary>
     /// Who owns the process or escalation path the page is about (not who wrote it): a user id or a group's key.
     /// Example: an ERP error page whose steps end in "escalate to the ERP Support Team" is owned by that team.

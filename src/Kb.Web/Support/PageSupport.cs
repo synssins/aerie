@@ -36,6 +36,7 @@ internal static class PageSupport
             if (major) { page.Major++; page.Minor = 0; } else page.Minor++;
             db.PageVersions.Add(new PageVersion { PageId = page.Id, Major = page.Major, Minor = page.Minor, Title = page.Title, ContentJson = page.ContentJson, AuthorId = me, At = now, Note = note });
         }
+        PageScan.Apply(page);
         db.PageDrafts.RemoveRange(db.PageDrafts.Where(d => d.PageId == page.Id && d.UserId == me));
         await SearchIndex.StageAsync(db, page, tags, renderers);
         try { await db.SaveChangesAsync(); }
@@ -167,6 +168,11 @@ internal static class PageSupport
         return new PageDto(page.Id, page.SpaceId, page.ParentId, page.Kind.ToString(), page.Title, page.ContentJson, page.Version,
             page.UpdatedAt, updatedBy, path, await HistoryAsync(db, page.Id, 10), canEdit, tags, canDelete,
             draft is null ? null : new DraftInfoDto(draft.UserId == me, draft.DisplayName, draft.UpdatedAt), files, await UploadLimits.AttachmentBytesAsync(db),
-            await Kb.Web.Actions.InventorySupport.PageDetailsAsync(db, page, CancellationToken.None));
+            await Kb.Web.Actions.InventorySupport.PageDetailsAsync(db, page, CancellationToken.None), page.AiFlag);
     }
+
+    /// <summary>The audit entry of a page whose flag a save changed: text addressed to an AI found, or gone.</summary>
+    internal static void AuditAiFlag(ActionContext ctx, Page page) =>
+        ctx.Audit(AuditActions.PageAiFlag, "page", page.Id.ToString(), page.SpaceId,
+            new Dictionary<string, string> { ["flagged"] = (page.AiFlag is not null).ToString(), ["found"] = page.AiFlag ?? "" });
 }

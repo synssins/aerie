@@ -148,6 +148,7 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | DELETE | `/api/v1/pages/{id:guid}` | `page.delete` |  | `Unit` | Yes | Needed | Write |
 | GET | `/api/v1/pages/{id:guid}` | `page.read` |  | `PageDto` ([PageDto](plugins/action-reference.md#pagedto)) | No | Not needed | Read |
 | PUT | `/api/v1/pages/{id:guid}` | `page.save` | `SavePageRequest` ([SavePageRequest](plugins/action-reference.md#savepagerequest)) | `PageDto` ([PageDto](plugins/action-reference.md#pagedto)) | Yes | Needed | Write |
+| POST | `/api/v1/pages/{id:guid}/ai-review` | `page.ai.review` |  | `PageDto` ([PageDto](plugins/action-reference.md#pagedto)) | Yes | Needed | No |
 | POST | `/api/v1/pages/{id:guid}/attachments` | `attachment.add` |  | `AttachmentDto` ([AttachmentDto](plugins/action-reference.md#attachmentdto)) | Yes | Needed | Write |
 | PUT | `/api/v1/pages/{id:guid}/details` | `page.details.save` | `PageDetailsRequest` ([PageDetailsRequest](plugins/action-reference.md#pagedetailsrequest)) | `PageDetailsDto` ([PageDetailsDto](plugins/action-reference.md#pagedetailsdto)) | Yes | Needed | No |
 | GET | `/api/v1/pages/{id:guid}/diff` | `page.diff` |  | `DiffDto` ([DiffDto](plugins/action-reference.md#diffdto)) | No | Needed | Read |
@@ -174,6 +175,7 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | GET | `/api/v1/spaces/{id:guid}` | `space.read` |  | `SpaceDto` ([SpaceDto](plugins/action-reference.md#spacedto)) | No | Not needed | Read |
 | PATCH | `/api/v1/spaces/{id:guid}` | `space.update` | `UpdateSpaceRequest` ([UpdateSpaceRequest](plugins/action-reference.md#updatespacerequest)) | `SpaceDto` ([SpaceDto](plugins/action-reference.md#spacedto)) | Yes | Needed | No |
 | POST | `/api/v1/spaces/{id:guid}/access-requests` | `access.request` | `AccessRequestBody` ([AccessRequestBody](plugins/action-reference.md#accessrequestbody)) | `AccessRequestedDto` ([AccessRequestedDto](plugins/action-reference.md#accessrequesteddto)) | Yes | Needed | No |
+| POST | `/api/v1/spaces/{id:guid}/assist` | `page.assist` | `AssistRequest` ([AssistRequest](plugins/action-reference.md#assistrequest)) | `AssistDto` ([AssistDto](plugins/action-reference.md#assistdto)) | Yes | Needed | No |
 | GET | `/api/v1/spaces/{id:guid}/bin` | `bin.list` |  | `IReadOnlyList<BinItemDto>` ([BinItemDto](plugins/action-reference.md#binitemdto)) | No | Needed | No |
 | POST | `/api/v1/spaces/{id:guid}/bin/empty` | `bin.empty` |  | `Unit` | Yes | Needed | No |
 | GET | `/api/v1/spaces/{id:guid}/bin/tree` | `bin.browse` |  | `IReadOnlyList<BinNodeDto>` ([BinNodeDto](plugins/action-reference.md#binnodedto)) | No | Needed | No |

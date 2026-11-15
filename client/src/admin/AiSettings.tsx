@@ -10,7 +10,7 @@ export type AiSettings = {
 type Dto = { settings: AiSettings; apiKeySet: boolean; rulesetIsDefault: boolean; defaultRuleset: string };
 type TestResult = { ok: boolean; model: string | null; milliseconds: number; reasoningEmpty: boolean; error: string | null };
 
-const FEATURES: [string, string][] = [["import", "Import"], ["format", "Formatting"], ["search", "In-depth search"]];
+const FEATURES: [string, string][] = [["import", "Import"], ["format", "Formatting"], ["assist", "Editor assist"], ["search", "In-depth search"]];
 const ACCESS: [AiAccess, string][] = [["Off", "Off"], ["Admins", "Admins"], ["Everyone", "Everyone with access"]];
 
 function Switch({ on, label, onChange }: { on: boolean; label: string; onChange: (v: boolean) => void }) {

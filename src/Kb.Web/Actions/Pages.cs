@@ -1,3 +1,4 @@
+using Kb.Core.Audit;
 using Kb.Core.Content;
 using Kb.Data;
 using Microsoft.EntityFrameworkCore;
@@ -46,6 +47,7 @@ internal sealed class CreatePageHandler(KbDbContext db, IAccess access, TimeProv
         var now = time.GetUtcNow();
         var page = new Page { SpaceId = req.SpaceId, ParentId = req.ParentId, Kind = kind, Title = req.Title.Trim(), Sort = await NextSortAsync(db, req.SpaceId, req.ParentId), CreatedBy = me, CreatedAt = now, UpdatedBy = me, UpdatedAt = now };
         if (kind == PageKind.Page) page.ContentJson = req.ContentJson ?? """{"type":"doc","content":[]}""";
+        var flagged = PageScan.Apply(page);
         db.Pages.Add(page);
         db.PageTags.AddRange(tags.Select(t => new PageTag { PageId = page.Id, Tag = t }));
         if (kind == PageKind.Page)
@@ -53,6 +55,7 @@ internal sealed class CreatePageHandler(KbDbContext db, IAccess access, TimeProv
         await SearchIndex.StageAsync(db, page, tags, renderers);
         await db.SaveChangesAsync();
         await ImageEndpoints.KeepAsync(db, page.ContentJson, page.SpaceId);
+        if (flagged) AuditAiFlag(ctx, page);
         return await ToDtoAsync(db, access, ctx.Actor, page);
     }
 }
@@ -94,6 +97,44 @@ internal sealed class SavePageHandler(KbDbContext db, IAccess access, TimeProvid
             db.PageTags.AddRange(tags.Select(t => new PageTag { PageId = page.Id, Tag = t }));
         }
         else tags = await db.PageTags.Where(t => t.PageId == page.Id).Select(t => t.Tag).ToListAsync(ctx.Cancel);
-        return await PublishAsync(db, access, renderers, ctx.Actor, page, req.ContentJson, req.Major, req.Note, tags, time.GetUtcNow());
+        var flagBefore = page.AiFlag;
+        var saved = await PublishAsync(db, access, renderers, ctx.Actor, page, req.ContentJson, req.Major, req.Note, tags, time.GetUtcNow());
+        if (saved.Problem is null && page.AiFlag != flagBefore) AuditAiFlag(ctx, page);
+        return saved;
+    }
+}
+
+/// <summary>
+/// An Owner of the page's space, or an Admin, marks a flagged page reviewed: its instruction-like text is meant (a page about
+/// prompt injection). It stays clear until other such text is found. Core only.
+/// </summary>
+[Action("page.ai.review")]
+public sealed record ReviewPageAi : IAction<PageDto>
+{
+    public required Guid PageId { get; init; }
+}
+
+internal sealed class ReviewPageAiHandler(KbDbContext db, IAccess access) : IActionHandler<ReviewPageAi, PageDto>
+{
+    private Page? _page;
+
+    public async Task<Problem?> AuthorizeAsync(ActionContext<ReviewPageAi> ctx)
+    {
+        if ((_page = await db.FindVisibleAsync(access, ctx.Actor, ctx.Action.PageId, track: true, ctx.Cancel)) is null) return Problem.NotFound;
+        if (ctx.Actor.TokenId is not null) return Problem.Forbidden;
+        return await access.IsAdminAsync(ctx.Actor, ctx.Cancel) || await access.RoleAsync(ctx.Actor, _page.SpaceId, ctx.Cancel) == SpaceRole.Owner
+            ? null : new Problem(403, "Only an Owner of the space or an Admin marks a page reviewed.");
+    }
+
+    public async Task<Outcome<PageDto>> HandleAsync(ActionContext<ReviewPageAi> ctx)
+    {
+        var page = _page!;
+        var findings = PageScan.Scan(page.ContentJson);
+        var found = page.AiFlag;
+        page.AiReviewed = findings.Count == 0 ? null : PageScan.Hash(findings);
+        page.AiFlag = null;
+        await db.SaveChangesAsync(ctx.Cancel);
+        ctx.Audit(AuditActions.PageAiReview, "page", page.Id.ToString(), page.SpaceId, new Dictionary<string, string> { ["found"] = found ?? PageScan.Describe(findings) });
+        return await PageSupport.ToDtoAsync(db, access, ctx.Actor, page);
     }
 }

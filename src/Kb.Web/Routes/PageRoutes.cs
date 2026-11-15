@@ -1,3 +1,4 @@
+using Kb.Web.Actions;
 using Kb.Core.Content;
 
 namespace Kb.Web;
@@ -23,5 +24,8 @@ public static class PageRoutes
         api.MapPut("/pages/{id:guid}", (Guid id, SavePageRequest req, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new SavePage { PageId = id, Title = req.Title, ContentJson = req.ContentJson, BaseVersion = req.BaseVersion, Major = req.Major, Note = req.Note, Tags = req.Tags }, ct)
                 .ToHttp()).WithAction<SavePage>();
+
+        api.MapPost("/pages/{id:guid}/ai-review", (Guid id, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new ReviewPageAi { PageId = id }, ct).ToHttp()).WithAction<ReviewPageAi>();
     }
 }

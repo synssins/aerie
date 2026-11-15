@@ -70,7 +70,9 @@ internal sealed class RestoreVersionHandler(KbDbContext db, IAccess access, Time
         var (page, v, version) = (_page!, _version!, ctx.Action.Version);
         page.Title = v.Title;
         var tags = await db.PageTags.Where(t => t.PageId == page.Id).Select(t => t.Tag).ToListAsync(ctx.Cancel);
+        var flagBefore = page.AiFlag;
         var result = await PublishAsync(db, access, renderers, ctx.Actor, page, v.ContentJson, major: false, $"Restored from {version}", tags, time.GetUtcNow());
+        if (result.Problem is null && page.AiFlag != flagBefore) AuditAiFlag(ctx, page);
         // Only a restore that happened is in the audit log. One that lost the race for its version number answers 409 and changed nothing.
         if (result.Problem is null) ctx.Audit(AuditActions.PageVersionRestore, "page", page.Id.ToString(), page.SpaceId, new Dictionary<string, string> { ["from"] = version, ["to"] = page.Version });
         return result;

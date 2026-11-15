@@ -92,5 +92,22 @@
     "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 403},
     "sensitive": {"admin": 404},
     "note": "Formatting needs the right to edit the page and the Format feature, which is off while AI is off."
+  },
+  {
+    "action": "page.assist",
+    "method": "POST",
+    "path": "/api/v1/spaces/{space}/assist",
+    "body": {},
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 403},
+    "sensitive": {"admin": 404},
+    "note": "Assist needs the right to add pages in the space and the Assist feature, which is off while AI is off."
+  },
+  {
+    "action": "page.ai.review",
+    "method": "POST",
+    "path": "/api/v1/pages/{page}/ai-review",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 403, "supervisor": 403, "owner": "allowed", "admin": "allowed"},
+    "sensitive": {"admin": 404},
+    "note": "An Owner of the space or an Admin marks a flagged page reviewed."
   }
 ]
