@@ -215,17 +215,21 @@ internal sealed class RemoveGroupMemberHandler(KbDbContext db, IAccess access) :
 
 internal sealed class ListPrincipalsHandler(KbDbContext db, IAccess access) : IActionHandler<ListPrincipals, IReadOnlyList<PrincipalDto>>
 {
-    public async Task<Problem?> AuthorizeAsync(ActionContext<ListPrincipals> ctx)
+    public async Task<Problem?> AuthorizeAsync(ActionContext<ListPrincipals> ctx) =>
+        ctx.Actor.UserId is null ? Problem.Unauthorized : await MayBrowseAsync(db, access, ctx.Actor, ctx.Cancel) ? null : Problem.Forbidden;
+
+    /// <summary>Who may look people up: an Admin, and anyone who picks people somewhere (an Owner, or someone who may edit pages).</summary>
+    public static async Task<bool> MayBrowseAsync(KbDbContext db, IAccess access, Actor actor, CancellationToken ct)
     {
-        if (ctx.Actor.UserId is not { } me) return Problem.Unauthorized;
-        if (await access.IsAdminAsync(ctx.Actor, ctx.Cancel)) return null;
+        if (actor.UserId is not { } me) return false;
+        if (await access.IsAdminAsync(actor, ct)) return true;
         // An Owner of any space, directly or through a group, picks who gets a role there.
-        var ids = await db.KbGroupMembers.Where(m => m.UserId == me).Join(db.KbGroups, m => m.GroupId, g => g.Id, (m, g) => g.Key).ToListAsync(ctx.Cancel);
+        var ids = await db.KbGroupMembers.Where(m => m.UserId == me).Join(db.KbGroups, m => m.GroupId, g => g.Id, (m, g) => g.Key).ToListAsync(ct);
         ids.Add(me.ToString("D"));
         // Also anyone who may edit a page somewhere: they pick a page's owner, a person or a group.
-        var pickers = (await db.SpaceRoleDefs.AsNoTracking().ToListAsync(ctx.Cancel))
+        var pickers = (await db.SpaceRoleDefs.AsNoTracking().ToListAsync(ct))
             .Where(r => Kb.Core.Spaces.SpacePerms.IsOwnerGrade(r.Permissions) || Kb.Core.Spaces.SpacePerms.Has(r.Permissions, SpaceAction.CreateEdit)).Select(r => r.Id).ToList();
-        return await db.SpaceRoleAssignments.AnyAsync(a => pickers.Contains(a.RoleId) && ids.Contains(a.PrincipalId), ctx.Cancel) ? null : Problem.Forbidden;
+        return await db.SpaceRoleAssignments.AnyAsync(a => pickers.Contains(a.RoleId) && ids.Contains(a.PrincipalId), ct);
     }
 
     public async Task<Outcome<IReadOnlyList<PrincipalDto>>> HandleAsync(ActionContext<ListPrincipals> ctx)

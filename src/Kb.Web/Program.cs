@@ -88,8 +88,12 @@ services.Configure<Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticat
 
 // API tokens beside the sign-in cookie: a request with a Bearer header goes to the token handler, every other one to the cookie.
 services.AddAuthentication()
-    .AddPolicyScheme(ApiTokenAuth.Selector, null, o => o.ForwardDefaultSelector = ctx => ApiTokenAuth.HasBearer(ctx.Request) ? ApiTokenAuth.Scheme : IdentityConstants.ApplicationScheme)
-    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, ApiTokenAuthHandler>(ApiTokenAuth.Scheme, null);
+    // HTTP Basic is read on the Data Center compatible surface only; aerie's own API ignores the header as it always did.
+    .AddPolicyScheme(ApiTokenAuth.Selector, null, o => o.ForwardDefaultSelector = ctx => ApiTokenAuth.HasBearer(ctx.Request) ? ApiTokenAuth.Scheme
+        : Kb.Web.DataCenter.DcRest.HasBasic(ctx.Request) && Kb.Web.DataCenter.DcRest.IsUnderRoot(ctx) ? Kb.Web.DataCenter.BasicAuthHandler.SchemeName
+        : IdentityConstants.ApplicationScheme)
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, ApiTokenAuthHandler>(ApiTokenAuth.Scheme, null)
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, Kb.Web.DataCenter.BasicAuthHandler>(Kb.Web.DataCenter.BasicAuthHandler.SchemeName, null);
 services.Configure<Microsoft.AspNetCore.Authentication.AuthenticationOptions>(o =>
     o.DefaultAuthenticateScheme = o.DefaultChallengeScheme = o.DefaultForbidScheme = ApiTokenAuth.Selector);
 // shortcut: the limit is counted per server, so N servers allow N times as much; move it to the database if abuse appears.
@@ -103,10 +107,13 @@ services.AddRateLimiter(o =>
         HttpMethods.IsPost(http.Request.Method) && (http.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText is "/api/v1/auth/local/signin" or "/api/v1/auth/local/password"
             or "/api/v1/auth/local/code" or "/api/v1/auth/codes" or "/api/v1/auth/codes/key"
             ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("signin:" + http.Connection.RemoteIpAddress, _ => new() { PermitLimit = kb.Auth.SignInsPerMinutePerAddress, Window = TimeSpan.FromMinutes(1) })
+        // Refused Basic credentials on the Data Center compatible surface are password guesses: counted like sign-ins.
+        : http.User.Identity?.IsAuthenticated != true && Kb.Web.DataCenter.DcRest.HasBasic(http.Request) && Kb.Web.DataCenter.DcRest.IsUnderRoot(http)
+            ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("signin:" + http.Connection.RemoteIpAddress, _ => new() { PermitLimit = kb.Auth.SignInsPerMinutePerAddress, Window = TimeSpan.FromMinutes(1) })
         : ApiTokenAuth.PresentedId(http) is { } tokenId
             ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("token:" + tokenId, _ => new() { PermitLimit = kb.Tokens.RequestsPerMinute, Window = TimeSpan.FromMinutes(1) })
         // Someone not signed in (reading Anyone spaces) is counted by address; the limiter runs after authentication, so a session is known.
-        : http.User.Identity?.IsAuthenticated != true && http.Request.Path.StartsWithSegments("/api")
+        : http.User.Identity?.IsAuthenticated != true && (http.Request.Path.StartsWithSegments("/api") || Kb.Web.DataCenter.DcRest.IsUnderRoot(http))
             ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("anon:" + http.Connection.RemoteIpAddress, _ => new() { PermitLimit = kb.Auth.AnonymousRequestsPerMinutePerAddress, Window = TimeSpan.FromMinutes(1) })
         : System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter(""));
 });
@@ -231,6 +238,7 @@ app.UseStaticFiles(new StaticFileOptions
 });
 app.UseAuthentication();
 app.UseRateLimiter();
+app.Use(Kb.Web.DataCenter.DcRest.GuardAsync);
 app.Use(ApiTokenAuth.EnforceAsync);
 app.UseAuthorization();
 
@@ -262,6 +270,7 @@ api.MapUiEndpoints();
 api.MapInventoryEndpoints();
 api.MapImportEndpoints();
 app.MapPluginFiles();
+Kb.Web.DataCenter.DcRoutes.MapDataCenterApi(app);
 // Each loaded plugin's own routes, under /api/v1/plugins/<id>/. They need sign-in unless a route says AllowAnonymous, and are closed to API tokens.
 // A server that runs an old set of plugins answers 503 there until it has restarted.
 foreach (var routes in boot.Registrations.All<RouteMap>())

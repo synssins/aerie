@@ -88,6 +88,8 @@ public static class AuditActions
     public const string TokenRevoke = "token.revoke";
     public const string TokenUse = "token.use";
     public const string TokenRefused = "token.refused";
+    /// <summary>A request on the Data Center compatible surface signed in with HTTP Basic.</summary>
+    public const string BasicUse = "auth.basic";
     public const string SettingsChange = "settings.change";
     public const string PluginEnable = "plugin.enable";
     public const string PluginDisable = "plugin.disable";
