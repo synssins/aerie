@@ -1,0 +1,8 @@
+# Every change needs a review from an owner. Pair this with branch protection on main
+# (Settings > Branches: require a pull request, one approval, review from code owners, passing checks).
+*                   @synssins
+/CLEAN_ROOM.md      @synssins
+/PROVENANCE.md      @synssins
+/contracts/         @synssins
+/LICENSE            @synssins
+/NOTICE             @synssins

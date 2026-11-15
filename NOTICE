@@ -1,0 +1,8 @@
+Aerie
+Copyright 2026 synssins and the Aerie contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product bundles the Liberation Sans and Liberation Mono fonts, version 2.1.5
+(src/Kb.Web/Fonts), which are licensed separately under the SIL Open Font License 1.1.
+Their copyright notices and license text are in src/Kb.Web/Fonts/OFL.txt.
