@@ -48,7 +48,7 @@ public sealed class DcPlumbingTests : IAsyncLifetime
         {
             var r = await Basic(_f, "ravi", "not-the-password").GetAsync(path, Ct);
             await r.ErrorAsync(HttpStatusCode.Unauthorized);
-            Assert.StartsWith("Basic", r.Headers.WwwAuthenticate.Single().Scheme, StringComparison.Ordinal);
+            Assert.Empty(r.Headers.WwwAuthenticate); // no Basic challenge: a browser shows no password dialog (identity.md)
         }
         await (await Basic(_f, "nobody").GetAsync("/rest/api/user/current", Ct)).ErrorAsync(HttpStatusCode.Unauthorized);
         await _f.WithDbAsync(async db => Assert.True(await db.AuditEntries.AnyAsync(a => a.Action == AuditActions.SignInFailed && a.ActorId == id && a.DataJson.Contains("basic"), Ct)));

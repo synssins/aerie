@@ -108,7 +108,7 @@ public static class DcContentRoutes
             // Children as they were at an older version of the parent: aerie supports 0, now, only.
             if (q.Query["parentVersion"].ToString() is { Length: > 0 } pv && pv != "0") return Task.FromResult(DcRest.Fail(400, "parentVersion 0 is the only one aerie supports."));
             return bus.SendAsync(new DcContentChildren { Id = id, Descendants = descendants, Type = type, Start = paging.Start, Limit = paging.Limit, Expand = Expand.Raw(q) }, ct)
-                .Rest(o => DcRest.Json(type is null ? o : links.Top(o)));
+                .Rest(o => DcRest.Json(type is null ? o : links.Repage(o, paging)));
         }
         dc.MapGet("/content/{id}/child", (HttpContext http, string id, IActionBus bus, CancellationToken ct) => Children(http, id, null, false, bus, ct)).WithAction<DcContentChildren>();
         dc.MapGet("/content/{id}/child/{type}", (HttpContext http, string id, string type, IActionBus bus, CancellationToken ct) => Children(http, id, type, false, bus, ct)).WithAction<DcContentChildren>();
@@ -132,7 +132,7 @@ public static class DcContentRoutes
             var depth = q.Query["depth"].ToString() is { Length: > 0 } d ? d : "all";
             if (depth is not ("all" or "root")) return Task.FromResult(DcRest.Fail(400, "depth is all or root."));
             return bus.SendAsync(new DcSpaceContent { Key = spaceKey, Type = type, RootOnly = depth == "root", Start = paging.Start, Limit = paging.Limit, Expand = Expand.Raw(q) }, ct)
-                .Rest(o => DcRest.Json(type is null ? o : links.Top(o)));
+                .Rest(o => DcRest.Json(type is null ? o : links.Repage(o, paging)));
         }
         dc.MapGet("/space/{spaceKey}/content", (HttpContext http, string spaceKey, IActionBus bus, CancellationToken ct) => SpaceContent(http, spaceKey, null, bus, ct)).WithAction<DcSpaceContent>();
         dc.MapGet("/space/{spaceKey}/content/{type}", (HttpContext http, string spaceKey, string type, IActionBus bus, CancellationToken ct) => SpaceContent(http, spaceKey, type, bus, ct)).WithAction<DcSpaceContent>();

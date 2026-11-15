@@ -41,6 +41,10 @@ public static class DcRest
     private static bool IsUnderOAuth(HttpContext http) =>
         http.Request.Path.StartsWithSegments(http.RequestServices.GetRequiredService<IOptions<KbOptions>>().Value.DataCenter.ContextPath + OAuthRoot);
 
+    /// <summary>True when the request matched a route of the surface or its attachment download.</summary>
+    public static bool IsSurfaceRoute(HttpContext? http) =>
+        http?.GetEndpoint()?.Metadata is { } m && (m.GetMetadata<DcRoute>() is not null || m.GetMetadata<DcDownloadRoute>() is not null);
+
     public static bool HasBasic(HttpRequest request) =>
         request.Headers.Authorization.ToString().StartsWith("Basic ", StringComparison.OrdinalIgnoreCase);
 
@@ -129,7 +133,7 @@ public static class DcRest
         var res = http.Response;
         if (HasBasic(http.Request) && http.User.Identity?.IsAuthenticated != true)
         {
-            res.Headers.WWWAuthenticate = "Basic realm=\"aerie\"";
+            // No Basic challenge: a browser on aerie's own pages never shows a password dialog (identity.md, Failed Basic attempts).
             await Fail(401, "The user name or password is not valid.").ExecuteAsync(http);
             return;
         }
@@ -215,6 +219,21 @@ public sealed class DcLinks(HttpContext http, DataCenterOptions options)
         if (more) links["next"] = WithStart(paging.Start + paging.Limit);
         if (paging.Start > 0) links["prev"] = WithStart(Math.Max(0, paging.Start - paging.Limit));
         return Top(new JsonObject { ["results"] = results, ["start"] = paging.Start, ["limit"] = paging.Limit, ["size"] = results.Count, ["_links"] = links });
+    }
+
+    /// <summary>
+    /// A list built inside another object, answered on its own: its self, next and prev links are made again from this request, so they keep
+    /// its query (expand and the rest), and it gets base and context. Whether a next page exists is what the list said.
+    /// </summary>
+    public JsonObject Repage(JsonObject list, Paging paging)
+    {
+        ArgumentNullException.ThrowIfNull(list);
+        var more = list["_links"]?["next"] is not null;
+        var links = new JsonObject { ["self"] = Abs(RequestPath + Http.Request.QueryString) };
+        if (more) links["next"] = WithStart(paging.Start + paging.Limit);
+        if (paging.Start > 0) links["prev"] = WithStart(Math.Max(0, paging.Start - paging.Limit));
+        list["_links"] = links;
+        return Top(list);
     }
 
     private string WithStart(int start)

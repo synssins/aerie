@@ -33,6 +33,9 @@ public sealed class BasicAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions
         if (colon <= 0) return AuthenticateResult.Fail("Not Basic credentials.");
         var (name, password) = (text[..colon], text[(colon + 1)..]);
         var ip = Context.Connection.RemoteIpAddress?.ToString() ?? "";
+        // A token in the password field is treated exactly like the Bearer form; sign-in codes do not apply (identity.md, HTTP Basic).
+        if (password.StartsWith(TokenFormat.Prefix, StringComparison.Ordinal))
+            return await ApiTokenAuth.AuthenticateAsync(Context, db, Context.RequestServices.GetRequiredService<TimeProvider>(), password, SchemeName, ownerName: name);
 
         var user = await users.FindByNameAsync(name);
         // Same refusal for every reason, as at sign-in; each is audited so a SIEM sees password guessing.
@@ -61,10 +64,10 @@ public sealed class BasicAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions
         return AuthenticateResult.Fail("Refused.");
     }
 
+    /// <summary>A 401 carries no Basic challenge, so a browser never shows a password dialog (identity.md, Failed Basic attempts).</summary>
     protected override Task HandleChallengeAsync(AuthenticationProperties properties)
     {
         Response.StatusCode = StatusCodes.Status401Unauthorized;
-        Response.Headers.WWWAuthenticate = "Basic realm=\"aerie\"";
         return Task.CompletedTask;
     }
 }

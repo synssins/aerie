@@ -115,6 +115,34 @@ public static class ApiTokenAuth
         await next(http);
     }
 
+    /// <summary>
+    /// Checks a token's text: it must exist, be neither revoked nor expired, and its owner active. On success the request acts as the owner,
+    /// narrowed by the token, exactly as with Bearer. Used by the Bearer handler and by Basic with a token in the password field.
+    /// </summary>
+    /// <param name="ownerName">For Basic: the user name sent with the token, which must be the owner's (identity.md, HTTP Basic).</param>
+    internal static async Task<AuthenticateResult> AuthenticateAsync(HttpContext http, KbDbContext db, TimeProvider clock, string text, string scheme, string? ownerName = null)
+    {
+        if (!TokenFormat.IsWellFormed(text)) return AuthenticateResult.Fail("Not a token.");
+        var hash = TokenFormat.Hash(text);
+        var token = await db.ApiTokens.AsNoTracking().FirstOrDefaultAsync(t => t.Hash == hash, http.RequestAborted);
+        if (token is null) return AuthenticateResult.Fail("Unknown token.");
+
+        var owner = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == token.OwnerUserId, http.RequestAborted);
+        var reason = token.RevokedAt is not null ? "revoked"
+            : token.ExpiresAt <= clock.GetUtcNow() ? "expired"
+            : owner is null || owner.DeactivatedAt is not null ? "owner deactivated"
+            : ownerName is not null && !string.Equals(ownerName, owner.UserName, StringComparison.OrdinalIgnoreCase) ? "user name is not the owner's"
+            : null;
+        if (reason is not null)
+        {
+            Refuse(http, token, reason);
+            return AuthenticateResult.Fail("Token " + reason + ".");
+        }
+        Accept(http, token);
+        var identity = new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, token.OwnerUserId.ToString()), new Claim("kb:token", token.Id.ToString())], scheme);
+        return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), scheme));
+    }
+
     public static async Task<int> MaxDaysAsync(KbDbContext db, CancellationToken ct = default) =>
         int.TryParse(await db.GetAsync(MaxDaysKey, ct), NumberStyles.None, CultureInfo.InvariantCulture, out var days) && days is >= 1 and <= 3650 ? days : DefaultMaxDays;
 }
@@ -127,23 +155,7 @@ public sealed class ApiTokenAuthHandler(IOptionsMonitor<AuthenticationSchemeOpti
     {
         if (!ApiTokenAuth.HasBearer(Request)) return AuthenticateResult.NoResult();
         var text = Request.Headers.Authorization.ToString()[7..].Trim();
-        if (!TokenFormat.IsWellFormed(text)) return AuthenticateResult.Fail("Not a token.");
-        var hash = TokenFormat.Hash(text);
-        var token = await db.ApiTokens.AsNoTracking().FirstOrDefaultAsync(t => t.Hash == hash, Context.RequestAborted);
-        if (token is null) return AuthenticateResult.Fail("Unknown token.");
-
-        var reason = token.RevokedAt is not null ? "revoked"
-            : token.ExpiresAt <= clock.GetUtcNow() ? "expired"
-            : !await db.Users.AsNoTracking().AnyAsync(u => u.Id == token.OwnerUserId && u.DeactivatedAt == null, Context.RequestAborted) ? "owner deactivated"
-            : null;
-        if (reason is not null)
-        {
-            ApiTokenAuth.Refuse(Context, token, reason);
-            return AuthenticateResult.Fail("Token " + reason + ".");
-        }
-        ApiTokenAuth.Accept(Context, token);
-        var identity = new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, token.OwnerUserId.ToString()), new Claim("kb:token", token.Id.ToString())], ApiTokenAuth.Scheme);
-        return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), ApiTokenAuth.Scheme));
+        return await ApiTokenAuth.AuthenticateAsync(Context, db, clock, text, ApiTokenAuth.Scheme);
     }
 
     protected override Task HandleChallengeAsync(AuthenticationProperties properties)
@@ -172,6 +184,13 @@ public sealed class TokenScopedPermissions(SpacePermissionService inner, ISpaceA
 
     private static int Cap(TokenAccess access) => access == TokenAccess.Write ? SpacePerms.WriteToken : SpacePerms.Read;
 
+    /// <summary>
+    /// On the Data Center compatible surface a personal token's role decides and its scope only filters (contracts/behaviour/identity.md,
+    /// Scopes): Write admits every write the owner's role holds, Read what a Reader could do. Aerie's own API keeps its narrower cap.
+    /// </summary>
+    private int PersonalCap(TokenAccess access) =>
+        access == TokenAccess.Write && Kb.Web.DataCenter.DcRest.IsSurfaceRoute(http.HttpContext) ? SpacePerms.All : Cap(access);
+
     public async Task<int> GetPermissionsAsync(Guid userId, Guid spaceId, CancellationToken ct = default)
     {
         if (TokenOf(userId) is not { } token) return await inner.GetPermissionsAsync(userId, spaceId, ct);
@@ -180,7 +199,7 @@ public sealed class TokenScopedPermissions(SpacePermissionService inner, ISpaceA
             if (await data.GetSpaceAsync(spaceId, ct) is not { } space) return 0;
             return token.AccessTo(spaceId, includeGlobal: !space.IsSensitive) is { } granted ? Cap(granted) : 0;
         }
-        return token.AccessTo(spaceId) is { } access ? await inner.GetPermissionsAsync(userId, spaceId, ct) & Cap(access) : 0;
+        return token.AccessTo(spaceId) is { } access ? await inner.GetPermissionsAsync(userId, spaceId, ct) & PersonalCap(access) : 0;
     }
 
     public async Task<SpaceRole?> GetRoleAsync(Guid userId, Guid spaceId, CancellationToken ct = default) =>

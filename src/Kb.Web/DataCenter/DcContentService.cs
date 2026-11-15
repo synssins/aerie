@@ -404,6 +404,7 @@ internal sealed class DcContentService(KbDbContext db, IAccess access, IHttpCont
         foreach (var x in all.Skip(paging.Start).Take(paging.Limit)) results.Add(await ContentAsync(actor, x, expand, ct));
         var links = new JsonObject { ["self"] = Links.Abs(restPath) };
         if (all.Count > paging.Start + paging.Limit) links["next"] = $"{restPath}?limit={paging.Limit}&start={paging.Start + paging.Limit}";
+        if (paging.Start > 0) links["prev"] = $"{restPath}?limit={paging.Limit}&start={Math.Max(0, paging.Start - paging.Limit)}";
         return new JsonObject { ["results"] = results, ["start"] = paging.Start, ["limit"] = paging.Limit, ["size"] = results.Count, ["_links"] = links };
     }
 
