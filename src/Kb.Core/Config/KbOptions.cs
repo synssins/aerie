@@ -17,6 +17,7 @@ public sealed class KbOptions
     public StorageOptions Storage { get; set; } = new();
     public TokenOptions Tokens { get; set; } = new();
     public LogOptions Logs { get; set; } = new();
+    public DataCenterOptions DataCenter { get; set; } = new();
 }
 
 public sealed class BrandOptions
@@ -112,6 +113,23 @@ public sealed class LogOptions
     public string Folder { get; set; } = "App_Data/logs";
 }
 
+/// <summary>The Data Center compatible surface under /rest/api (contracts/datacenter/openapi.yaml).</summary>
+public sealed class DataCenterOptions
+{
+    /// <summary>Prefix the surface is served under, such as "/kb"; empty for the root. Starts with "/" and has no trailing "/".</summary>
+    public string ContextPath { get; set; } = "";
+    /// <summary>The site URL clients see, with the context prefix. Empty: taken from each request.</summary>
+    public string BaseUrl { get; set; } = "";
+    /// <summary>The most items one page of a list returns, whatever limit the caller asks for.</summary>
+    public int MaxLimit { get; set; } = 200;
+    /// <summary>The Data Center version aerie presents itself as.</summary>
+    public string Version { get; set; } = "9.2.4";
+    /// <summary>Build numbers reported with the version; 0 derives them from it. See docs/spec-questions/server-information-build-numbers.md.</summary>
+    public int BuildNumber { get; set; }
+    public int MarketplaceBuildNumber { get; set; }
+    public string BuildDate { get; set; } = "2026-01-01T00:00:00.000Z";
+}
+
 public sealed class TokenOptions
 {
     /// <summary>Requests one API token may make in a minute, on one server.</summary>
@@ -141,6 +159,9 @@ public sealed class KbOptionsValidator : IValidateOptions<KbOptions>
             errors.Add("Kb:Auth:Entra requires TenantId and ClientId.");
         var dupes = o.Hostnames.GroupBy(h => h.Host, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
         if (dupes.Count > 0) errors.Add($"Kb:Hostnames has duplicate Host values: {string.Join(", ", dupes)}.");
+        if (o.DataCenter.ContextPath.Length > 0 && (!o.DataCenter.ContextPath.StartsWith('/') || o.DataCenter.ContextPath.EndsWith('/')))
+            errors.Add("Kb:DataCenter:ContextPath must start with \"/\" and not end with one.");
+        if (o.DataCenter.MaxLimit < 1) errors.Add("Kb:DataCenter:MaxLimit must be at least 1.");
         if (o.Retention.RecycleDays < 1) errors.Add("Kb:Retention:RecycleDays must be at least 1.");
         return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);
     }
