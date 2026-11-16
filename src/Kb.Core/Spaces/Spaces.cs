@@ -79,7 +79,10 @@ public sealed class Space
     public bool IsSensitive { get; set; }
     public SpaceVisibility Visibility { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    /// <summary>The space's switch for page comments (comments.md, Switching comments on and off).</summary>
     public bool CommentsEnabled { get; set; } = true;
+    /// <summary>The space's switch for page ratings (ratings.md).</summary>
+    public bool RatingsEnabled { get; set; } = true;
     public int AgingDays { get; set; } = 180;
     public AgingAudience AgingAudience { get; set; } = AgingAudience.Everyone;
     /// <summary>Recycle-bin retention override; null uses Kb:Retention:RecycleDays.</summary>
@@ -151,7 +154,17 @@ public sealed class SpacePermissionService(ISpaceAccessData data, TimeProvider t
     public async Task<SpaceRole?> GetRoleAsync(Guid userId, Guid spaceId, CancellationToken ct = default) =>
         SpacePerms.Rank(await GetPermissionsAsync(userId, spaceId, ct), await data.GetRoleDefsAsync(ct));
 
-    public async Task<int> GetPermissionsAsync(Guid userId, Guid spaceId, CancellationToken ct = default)
+    /// <summary>
+    /// The level of the roles the person holds in the space (assignments, through groups too, and grants), without the Owner role an Admin
+    /// has on every space that is not sensitive. Comment moderation and the rating list need a held Supervisor or Owner role:
+    /// being an Admin is not enough on its own (comments.md, ratings.md; questions Q-0024, Q-0029).
+    /// </summary>
+    public async Task<SpaceRole?> GetHeldRoleAsync(Guid userId, Guid spaceId, CancellationToken ct = default) =>
+        SpacePerms.Rank(await MaskAsync(userId, spaceId, adminOverride: false, ct), await data.GetRoleDefsAsync(ct));
+
+    public Task<int> GetPermissionsAsync(Guid userId, Guid spaceId, CancellationToken ct = default) => MaskAsync(userId, spaceId, adminOverride: true, ct);
+
+    private async Task<int> MaskAsync(Guid userId, Guid spaceId, bool adminOverride, CancellationToken ct)
     {
         var p = await data.GetPrincipalAsync(userId, ct);
         var space = await data.GetSpaceAsync(spaceId, ct);
@@ -166,7 +179,7 @@ public sealed class SpacePermissionService(ISpaceAccessData data, TimeProvider t
         foreach (var a in await data.GetAssignmentsAsync(spaceId, ct))
             if (ids.Contains(a.PrincipalId) && roles.TryGetValue(a.RoleId, out var role)) mask |= role.Permissions;
 
-        if (p.IsAdmin && !space.IsSensitive) mask = SpacePerms.All;
+        if (adminOverride && p.IsAdmin && !space.IsSensitive) mask = SpacePerms.All;
 
         // Emergency access and approved requests are at a built-in level: that role's permissions as they are now.
         foreach (var g in await data.GetActiveGrantsAsync(userId, time.GetUtcNow(), ct))

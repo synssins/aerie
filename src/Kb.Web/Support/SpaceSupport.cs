@@ -45,6 +45,7 @@ internal static partial class SpaceSupport
         if (IsRename(s, req)) s.Name = req.Name!.Trim();
         if (req.Description is { } d) s.Description = string.IsNullOrWhiteSpace(d) ? null : d.Trim();
         if (req.CommentsEnabled is { } c) s.CommentsEnabled = c;
+        if (req.RatingsEnabled is { } r) s.RatingsEnabled = r;
         if (req.AgingDays is { } ad) s.AgingDays = ad;
         if (req.AgingAudience is { } aa) s.AgingAudience = aa;
         if (req.RecycleDays is { } rd) s.RecycleDays = rd;
@@ -65,7 +66,7 @@ internal static partial class SpaceSupport
     }
 
     internal static SpaceDto ToDto(Space s, SpaceRole? role) => new(s.Id, s.Key, s.Name, s.Description, s.IsSensitive, s.Visibility.ToString(), role?.ToString(),
-        s.CommentsEnabled, s.AgingDays, s.AgingAudience.ToString(), s.RecycleDays, s.CreatedAt, s.ReviewMonths);
+        s.CommentsEnabled, s.AgingDays, s.AgingAudience.ToString(), s.RecycleDays, s.CreatedAt, s.ReviewMonths, s.RatingsEnabled);
 
     internal static readonly int[] ReviewChoices = [0, 1, 3, 6, 12, 24, 36];
 }

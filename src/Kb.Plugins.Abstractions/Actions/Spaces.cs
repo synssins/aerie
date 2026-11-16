@@ -35,6 +35,7 @@ public sealed record UpdateSpace : IAction<SpaceDto>
     public bool? IsSensitive { get; init; }
     public SpaceVisibility? Visibility { get; init; }
     public bool? CommentsEnabled { get; init; }
+    public bool? RatingsEnabled { get; init; }
     public int? AgingDays { get; init; }
     public AgingAudience? AgingAudience { get; init; }
     public int? RecycleDays { get; init; }
@@ -52,6 +53,7 @@ public sealed record UpdateSpaceAdmin : IAction<SpaceDto>
     public bool? IsSensitive { get; init; }
     public SpaceVisibility? Visibility { get; init; }
     public bool? CommentsEnabled { get; init; }
+    public bool? RatingsEnabled { get; init; }
     public int? AgingDays { get; init; }
     public AgingAudience? AgingAudience { get; init; }
     public int? RecycleDays { get; init; }
@@ -111,7 +113,7 @@ public sealed record DeletedSpaceDto(Guid Id, string Key, string Name, bool IsSe
 public sealed record ListAllSpaces : IAction<IReadOnlyList<SpaceDto>>;
 
 public sealed record SpaceDto(Guid Id, string Key, string Name, string? Description, bool IsSensitive, string Visibility, string? MyRole,
-    bool CommentsEnabled, int AgingDays, string AgingAudience, int? RecycleDays, DateTimeOffset CreatedAt, int? ReviewMonths = null);
+    bool CommentsEnabled, int AgingDays, string AgingAudience, int? RecycleDays, DateTimeOffset CreatedAt, int? ReviewMonths = null, bool RatingsEnabled = true);
 /// <summary>Name: the person's display name or the group's name, for showing the row.</summary>
 /// <summary>Role: the level the row's role reaches (its strongest built-in role held in full). RoleId and RoleName: the role itself.</summary>
 public sealed record RoleAssignmentDto(Guid Id, PrincipalType PrincipalType, string PrincipalId, SpaceRole Role, string? Name = null, Guid RoleId = default, string? RoleName = null);

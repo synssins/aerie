@@ -257,6 +257,43 @@ Write. `UpdateBrand`, answers `Unit`.
 |---|---|---|
 | ProductName | `string` | required |
 
+## comment.create
+
+Write. `CreateComment`, answers `CommentDto` ([CommentDto](#commentdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+| Text | `string?` |  |
+| ParentId | `Guid?` |  |
+
+## comment.delete
+
+Write. `DeleteComment`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| CommentId | `Guid` | required |
+
+## comment.edit
+
+Write. `EditComment`, answers `CommentDto` ([CommentDto](#commentdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| CommentId | `Guid` | required |
+| Text | `string?` |  |
+
+## comment.list
+
+Read. `ListComments`, answers `CommentListDto` ([CommentListDto](#commentlistdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+| Limit | `int?` |  |
+| Offset | `int?` |  |
+
 ## dc.attachment.create
 
 Write. `DcCreateAttachments`, answers `JsonObject`. Core only.
@@ -706,6 +743,18 @@ Write. `SaveDraft`, answers `DraftSavedDto` ([DraftSavedDto](#draftsaveddto)).
 | ContentJson | `string` | required |
 | BaseVersion | `string` | required |
 | Tags | `IReadOnlyList<string>?` |  |
+
+## feedback.settings.read
+
+Read. `ReadFeedbackSettings`, answers `FeedbackSettingsDto` ([FeedbackSettingsDto](#feedbacksettingsdto)). Core only.
+
+## feedback.settings.save
+
+Write. `SaveFeedbackSettings`, answers `FeedbackSettingsDto` ([FeedbackSettingsDto](#feedbacksettingsdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Settings | `FeedbackSettingsDto` ([FeedbackSettingsDto](#feedbacksettingsdto)) | required |
 
 ## group.create
 
@@ -1272,6 +1321,24 @@ Read. `ExportPageTable`, answers `FileOut`.
 | Number | `int` | required |
 | Format | `string?` |  |
 
+## page.feedback.read
+
+Read. `ReadPageFeedback`, answers `PageFeedbackDto` ([PageFeedbackDto](#pagefeedbackdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+
+## page.feedback.save
+
+Write. `SavePageFeedback`, answers `PageFeedbackDto` ([PageFeedbackDto](#pagefeedbackdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+| CommentsEnabled | `bool?` |  |
+| RatingsEnabled | `bool?` |  |
+
 ## page.format
 
 Write. `FormatPage`, answers `FormatDto` ([FormatDto](#formatdto)). Core only.
@@ -1648,6 +1715,7 @@ Write. `UpdateSpace`, answers `SpaceDto` ([SpaceDto](#spacedto)).
 | IsSensitive | `bool?` |  |
 | Visibility | `SpaceVisibility?` ([SpaceVisibility](#spacevisibility)) |  |
 | CommentsEnabled | `bool?` |  |
+| RatingsEnabled | `bool?` |  |
 | AgingDays | `int?` |  |
 | AgingAudience | `AgingAudience?` ([AgingAudience](#agingaudience)) |  |
 | RecycleDays | `int?` |  |
@@ -1665,6 +1733,7 @@ Write. `UpdateSpaceAdmin`, answers `SpaceDto` ([SpaceDto](#spacedto)).
 | IsSensitive | `bool?` |  |
 | Visibility | `SpaceVisibility?` ([SpaceVisibility](#spacevisibility)) |  |
 | CommentsEnabled | `bool?` |  |
+| RatingsEnabled | `bool?` |  |
 | AgingDays | `int?` |  |
 | AgingAudience | `AgingAudience?` ([AgingAudience](#agingaudience)) |  |
 | RecycleDays | `int?` |  |
@@ -2667,6 +2736,136 @@ Enum: `Off`, `Admins`, `Everyone`.
 }
 ```
 
+### CommentDto
+
+| Field | Type |
+|---|---|
+| id | `Guid` |
+| pageId | `Guid` |
+| parentId | `Guid?` |
+| author | `OwnerRefDto?` ([OwnerRefDto](#ownerrefdto)) |
+| text | `string?` |
+| createdAt | `DateTimeOffset` |
+| editedAt | `DateTimeOffset?` |
+| state | `string` |
+| canEdit | `bool` |
+| canDelete | `bool` |
+| canModerate | `bool` |
+| replies | `IReadOnlyList<CommentDto>` ([CommentDto](#commentdto)) |
+
+```json
+{
+  "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "pageId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "parentId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "author": {
+    "type": "text",
+    "id": "text",
+    "name": "text"
+  },
+  "text": "text",
+  "createdAt": "2026-11-14T10:00:00\u002B00:00",
+  "editedAt": "2026-11-14T10:00:00\u002B00:00",
+  "state": "text",
+  "canEdit": false,
+  "canDelete": false,
+  "canModerate": false,
+  "replies": [
+    {
+      "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "pageId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "parentId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "author": {
+        "type": "text",
+        "id": "text",
+        "name": "text"
+      },
+      "text": "text",
+      "createdAt": "2026-11-14T10:00:00\u002B00:00",
+      "editedAt": "2026-11-14T10:00:00\u002B00:00",
+      "state": "text",
+      "canEdit": false,
+      "canDelete": false,
+      "canModerate": false,
+      "replies": [
+        null
+      ]
+    }
+  ]
+}
+```
+
+### CommentEditRequest
+
+| Field | Type |
+|---|---|
+| text | `string?` |
+
+```json
+{
+  "text": "text"
+}
+```
+
+### CommentListDto
+
+| Field | Type |
+|---|---|
+| enabled | `bool` |
+| canComment | `bool` |
+| canModerate | `bool` |
+| total | `int` |
+| limit | `int` |
+| offset | `int` |
+| comments | `IReadOnlyList<CommentDto>` ([CommentDto](#commentdto)) |
+
+```json
+{
+  "enabled": false,
+  "canComment": false,
+  "canModerate": false,
+  "total": 0,
+  "limit": 0,
+  "offset": 0,
+  "comments": [
+    {
+      "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "pageId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "parentId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "author": {
+        "type": "text",
+        "id": "text",
+        "name": "text"
+      },
+      "text": "text",
+      "createdAt": "2026-11-14T10:00:00\u002B00:00",
+      "editedAt": "2026-11-14T10:00:00\u002B00:00",
+      "state": "text",
+      "canEdit": false,
+      "canDelete": false,
+      "canModerate": false,
+      "replies": [
+        null
+      ]
+    }
+  ]
+}
+```
+
+### CommentRequest
+
+| Field | Type |
+|---|---|
+| text | `string?` |
+| parentId | `Guid?` |
+
+```json
+{
+  "text": "text",
+  "parentId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+}
+```
+
 ### CompatAuthSettingsDto
 
 | Field | Type |
@@ -3187,6 +3386,38 @@ Enum: `Same`, `Add`, `Del`.
 ```json
 {
   "reason": "text"
+}
+```
+
+### FeedbackLevelsDto
+
+| Field | Type |
+|---|---|
+| site | `bool` |
+| space | `bool` |
+| page | `bool` |
+| effective | `bool` |
+
+```json
+{
+  "site": false,
+  "space": false,
+  "page": false,
+  "effective": false
+}
+```
+
+### FeedbackSettingsDto
+
+| Field | Type |
+|---|---|
+| commentsEnabled | `bool` |
+| ratingsEnabled | `bool` |
+
+```json
+{
+  "commentsEnabled": false,
+  "ratingsEnabled": false
 }
 ```
 
@@ -4604,6 +4835,44 @@ Enum: `Same`, `Add`, `Del`.
 }
 ```
 
+### PageFeedbackDto
+
+| Field | Type |
+|---|---|
+| comments | `FeedbackLevelsDto` ([FeedbackLevelsDto](#feedbacklevelsdto)) |
+| ratings | `FeedbackLevelsDto` ([FeedbackLevelsDto](#feedbacklevelsdto)) |
+
+```json
+{
+  "comments": {
+    "site": false,
+    "space": false,
+    "page": false,
+    "effective": false
+  },
+  "ratings": {
+    "site": false,
+    "space": false,
+    "page": false,
+    "effective": false
+  }
+}
+```
+
+### PageFeedbackRequest
+
+| Field | Type |
+|---|---|
+| commentsEnabled | `bool?` |
+| ratingsEnabled | `bool?` |
+
+```json
+{
+  "commentsEnabled": false,
+  "ratingsEnabled": false
+}
+```
+
 ### PageKind
 
 Enum: `Folder`, `Page`.
@@ -5390,6 +5659,7 @@ Enum: `User`, `Group`.
 | recycleDays | `int?` |
 | createdAt | `DateTimeOffset` |
 | reviewMonths | `int?` |
+| ratingsEnabled | `bool` |
 
 ```json
 {
@@ -5405,7 +5675,8 @@ Enum: `User`, `Group`.
   "agingAudience": "text",
   "recycleDays": 0,
   "createdAt": "2026-11-14T10:00:00\u002B00:00",
-  "reviewMonths": 0
+  "reviewMonths": 0,
+  "ratingsEnabled": false
 }
 ```
 
@@ -5837,6 +6108,7 @@ Enum: `Personal`, `Service`.
 | agingAudience | `AgingAudience?` ([AgingAudience](#agingaudience)) |
 | recycleDays | `int?` |
 | reviewMonths | `int?` |
+| ratingsEnabled | `bool?` |
 
 ```json
 {
@@ -5848,7 +6120,8 @@ Enum: `Personal`, `Service`.
   "agingDays": 0,
   "agingAudience": "Everyone",
   "recycleDays": 0,
-  "reviewMonths": 0
+  "reviewMonths": 0,
+  "ratingsEnabled": false
 }
 ```
 

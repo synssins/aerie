@@ -255,7 +255,7 @@ public sealed class ApiTokenTests : IAsyncLifetime
             "GET /api/v1/pages/{id:guid}", "GET /api/v1/pages/{id:guid}/diff", "GET /api/v1/pages/{id:guid}/markdown", "GET /api/v1/pages/{id:guid}/versions",
             "GET /api/v1/pages/{id:guid}/versions/{version}", "GET /api/v1/pages/{id:guid}/export", "GET /api/v1/pages/{id:guid}/export/code/{n:int}",
             "GET /api/v1/pages/{id:guid}/export/table/{n:int}", "GET /api/v1/images/{id:guid}", "GET /api/v1/attachments/{id:guid}",
-            "GET /api/v1/brand", "GET /api/v1/brand/logo/{variant}",
+            "GET /api/v1/brand", "GET /api/v1/brand/logo/{variant}", "GET /api/v1/pages/{id:guid}/comments",
             "POST /api/v1/spaces/{id:guid}/pages", "PUT /api/v1/pages/{id:guid}", "POST /api/v1/pages/{id:guid}/move", "DELETE /api/v1/pages/{id:guid}",
             "POST /api/v1/pages/{id:guid}/versions/{version}/restore", "POST /api/v1/pages/{id:guid}/attachments", "DELETE /api/v1/attachments/{id:guid}",
             "POST /api/v1/spaces/{id:guid}/images", "POST /api/v1/spaces/{id:guid}/images/import",

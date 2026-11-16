@@ -16,6 +16,8 @@ import { useSlot, type ActionItem } from "./kit/slots";
 import { useDialogs } from "./Dialogs";
 import { TagInput } from "./TagInput";
 import { MenuButton, type MenuItem } from "./ui";
+import { PageFeedbackSwitches } from "./Feedback";
+import { PageComments } from "./Comments";
 
 export const LANGUAGES = ["plaintext", "powershell", "bash", "shell", "sql", "json", "yaml", "xml", "ini", "csharp", "javascript", "typescript", "python", "go", "java", "css", "markdown", "diff"];
 
@@ -435,6 +437,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
             </table>
           </section>
         )}
+        {!editing && !guest && !isNew && page.kind === "Page" && <PageComments pageId={page.id} />}
       </div>
       {!editing && headings.length > 0 && (
         <aside className="toc" aria-label="On this page">
@@ -482,6 +485,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
       <div>{[spaceName, ...page.path.map((c) => c.title)].join(" / ")}</div>
       <h3>Your access</h3>
       <div>{role ?? "None"}</div>
+      {!isNew && !guest && page.kind === "Page" && (role === "Supervisor" || role === "Owner") && <PageFeedbackSwitches pageId={page.id} />}
       {!isNew && <SlotSections slot="page.panel" ctx={{ page }} />}
     </aside>
     </>

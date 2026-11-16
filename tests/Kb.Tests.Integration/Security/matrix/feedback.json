@@ -1,0 +1,34 @@
+[
+  {
+    "action": "feedback.settings.read",
+    "method": "GET",
+    "path": "/api/v1/admin/feedback",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "feedback.settings.save",
+    "method": "PUT",
+    "path": "/api/v1/admin/feedback",
+    "body": {"commentsEnabled": true, "ratingsEnabled": true},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "page.feedback.read",
+    "method": "GET",
+    "path": "/api/v1/pages/{page}/feedback",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404},
+    "note": "Everyone who can read the page, signed in; guests get 401 (comments.md, question Q-0027)."
+  },
+  {
+    "action": "page.feedback.save",
+    "method": "PUT",
+    "path": "/api/v1/pages/{page}/feedback",
+    "body": {"commentsEnabled": true},
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 403, "supervisor": 200, "owner": 200, "admin": 403},
+    "sensitive": {"admin": 404},
+    "note": "Supervisors and Owners of the space; an Admin without a held role there is not enough (comments.md, question Q-0024)."
+  }
+]

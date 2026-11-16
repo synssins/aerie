@@ -42,6 +42,9 @@ public sealed class Page
     public string? OwnerId { get; set; }
     /// <summary>How often the page is to be reviewed, in months; null for none.</summary>
     public int? ReviewMonths { get; set; }
+    /// <summary>The page's switches for comments and ratings, set by the space's Supervisors and Owners (comments.md, Switching comments on and off).</summary>
+    public bool CommentsEnabled { get; set; } = true;
+    public bool RatingsEnabled { get; set; } = true;
 
     public string Version => $"{Major}.{Minor}";
 }

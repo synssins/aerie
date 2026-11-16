@@ -45,9 +45,19 @@ public static class HttpOutcome
             { Status: 401 } => Results.Unauthorized(),
             { Status: 404 } => Results.NotFound(),
             { Status: 409, Body: { } body } => Results.Conflict(body),
+            { Status: 429, Body: RetryAfter wait } => new RetryAfterResult(Results.Problem(detail: problem.Message, statusCode: 429), wait.Seconds),
             { Message: { } message } => Results.Problem(detail: message, statusCode: problem.Status),
             _ => Results.StatusCode(problem.Status),
         };
+    }
+
+    private sealed class RetryAfterResult(IResult inner, int seconds) : IResult
+    {
+        public Task ExecuteAsync(HttpContext httpContext)
+        {
+            httpContext.Response.Headers.RetryAfter = Math.Max(1, seconds).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return inner.ExecuteAsync(httpContext);
+        }
     }
 
     /// <summary>Streams a file with the headers the action gave it. A file name makes it a download.</summary>
