@@ -17,7 +17,20 @@ Deleted pages and spaces go to a recycle bin. Sign-ins, permission changes, dele
 
 Most extra features are meant to be plugins. A plugin brings its own code, tables and screens, and an Admin installs one by uploading it.
 
-Not built yet: sign-in through Entra ID, AD/LDAP or passkeys, AD and Entra groups, comments and ratings, and Azure Blob storage.
+Not built yet: sign-in through Entra ID, AD/LDAP or passkeys, AD and Entra groups, comments and ratings, and Azure Blob storage. What is planned is in [ROADMAP.md](ROADMAP.md).
+
+## Works with existing integrations
+
+Aerie answers a Data Center compatible REST API next to its own, so scripts and tools written for that API keep working when you point them at an Aerie site. Nothing has to be installed or turned on.
+
+- **The API** is under `/rest/api`: pages and their versions, attachments, labels, content properties, spaces, users, CQL search and long-running tasks. Bodies are read and written in the storage format. A caller sees only what its account may see in Aerie, and each space keeps its own access rules.
+- **HTTP Basic** takes a username with a password or with an API token. Accounts that sign in with codes, which includes every Admin, must use a token. Failed attempts count against the same lockout limits as the sign-in page.
+- **Personal access tokens** are Aerie's own API tokens, sent as `Authorization: Bearer`. Their space and read-only limits still apply.
+- **OAuth 2.0** is built in, and Aerie is the authorization server at `/rest/oauth2/latest`. It uses the authorization code flow with PKCE. Refresh tokens rotate, and presenting a used one again revokes every token issued under that grant. An Admin registers each application under Administration › Applications, where the client secret is shown once. A user approves each application on a consent screen and can cut it off again under Connected applications in their profile. Clients can find the endpoints at `/.well-known/oauth-authorization-server`.
+
+OAuth access tokens work on the compatible API only, not on Aerie's own `/api/v1`. OAuth needs HTTPS.
+
+The exact behaviour is in [contracts/](contracts/README.md): `datacenter/openapi.yaml` lists every operation, and `behaviour/identity.md` covers sign-in and tokens. Every published image is run against clients generated in three languages by [aerie-compat-lab](https://github.com/synssins/aerie-compat-lab). The Cloud compatible APIs are not built yet.
 
 ## Running it in Docker
 
