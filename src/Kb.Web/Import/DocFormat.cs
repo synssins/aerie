@@ -150,7 +150,7 @@ public static partial class DocFormat
                 continue;
             }
             Close();
-            if (u.Kind == "text" && u.Node["type"]?.GetValue<string>() == "paragraph" && role is "paragraph" or "keep" && splits?.GetValueOrDefault(u.N) is { Count: > 0 } at)
+            if (u.Kind == "text" && u.Node["type"]?.GetValue<string>() == "paragraph" && role == "paragraph" && splits?.GetValueOrDefault(u.N) is { Count: > 0 } at)
             {
                 foreach (var piece in Cut(content, at)) output.Add(Node("paragraph", piece));
                 continue;
@@ -232,8 +232,9 @@ public static partial class DocFormat
     [GeneratedRegex(@"\d+")]
     private static partial Regex Digits();
 
-    // Written like an identifier, host name, path, address or version: never corrected.
-    [GeneratedRegex(@"[-_./\\@:=#<>`\d]|\p{Ll}\p{Lu}")]
+    // Written like an identifier, host name, path or version (a hyphen, underscore, dot, slash or digit, or a capital after a
+    // word's first letter): never corrected.
+    [GeneratedRegex(@"[-_./\\\d]|\S\p{Lu}")]
     private static partial Regex IdentifierLike();
 
     /// <summary>The fixes made in the text nodes under a node (or in an inline content array): not in code, not inside quotes.</summary>

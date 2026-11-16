@@ -211,4 +211,24 @@ public sealed class DocFormatTests
         var (doc, _) = DocFormat.Restructure(page, NoRoles, null, null, new Dictionary<int, IReadOnlyList<DocFormat.Fix>> { [0] = [new(from, to)] });
         Assert.Equal(Plain(page), Plain(doc));
     }
+
+    [Fact]
+    public void ASplit_OnAPartWhoseRoleIsNotParagraph_IsIgnored()
+    {
+        var splits = new Dictionary<int, IReadOnlyList<string>> { [0] = ["Owner:", "Last verified:"] };
+        foreach (var roles in new[] { NoRoles, new Dictionary<int, string> { [0] = "keep" }, new Dictionary<int, string> { [0] = "note" } })
+        {
+            var (doc, _) = DocFormat.Restructure(Metadata(), roles, null, splits);
+            Assert.Single(doc["content"]!.AsArray(), n => n!["type"]!.GetValue<string>() != "heading");
+        }
+    }
+
+    [Fact]
+    public void AWordWithACapitalAfterItsFirstLetter_IsWrittenLikeAnIdentifier_AndStays()
+    {
+        var page = new JsonObject { ["type"] = "doc", ["content"] = new JsonArray(P(T("Check MOnitoring and AKs and Monitorng."))) };
+        var fixes = new Dictionary<int, IReadOnlyList<DocFormat.Fix>> { [0] = [new("MOnitoring", "Monitoring"), new("AKs", "AKS"), new("Monitorng", "Monitoring")] };
+        var (doc, _) = DocFormat.Restructure(page, NoRoles, null, null, fixes);
+        Assert.Equal("Check MOnitoring and AKs and Monitoring.", Plain(doc).Trim());
+    }
 }
