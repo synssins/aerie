@@ -9,7 +9,8 @@ import { useDialogs } from "./Dialogs";
 import { CodeSettingsPanel } from "./admin/CodeSettings";
 import { ApplicationsPanel, CompatSettingsPanel } from "./admin/Applications";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { ArrowLeft, ChevronRight, Ellipsis, FolderTree, HardDrive, House, Lock, Palette, Paperclip, Plug, Plus, Search, Shield, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronRight, Ellipsis, FolderTree, HardDrive, House, Lock, MessageSquare, Palette, Paperclip, Plug, Plus, Search, Shield, Trash2 } from "lucide-react";
+import { FeedbackSettingsPanel } from "./Feedback";
 import { BinTable } from "./Views";
 import { MenuButton } from "./ui";
 import { BinPageView, BinTree } from "./Bin";
@@ -25,8 +26,8 @@ import { UserTools } from "./admin/UserTools";
 import { TokensPanel } from "./Tokens";
 import { api, ApiError, fmtSize, type AdminUser, type Brand, type PluginInfo, type Space, type TreeNode } from "./api";
 
-export type AdminSection = "spaces" | "users" | "groups" | "roles" | "inventory" | "signin" | "branding" | "search" | "ai" | "uploads" | "storage" | "tokens" | "applications" | "logs" | "bin" | "plugins" | "audit";
-export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "groups", "roles", "inventory", "signin", "branding", "search", "ai", "uploads", "storage", "tokens", "applications", "logs", "bin", "plugins", "audit"];
+export type AdminSection = "spaces" | "users" | "groups" | "roles" | "inventory" | "signin" | "branding" | "search" | "ai" | "feedback" | "uploads" | "storage" | "tokens" | "applications" | "logs" | "bin" | "plugins" | "audit";
+export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "groups", "roles", "inventory", "signin", "branding", "search", "ai", "feedback", "uploads", "storage", "tokens", "applications", "logs", "bin", "plugins", "audit"];
 type UploadSettings = { attachmentMb: number; serverLimitBytes: number | null };
 
 type Picked = { kind: "user"; item: AdminUser } | null;
@@ -94,7 +95,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
     setVerify(r.valid ? "Chain intact." : `Chain broken at entry ${r.firstBrokenSequence}.`);
   }
 
-  const title = space?.name ?? ({ spaces: "Spaces", users: "Users", groups: "Groups", roles: "Roles", inventory: "Inventory access", signin: "Sign-in", branding: "Branding", search: "Search", ai: "AI", uploads: "Uploads", storage: "Document storage", tokens: "API tokens", applications: "Applications", logs: "Log shipping", bin: "Recycle bin", plugins: "Plugins", audit: "Audit log" } as const)[section];
+  const title = space?.name ?? ({ spaces: "Spaces", users: "Users", groups: "Groups", roles: "Roles", inventory: "Inventory access", signin: "Sign-in", branding: "Branding", search: "Search", ai: "AI", feedback: "Comments and ratings", uploads: "Uploads", storage: "Document storage", tokens: "API tokens", applications: "Applications", logs: "Log shipping", bin: "Recycle bin", plugins: "Plugins", audit: "Audit log" } as const)[section];
 
   async function setAnnouncer(u: AdminUser, enabled: boolean) {
     await api.put(`/admin/users/${u.id}/announcer`, { enabled });
@@ -176,6 +177,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
             </div>
             <Link href={to.admin("ai")} className={`node ${section === "ai" ? "cur" : ""}`} onNav={() => onNavigate("ai")}><Sparkles className="ic" aria-hidden /><span className="grow">AI</span></Link>
             <Link href={to.admin("search")} className={`node ${section === "search" ? "cur" : ""}`} onNav={() => onNavigate("search")}><Search className="ic" aria-hidden /><span className="grow">Search</span></Link>
+            <Link href={to.admin("feedback")} className={`node ${section === "feedback" ? "cur" : ""}`} onNav={() => onNavigate("feedback")}><MessageSquare className="ic" aria-hidden /><span className="grow">Comments and ratings</span></Link>
             <Link href={to.admin("uploads")} className={`node ${section === "uploads" ? "cur" : ""}`} onNav={() => onNavigate("uploads")}><Paperclip className="ic" aria-hidden /><span className="grow">Uploads</span></Link>
             <Link href={to.admin("plugins")} className={`node ${section === "plugins" ? "cur" : ""}`} onNav={() => onNavigate("plugins")}><Plug className="ic" aria-hidden /><span className="grow">Plugins</span></Link>
           </>
@@ -236,6 +238,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
               {section === "branding" && isAdmin && <BrandingPanel brand={brand} onChanged={onBrandChanged} />}
               {section === "search" && isAdmin && <SearchPanel />}
               {section === "ai" && isAdmin && <AiPanel />}
+              {section === "feedback" && isAdmin && <FeedbackSettingsPanel />}
               {section === "signin" && isAdmin && <><CodeSettingsPanel /><CompatSettingsPanel /></>}
               {section === "tokens" && isAdmin && <TokensPanel admin spaces={allSpaces} />}
               {section === "applications" && isAdmin && <ApplicationsPanel />}
@@ -374,7 +377,7 @@ export function SpaceEditor({ space, isAdmin, area, onBack, onSaved, onHome, onD
     const body = tab === "details"
       ? { description: form.description ?? "", ...(isAdmin ? { name: form.name } : {}) }
       : {
-          commentsEnabled: form.commentsEnabled, agingDays: form.agingDays, agingAudience: form.agingAudience,
+          commentsEnabled: form.commentsEnabled, ratingsEnabled: form.ratingsEnabled ?? true, agingDays: form.agingDays, agingAudience: form.agingAudience,
           recycleDays: form.recycleDays ?? undefined, reviewMonths: form.reviewMonths ?? 0, ...(isAdmin ? { isSensitive: form.isSensitive, visibility: form.visibility } : {}),
         };
     try {
@@ -426,6 +429,8 @@ export function SpaceEditor({ space, isAdmin, area, onBack, onSaved, onHome, onD
               <>
                 <span className="lbl">Comments</span>
                 <button type="button" role="switch" aria-checked={form.commentsEnabled} aria-label="Comments" className={`sw ${form.commentsEnabled ? "on" : ""}`} onClick={() => set("commentsEnabled", !form.commentsEnabled)} />
+                <span className="lbl">Ratings</span>
+                <button type="button" role="switch" aria-checked={form.ratingsEnabled ?? true} aria-label="Ratings" className={`sw ${form.ratingsEnabled ?? true ? "on" : ""}`} onClick={() => set("ratingsEnabled", !(form.ratingsEnabled ?? true))} />
                 <label className="lbl" htmlFor="sp-aging">Aging limit</label>
                 <span className="days"><input id="sp-aging" type="number" min={1} max={3650} value={form.agingDays} onChange={(e) => set("agingDays", Number(e.target.value))} />days</span>
                 <span className="lbl">Aging notice shown to</span>

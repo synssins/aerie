@@ -50,7 +50,7 @@ export type Brand = { productName: string; logoLightUrl: string | null; logoDark
   theme?: { day: Record<string, string>; night: Record<string, string> } | null };
 export type Space = {
   id: string; key: string; name: string; description: string | null; isSensitive: boolean; visibility: "Private" | "SignedIn" | "Anyone"; myRole: string | null;
-  commentsEnabled: boolean; agingDays: number; agingAudience: "Everyone" | "Supervisors"; recycleDays: number | null; createdAt: string; reviewMonths?: number | null;
+  commentsEnabled: boolean; ratingsEnabled?: boolean; agingDays: number; agingAudience: "Everyone" | "Supervisors"; recycleDays: number | null; createdAt: string; reviewMonths?: number | null;
 };
 export type NotifyPref = { inApp: boolean; email: boolean };
 export type UserSettings = { theme: "light" | "dark" | "system"; width: "boxed" | "full"; startPage: string; codeLanguage: string; notify: Record<string, NotifyPref> };

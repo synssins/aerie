@@ -174,6 +174,50 @@ namespace Kb.Data.Sqlite.Migrations
                     b.ToTable("Attachments");
                 });
 
+            modelBuilder.Entity("Kb.Core.Content.Comment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AuthorId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("DeletedByAuthor")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("EditedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("ModeratedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("ModeratedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("PageId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ParentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("State")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Text")
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PageId", "ParentId", "CreatedAt");
+
+                    b.ToTable("Comments");
+                });
+
             modelBuilder.Entity("Kb.Core.Content.Page", b =>
                 {
                     b.Property<Guid>("Id")
@@ -189,6 +233,9 @@ namespace Kb.Data.Sqlite.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("BinHidden")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("CommentsEnabled")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("ContentJson")
@@ -227,6 +274,9 @@ namespace Kb.Data.Sqlite.Migrations
 
                     b.Property<Guid?>("ParentId")
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("RatingsEnabled")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int?>("ReviewMonths")
                         .HasColumnType("INTEGER");
@@ -1767,6 +1817,9 @@ namespace Kb.Data.Sqlite.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("RatingsEnabled")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int?>("RecycleDays")
                         .HasColumnType("INTEGER");
 
@@ -2129,6 +2182,15 @@ namespace Kb.Data.Sqlite.Migrations
                     b.HasKey("UserId", "LoginProvider", "Name");
 
                     b.ToTable("AspNetUserTokens", (string)null);
+                });
+
+            modelBuilder.Entity("Kb.Core.Content.Comment", b =>
+                {
+                    b.HasOne("Kb.Core.Content.Page", null)
+                        .WithMany()
+                        .HasForeignKey("PageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Kb.Core.Identity.OAuthAccessToken", b =>

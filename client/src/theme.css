@@ -387,6 +387,16 @@ textarea { resize: both; max-width: 100%; }
 .history td { padding: 3px 18px 3px 0; }
 .history td:first-child { color: var(--ink); font-weight: 500; }
 
+/* Comments under the page: plain text, line breaks kept */
+.comments { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 4px; }
+.comment-thread { margin: 14px 0; }
+.comment-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.comment-text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0; }
+.comment.hidden, .comment.deleted { opacity: .7; }
+.comment-tools { display: flex; gap: 12px; font-size: 13px; }
+.replies { margin-left: 22px; padding-left: 12px; border-left: 2px solid var(--line); }
+.comment-form textarea { width: 100%; max-width: 100%; }
+
 /* Outline links */
 .toc-link { display: block; text-align: left; color: var(--ink2); padding: 3px 0; font-size: 13px; }
 .toc-link.l3 { padding-left: 12px; }

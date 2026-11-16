@@ -209,6 +209,16 @@ public sealed class MatrixTests : IAsyncLifetime
                 Assert.Equal(HttpStatusCode.Created, made.StatusCode);
                 return (await made.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("client").GetProperty("id").GetGuid().ToString();
             }
+            case "comment":
+            {
+                // On a fresh page, written by a user who is none of the seven callers.
+                var c = new Kb.Core.Content.Comment
+                {
+                    PageId = await PageAsync(space), AuthorId = await NewUserAsync("commenter" + Guid.NewGuid().ToString("N")[..8]), Text = "Matrix comment", CreatedAt = DateTimeOffset.UtcNow,
+                };
+                await _f.WithDbAsync(async db => { db.Comments.Add(c); await db.SaveChangesAsync(Ct); });
+                return c.Id.ToString();
+            }
             case "oauthGrant":
             {
                 // The consent of a user who is none of the seven callers.

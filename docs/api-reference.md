@@ -40,6 +40,8 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | DELETE | `/api/v1/admin/brand/logo/{variant}` | `brand.logo.remove` |  | `Unit` | Yes | Needed | No |
 | PUT | `/api/v1/admin/brand/logo/{variant}` | `brand.logo.set` |  | `Unit` | Yes | Needed | No |
 | PUT | `/api/v1/admin/brand/theme` | `brand.theme.save` | `ThemeDto` ([ThemeDto](plugins/action-reference.md#themedto)) | `ThemeDto` ([ThemeDto](plugins/action-reference.md#themedto)) | Yes | Needed | No |
+| GET | `/api/v1/admin/feedback` | `feedback.settings.read` |  | `FeedbackSettingsDto` ([FeedbackSettingsDto](plugins/action-reference.md#feedbacksettingsdto)) | No | Needed | No |
+| PUT | `/api/v1/admin/feedback` | `feedback.settings.save` | `FeedbackSettingsDto` ([FeedbackSettingsDto](plugins/action-reference.md#feedbacksettingsdto)) | `FeedbackSettingsDto` ([FeedbackSettingsDto](plugins/action-reference.md#feedbacksettingsdto)) | Yes | Needed | No |
 | GET | `/api/v1/admin/groups` | `group.list` |  | `IReadOnlyList<GroupDto>` ([GroupDto](plugins/action-reference.md#groupdto)) | No | Needed | No |
 | POST | `/api/v1/admin/groups` | `group.create` | `GroupNameRequest` ([GroupNameRequest](plugins/action-reference.md#groupnamerequest)) | `GroupDto` ([GroupDto](plugins/action-reference.md#groupdto)) | Yes | Needed | No |
 | DELETE | `/api/v1/admin/groups/{id:guid}` | `group.delete` |  | `Unit` | Yes | Needed | No |
@@ -120,6 +122,8 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | GET | `/api/v1/bin/pages/{id:guid}` | `bin.page.read` |  | `BinPageDto` ([BinPageDto](plugins/action-reference.md#binpagedto)) | No | Needed | No |
 | GET | `/api/v1/brand` | `brand.read` |  | `BrandDto` ([BrandDto](plugins/action-reference.md#branddto)) | No | Not needed | Read |
 | GET | `/api/v1/brand/logo/{variant}` | `brand.logo.read` |  | `FileOut` | No | Not needed | Read |
+| DELETE | `/api/v1/comments/{id:guid}` | `comment.delete` |  | `Unit` | Yes | Needed | No |
+| PUT | `/api/v1/comments/{id:guid}` | `comment.edit` | `CommentEditRequest` ([CommentEditRequest](plugins/action-reference.md#commenteditrequest)) | `CommentDto` ([CommentDto](plugins/action-reference.md#commentdto)) | Yes | Needed | No |
 | GET | `/api/v1/home` | `home.read` |  | `HomeDto` ([HomeDto](plugins/action-reference.md#homedto)) | No | Needed | Read |
 | GET | `/api/v1/images/{id:guid}` | `image.read` |  | `FileOut` | No | Not needed | Read |
 | GET | `/api/v1/imports/` | `import.list` |  | `ImportListDto` ([ImportListDto](plugins/action-reference.md#importlistdto)) | No | Needed | No |
@@ -162,6 +166,8 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | PUT | `/api/v1/pages/{id:guid}` | `page.save` | `SavePageRequest` ([SavePageRequest](plugins/action-reference.md#savepagerequest)) | `PageDto` ([PageDto](plugins/action-reference.md#pagedto)) | Yes | Needed | Write |
 | POST | `/api/v1/pages/{id:guid}/ai-review` | `page.ai.review` |  | `PageDto` ([PageDto](plugins/action-reference.md#pagedto)) | Yes | Needed | No |
 | POST | `/api/v1/pages/{id:guid}/attachments` | `attachment.add` |  | `AttachmentDto` ([AttachmentDto](plugins/action-reference.md#attachmentdto)) | Yes | Needed | Write |
+| GET | `/api/v1/pages/{id:guid}/comments` | `comment.list` |  | `CommentListDto` ([CommentListDto](plugins/action-reference.md#commentlistdto)) | No | Needed | Read |
+| POST | `/api/v1/pages/{id:guid}/comments` | `comment.create` | `CommentRequest` ([CommentRequest](plugins/action-reference.md#commentrequest)) | `CommentDto` ([CommentDto](plugins/action-reference.md#commentdto)) | Yes | Needed | No |
 | PUT | `/api/v1/pages/{id:guid}/details` | `page.details.save` | `PageDetailsRequest` ([PageDetailsRequest](plugins/action-reference.md#pagedetailsrequest)) | `PageDetailsDto` ([PageDetailsDto](plugins/action-reference.md#pagedetailsdto)) | Yes | Needed | No |
 | GET | `/api/v1/pages/{id:guid}/diff` | `page.diff` |  | `DiffDto` ([DiffDto](plugins/action-reference.md#diffdto)) | No | Needed | Read |
 | DELETE | `/api/v1/pages/{id:guid}/draft` | `draft.discard` |  | `Unit` | Yes | Needed | No |
@@ -170,6 +176,8 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | GET | `/api/v1/pages/{id:guid}/export` | `page.export` |  | `FileOut` | No | Needed | Read |
 | GET | `/api/v1/pages/{id:guid}/export/code/{n:int}` | `page.export.code` |  | `FileOut` | No | Needed | Read |
 | GET | `/api/v1/pages/{id:guid}/export/table/{n:int}` | `page.export.table` |  | `FileOut` | No | Needed | Read |
+| GET | `/api/v1/pages/{id:guid}/feedback` | `page.feedback.read` |  | `PageFeedbackDto` ([PageFeedbackDto](plugins/action-reference.md#pagefeedbackdto)) | No | Needed | No |
+| PUT | `/api/v1/pages/{id:guid}/feedback` | `page.feedback.save` | `PageFeedbackRequest` ([PageFeedbackRequest](plugins/action-reference.md#pagefeedbackrequest)) | `PageFeedbackDto` ([PageFeedbackDto](plugins/action-reference.md#pagefeedbackdto)) | Yes | Needed | No |
 | POST | `/api/v1/pages/{id:guid}/format` | `page.format` | `FormatRequest` ([FormatRequest](plugins/action-reference.md#formatrequest)) | `FormatDto` ([FormatDto](plugins/action-reference.md#formatdto)) | Yes | Needed | No |
 | GET | `/api/v1/pages/{id:guid}/markdown` | `page.markdown` |  | `PageMarkdownDto` ([PageMarkdownDto](plugins/action-reference.md#pagemarkdowndto)) | No | Needed | Read |
 | POST | `/api/v1/pages/{id:guid}/move` | `page.move` | `MoveRequest` ([MoveRequest](plugins/action-reference.md#moverequest)) | `PageDto` ([PageDto](plugins/action-reference.md#pagedto)) | Yes | Needed | Write |
