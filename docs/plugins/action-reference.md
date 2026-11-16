@@ -284,6 +284,14 @@ Write. `EditComment`, answers `CommentDto` ([CommentDto](#commentdto)). Core onl
 | CommentId | `Guid` | required |
 | Text | `string?` |  |
 
+## comment.hide
+
+Write. `HideComment`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| CommentId | `Guid` | required |
+
 ## comment.list
 
 Read. `ListComments`, answers `CommentListDto` ([CommentListDto](#commentlistdto)). Core only.
@@ -293,6 +301,14 @@ Read. `ListComments`, answers `CommentListDto` ([CommentListDto](#commentlistdto
 | PageId | `Guid` | required |
 | Limit | `int?` |  |
 | Offset | `int?` |  |
+
+## comment.restore
+
+Write. `RestoreComment`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| CommentId | `Guid` | required |
 
 ## dc.attachment.create
 

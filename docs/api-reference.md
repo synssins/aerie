@@ -124,6 +124,8 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | GET | `/api/v1/brand/logo/{variant}` | `brand.logo.read` |  | `FileOut` | No | Not needed | Read |
 | DELETE | `/api/v1/comments/{id:guid}` | `comment.delete` |  | `Unit` | Yes | Needed | No |
 | PUT | `/api/v1/comments/{id:guid}` | `comment.edit` | `CommentEditRequest` ([CommentEditRequest](plugins/action-reference.md#commenteditrequest)) | `CommentDto` ([CommentDto](plugins/action-reference.md#commentdto)) | Yes | Needed | No |
+| POST | `/api/v1/comments/{id:guid}/hide` | `comment.hide` |  | `Unit` | Yes | Needed | No |
+| POST | `/api/v1/comments/{id:guid}/restore` | `comment.restore` |  | `Unit` | Yes | Needed | No |
 | GET | `/api/v1/home` | `home.read` |  | `HomeDto` ([HomeDto](plugins/action-reference.md#homedto)) | No | Needed | Read |
 | GET | `/api/v1/images/{id:guid}` | `image.read` |  | `FileOut` | No | Not needed | Read |
 | GET | `/api/v1/imports/` | `import.list` |  | `ImportListDto` ([ImportListDto](plugins/action-reference.md#importlistdto)) | No | Needed | No |
