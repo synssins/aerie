@@ -104,8 +104,12 @@ public static class AuditActions
     public const string TokenRevoke = "token.revoke";
     public const string TokenUse = "token.use";
     public const string TokenRefused = "token.refused";
+    /// <summary>A token refused on the Data Center compatible surface: expired, revoked, its owner gone, or its scope (identity.md, Audit).</summary>
+    public const string TokenUseDenied = "token.use.denied";
     /// <summary>A request on the Data Center compatible surface signed in with HTTP Basic.</summary>
     public const string BasicUse = "auth.basic";
+    /// <summary>HTTP Basic refused on the compatible surface: bad password, codes on, password Basic off, locked out or rate limited. The reason is recorded.</summary>
+    public const string BasicRefused = "auth.basic.refused";
     public const string SettingsChange = "settings.change";
     public const string PluginEnable = "plugin.enable";
     public const string PluginDisable = "plugin.disable";

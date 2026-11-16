@@ -137,6 +137,18 @@ public static class DcRest
             return;
         }
         var res = http.Response;
+        // An Authorization header aerie cannot use is 401, never anonymous (identity.md, The callers aerie must tell apart).
+        if (http.Request.Headers.Authorization.Count > 0 && !HasBasic(http.Request) && !ApiTokenAuth.HasBearer(http.Request))
+        {
+            await Fail(401, "The Authorization header is not one aerie accepts.").ExecuteAsync(http);
+            return;
+        }
+        if (HasBasic(http.Request) && http.User.Identity?.IsAuthenticated != true && http.Items[BasicAuthHandler.LockedItem] is int locked)
+        {
+            res.Headers.RetryAfter = locked.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            await Fail(429, "This account is locked after too many failed sign-ins; try again later.").ExecuteAsync(http);
+            return;
+        }
         if (HasBasic(http.Request) && http.User.Identity?.IsAuthenticated != true)
         {
             // No Basic challenge: a browser on aerie's own pages never shows a password dialog (identity.md, Failed Basic attempts).
@@ -150,7 +162,7 @@ public static class DcRest
             await (HasRouteFor(http) ? Fail(405, "This resource does not take " + http.Request.Method + ".") : Fail(404, "No such resource.")).ExecuteAsync(http);
             return;
         }
-        if (!XsrfOk(http.Request))
+        if (!XsrfOk(http.Request) || (IsCookieCaller(http) && !IsSafe(http.Request.Method) && !HasXsrfHeader(http.Request)))
         {
             await Fail(403, "This request needs the X-Atlassian-Token header.").ExecuteAsync(http);
             return;
@@ -183,8 +195,19 @@ public static class DcRest
         if (!(HttpMethods.IsPost(request.Method) || HttpMethods.IsPut(request.Method) || HttpMethods.IsDelete(request.Method))) return true;
         var type = request.ContentType ?? "";
         if (!type.StartsWith("multipart/form-data", StringComparison.OrdinalIgnoreCase) && !type.StartsWith("application/x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase)) return true;
-        return request.Headers["X-Atlassian-Token"].Any(v => string.Equals(v, "no-check", StringComparison.OrdinalIgnoreCase) || string.Equals(v, "nocheck", StringComparison.OrdinalIgnoreCase));
+        return HasXsrfHeader(request);
     }
+
+    private static bool HasXsrfHeader(HttpRequest request) =>
+        request.Headers["X-Atlassian-Token"].Any(v => string.Equals(v, "no-check", StringComparison.OrdinalIgnoreCase) || string.Equals(v, "nocheck", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsSafe(string method) => HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method);
+
+    /// <summary>
+    /// Signed in by aerie's session cookie, which the browser sends on its own: every write then needs the XSRF header, whatever the body
+    /// (identity.md, Sessions and aerie's own API; stricter than the form-only rule for other callers).
+    /// </summary>
+    private static bool IsCookieCaller(HttpContext http) => http.User.Identity?.IsAuthenticated == true && http.Request.Headers.Authorization.Count == 0;
 }
 
 /// <summary>Where the site is, for the links in an answer.</summary>

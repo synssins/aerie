@@ -295,7 +295,7 @@ public sealed class DcLabFindingsTests : IAsyncLifetime
         await f.WithDbAsync(async db =>
         {
             Assert.Equal(3, (await db.Users.SingleAsync(u => u.UserName == "ravi", Ct)).AccessFailedCount);
-            Assert.Equal(3, await db.AuditEntries.CountAsync(a => a.Action == Kb.Core.Audit.AuditActions.SignInFailed && a.DataJson.Contains("basic"), Ct));
+            Assert.Equal(3, await db.AuditEntries.CountAsync(a => a.Action == Kb.Core.Audit.AuditActions.BasicRefused && a.DataJson.Contains("wrong password"), Ct));
         });
         await (await Basic(f, "ravi").GetAsync("/rest/api/user/current", Ct)).ErrorAsync(HttpStatusCode.TooManyRequests);
         // No more broadly: calls without Basic from the same address, and other sign-ins, are not held back.

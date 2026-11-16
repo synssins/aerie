@@ -22,6 +22,9 @@ public sealed class BasicAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     public const string SchemeName = "KbBasic";
+    /// <summary>Set when the account is locked: the Retry-After seconds GuardAsync answers 429 with.</summary>
+    internal const string LockedItem = "kb.basic.locked";
+    private static string? _dummyHash;
 
     /// <summary>Every refused attempt counts against the caller's address (BasicThrottle).</summary>
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -46,12 +49,20 @@ public sealed class BasicAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions
             return await ApiTokenAuth.AuthenticateAsync(Context, db, Context.RequestServices.GetRequiredService<TimeProvider>(), password, SchemeName, ownerName: name);
 
         var user = await users.FindByNameAsync(name);
-        // Same refusal for every reason, as at sign-in; each is audited so a SIEM sees password guessing.
+        // Same refusal for every reason, as at sign-in; each is audited so a SIEM sees password guessing. Every refusal before the password
+        // check still hashes the password once, so the time taken does not say whether the account exists (identity-plan.md, slice 1).
         if (user is null || user.DeactivatedAt is not null)
-            return await RefuseAsync(user, name, user is null ? "unknown user" : "deactivated", ip);
-        if (!user.IsBreakGlass && await db.GetAsync(RuntimeSettingKeys.LocalSignInDisabled, Context.RequestAborted) == "true") return await RefuseAsync(user, name, "local sign-in disabled", ip);
+            return await RefuseAsync(user, name, user is null ? "unknown user" : "deactivated", ip, password);
+        if (await db.GetAsync(RuntimeSettingKeys.CompatBasicPasswordEnabled, Context.RequestAborted) == "false") return await RefuseAsync(user, name, "password Basic turned off", ip, password);
+        if (!user.IsBreakGlass && await db.GetAsync(RuntimeSettingKeys.LocalSignInDisabled, Context.RequestAborted) == "true") return await RefuseAsync(user, name, "local sign-in disabled", ip, password);
+        // A locked account gets 429 until the lock ends, and its password is not looked at (identity.md, Failed Basic attempts).
+        if (await users.IsLockedOutAsync(user) && await users.GetLockoutEndDateAsync(user) is { } end)
+        {
+            Context.Items[LockedItem] = (int)Math.Max(1, Math.Ceiling((end - Context.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow()).TotalSeconds));
+            return await RefuseAsync(user, name, "locked out", ip);
+        }
         var result = await signIn.CheckPasswordSignInAsync(user, password, lockoutOnFailure: true);
-        if (!result.Succeeded) return await RefuseAsync(user, name, result.IsLockedOut ? "locked out" : "wrong password", ip);
+        if (!result.Succeeded) return await RefuseAsync(user, name, "wrong password", ip);
         // Checked after the password, so the answer tells nothing to someone who does not know it.
         // The same 401 as a wrong password; the audit entry says why.
         if (await Context.RequestServices.GetRequiredService<CodeSignIn>().NeededAsync(user, Context.RequestAborted))
@@ -65,9 +76,16 @@ public sealed class BasicAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions
         return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName));
     }
 
-    private async Task<AuthenticateResult> RefuseAsync(KbUser? user, string typed, string reason, string ip)
+    /// <param name="hashLike">When set, the password is hashed against a dummy hash so this refusal takes as long as a password check.</param>
+    private async Task<AuthenticateResult> RefuseAsync(KbUser? user, string typed, string reason, string ip, string? hashLike = null)
     {
-        await audit.AppendAsync(new AuditEvent(AuditActions.SignInFailed, user?.Id, "user", user?.Id.ToString(), Data: new Dictionary<string, string>
+        if (hashLike is not null)
+        {
+            var hasher = users.PasswordHasher;
+            _dummyHash ??= hasher.HashPassword(new KbUser(), Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24)));
+            _ = hasher.VerifyHashedPassword(new KbUser(), _dummyHash, hashLike);
+        }
+        await audit.AppendAsync(new AuditEvent(AuditActions.BasicRefused, user?.Id, "user", user?.Id.ToString(), Data: new Dictionary<string, string>
             { ["userName"] = typed[..Math.Min(typed.Length, 64)], ["reason"] = reason, ["method"] = "basic", ["ip"] = ip }), Context.RequestAborted);
         return AuthenticateResult.Fail("Refused.");
     }
@@ -88,6 +106,7 @@ public sealed class BasicAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions
 public sealed class BasicThrottle(IOptions<Kb.Core.Config.KbOptions> options, TimeProvider time)
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Window, int Count)> _failures = new(StringComparer.Ordinal);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _refusedIn = new(StringComparer.Ordinal);
 
     private long Window => time.GetUtcNow().ToUnixTimeSeconds() / 60;
 
@@ -103,6 +122,16 @@ public sealed class BasicThrottle(IOptions<Kb.Core.Config.KbOptions> options, Ti
         _failures.AddOrUpdate(address, (window, 1), (_, e) => e.Window == window ? (window, e.Count + 1) : (window, 1));
         // shortcut: counted on each server, in memory, like aerie's other limits; old windows are dropped once many addresses are held.
         if (_failures.Count > 10_000) foreach (var (key, e) in _failures) if (e.Window != window) _failures.TryRemove(key, out _);
+        if (_refusedIn.Count > 10_000) foreach (var (key, w) in _refusedIn) if (w != window) _refusedIn.TryRemove(key, out _);
+    }
+
+    /// <summary>True for the first refusal of this address in the current window: what is audited, so a flood writes one entry a minute.</summary>
+    public bool FirstRefusal(string address)
+    {
+        var window = Window;
+        var first = false;
+        _refusedIn.AddOrUpdate(address, _ => { first = true; return window; }, (_, w) => { first = w != window; return window; });
+        return first;
     }
 
     /// <summary>Seconds until the address may try again, or null when it is not limited.</summary>
@@ -119,8 +148,11 @@ public sealed class BasicThrottle(IOptions<Kb.Core.Config.KbOptions> options, Ti
         ArgumentNullException.ThrowIfNull(http);
         ArgumentNullException.ThrowIfNull(next);
         if (DcRest.HasBasic(http.Request) && DcRest.IsUnderRoot(http)
-            && http.RequestServices.GetRequiredService<BasicThrottle>().RetryAfter(AddressOf(http)) is { } wait)
+            && http.RequestServices.GetRequiredService<BasicThrottle>() is var throttle && throttle.RetryAfter(AddressOf(http)) is { } wait)
         {
+            if (throttle.FirstRefusal(AddressOf(http)))
+                await http.RequestServices.GetRequiredService<IAuditLog>().AppendAsync(new AuditEvent(AuditActions.BasicRefused, null, "address", null,
+                    Data: new Dictionary<string, string> { ["reason"] = "rate limited", ["method"] = "basic", ["ip"] = AddressOf(http) }), http.RequestAborted);
             http.Response.Headers.RetryAfter = wait.ToString(System.Globalization.CultureInfo.InvariantCulture);
             await DcRest.Fail(429, "Too many failed sign-ins from this address; try again later.").ExecuteAsync(http);
             return;
