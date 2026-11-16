@@ -182,7 +182,8 @@ internal sealed class ListCommentsHandler(KbDbContext db, IAccess access, SpaceP
     }
 }
 
-internal sealed class CreateCommentHandler(KbDbContext db, IAccess access, SpacePermissionService permissions, TimeProvider time, CommentThrottle throttle)
+internal sealed class CreateCommentHandler(KbDbContext db, IAccess access, SpacePermissionService permissions, TimeProvider time, CommentThrottle throttle,
+    Kb.Core.Notifications.INotifier notifier)
     : IActionHandler<CreateComment, CommentDto>
 {
     private Page? _page;
@@ -211,7 +212,28 @@ internal sealed class CreateCommentHandler(KbDbContext db, IAccess access, Space
         db.Comments.Add(c);
         await db.SaveChangesAsync(ctx.Cancel);
         ctx.Audit(AuditActions.CommentCreate, "comment", c.Id.ToString(), page.SpaceId, new Dictionary<string, string> { ["pageId"] = page.Id.ToString() });
+        await NotifyAsync(page, c, ctx.Cancel);
         return await CommentRules.OneAsync(db, v, c, ctx.Cancel);
+    }
+
+    /// <summary>
+    /// A top-level comment tells the page's owner (details.owner, when a user); a reply tells the comment's author (question Q-0026).
+    /// Never the writer, never someone who cannot read the page, never a group. The comment's text is not in it.
+    /// In-app by default; each person's preference for the kind decides.
+    /// </summary>
+    private async Task NotifyAsync(Page page, Comment c, CancellationToken ct)
+    {
+        Guid? to = null;
+        var kind = Kb.Core.Notifications.NotificationKinds.CommentPage;
+        if (c.ParentId is { } parent)
+        {
+            (to, kind) = (await db.Comments.Where(x => x.Id == parent).Select(x => (Guid?)x.AuthorId).FirstOrDefaultAsync(ct), Kb.Core.Notifications.NotificationKinds.CommentReply);
+        }
+        else if (page.OwnerType == PrincipalType.User && Guid.TryParse(page.OwnerId, out var owner)) to = owner;
+        if (to is not { } user || user == c.AuthorId || await permissions.GetRoleAsync(user, page.SpaceId, ct) is null) return;
+        var writer = await db.Users.Where(u => u.Id == c.AuthorId).Select(u => u.DisplayName).FirstOrDefaultAsync(ct) ?? "Someone";
+        var title = c.ParentId is null ? $"{writer} commented on {page.Title}" : $"{writer} replied to your comment on {page.Title}";
+        await notifier.NotifyAsync([user], kind, title, null, $"/p/{page.Id}", alsoEmail: false, ct);
     }
 }
 

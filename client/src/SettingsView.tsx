@@ -70,6 +70,8 @@ export function SettingsView({ section, settings, isAdmin, ownsSpaces, spaces, o
   const events: Event[] = [
     ...(ownsSpaces || isAdmin ? [{ kind: "access.request", label: "Access requests to my spaces" }] : []),
     { kind: "access.decision", label: "Decisions on my access requests" },
+    { kind: "comment.page", label: "Comments on pages I own" },
+    { kind: "comment.reply", label: "Replies to my comments" },
     ...(ownsSpaces || isAdmin ? [{ kind: "security.alert", label: "Security alerts", locked: true }] : []),
   ];
   const pref = (e: Event): NotifyPref => e.locked ? { inApp: true, email: true } : settings.notify[e.kind] ?? { inApp: true, email: e.kind === "access.request" };

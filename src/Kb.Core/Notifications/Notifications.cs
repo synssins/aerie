@@ -23,6 +23,10 @@ public static class NotificationKinds
     public const string AccessRequest = "access.request";
     public const string AccessDecision = "access.decision";
     public const string SecurityAlert = "security.alert";
+    /// <summary>A new top-level comment on a page you own (comments.md, Notifications).</summary>
+    public const string CommentPage = "comment.page";
+    /// <summary>A reply to your comment.</summary>
+    public const string CommentReply = "comment.reply";
 }
 
 public interface INotificationStore
