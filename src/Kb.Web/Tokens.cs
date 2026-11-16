@@ -24,7 +24,7 @@ public static class ApiTokenAuth
     public const string Selector = "Kb";
     public const string MaxDaysKey = "Tokens.MaxDays";
     public const int DefaultMaxDays = 365;
-    private const string TokenItem = "kb.token", RefusedItem = "kb.token.refused";
+    private const string TokenItem = "kb.token", RefusedItem = "kb.token.refused", OAuthItem = "kb.oauth", OAuthRefusedItem = "kb.oauth.refused";
 
     /// <summary>
     /// The routes a token may call, each of which decides access through <see cref="ISpacePermissionService"/>.
@@ -51,6 +51,11 @@ public static class ApiTokenAuth
     public static ApiToken? Current(HttpContext? http) => http?.Items[TokenItem] as ApiToken;
 
     internal static void Accept(HttpContext http, ApiToken token) => http.Items[TokenItem] = token;
+
+    /// <summary>The OAuth 2.0 access token this request was authenticated with, with its grant and client; null for any other caller.</summary>
+    public static OAuthCaller? OAuthCurrent(HttpContext? http) => http?.Items[OAuthItem] as OAuthCaller;
+
+    private static (OAuthAccessToken Token, Guid User, string Reason)? OAuthRefused(HttpContext http) => http.Items[OAuthRefusedItem] as (OAuthAccessToken, Guid, string)?;
     internal static void Refuse(HttpContext http, ApiToken token, string reason) => http.Items[RefusedItem] = (token, reason);
     private static (ApiToken Token, string Reason)? Refused(HttpContext http) => http.Items[RefusedItem] as (ApiToken, string)?;
 
@@ -64,7 +69,7 @@ public static class ApiTokenAuth
     public static Guid? PresentedId(HttpContext http)
     {
         ArgumentNullException.ThrowIfNull(http);
-        return Current(http)?.Id ?? Refused(http)?.Token.Id;
+        return Current(http)?.Id ?? Refused(http)?.Token.Id ?? OAuthCurrent(http)?.Token.Id ?? OAuthRefused(http)?.Token.Id;
     }
 
     /// <summary>
@@ -84,7 +89,10 @@ public static class ApiTokenAuth
             await http.RequestServices.GetRequiredService<IAuditLog>().AppendAsync(new AuditEvent(action, refused.Token.OwnerUserId, "token", refused.Token.Id.ToString(),
                 Data: new Dictionary<string, string> { ["reason"] = refused.Reason, ["ip"] = ip, ["prefix"] = refused.Token.Prefix }), http.RequestAborted);
         }
-        if (HasBearer(http.Request) && Current(http) is null)
+        if (OAuthRefused(http) is { } oauth)
+            await http.RequestServices.GetRequiredService<IAuditLog>().AppendAsync(new AuditEvent(AuditActions.TokenUseDenied, oauth.User, "oauth.token", oauth.Token.Id.ToString(),
+                Data: new Dictionary<string, string> { ["reason"] = oauth.Reason, ["ip"] = ip, ["prefix"] = oauth.Token.Prefix }), http.RequestAborted);
+        if (HasBearer(http.Request) && Current(http) is null && OAuthCurrent(http) is null)
         {
             // A token that was presented and refused is never served as someone not signed in, even on a route open to them.
             await Microsoft.AspNetCore.Authentication.AuthenticationHttpContextExtensions.ChallengeAsync(http, Scheme);
@@ -145,6 +153,28 @@ public static class ApiTokenAuth
         return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), scheme));
     }
 
+    /// <summary>
+    /// Checks an OAuth 2.0 access token (<c>kbo_</c>): live (OAuthStore), and only on the compatible surface: on aerie's own API it is refused
+    /// (identity.md, Sessions and aerie's own API). On success the request acts as the user who consented; the token's scopes filter, the role decides.
+    /// </summary>
+    /// <param name="ownerName">For Basic: the user name sent with the token, which must be its user's.</param>
+    internal static async Task<AuthenticateResult> AuthenticateOAuthAsync(HttpContext http, KbDbContext db, TimeProvider clock, string text, string scheme, string? ownerName = null)
+    {
+        if (!Kb.Web.DataCenter.DcRest.IsUnderRoot(http)) return AuthenticateResult.Fail("OAuth tokens work only on the compatible surface.");
+        var (live, refused, user, reason) = await Kb.Web.DataCenter.OAuthStore.CheckAccessTokenAsync(db, text, clock.GetUtcNow(), http.RequestAborted);
+        if (live is { } ok && ownerName is not null
+            && !string.Equals(ownerName, await db.Users.Where(u => u.Id == ok.Grant.UserId).Select(u => u.UserName).FirstOrDefaultAsync(http.RequestAborted), StringComparison.OrdinalIgnoreCase))
+            (live, refused, user, reason) = (null, ok.Token, ok.Grant.UserId, "user name is not the owner's");
+        if (live is not { } caller)
+        {
+            if (refused is not null) http.Items[OAuthRefusedItem] = (refused, user!.Value, reason!);
+            return AuthenticateResult.Fail("OAuth token refused.");
+        }
+        http.Items[OAuthItem] = new OAuthCaller(caller.Token, caller.Grant, caller.Client);
+        var identity = new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, caller.Grant.UserId.ToString()), new Claim("kb:oauth", caller.Token.Id.ToString())], scheme);
+        return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), scheme));
+    }
+
     public static async Task<int> MaxDaysAsync(KbDbContext db, CancellationToken ct = default) =>
         int.TryParse(await db.GetAsync(MaxDaysKey, ct), NumberStyles.None, CultureInfo.InvariantCulture, out var days) && days is >= 1 and <= 3650 ? days : DefaultMaxDays;
 }
@@ -157,7 +187,9 @@ public sealed class ApiTokenAuthHandler(IOptionsMonitor<AuthenticationSchemeOpti
     {
         if (!ApiTokenAuth.HasBearer(Request)) return AuthenticateResult.NoResult();
         var text = Request.Headers.Authorization.ToString()[7..].Trim();
-        return await ApiTokenAuth.AuthenticateAsync(Context, db, clock, text, ApiTokenAuth.Scheme);
+        return text.StartsWith(OAuthSecrets.AccessPrefix, StringComparison.Ordinal)
+            ? await ApiTokenAuth.AuthenticateOAuthAsync(Context, db, clock, text, ApiTokenAuth.Scheme)
+            : await ApiTokenAuth.AuthenticateAsync(Context, db, clock, text, ApiTokenAuth.Scheme);
     }
 
     protected override Task HandleChallengeAsync(AuthenticationProperties properties)
@@ -219,3 +251,6 @@ public sealed class TokenScopedPermissions(SpacePermissionService inner, ISpaceA
         return [.. (await inner.VisibleSpaceIdsAsync(userId, ct)).Where(id => token.AccessTo(id) is not null)];
     }
 }
+
+/// <summary>A request made with an OAuth 2.0 access token: the token, the consent it was issued under, and the client.</summary>
+public sealed record OAuthCaller(OAuthAccessToken Token, OAuthGrant Grant, OAuthClient Client);

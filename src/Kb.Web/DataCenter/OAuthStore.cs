@@ -51,10 +51,18 @@ public static class OAuthStore
     /// The access token with this text, if it is live: not expired or revoked, its family not revoked, its client enabled, its user active,
     /// and its grant within the absolute limit. Checked on every use, so disabling a user or client, or revoking a grant, takes effect at once.
     /// </summary>
-    public static async Task<(OAuthAccessToken Token, OAuthGrant Grant, OAuthClient Client)?> LiveAccessTokenAsync(KbDbContext db, string text, DateTimeOffset now, CancellationToken ct = default)
+    public static async Task<(OAuthAccessToken Token, OAuthGrant Grant, OAuthClient Client)?> LiveAccessTokenAsync(KbDbContext db, string text, DateTimeOffset now, CancellationToken ct = default) =>
+        (await CheckAccessTokenAsync(db, text, now, ct)).Live;
+
+    /// <summary>
+    /// As <see cref="LiveAccessTokenAsync"/>, with why a token that exists was refused (expired, revoked, client disabled, user disabled,
+    /// consent expired) and its row, for the audit. An unknown token has neither: guesses are not audited.
+    /// </summary>
+    public static async Task<((OAuthAccessToken Token, OAuthGrant Grant, OAuthClient Client)? Live, OAuthAccessToken? Refused, Guid? User, string? Reason)> CheckAccessTokenAsync(
+        KbDbContext db, string text, DateTimeOffset now, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(db);
-        if (!OAuthSecrets.IsAccessToken(text)) return null;
+        if (!OAuthSecrets.IsAccessToken(text)) return (null, null, null, null);
         var hash = OAuthSecrets.Hash(text);
         var row = await (from t in db.OAuthAccessTokens.AsNoTracking()
                          where t.Hash == hash
@@ -63,10 +71,15 @@ public static class OAuthStore
                          join c in db.OAuthClients on g.ClientId equals c.Id
                          join u in db.Users on g.UserId equals u.Id
                          select new { t, f, g, c, u.DeactivatedAt }).FirstOrDefaultAsync(ct);
-        if (row is null || row.t.RevokedAt is not null || row.t.ExpiresAt <= now || row.f.RevokedAt is not null || !row.c.Enabled || row.DeactivatedAt is not null) return null;
+        if (row is null) return (null, null, null, null);
         var max = (await CompatAuthSettings.LoadAsync(db, ct)).GrantMaxDays;
-        if (max is { } days && row.g.CreatedAt.AddDays(days) <= now) return null;
-        return (row.t, row.g, row.c);
+        var reason = row.t.RevokedAt is not null || row.f.RevokedAt is not null ? "revoked"
+            : row.t.ExpiresAt <= now ? "expired"
+            : !row.c.Enabled ? "client disabled"
+            : row.DeactivatedAt is not null ? "user disabled"
+            : max is { } days && row.g.CreatedAt.AddDays(days) <= now ? "consent expired"
+            : null;
+        return reason is null ? ((row.t, row.g, row.c), null, row.g.UserId, null) : (null, row.t, row.g.UserId, reason);
     }
 
     /// <summary>
