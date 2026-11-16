@@ -13,7 +13,12 @@ public sealed record Problem(int Status, string? Message = null, IReadOnlyDictio
     public static Problem Refused(string message) => new(422, message);
     /// <summary>An enforcing plugin is disabled by the core.</summary>
     public static Problem Locked(string message) => new(423, message);
+    /// <summary>Too many calls: 429 with a Retry-After header of this many seconds.</summary>
+    public static Problem TooMany(string message, int retryAfterSeconds) => new(429, message, Body: new RetryAfter(retryAfterSeconds));
 }
+
+/// <summary>The body of a 429 problem: how long the caller waits (the Retry-After header).</summary>
+public sealed record RetryAfter(int Seconds);
 
 /// <summary>A result or the problem that prevented it.</summary>
 public readonly struct Outcome<T> : IEquatable<Outcome<T>>
