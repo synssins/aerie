@@ -110,6 +110,11 @@ public static class AuditActions
     public const string BasicUse = "auth.basic";
     /// <summary>HTTP Basic refused on the compatible surface: bad password, codes on, password Basic off, locked out or rate limited. The reason is recorded.</summary>
     public const string BasicRefused = "auth.basic.refused";
+    // OAuth 2.0 on the compatible surface (identity.md, Audit). No entry ever holds a secret, a code or a token.
+    public const string OAuthClientCreate = "oauth.client.create";
+    public const string OAuthClientUpdate = "oauth.client.update";
+    public const string OAuthClientSecretRotate = "oauth.client.secret.rotate";
+    public const string OAuthClientDelete = "oauth.client.delete";
     public const string SettingsChange = "settings.change";
     public const string PluginEnable = "plugin.enable";
     public const string PluginDisable = "plugin.disable";

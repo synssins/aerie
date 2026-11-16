@@ -108,6 +108,13 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     public DbSet<Kb.Core.DataCenter.DcVersion> DcVersions => Set<Kb.Core.DataCenter.DcVersion>();
     public DbSet<Kb.Core.DataCenter.DcLabel> DcLabels => Set<Kb.Core.DataCenter.DcLabel>();
     public DbSet<Kb.Core.DataCenter.DcAttachmentVersion> DcAttachmentVersions => Set<Kb.Core.DataCenter.DcAttachmentVersion>();
+    public DbSet<OAuthClient> OAuthClients => Set<OAuthClient>();
+    public DbSet<OAuthAuthorizeRequest> OAuthAuthorizeRequests => Set<OAuthAuthorizeRequest>();
+    public DbSet<OAuthGrant> OAuthGrants => Set<OAuthGrant>();
+    public DbSet<OAuthCode> OAuthCodes => Set<OAuthCode>();
+    public DbSet<OAuthTokenFamily> OAuthTokenFamilies => Set<OAuthTokenFamily>();
+    public DbSet<OAuthAccessToken> OAuthAccessTokens => Set<OAuthAccessToken>();
+    public DbSet<OAuthRefreshToken> OAuthRefreshTokens => Set<OAuthRefreshToken>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -292,6 +299,65 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
             e.Property(x => x.MediaType).HasMaxLength(255);
             e.Property(x => x.Comment).HasMaxLength(2000);
             e.HasIndex(x => new { x.AttachmentId, x.Number }).IsUnique();
+        });
+
+        // OAuth 2.0 (identity.md). Deleting a client deletes its requests, grants, codes and tokens; deleting a user deletes theirs.
+        builder.Entity<OAuthClient>(e =>
+        {
+            e.Property(x => x.ClientId).HasMaxLength(32);
+            e.HasIndex(x => x.ClientId).IsUnique();
+            e.Property(x => x.SecretHash).HasMaxLength(200);
+            e.Property(x => x.Name).HasMaxLength(100);
+            e.Property(x => x.Type).HasMaxLength(16);
+            e.Property(x => x.Scopes).HasMaxLength(100);
+        });
+        builder.Entity<OAuthAuthorizeRequest>(e =>
+        {
+            e.HasOne<OAuthClient>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<KbUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.RedirectUri).HasMaxLength(2000);
+            e.Property(x => x.Scopes).HasMaxLength(100);
+            e.Property(x => x.State).HasMaxLength(2000);
+            e.Property(x => x.CodeChallenge).HasMaxLength(128);
+            e.Property(x => x.Decision).HasMaxLength(8);
+            e.HasIndex(x => x.ExpiresAt);
+        });
+        builder.Entity<OAuthGrant>(e =>
+        {
+            e.HasOne<OAuthClient>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<KbUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.Scopes).HasMaxLength(100);
+            e.HasIndex(x => new { x.UserId, x.ClientId }).IsUnique();
+        });
+        builder.Entity<OAuthCode>(e =>
+        {
+            e.HasOne<OAuthGrant>().WithMany().HasForeignKey(x => x.GrantId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.Hash).HasMaxLength(32);
+            e.HasIndex(x => x.Hash).IsUnique();
+            e.Property(x => x.RedirectUri).HasMaxLength(2000);
+            e.Property(x => x.Scopes).HasMaxLength(100);
+            e.Property(x => x.CodeChallenge).HasMaxLength(128);
+        });
+        builder.Entity<OAuthTokenFamily>(e =>
+        {
+            e.HasOne<OAuthGrant>().WithMany().HasForeignKey(x => x.GrantId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.Scopes).HasMaxLength(100);
+            e.Property(x => x.RevokeReason).HasMaxLength(100);
+        });
+        builder.Entity<OAuthAccessToken>(e =>
+        {
+            e.HasOne<OAuthTokenFamily>().WithMany().HasForeignKey(x => x.FamilyId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.Hash).HasMaxLength(32);
+            e.HasIndex(x => x.Hash).IsUnique();
+            e.Property(x => x.Prefix).HasMaxLength(16);
+            e.Property(x => x.Scopes).HasMaxLength(100);
+        });
+        builder.Entity<OAuthRefreshToken>(e =>
+        {
+            e.HasOne<OAuthTokenFamily>().WithMany().HasForeignKey(x => x.FamilyId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.Hash).HasMaxLength(32);
+            e.HasIndex(x => x.Hash).IsUnique();
+            e.Property(x => x.Prefix).HasMaxLength(16);
         });
     }
 

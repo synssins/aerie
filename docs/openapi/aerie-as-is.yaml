@@ -267,6 +267,65 @@ paths:
       security:
         - cookieAuth: []
       "x-kb-api-token": "closed"
+  "/api/v1/admin/auth/compat":
+    get:
+      tags:
+        - "admin"
+      operationId: "auth.compat.read"
+      "x-kb-action": "auth.compat.read"
+      "x-kb-changes-data": false
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/CompatAuthSettingsDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
+    put:
+      tags:
+        - "admin"
+      operationId: "auth.compat.save"
+      "x-kb-action": "auth.compat.save"
+      "x-kb-changes-data": true
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/CompatAuthSettingsDto"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/CompatAuthSettingsDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
   "/api/v1/admin/auth/local/disable":
     post:
       tags:
@@ -920,6 +979,203 @@ paths:
             "application/json":
               schema:
                 "$ref": "#/components/schemas/StorageTestDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
+  "/api/v1/admin/oauth/clients":
+    get:
+      tags:
+        - "admin"
+      operationId: "oauth.client.list"
+      "x-kb-action": "oauth.client.list"
+      "x-kb-changes-data": false
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                type: "array"
+                items:
+                  "$ref": "#/components/schemas/OAuthClientDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
+    post:
+      tags:
+        - "admin"
+      operationId: "oauth.client.create"
+      "x-kb-action": "oauth.client.create"
+      "x-kb-changes-data": true
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/OAuthClientRequest"
+      responses:
+        "201":
+          description: "Created"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/OAuthClientCreatedDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
+  "/api/v1/admin/oauth/clients/{id}":
+    delete:
+      tags:
+        - "admin"
+      operationId: "oauth.client.delete"
+      "x-kb-action": "oauth.client.delete"
+      "x-kb-changes-data": true
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      responses:
+        "204":
+          description: "No content"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
+    get:
+      tags:
+        - "admin"
+      operationId: "oauth.client.read"
+      "x-kb-action": "oauth.client.read"
+      "x-kb-changes-data": false
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/OAuthClientDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
+    put:
+      tags:
+        - "admin"
+      operationId: "oauth.client.update"
+      "x-kb-action": "oauth.client.update"
+      "x-kb-changes-data": true
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/OAuthClientRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/OAuthClientDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
+  "/api/v1/admin/oauth/clients/{id}/secret":
+    post:
+      tags:
+        - "admin"
+      operationId: "oauth.client.secret.rotate"
+      "x-kb-action": "oauth.client.secret.rotate"
+      "x-kb-changes-data": true
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/OAuthClientCreatedDto"
         "401":
           description: "Not signed in, or a bad token"
         "403":
@@ -6053,6 +6309,26 @@ components:
       properties:
         exempt:
           type: "boolean"
+    CompatAuthSettingsDto:
+      type: "object"
+      properties:
+        basicPasswordEnabled:
+          type: "boolean"
+        allowHttpRedirects:
+          type: "boolean"
+        codeSeconds:
+          type: "integer"
+          format: "int32"
+        accessTokenSeconds:
+          type: "integer"
+          format: "int32"
+        refreshTokenDays:
+          type: "integer"
+          format: "int32"
+        grantMaxDays:
+          type: "integer"
+          format: "int32"
+          nullable: true
     CreatePageRequest:
       type: "object"
       properties:
@@ -6922,6 +7198,75 @@ components:
           type: "boolean"
         email:
           type: "boolean"
+    OAuthClientCreatedDto:
+      type: "object"
+      properties:
+        clientSecret:
+          type: "string"
+          nullable: true
+        client:
+          "$ref": "#/components/schemas/OAuthClientDto"
+    OAuthClientDto:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        clientId:
+          type: "string"
+        name:
+          type: "string"
+        type:
+          type: "string"
+        redirectUris:
+          type: "array"
+          items:
+            type: "string"
+        scopes:
+          type: "array"
+          items:
+            type: "string"
+        requirePkce:
+          type: "boolean"
+        enabled:
+          type: "boolean"
+        activeGrants:
+          type: "integer"
+          format: "int32"
+        createdBy:
+          type: "string"
+        createdAt:
+          type: "string"
+          format: "date-time"
+        secretRotatedAt:
+          type: "string"
+          format: "date-time"
+          nullable: true
+    OAuthClientRequest:
+      type: "object"
+      properties:
+        name:
+          type: "string"
+          nullable: true
+        type:
+          type: "string"
+          nullable: true
+        redirectUris:
+          type: "array"
+          items:
+            type: "string"
+          nullable: true
+        scopes:
+          type: "array"
+          items:
+            type: "string"
+          nullable: true
+        requirePkce:
+          type: "boolean"
+          nullable: true
+        enabled:
+          type: "boolean"
+          nullable: true
     OwnerRefDto:
       type: "object"
       properties:

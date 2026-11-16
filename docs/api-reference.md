@@ -31,6 +31,8 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | POST | `/api/v1/admin/ai/test` | `ai.test` |  | `AiTestDto` ([AiTestDto](plugins/action-reference.md#aitestdto)) | Yes | Needed | No |
 | GET | `/api/v1/admin/audit` | `audit.list` |  | `IReadOnlyList<AuditEntryDto>` ([AuditEntryDto](plugins/action-reference.md#auditentrydto)) | No | Needed | No |
 | GET | `/api/v1/admin/audit/verify` | `audit.verify` |  | `AuditVerifyResult` ([AuditVerifyResult](plugins/action-reference.md#auditverifyresult)) | No | Needed | No |
+| GET | `/api/v1/admin/auth/compat` | `auth.compat.read` |  | `CompatAuthSettingsDto` ([CompatAuthSettingsDto](plugins/action-reference.md#compatauthsettingsdto)) | No | Needed | No |
+| PUT | `/api/v1/admin/auth/compat` | `auth.compat.save` | `CompatAuthSettingsDto` ([CompatAuthSettingsDto](plugins/action-reference.md#compatauthsettingsdto)) | `CompatAuthSettingsDto` ([CompatAuthSettingsDto](plugins/action-reference.md#compatauthsettingsdto)) | Yes | Needed | No |
 | POST | `/api/v1/admin/auth/local/disable` | `auth.local.disable` |  | `Unit` | Yes | Needed | No |
 | GET | `/api/v1/admin/bin` | `bin.list.all` |  | `IReadOnlyList<BinItemDto>` ([BinItemDto](plugins/action-reference.md#binitemdto)) | No | Needed | No |
 | GET | `/api/v1/admin/bin/tree` | `bin.browse.all` |  | `IReadOnlyList<BinNodeDto>` ([BinNodeDto](plugins/action-reference.md#binnodedto)) | No | Needed | No |
@@ -52,6 +54,12 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | DELETE | `/api/v1/admin/logs/targets/{id:guid}` | `log.target.remove` |  | `Unit` | Yes | Needed | No |
 | PUT | `/api/v1/admin/logs/targets/{id:guid}` | `log.target.save` | `LogTargetRequest` ([LogTargetRequest](plugins/action-reference.md#logtargetrequest)) | `LogTargetDto` ([LogTargetDto](plugins/action-reference.md#logtargetdto)) | Yes | Needed | No |
 | POST | `/api/v1/admin/logs/targets/{id:guid}/test` | `log.target.test` |  | `StorageTestDto` ([StorageTestDto](plugins/action-reference.md#storagetestdto)) | Yes | Needed | No |
+| GET | `/api/v1/admin/oauth/clients` | `oauth.client.list` |  | `IReadOnlyList<OAuthClientDto>` ([OAuthClientDto](plugins/action-reference.md#oauthclientdto)) | No | Needed | No |
+| POST | `/api/v1/admin/oauth/clients` | `oauth.client.create` | `OAuthClientRequest` ([OAuthClientRequest](plugins/action-reference.md#oauthclientrequest)) | `OAuthClientCreatedDto` ([OAuthClientCreatedDto](plugins/action-reference.md#oauthclientcreateddto)) | Yes | Needed | No |
+| DELETE | `/api/v1/admin/oauth/clients/{id:guid}` | `oauth.client.delete` |  | `Unit` | Yes | Needed | No |
+| GET | `/api/v1/admin/oauth/clients/{id:guid}` | `oauth.client.read` |  | `OAuthClientDto` ([OAuthClientDto](plugins/action-reference.md#oauthclientdto)) | No | Needed | No |
+| PUT | `/api/v1/admin/oauth/clients/{id:guid}` | `oauth.client.update` | `OAuthClientRequest` ([OAuthClientRequest](plugins/action-reference.md#oauthclientrequest)) | `OAuthClientDto` ([OAuthClientDto](plugins/action-reference.md#oauthclientdto)) | Yes | Needed | No |
+| POST | `/api/v1/admin/oauth/clients/{id:guid}/secret` | `oauth.client.secret.rotate` |  | `OAuthClientCreatedDto` ([OAuthClientCreatedDto](plugins/action-reference.md#oauthclientcreateddto)) | Yes | Needed | No |
 | GET | `/api/v1/admin/plugins` | `plugin.list` |  | `PluginListDto` ([PluginListDto](plugins/action-reference.md#pluginlistdto)) | No | Needed | No |
 | POST | `/api/v1/admin/plugins` | `plugin.install` |  | `InstalledDto` ([InstalledDto](plugins/action-reference.md#installeddto)) | Yes | Needed | No |
 | GET | `/api/v1/admin/plugins/health` | `plugin.health` |  | `PluginHealthDto` ([PluginHealthDto](plugins/action-reference.md#pluginhealthdto)) | No | Needed | No |
