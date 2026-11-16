@@ -77,7 +77,7 @@ internal sealed class ListAuditHandler(KbDbContext db, IAccess access) : IAction
         {
             var data = AuditData.Read(a.DataJson);
             return new AuditEntryDto(a.Sequence, a.At, a.Action, a.Actor, a.TargetType, a.TargetId,
-                data.ContainsKey(AuditData.TokenIdKey) ? "API" : "Web", data.GetValueOrDefault(AuditData.TokenKey));
+                data.ContainsKey(AuditData.TokenIdKey) ? "API" : "Web", data.GetValueOrDefault(AuditData.TokenKey), AuditAiSearch.Read(data));
         }).ToList());
     }
 }

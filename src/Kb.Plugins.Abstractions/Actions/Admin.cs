@@ -34,4 +34,10 @@ public sealed record DisableLocalSignIn : IAction<Unit>;
 public sealed record AdminUserDto(Guid Id, string UserName, string DisplayName, string Source, bool IsAdmin, bool IsBreakGlass, DateTimeOffset CreatedAt, DateTimeOffset? DeactivatedAt, bool CanAnnounce,
     IReadOnlyList<string>? Permissions = null, IReadOnlyList<string>? Groups = null, bool CodesExempt = false);
 /// <summary>Via: "API" when it was done with an API token (Token names it), else "Web".</summary>
-public sealed record AuditEntryDto(long Sequence, DateTimeOffset At, string Action, string? Actor, string? TargetType, string? TargetId, string Via = "Web", string? Token = null);
+public sealed record AuditEntryDto(long Sequence, DateTimeOffset At, string Action, string? Actor, string? TargetType, string? TargetId, string Via = "Web", string? Token = null,
+    AuditAiSearchDto? AiSearch = null);
+
+/// <summary>One AI search, recorded in its audit entry: the question as sent (its first 2000 characters), the outcome, the pages given to the model. No page text, no answer.</summary>
+public sealed record AuditAiSearchDto(string Question, int QuestionLength, string Outcome, Guid? SpaceId, IReadOnlyList<AuditAiSearchPageDto> Pages);
+
+public sealed record AuditAiSearchPageDto(Guid PageId, string Version);

@@ -194,6 +194,7 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | GET | `/api/v1/principals` | `principal.list` |  | `IReadOnlyList<PrincipalDto>` ([PrincipalDto](plugins/action-reference.md#principaldto)) | No | Needed | No |
 | GET | `/api/v1/roles` | `role.list` |  | `IReadOnlyList<RoleDto>` ([RoleDto](plugins/action-reference.md#roledto)) | No | Needed | No |
 | GET | `/api/v1/search` | `search.query` |  | `SearchResponse` ([SearchResponse](plugins/action-reference.md#searchresponse)) | No | Not needed | Read |
+| POST | `/api/v1/search/answer` | `search.answer` | `SearchAnswerRequest` ([SearchAnswerRequest](plugins/action-reference.md#searchanswerrequest)) | `SearchAnswerDto` ([SearchAnswerDto](plugins/action-reference.md#searchanswerdto)) | Yes | Needed | No |
 | POST | `/api/v1/setup` | `setup.run` | `SetupRequest` ([SetupRequest](plugins/action-reference.md#setuprequest)) | `MeResponse` ([MeResponse](plugins/action-reference.md#meresponse)) | Yes | Not needed | No |
 | GET | `/api/v1/setup/status` | `setup.status` |  | `SetupStatus` ([SetupStatus](plugins/action-reference.md#setupstatus)) | No | Not needed | No |
 | GET | `/api/v1/spaces` | `space.list` |  | `IReadOnlyList<SpaceDto>` ([SpaceDto](plugins/action-reference.md#spacedto)) | No | Not needed | Read |

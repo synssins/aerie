@@ -52,7 +52,9 @@ public sealed record RunSetup : IAction<MeResponse>
 }
 
 /// <summary>Permissions: the global plugin permissions the person holds ("&lt;plugin id&gt;:&lt;key&gt;"); filled by me.read.</summary>
-public sealed record MeResponse(Guid Id, string UserName, string DisplayName, bool IsAdmin, bool IsBreakGlass, bool CanAnnounce = false, IReadOnlyList<string>? Permissions = null);
+/// <summary>AiSearch: AI search is available to this person (contracts/behaviour/ai-search.md, When it is available).</summary>
+public sealed record MeResponse(Guid Id, string UserName, string DisplayName, bool IsAdmin, bool IsBreakGlass, bool CanAnnounce = false, IReadOnlyList<string>? Permissions = null,
+    bool AiSearch = false);
 public sealed record SetupStatus(bool Required, bool CodeRequired);
 
 /// <summary>Per-user app settings. Stored as JSON on the user.</summary>
