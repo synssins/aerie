@@ -3236,7 +3236,10 @@ Enum: `Same`, `Add`, `Del`.
   "roles": [
     {
       "n": 0,
-      "role": "text"
+      "role": "text",
+      "split": [
+        "text"
+      ]
     }
   ]
 }
@@ -3274,7 +3277,10 @@ Enum: `Same`, `Add`, `Del`.
   "roles": [
     {
       "n": 0,
-      "role": "text"
+      "role": "text",
+      "split": [
+        "text"
+      ]
     }
   ],
   "keep": [
@@ -3289,11 +3295,15 @@ Enum: `Same`, `Add`, `Del`.
 |---|---|
 | n | `int` |
 | role | `string` |
+| split | `IReadOnlyList<string>?` |
 
 ```json
 {
   "n": 0,
-  "role": "text"
+  "role": "text",
+  "split": [
+    "text"
+  ]
 }
 ```
 

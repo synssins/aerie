@@ -59,8 +59,13 @@ public static partial class DocFormat
     public static string Lines(IReadOnlyList<Unit> units) => string.Join('\n', units.Select(u =>
         $"[{u.N}] ({u.Kind switch { "text" => u.Node["type"]!.GetValue<string>(), "item" => "list item", "line" => "line of the list item above", _ => u.Node["type"]!.GetValue<string>() }}) {Flat(u.Text)}"));
 
-    /// <summary>The page rebuilt with the roles. Keep: units the person chose to keep although they were found to be duplicates.</summary>
-    public static (JsonObject Doc, List<Removal> Removed) Restructure(JsonObject doc, IReadOnlyDictionary<int, string> roles, IReadOnlySet<int>? keep = null)
+    /// <summary>
+    /// The page rebuilt with the roles. Keep: units the person chose to keep although they were found to be duplicates. Splits: for
+    /// a paragraph that runs several items together ("Owner: ... Last verified: ..."), the text each item after the first starts with;
+    /// the paragraph is cut there, each item a paragraph of its own. A cut not found at a word start in the text is ignored.
+    /// </summary>
+    public static (JsonObject Doc, List<Removal> Removed) Restructure(JsonObject doc, IReadOnlyDictionary<int, string> roles, IReadOnlySet<int>? keep = null,
+        IReadOnlyDictionary<int, IReadOnlyList<string>>? splits = null)
     {
         var units = Units(doc);
         // A short line after a line break in a list item, with no end punctuation, is a title stuck to the item ("Procedure"),
@@ -136,6 +141,11 @@ public static partial class DocFormat
                 continue;
             }
             Close();
+            if (u.Kind == "text" && u.Node["type"]?.GetValue<string>() == "paragraph" && role is "paragraph" or "keep" && splits?.GetValueOrDefault(u.N) is { Count: > 0 } at)
+            {
+                foreach (var piece in Cut(content, at)) output.Add(Node("paragraph", piece));
+                continue;
+            }
             output.Add(role switch
             {
                 "heading1" or "heading2" or "heading3" => Node("heading", content, new JsonObject { ["level"] = role[^1] - '0' }),
@@ -173,6 +183,51 @@ public static partial class DocFormat
             i++;
         }
         return true;
+    }
+
+    /// <summary>Inline content cut before each of the texts, in order, where one starts a word; marks stay with their text.</summary>
+    private static List<JsonArray> Cut(JsonArray content, IReadOnlyList<string> at)
+    {
+        var text = PlainOf(content);
+        var cuts = new List<int>();
+        var from = 1;
+        foreach (var s in at.Select(a => a.Trim()).Where(a => a.Length > 0).Take(20))
+        {
+            for (var i = text.IndexOf(s, from, StringComparison.Ordinal); i > 0; i = text.IndexOf(s, i + 1, StringComparison.Ordinal))
+                if (char.IsWhiteSpace(text[i - 1])) { cuts.Add(i); from = i + 1; break; }
+        }
+        var pieces = new List<JsonArray> { new() };
+        var offset = 0;
+        foreach (var node in content.OfType<JsonObject>())
+        {
+            var t = node["text"]?.GetValue<string>() ?? "";
+            var start = 0;
+            foreach (var c in cuts.Where(c => c > offset && c < offset + t.Length))
+            {
+                pieces[^1].Add(Piece(node, t[start..(c - offset)]));
+                pieces.Add([]);
+                start = c - offset;
+            }
+            pieces[^1].Add(Piece(node, t[start..]));
+            offset += t.Length;
+            if (cuts.Contains(offset)) pieces.Add([]);
+        }
+        static string TextOf(JsonNode? n) => n!["text"]!.GetValue<string>();
+        foreach (var p in pieces)
+        {
+            // The spaces between items go with the cut.
+            while (p.Count > 0) { var head = TextOf(p[0]).TrimStart(); if (head.Length > 0) { p[0]!["text"] = head; break; } p.RemoveAt(0); }
+            while (p.Count > 0) { var tail = TextOf(p[^1]).TrimEnd(); if (tail.Length > 0) { p[^1]!["text"] = tail; break; } p.RemoveAt(p.Count - 1); }
+            foreach (var empty in p.Where(x => TextOf(x).Length == 0).ToList()) p.Remove(empty);
+        }
+        return [.. pieces.Where(p => p.Count > 0)];
+    }
+
+    private static JsonObject Piece(JsonObject node, string text)
+    {
+        var copy = node.DeepClone().AsObject();
+        copy["text"] = text;
+        return copy;
     }
 
     private static bool IsTitle(Unit u, string role) =>

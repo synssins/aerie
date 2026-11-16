@@ -31,7 +31,8 @@ public sealed record ImportItemDto(Guid Id, string Title, string Status, string?
 public sealed record ImportMergeRequest(IReadOnlyList<Guid>? ItemIds);
 /// <summary>Roles and Keep: to build the preview again without the model (to keep a duplicate it removed), the roles it gave.</summary>
 public sealed record FormatRequest(string? ContentJson, IReadOnlyList<FormatRoleDto>? Roles = null, IReadOnlyList<int>? Keep = null);
-public sealed record FormatRoleDto(int N, string Role);
+/// <summary>Split: where a paragraph that runs items together is cut, as the text each item after the first starts with.</summary>
+public sealed record FormatRoleDto(int N, string Role, IReadOnlyList<string>? Split = null);
 /// <summary>Removed: the duplicates taken out, each with what says the same and stays. Roles: what the model gave, to build it again.</summary>
 public sealed record FormatDto(string ContentJson, IReadOnlyList<DiffLine> Diff, IReadOnlyList<FormatRemovedDto>? Removed = null, IReadOnlyList<FormatRoleDto>? Roles = null);
 public sealed record FormatRemovedDto(IReadOnlyList<int> Units, string Text, string SameAs);
@@ -415,7 +416,10 @@ internal sealed class FormatPageHandler(KbDbContext db, IAccess access, ImportSe
         "\"code\" for commands and configuration, \"note\" for a warning, \"paragraph\" for the rest, \"keep\" to leave it as it is (list items and blocks usually stay). " +
         "When the same text is in the document twice (a paragraph, a step, a whole procedure written out again, a title repeated as a step), " +
         "give the repeat the role \"duplicate\" and keep the copy that reads best, with the title of a repeated section as a duplicate too. " +
-        "A section title stuck to the end of a list item, as a line of its own, is a title: give it a heading role. Return one role for every n.";
+        "A section title stuck to the end of a list item, as a line of its own, is a title: give it a heading role. " +
+        "When a paragraph runs several separate items together, such as label and value pairs (\"Label: value. Other label: value.\"), " +
+        "give it the role \"paragraph\" and in \"split\" the exact text each item after the first starts with, as written (usually its label): " +
+        "each item then goes on a line of its own. Return one role for every n.";
     private Kb.Core.Content.Page? _page;
 
     public async Task<Problem?> AuthorizeAsync(ActionContext<FormatPage> ctx)
@@ -435,10 +439,12 @@ internal sealed class FormatPageHandler(KbDbContext db, IAccess access, ImportSe
         var units = DocFormat.Units(source);
         if (units.Count == 0) return new Problem(422, "There is nothing to format.");
         var roles = new Dictionary<int, string>();
+        var splits = new Dictionary<int, IReadOnlyList<string>>();
         if (ctx.Action.Roles is { } given)
         {
             // Built again from the roles of an earlier preview (to keep a duplicate): no model call. They only arrange the page's own units.
-            foreach (var g in given) if (g.N >= 0 && g.N < units.Count && DocFormat.Roles.Contains(g.Role)) roles.TryAdd(g.N, g.Role);
+            foreach (var g in given)
+                if (g.N >= 0 && g.N < units.Count && DocFormat.Roles.Contains(g.Role) && roles.TryAdd(g.N, g.Role) && g.Split is { Count: > 0 } cut) splits[g.N] = [.. cut.Take(20)];
         }
         else
         {
@@ -453,7 +459,12 @@ internal sealed class FormatPageHandler(KbDbContext db, IAccess access, ImportSe
                         ["items"] = new JsonObject
                         {
                             ["type"] = "object",
-                            ["properties"] = new JsonObject { ["n"] = new JsonObject { ["type"] = "integer" }, ["role"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray([.. DocFormat.Roles.Select(r => (JsonNode)r)]) } },
+                            ["properties"] = new JsonObject
+                            {
+                                ["n"] = new JsonObject { ["type"] = "integer" },
+                                ["role"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray([.. DocFormat.Roles.Select(r => (JsonNode)r)]) },
+                                ["split"] = new JsonObject { ["type"] = "array", ["maxItems"] = 20, ["items"] = new JsonObject { ["type"] = "string", ["maxLength"] = 200 } },
+                            },
                             ["required"] = new JsonArray("n", "role"), ["additionalProperties"] = false,
                         },
                     },
@@ -463,11 +474,12 @@ internal sealed class FormatPageHandler(KbDbContext db, IAccess access, ImportSe
             var r = await ai.RunAsync(ctx.Actor, AiFeatures.Format, Task, new Dictionary<string, string> { ["lines"] = DocFormat.Lines(units) }, schema, ctx.Cancel);
             if (r.Problem is { } p) return p;
             foreach (var item in r.Value!.Output["roles"]!.AsArray().OfType<JsonObject>())
-                if (item["n"]!.GetValue<int>() is var n && n >= 0 && n < units.Count) roles.TryAdd(n, item["role"]!.GetValue<string>());
+                if (item["n"]!.GetValue<int>() is var n && n >= 0 && n < units.Count && roles.TryAdd(n, item["role"]!.GetValue<string>())
+                    && item["split"] is JsonArray cut && cut.Count > 0) splits[n] = [.. cut.Select(x => x!.GetValue<string>())];
         }
         // The page is rebuilt from its own units: the model names roles and duplicates, it writes nothing. A duplicate goes only when
         // what stays says the same.
-        var (built, removed) = DocFormat.Restructure(source, roles, ctx.Action.Keep?.ToHashSet());
+        var (built, removed) = DocFormat.Restructure(source, roles, ctx.Action.Keep?.ToHashSet(), splits);
         var doc = built.ToJsonString();
         // Kept as a guard all the same: every word of the result is one of the page's, in order.
         if (!DocFormat.OnlyPageWords(DocText.Plain(before, renderers), DocText.Plain(doc, renderers)))
@@ -481,6 +493,6 @@ internal sealed class FormatPageHandler(KbDbContext db, IAccess access, ImportSe
             ["duplicatesRemoved"] = removed.Sum(x => x.Units.Count).ToString(System.Globalization.CultureInfo.InvariantCulture),
         });
         return new FormatDto(doc, LineDiff.Diff(DocText.MarkdownLines(before, renderers), DocText.MarkdownLines(doc, renderers)),
-            [.. removed.Select(x => new FormatRemovedDto(x.Units, x.Text, x.SameAs))], [.. roles.OrderBy(x => x.Key).Select(x => new FormatRoleDto(x.Key, x.Value))]);
+            [.. removed.Select(x => new FormatRemovedDto(x.Units, x.Text, x.SameAs))], [.. roles.OrderBy(x => x.Key).Select(x => new FormatRoleDto(x.Key, x.Value, splits.GetValueOrDefault(x.Key)))]);
     }
 }

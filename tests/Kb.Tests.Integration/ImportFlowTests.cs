@@ -48,7 +48,11 @@ public sealed class ImportFlowTests : IAsyncLifetime
                 var lines = data["lines"]!.GetValue<string>().Split('\n');
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 string Text(string line) => line[(line.IndexOf(") ", StringComparison.Ordinal) + 2)..].TrimStart('1', '.', ' ').TrimEnd('.');
-                var roles = new JsonArray([.. lines.Select((line, n) => (JsonNode)new JsonObject { ["n"] = n, ["role"] = !seen.Add(Text(line)) ? "duplicate" : n == 0 ? "heading2" : "step" })]);
+                // A line of run-together label and value items is cut where the second and third start.
+                var roles = new JsonArray([.. lines.Select((line, n) => (JsonNode)(line.Contains("Owner:", StringComparison.Ordinal)
+                    ? new JsonObject { ["n"] = n, ["role"] = "paragraph", ["split"] = new JsonArray("Owner:", "Last verified:", "Nowhere:") }
+                    : new JsonObject { ["n"] = n, ["role"] = !seen.Add(Text(line)) ? "duplicate" : n == 0 ? "heading2" : "step" }))]);
+                if (!system.Contains("\"split\"", StringComparison.Ordinal)) roles = [];
                 if (ChangeWords) roles[0]!["n"] = 99;
                 content = new JsonObject { ["roles"] = roles }.ToJsonString();
             }
@@ -422,5 +426,31 @@ public sealed class ImportFlowTests : IAsyncLifetime
 
         var (rita, _) = await UserAsync("reed", "Reader");
         Assert.Equal(HttpStatusCode.Forbidden, (await rita.PostAsJsonAsync($"/api/v1/pages/{id}/format", new { contentJson = page.GetProperty("contentJson").GetString() }, Ct)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Format_PutsEachRunTogetherLabelAndValueOnItsOwnLine_WithItsMarks_AndBuildsItAgainWithoutTheModel()
+    {
+        var page = (await (await _admin.PostAsJsonAsync($"/api/v1/spaces/{_space}/pages", new
+        {
+            kind = "Page", title = "Kraken",
+            contentJson = """{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","marks":[{"type":"bold"}],"text":"Applies to:"},{"type":"text","text":" "},{"type":"text","marks":[{"type":"code"}],"text":"kv-platform-prod"},{"type":"text","text":" and anything within ten feet of it. "},{"type":"text","marks":[{"type":"bold"}],"text":"Owner:"},{"type":"text","text":" Cloud Platform Engineering. "},{"type":"text","marks":[{"type":"bold"}],"text":"Last verified:"},{"type":"text","text":" after the incident we don't talk about."}]}]}""",
+        }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct));
+        var id = page.GetProperty("id").GetGuid();
+        var before = page.GetProperty("contentJson").GetString();
+        var r = await _admin.PostAsJsonAsync($"/api/v1/pages/{id}/format", new { contentJson = before }, Ct);
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var preview = await r.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        var doc = JsonNode.Parse(preview.GetProperty("contentJson").GetString()!)!["content"]!.AsArray();
+        Assert.Equal(["Applies to: kv-platform-prod and anything within ten feet of it.", "Owner: Cloud Platform Engineering.", "Last verified: after the incident we don't talk about."],
+            doc.Select(n => Kb.Core.Content.DocText.Plain(new JsonObject { ["type"] = "doc", ["content"] = new JsonArray(n!.DeepClone()) }.ToJsonString()).Trim()));
+        Assert.Equal("bold", doc[1]!["content"]![0]!["marks"]![0]!["type"]!.GetValue<string>());
+        Assert.Equal(["Owner:", "Last verified:", "Nowhere:"], preview.GetProperty("roles")[0].GetProperty("split").EnumerateArray().Select(x => x.GetString()));
+
+        // Built again from the roles the preview gave (as keeping a duplicate does): the same cut, no model call.
+        var calls = _model.Calls;
+        var again = await (await _admin.PostAsJsonAsync($"/api/v1/pages/{id}/format", new { contentJson = before, roles = preview.GetProperty("roles"), keep = Array.Empty<int>() }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct);
+        Assert.Equal(preview.GetProperty("contentJson").GetString(), again.GetProperty("contentJson").GetString());
+        Assert.Equal(calls, _model.Calls);
     }
 }

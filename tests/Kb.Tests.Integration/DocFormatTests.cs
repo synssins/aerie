@@ -117,4 +117,44 @@ public sealed class DocFormatTests
         Assert.True(DocFormat.Same("Run the reset from the jump host and confirm the counters are back to normal", "Run the reset from the jump host and confirm all counters are back to normal"));
         Assert.False(DocFormat.Same("", ""));
     }
+
+    private static JsonObject T(string text, string mark) => new() { ["type"] = "text", ["text"] = text, ["marks"] = new JsonArray(new JsonObject { ["type"] = mark }) };
+
+    /// <summary>Label and value items run together in one paragraph, as the demo pages have them.</summary>
+    private static JsonObject Metadata() => new()
+    {
+        ["type"] = "doc",
+        ["content"] = new JsonArray(
+            P(T("Applies to:", "bold"), T(" "), T("kv-platform-prod", "code"), T(" and anything within ten feet of it. "), T("Owner:", "bold"),
+              T(" Cloud Platform Engineering. "), T("Last verified:", "bold"), T(" after the incident we don't talk about.")),
+            H("Symptoms")),
+    };
+
+    [Fact]
+    public void ARunTogetherParagraph_IsCutWhereTheModelSaysEachItemStarts_KeepingItsMarksAndEveryWord()
+    {
+        var splits = new Dictionary<int, IReadOnlyList<string>> { [0] = ["Owner:", "Last verified:"] };
+        var (doc, removed) = DocFormat.Restructure(Metadata(), new Dictionary<int, string> { [0] = "paragraph" }, null, splits);
+        Assert.Empty(removed);
+        var blocks = doc["content"]!.AsArray();
+        Assert.Equal(["paragraph", "paragraph", "paragraph", "heading"], blocks.Select(n => n!["type"]!.GetValue<string>()));
+        string Line(int i) => DocText.Plain(new JsonObject { ["type"] = "doc", ["content"] = new JsonArray(blocks[i]!.DeepClone()) }.ToJsonString()).Trim();
+        Assert.Equal("Applies to: kv-platform-prod and anything within ten feet of it.", Line(0));
+        Assert.Equal("Owner: Cloud Platform Engineering.", Line(1));
+        Assert.Equal("Last verified: after the incident we don't talk about.", Line(2));
+        // Each label keeps its bold, the value its code mark.
+        Assert.Equal("bold", blocks[1]!["content"]![0]!["marks"]![0]!["type"]!.GetValue<string>());
+        Assert.Equal("Owner:", blocks[1]!["content"]![0]!["text"]!.GetValue<string>());
+        Assert.Equal("code", blocks[0]!["content"]![2]!["marks"]![0]!["type"]!.GetValue<string>());
+        Assert.True(DocFormat.OnlyPageWords(Plain(Metadata()), Plain(doc)));
+    }
+
+    [Fact]
+    public void ACutThatIsNotInTheText_OrNotAtAWordStart_OrInAHeading_IsIgnored()
+    {
+        var splits = new Dictionary<int, IReadOnlyList<string>> { [0] = ["Nowhere:", "wner:", "Applies to:", "Owner: Cloud Platform Engineering. Last verified: after the incident we don't talk about. And more"], [1] = ["toms"] };
+        var (doc, _) = DocFormat.Restructure(Metadata(), new Dictionary<int, string> { [0] = "paragraph" }, null, splits);
+        Assert.Equal(["paragraph", "heading"], doc["content"]!.AsArray().Select(n => n!["type"]!.GetValue<string>()));
+        Assert.Equal(Plain(Metadata()), Plain(doc));
+    }
 }
