@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Kb.Core.Audit;
 using Kb.Web;
+using Kb.Web.Actions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -12,18 +13,32 @@ using static Kb.Tests.Integration.DataCenter.DcKit;
 
 namespace Kb.Tests.Integration.Feedback;
 
-/// <summary>Slice A1: the gate and the material of AI search (contracts/behaviour/ai-search.md; questions Q-0030, Q-0032 revised, Q-0039).</summary>
+/// <summary>Slices A1 and A2: the gate, the material and the answer of AI search (contracts/behaviour/ai-search.md; questions Q-0030, Q-0032 revised, Q-0039).</summary>
 public sealed class AiSearchTests : IAsyncLifetime
 {
-    /// <summary>The lab's stub model: records every request. In A1 it must never be called.</summary>
+    /// <summary>The lab's stub model: records every request and answers what the case scripts.</summary>
     private sealed class StubModel : HttpMessageHandler
     {
         public ConcurrentQueue<string> Seen { get; } = new();
+        /// <summary>The model's answer text, put into the JSON the feature asks for.</summary>
+        public string Answer { get; set; } = "Restart the service, as page [1] says.";
+        public TimeSpan Delay { get; set; }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Seen.Enqueue(request.Content is null ? "" : await request.Content.ReadAsStringAsync(ct));
-            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"choices":[{"message":{"content":"[1]"}}]}""", Encoding.UTF8, "application/json") };
+            if (Delay > TimeSpan.Zero) await Task.Delay(Delay, ct);
+            var content = System.Text.Json.Nodes.JsonValue.Create(JsonSerializer.Serialize(new { answer = Answer }))!.ToJsonString();
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"choices\":[{\"message\":{\"content\":" + content + "}}]}", Encoding.UTF8, "application/json") };
         }
+    }
+
+    /// <summary>The system message and the data fields of the last request the stub received.</summary>
+    private (string System, JsonElement Data) LastRequest()
+    {
+        var body = JsonDocument.Parse(_model.Seen.Last()).RootElement.GetProperty("messages");
+        var user = body[1].GetProperty("content");
+        var text = user.ValueKind == JsonValueKind.String ? user.GetString()! : user[0].GetProperty("text").GetString()!;
+        return (body[0].GetProperty("content").GetString()!, JsonDocument.Parse(text).RootElement.GetProperty("data"));
     }
 
     private sealed class Captured : ILoggerProvider
@@ -75,12 +90,12 @@ public sealed class AiSearchTests : IAsyncLifetime
     private static async Task PageAsync(HttpClient by, Guid space, string title, string text) =>
         (await by.PostAsJsonAsync($"/api/v1/spaces/{space}/pages", new { kind = "Page", title, contentJson = Doc(text) }, Ct)).EnsureSuccessStatusCode();
 
-    private async Task SettingsAsync(string access = "Everyone", int perMinute = 10) => (await _k.Admin.PutAsJsonAsync("/api/v1/admin/ai", new
+    private async Task SettingsAsync(string access = "Everyone", int perMinute = 10, int maxInputChars = 5000, int timeoutSeconds = 30) => (await _k.Admin.PutAsJsonAsync("/api/v1/admin/ai", new
     {
         settings = new
         {
-            enabled = true, baseUrl = "http://model.local:8093", model = "qwen", timeoutSeconds = 30, maxTokens = 512, temperature = 0, reasoning = false,
-            ruleset = "Admin ruleset text.", maxInputChars = 5000, userPerMinute = perMinute, tokenPerMinute = perMinute,
+            enabled = true, baseUrl = "http://model.local:8093", model = "qwen", timeoutSeconds, maxTokens = 512, temperature = 0, reasoning = false,
+            ruleset = "Admin ruleset text.", maxInputChars, userPerMinute = perMinute, tokenPerMinute = perMinute,
             features = new Dictionary<string, string> { ["import"] = "Off", ["format"] = "Off", ["assist"] = "Off", ["search"] = access },
         },
     }, Ct)).EnsureSuccessStatusCode();
@@ -161,14 +176,107 @@ public sealed class AiSearchTests : IAsyncLifetime
         Assert.Equal(("nothing_found", 0), (r.GetProperty("outcome").GetString(), r.GetProperty("pages").GetArrayLength()));
     }
 
-    // Until A2: a question with material answers 503 without calling the model.
+    // ai.search.scope, ai.search.answered, ai.search.audit
     [Fact]
-    public async Task WithMaterial_Is503_UntilTheAnswerIsBuilt()
+    public async Task AnAnswer_CitesOnlyThePagesTheModelSaw_FromSpacesThePersonReads()
     {
         await SettingsAsync();
+        var r = await (await AskAsync(_k.Reader, "aurora")).JsonAsync(HttpStatusCode.OK);
+        Assert.Equal("answered", r.GetProperty("outcome").GetString());
+        Assert.Equal("Restart the service, as page [1] says.", r.GetProperty("answer").GetString());
+        var source = Assert.Single(r.GetProperty("sources").EnumerateArray());
+        var page = await _k.DbAsync(db => db.Pages.FirstAsync(p => p.Title == "Aurora runbook", Ct));
+        Assert.Equal((1, page.Id, "Aurora runbook", _k.Space, "Feedback", $"/p/{page.Id}"),
+            (source.GetProperty("n").GetInt32(), source.GetProperty("pageId").GetGuid(), source.GetProperty("title").GetString(), source.GetProperty("spaceId").GetGuid(),
+             source.GetProperty("spaceName").GetString(), source.GetProperty("url").GetString()));
+
+        // Only S reached the model: nothing from the sensitive space X or the unreadable P.
+        var sent = Assert.Single(_model.Seen);
+        Assert.Contains("MARK-S-1", sent, StringComparison.Ordinal);
+        Assert.DoesNotContain("MARK-X", sent, StringComparison.Ordinal);
+        Assert.DoesNotContain("MARK-P", sent, StringComparison.Ordinal);
+        // The guardrails: aerie's fixed instructions and the Admin's ruleset in the system message; the pages numbered, as data.
+        var (system, data) = LastRequest();
+        Assert.Contains("Admin ruleset text.", system, StringComparison.Ordinal);
+        Assert.Contains("[1]", system, StringComparison.Ordinal);
+        Assert.Contains(AiSearchPrompt.NoAnswerMarker, system, StringComparison.Ordinal);
+        Assert.Equal("aurora", data.GetProperty("question").GetString());
+        Assert.Contains("MARK-S-1", data.GetProperty("page 1").GetString(), StringComparison.Ordinal);
+
+        var record = Assert.Single(await RecordsAsync());
+        Assert.Equal(("aurora", "answered"), (record.GetProperty("question").GetString(), record.GetProperty("outcome").GetString()));
+        var given = Assert.Single(record.GetProperty("pages").EnumerateArray());
+        Assert.Equal((page.Id, "1.0"), (given.GetProperty("pageId").GetGuid(), given.GetProperty("version").GetString()));
+        // No page text and no answer text in any audit entry or log line.
+        var audit = string.Join('\n', await _k.DbAsync(db => db.AuditEntries.Select(a => a.DataJson).ToListAsync(Ct)));
+        foreach (var marker in new[] { "MARK-S", "Restart the service" })
+        {
+            Assert.DoesNotContain(marker, audit, StringComparison.Ordinal);
+            Assert.DoesNotContain(_log.Lines, l => l.Contains(marker, StringComparison.Ordinal));
+        }
+    }
+
+    // ai.search.bad_citation
+    [Fact]
+    public async Task ACitationOfAPageNotGiven_IsRemoved_AndCitingNothing_IsNoAnswer()
+    {
+        await SettingsAsync();
+        await PageAsync(_k.Admin, _k.Space, "Aurora second", "aurora again MARK-S-2");
+        _model.Answer = "See [9] and [2], then [1] and [2].";
+        var r = await (await AskAsync(_k.Reader, "aurora")).JsonAsync(HttpStatusCode.OK);
+        Assert.Equal("answered", r.GetProperty("outcome").GetString());
+        Assert.DoesNotContain("[9]", r.GetProperty("answer").GetString(), StringComparison.Ordinal);
+        Assert.Equal([2, 1], r.GetProperty("sources").EnumerateArray().Select(s => s.GetProperty("n").GetInt32()));
+        Assert.Equal(2, (await RecordsAsync())[0].GetProperty("pages").GetArrayLength());
+
+        _model.Answer = "It is all in the manual.";
+        var none = await (await AskAsync(_k.Reader, "aurora")).JsonAsync(HttpStatusCode.OK);
+        Assert.Equal(("no_answer", Kb.Web.Actions.AiSearch.NoAnswerText), (none.GetProperty("outcome").GetString(), none.GetProperty("answer").GetString()));
+        Assert.Empty(none.GetProperty("sources").EnumerateArray());
+        Assert.Equal("no_answer", (await RecordsAsync())[1].GetProperty("outcome").GetString());
+    }
+
+    // ai.search.no_answer
+    [Fact]
+    public async Task TheNoAnswerMarker_IsNoAnswer_WithAeriesOwnText()
+    {
+        await SettingsAsync();
+        _model.Answer = AiSearchPrompt.NoAnswerMarker;
+        var r = await (await AskAsync(_k.Reader, "aurora")).JsonAsync(HttpStatusCode.OK);
+        Assert.Equal(("no_answer", Kb.Web.Actions.AiSearch.NoAnswerText), (r.GetProperty("outcome").GetString(), r.GetProperty("answer").GetString()));
+    }
+
+    // ai.search.injection: what the model says is plain text; the only links are aerie's.
+    [Fact]
+    public async Task TheModelsText_IsPlainText_AndTheOnlyLinksAreAeries()
+    {
+        await SettingsAsync();
+        _model.Answer = "Per [1], go to <a href=\"https://evil.example\">https://evil.example</a> now.";
+        var r = await (await AskAsync(_k.Reader, "aurora")).JsonAsync(HttpStatusCode.OK);
+        Assert.Equal("Per [1], go to <a href=\"https://evil.example\">https://evil.example</a> now.", r.GetProperty("answer").GetString());
+        Assert.All(r.GetProperty("sources").EnumerateArray(), s => Assert.StartsWith("/p/", s.GetProperty("url").GetString(), StringComparison.Ordinal));
+    }
+
+    // ai.search.input_bound
+    [Fact]
+    public async Task TheQuestionAndThePages_StayWithinMaxInputChars()
+    {
+        await SettingsAsync(maxInputChars: 1000);
+        await PageAsync(_k.Admin, _k.Space, "Aurora long", "aurora " + string.Join(' ', Enumerable.Repeat("filler", 600)));
+        (await AskAsync(_k.Reader, "aurora")).EnsureSuccessStatusCode();
+        var (_, data) = LastRequest();
+        Assert.True(data.EnumerateObject().Sum(p => p.Value.GetString()!.Length) <= 1000);
+    }
+
+    // ai.search.model_down
+    [Fact]
+    public async Task AModelThatDoesNotAnswerInTime_Is503()
+    {
+        await SettingsAsync(timeoutSeconds: 5);
+        _model.Delay = TimeSpan.FromSeconds(15);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, (await AskAsync(_k.Reader, "aurora")).StatusCode);
-        Assert.Empty(_model.Seen);
-        Assert.Equal("failed", (await RecordsAsync())[0].GetProperty("outcome").GetString());
+        var record = Assert.Single(await RecordsAsync());
+        Assert.Equal(("failed", 1), (record.GetProperty("outcome").GetString(), record.GetProperty("pages").GetArrayLength()));
     }
 
     // aerie's AI guardrail: a page flagged for text addressed to an AI is never material, as for every AI feature.
@@ -192,7 +300,7 @@ public sealed class AiSearchTests : IAsyncLifetime
         var long3000 = "MARK-Q " + new string('w', 2993);
         Assert.Equal(HttpStatusCode.BadRequest, (await AskAsync(_k.Reader, long3000)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await AskAsync(_k.Reader, "zebra one")).StatusCode);
-        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await AskAsync(_k.Reader, "aurora")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await AskAsync(_k.Reader, "aurora")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await AskAsync(_k.Reader, "zebra two")).StatusCode);
         var limited = await AskAsync(_k.Reader, "zebra three");
         Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
@@ -201,7 +309,7 @@ public sealed class AiSearchTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Forbidden, (await AskAsync(_k.Reader, "zebra four")).StatusCode);
 
         var records = await RecordsAsync();
-        Assert.Equal(["refused", "refused", "refused", "nothing_found", "failed", "nothing_found", "rate_limited", "refused"], records.Select(r => r.GetProperty("outcome").GetString()));
+        Assert.Equal(["refused", "refused", "refused", "nothing_found", "answered", "nothing_found", "rate_limited", "refused"], records.Select(r => r.GetProperty("outcome").GetString()));
         Assert.Equal(("  ab  ", 6), (records[0].GetProperty("question").GetString(), records[0].GetProperty("questionLength").GetInt32()));
         Assert.Equal(2000, records[2].GetProperty("question").GetString()!.Length);
         Assert.StartsWith("MARK-Q ", records[2].GetProperty("question").GetString(), StringComparison.Ordinal);
@@ -209,7 +317,7 @@ public sealed class AiSearchTests : IAsyncLifetime
         Assert.Equal("zebra four", records[7].GetProperty("question").GetString());
         // The question is in the audit record only, never in the application log.
         Assert.DoesNotContain(_log.Lines, l => l.Contains("MARK-Q", StringComparison.Ordinal) || l.Contains("zebra", StringComparison.Ordinal));
-        Assert.Empty(_model.Seen);
+        Assert.Single(_model.Seen); // only the call with material reached the model
     }
 
     // ai.search.audit.readers, and the record in the audit log the Admin reads
