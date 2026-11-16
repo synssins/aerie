@@ -209,6 +209,18 @@ public sealed class MatrixTests : IAsyncLifetime
                 Assert.Equal(HttpStatusCode.Created, made.StatusCode);
                 return (await made.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("client").GetProperty("id").GetGuid().ToString();
             }
+            case "oauthRequest":
+            {
+                // Pending for a user who is none of the seven callers. Written straight to the database: starting one is not an /api/v1 route.
+                var clientId = Guid.Parse(await ValueAsync("oauthClient", space));
+                var request = new Kb.Core.Identity.OAuthAuthorizeRequest
+                {
+                    ClientId = clientId, UserId = await NewUserAsync("oauth" + Guid.NewGuid().ToString("N")[..8]), RedirectUri = "https://matrix.example/cb", Scopes = "READ",
+                    CreatedAt = DateTimeOffset.UtcNow, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10),
+                };
+                await _f.WithDbAsync(async db => { db.OAuthAuthorizeRequests.Add(request); await db.SaveChangesAsync(Ct); });
+                return request.Id.ToString();
+            }
             default: throw new InvalidOperationException($"The matrix names {{{name}}}, which the test does not know how to make.");
         }
     }

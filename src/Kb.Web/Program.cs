@@ -115,6 +115,9 @@ services.AddRateLimiter(o =>
         HttpMethods.IsPost(http.Request.Method) && (http.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText is "/api/v1/auth/local/signin" or "/api/v1/auth/local/password"
             or "/api/v1/auth/local/code" or "/api/v1/auth/codes" or "/api/v1/auth/codes/key"
             ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("signin:" + http.Connection.RemoteIpAddress, _ => new() { PermitLimit = kb.Auth.SignInsPerMinutePerAddress, Window = TimeSpan.FromMinutes(1) })
+        // OAuth 2.0 authorize requests are counted per address, like sign-ins (identity-plan.md, slice 5).
+        : http.GetEndpoint()?.Metadata.GetMetadata<Kb.Web.DataCenter.DcOAuthRoute>() is not null && HttpMethods.IsGet(http.Request.Method)
+            ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("oauth.authorize:" + http.Connection.RemoteIpAddress, _ => new() { PermitLimit = kb.Auth.SignInsPerMinutePerAddress, Window = TimeSpan.FromMinutes(1) })
         // Refused Basic credentials on the Data Center compatible surface are limited before authentication instead (BasicThrottle.GateAsync).
         : http.User.Identity?.IsAuthenticated != true && Kb.Web.DataCenter.DcRest.HasBasic(http.Request) && Kb.Web.DataCenter.DcRest.IsUnderRoot(http)
             ? System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter("")
@@ -277,6 +280,7 @@ api.MapAttachmentEndpoints();
 api.MapStorageEndpoints();
 api.MapTokenEndpoints();
 api.MapOAuthClientEndpoints();
+api.MapOAuthConsentEndpoints();
 api.MapLogEndpoints();
 api.MapPluginAdminEndpoints();
 api.MapSearchEndpoints();
@@ -287,6 +291,7 @@ api.MapInventoryEndpoints();
 api.MapImportEndpoints();
 app.MapPluginFiles();
 Kb.Web.DataCenter.DcRoutes.MapDataCenterApi(app);
+app.MapDcOAuth();
 // Each loaded plugin's own routes, under /api/v1/plugins/<id>/. They need sign-in unless a route says AllowAnonymous, and are closed to API tokens.
 // A server that runs an old set of plugins answers 503 there until it has restarted.
 foreach (var routes in boot.Registrations.All<RouteMap>())

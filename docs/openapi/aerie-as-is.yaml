@@ -4064,6 +4064,80 @@ paths:
       security:
         - cookieAuth: []
       "x-kb-api-token": "closed"
+  "/api/v1/oauth/authorize-requests/{id}":
+    get:
+      tags:
+        - "oauth"
+      operationId: "oauth.request.read"
+      "x-kb-action": "oauth.request.read"
+      "x-kb-changes-data": false
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/OAuthAuthorizeRequestDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
+  "/api/v1/oauth/authorize-requests/{id}/decision":
+    post:
+      tags:
+        - "oauth"
+      operationId: "oauth.request.decide"
+      "x-kb-action": "oauth.request.decide"
+      "x-kb-changes-data": true
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/OAuthDecisionRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/OAuthDecisionDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
   "/api/v1/pages/{id}":
     delete:
       tags:
@@ -7198,6 +7272,25 @@ components:
           type: "boolean"
         email:
           type: "boolean"
+    OAuthAuthorizeRequestDto:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        clientName:
+          type: "string"
+        scopes:
+          type: "array"
+          items:
+            type: "string"
+        alreadyGranted:
+          type: "array"
+          items:
+            type: "string"
+        expiresAt:
+          type: "string"
+          format: "date-time"
     OAuthClientCreatedDto:
       type: "object"
       properties:
@@ -7267,6 +7360,16 @@ components:
         enabled:
           type: "boolean"
           nullable: true
+    OAuthDecisionDto:
+      type: "object"
+      properties:
+        redirectTo:
+          type: "string"
+    OAuthDecisionRequest:
+      type: "object"
+      properties:
+        allow:
+          type: "boolean"
     OwnerRefDto:
       type: "object"
       properties:

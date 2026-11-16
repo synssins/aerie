@@ -92,9 +92,9 @@ public sealed class DcPlumbingTests : IAsyncLifetime
         await (await _f.NewClient().GetAsync("/rest/api/no-such-thing.json", Ct)).ErrorAsync(HttpStatusCode.NotFound);
         await (await _f.NewClient().GetAsync("/rest/api/", Ct)).ErrorAsync(HttpStatusCode.NotFound);
         await (await _f.NewClient().PostAsJsonAsync("/rest/api/content/1/anything", new { }, Ct)).ErrorAsync(HttpStatusCode.NotFound);
-        // The OAuth 2.0 surface is not built yet; its paths answer JSON too, never the web app.
-        await (await _f.NewClient().GetAsync("/rest/oauth2/latest/authorize", Ct)).ErrorAsync(HttpStatusCode.NotFound);
-        await (await _f.NewClient().PostAsJsonAsync("/rest/oauth2/latest/token", new { }, Ct)).ErrorAsync(HttpStatusCode.NotFound);
+        // Paths of the OAuth 2.0 surface that are not its endpoints answer JSON too, never the web app.
+        await (await _f.NewClient().GetAsync("/rest/oauth2/latest/no-such-thing", Ct)).ErrorAsync(HttpStatusCode.NotFound);
+        await (await _f.NewClient().PostAsJsonAsync("/rest/oauth2/latest/authorize", new { }, Ct)).ErrorAsync(HttpStatusCode.NotFound);
     }
 
     [Fact]

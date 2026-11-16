@@ -7,6 +7,7 @@ import { Setup, type SetupStatus } from "./Setup";
 import { session } from "./kit/host";
 import { loadPluginsOnce } from "./kit/loader";
 import { passwordLinkAt, SetPassword } from "./SetPassword";
+import { Consent, consentAt } from "./Consent";
 
 export function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
@@ -19,6 +20,8 @@ export function App() {
   const [signingIn, setSigningIn] = useState(false);
   // A password link opens its own screen, whoever is or is not signed in in this browser.
   const [link, setLink] = useState(() => passwordLinkAt(location.pathname, location.hash));
+  // An OAuth 2.0 application sent the browser here for consent: sign in first if needed, then the consent page.
+  const [consent] = useState(() => consentAt(location.pathname));
 
   useEffect(() => {
     void loadBrand();
@@ -35,6 +38,7 @@ export function App() {
 
   if (me === undefined || !brand || !setup) return null;
   if (link) return <SetPassword brand={brand} userId={link.userId} token={link.token} onDone={() => { history.replaceState(history.state, "", "/"); setLink(null); }} />;
+  if (consent) return me ? <Consent id={consent} me={me} brand={brand} /> : <SignIn brand={brand} onSignedIn={setMe} />;
   if (me === null && setup.required)
     return <Setup brand={brand} codeRequired={setup.codeRequired} onDone={(m) => { setSetup({ required: false, codeRequired: false }); setMe(m); }} />;
   if (me === null && openSpaces === null) return null;

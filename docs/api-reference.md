@@ -153,6 +153,8 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | GET | `/api/v1/notifications/count` | `notification.count` |  | `NotificationCountDto` ([NotificationCountDto](plugins/action-reference.md#notificationcountdto)) | No | Needed | No |
 | POST | `/api/v1/notifications/read-all` | `notification.mark.all` |  | `Unit` | Yes | Needed | No |
 | POST | `/api/v1/notifications/{id:guid}/read` | `notification.mark` |  | `Unit` | Yes | Needed | No |
+| GET | `/api/v1/oauth/authorize-requests/{id:guid}` | `oauth.request.read` |  | `OAuthAuthorizeRequestDto` ([OAuthAuthorizeRequestDto](plugins/action-reference.md#oauthauthorizerequestdto)) | No | Needed | No |
+| POST | `/api/v1/oauth/authorize-requests/{id:guid}/decision` | `oauth.request.decide` | `OAuthDecisionRequest` ([OAuthDecisionRequest](plugins/action-reference.md#oauthdecisionrequest)) | `OAuthDecisionDto` ([OAuthDecisionDto](plugins/action-reference.md#oauthdecisiondto)) | Yes | Needed | No |
 | DELETE | `/api/v1/pages/{id:guid}` | `page.delete` |  | `Unit` | Yes | Needed | Write |
 | GET | `/api/v1/pages/{id:guid}` | `page.read` |  | `PageDto` ([PageDto](plugins/action-reference.md#pagedto)) | No | Not needed | Read |
 | PUT | `/api/v1/pages/{id:guid}` | `page.save` | `SavePageRequest` ([SavePageRequest](plugins/action-reference.md#savepagerequest)) | `PageDto` ([PageDto](plugins/action-reference.md#pagedto)) | Yes | Needed | Write |
