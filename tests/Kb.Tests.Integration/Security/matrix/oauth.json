@@ -1,0 +1,61 @@
+[
+  {
+    "action": "oauth.client.list",
+    "method": "GET",
+    "path": "/api/v1/admin/oauth/clients",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "oauth.client.create",
+    "method": "POST",
+    "path": "/api/v1/admin/oauth/clients",
+    "body": {"name": "Matrix", "type": "confidential", "redirectUris": ["https://matrix.example/cb"], "scopes": ["READ"]},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 201},
+    "scope": "server"
+  },
+  {
+    "action": "oauth.client.read",
+    "method": "GET",
+    "path": "/api/v1/admin/oauth/clients/{oauthClient}",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "oauth.client.update",
+    "method": "PUT",
+    "path": "/api/v1/admin/oauth/clients/{oauthClient}",
+    "body": {"name": "Renamed"},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "oauth.client.delete",
+    "method": "DELETE",
+    "path": "/api/v1/admin/oauth/clients/{oauthClient}",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 204},
+    "scope": "server"
+  },
+  {
+    "action": "oauth.client.secret.rotate",
+    "method": "POST",
+    "path": "/api/v1/admin/oauth/clients/{oauthClient}/secret",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "auth.compat.read",
+    "method": "GET",
+    "path": "/api/v1/admin/auth/compat",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
+    "action": "auth.compat.save",
+    "method": "PUT",
+    "path": "/api/v1/admin/auth/compat",
+    "body": {"basicPasswordEnabled": true, "allowHttpRedirects": false, "codeSeconds": 300, "accessTokenSeconds": 3600, "refreshTokenDays": 90},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  }
+]

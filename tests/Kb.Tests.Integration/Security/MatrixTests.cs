@@ -203,6 +203,12 @@ public sealed class MatrixTests : IAsyncLifetime
                 Assert.Equal(HttpStatusCode.Created, made.StatusCode);
                 return (await made.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("id").GetGuid().ToString();
             }
+            case "oauthClient":
+            {
+                var made = await _breakGlass.PostAsJsonAsync("/api/v1/admin/oauth/clients", new { name = "Matrix", type = "confidential", redirectUris = new[] { "https://matrix.example/cb" }, scopes = new[] { "READ" } }, Ct);
+                Assert.Equal(HttpStatusCode.Created, made.StatusCode);
+                return (await made.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("client").GetProperty("id").GetGuid().ToString();
+            }
             default: throw new InvalidOperationException($"The matrix names {{{name}}}, which the test does not know how to make.");
         }
     }

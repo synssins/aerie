@@ -125,6 +125,18 @@ Write. `EnrollCodes`, answers `CodesEnrolled` ([CodesEnrolled](#codesenrolled)).
 
 Write. `NewCodeKey`, answers `CodeKey` ([CodeKey](#codekey)). Core only.
 
+## auth.compat.read
+
+Read. `ReadCompatAuthSettings`, answers `CompatAuthSettingsDto` ([CompatAuthSettingsDto](#compatauthsettingsdto)). Core only.
+
+## auth.compat.save
+
+Write. `SaveCompatAuthSettings`, answers `CompatAuthSettingsDto` ([CompatAuthSettingsDto](#compatauthsettingsdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Settings | `CompatAuthSettingsDto` ([CompatAuthSettingsDto](#compatauthsettingsdto)) | required |
+
 ## auth.local.disable
 
 Write. `DisableLocalSignIn`, answers `Unit`.
@@ -1063,6 +1075,51 @@ Write. `MarkNotification`, answers `Unit`.
 ## notification.mark.all
 
 Write. `MarkAllNotifications`, answers `Unit`.
+
+## oauth.client.create
+
+Write. `CreateOAuthClient`, answers `OAuthClientCreatedDto` ([OAuthClientCreatedDto](#oauthclientcreateddto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Request | `OAuthClientRequest` ([OAuthClientRequest](#oauthclientrequest)) | required |
+
+## oauth.client.delete
+
+Write. `DeleteOAuthClient`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `Guid` | required |
+
+## oauth.client.list
+
+Read. `ListOAuthClients`, answers `IReadOnlyList<OAuthClientDto>` ([OAuthClientDto](#oauthclientdto)). Core only.
+
+## oauth.client.read
+
+Read. `ReadOAuthClient`, answers `OAuthClientDto` ([OAuthClientDto](#oauthclientdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `Guid` | required |
+
+## oauth.client.secret.rotate
+
+Write. `RotateOAuthClientSecret`, answers `OAuthClientCreatedDto` ([OAuthClientCreatedDto](#oauthclientcreateddto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `Guid` | required |
+
+## oauth.client.update
+
+Write. `UpdateOAuthClient`, answers `OAuthClientDto` ([OAuthClientDto](#oauthclientdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `Guid` | required |
+| Request | `OAuthClientRequest` ([OAuthClientRequest](#oauthclientrequest)) | required |
 
 ## page.ai.review
 
@@ -2545,6 +2602,28 @@ Enum: `Off`, `Admins`, `Everyone`.
 ```json
 {
   "exempt": false
+}
+```
+
+### CompatAuthSettingsDto
+
+| Field | Type |
+|---|---|
+| basicPasswordEnabled | `bool` |
+| allowHttpRedirects | `bool` |
+| codeSeconds | `int` |
+| accessTokenSeconds | `int` |
+| refreshTokenDays | `int` |
+| grantMaxDays | `int?` |
+
+```json
+{
+  "basicPasswordEnabled": false,
+  "allowHttpRedirects": false,
+  "codeSeconds": 0,
+  "accessTokenSeconds": 0,
+  "refreshTokenDays": 0,
+  "grantMaxDays": 0
 }
 ```
 
@@ -4090,6 +4169,101 @@ Enum: `Same`, `Add`, `Del`.
 {
   "inApp": false,
   "email": false
+}
+```
+
+### OAuthClientCreatedDto
+
+| Field | Type |
+|---|---|
+| clientSecret | `string?` |
+| client | `OAuthClientDto` ([OAuthClientDto](#oauthclientdto)) |
+
+```json
+{
+  "clientSecret": "text",
+  "client": {
+    "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+    "clientId": "text",
+    "name": "text",
+    "type": "text",
+    "redirectUris": [
+      "text"
+    ],
+    "scopes": [
+      "text"
+    ],
+    "requirePkce": false,
+    "enabled": false,
+    "activeGrants": 0,
+    "createdBy": "text",
+    "createdAt": "2026-11-14T10:00:00\u002B00:00",
+    "secretRotatedAt": "2026-11-14T10:00:00\u002B00:00"
+  }
+}
+```
+
+### OAuthClientDto
+
+| Field | Type |
+|---|---|
+| id | `Guid` |
+| clientId | `string` |
+| name | `string` |
+| type | `string` |
+| redirectUris | `IReadOnlyList<string>` |
+| scopes | `IReadOnlyList<string>` |
+| requirePkce | `bool` |
+| enabled | `bool` |
+| activeGrants | `int` |
+| createdBy | `string` |
+| createdAt | `DateTimeOffset` |
+| secretRotatedAt | `DateTimeOffset?` |
+
+```json
+{
+  "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "clientId": "text",
+  "name": "text",
+  "type": "text",
+  "redirectUris": [
+    "text"
+  ],
+  "scopes": [
+    "text"
+  ],
+  "requirePkce": false,
+  "enabled": false,
+  "activeGrants": 0,
+  "createdBy": "text",
+  "createdAt": "2026-11-14T10:00:00\u002B00:00",
+  "secretRotatedAt": "2026-11-14T10:00:00\u002B00:00"
+}
+```
+
+### OAuthClientRequest
+
+| Field | Type |
+|---|---|
+| name | `string?` |
+| type | `string?` |
+| redirectUris | `IReadOnlyList<string>?` |
+| scopes | `IReadOnlyList<string>?` |
+| requirePkce | `bool?` |
+| enabled | `bool?` |
+
+```json
+{
+  "name": "text",
+  "type": "text",
+  "redirectUris": [
+    "text"
+  ],
+  "scopes": [
+    "text"
+  ],
+  "requirePkce": false,
+  "enabled": false
 }
 ```
 

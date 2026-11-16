@@ -7,6 +7,7 @@ import { AuditLog } from "./admin/AuditLog";
 import { Roles } from "./admin/Roles";
 import { useDialogs } from "./Dialogs";
 import { CodeSettingsPanel } from "./admin/CodeSettings";
+import { ApplicationsPanel, CompatSettingsPanel } from "./admin/Applications";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ArrowLeft, ChevronRight, Ellipsis, FolderTree, HardDrive, House, Lock, Palette, Paperclip, Plug, Plus, Search, Shield, Trash2 } from "lucide-react";
 import { BinTable } from "./Views";
@@ -24,8 +25,8 @@ import { UserTools } from "./admin/UserTools";
 import { TokensPanel } from "./Tokens";
 import { api, ApiError, fmtSize, type AdminUser, type Brand, type PluginInfo, type Space, type TreeNode } from "./api";
 
-export type AdminSection = "spaces" | "users" | "groups" | "roles" | "inventory" | "signin" | "branding" | "search" | "ai" | "uploads" | "storage" | "tokens" | "logs" | "bin" | "plugins" | "audit";
-export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "groups", "roles", "inventory", "signin", "branding", "search", "ai", "uploads", "storage", "tokens", "logs", "bin", "plugins", "audit"];
+export type AdminSection = "spaces" | "users" | "groups" | "roles" | "inventory" | "signin" | "branding" | "search" | "ai" | "uploads" | "storage" | "tokens" | "applications" | "logs" | "bin" | "plugins" | "audit";
+export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "groups", "roles", "inventory", "signin", "branding", "search", "ai", "uploads", "storage", "tokens", "applications", "logs", "bin", "plugins", "audit"];
 type UploadSettings = { attachmentMb: number; serverLimitBytes: number | null };
 
 type Picked = { kind: "user"; item: AdminUser } | null;
@@ -51,7 +52,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
 }) {
   const [allSpaces, setAllSpaces] = useState<Space[]>([]);
   const [open, setOpen] = useState<Record<string, boolean>>({ spaces: true, appearance: section === "branding",
-    security: ["users", "groups", "roles", "inventory", "signin", "tokens", "audit", "logs"].includes(section), storage: ["bin", "storage"].includes(section) });
+    security: ["users", "groups", "roles", "inventory", "signin", "tokens", "applications", "audit", "logs"].includes(section), storage: ["bin", "storage"].includes(section) });
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [userPermissions, setUserPermissions] = useState<PermissionColumn[]>([]);
   const [auditKey, setAuditKey] = useState(0);
@@ -93,7 +94,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
     setVerify(r.valid ? "Chain intact." : `Chain broken at entry ${r.firstBrokenSequence}.`);
   }
 
-  const title = space?.name ?? ({ spaces: "Spaces", users: "Users", groups: "Groups", roles: "Roles", inventory: "Inventory access", signin: "Sign-in", branding: "Branding", search: "Search", ai: "AI", uploads: "Uploads", storage: "Document storage", tokens: "API tokens", logs: "Log shipping", bin: "Recycle bin", plugins: "Plugins", audit: "Audit log" } as const)[section];
+  const title = space?.name ?? ({ spaces: "Spaces", users: "Users", groups: "Groups", roles: "Roles", inventory: "Inventory access", signin: "Sign-in", branding: "Branding", search: "Search", ai: "AI", uploads: "Uploads", storage: "Document storage", tokens: "API tokens", applications: "Applications", logs: "Log shipping", bin: "Recycle bin", plugins: "Plugins", audit: "Audit log" } as const)[section];
 
   async function setAnnouncer(u: AdminUser, enabled: boolean) {
     await api.put(`/admin/users/${u.id}/announcer`, { enabled });
@@ -143,6 +144,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
                   <Link href={to.admin("inventory")} className={`node ${section === "inventory" ? "cur" : ""}`} onNav={() => onNavigate("inventory")}><span className="grow">Inventory access</span></Link>
                   <Link href={to.admin("signin")} className={`node ${section === "signin" ? "cur" : ""}`} onNav={() => onNavigate("signin")}><span className="grow">Sign-in</span></Link>
                   <Link href={to.admin("tokens")} className={`node ${section === "tokens" ? "cur" : ""}`} onNav={() => onNavigate("tokens")}><span className="grow">API tokens</span></Link>
+                  <Link href={to.admin("applications")} className={`node ${section === "applications" ? "cur" : ""}`} onNav={() => onNavigate("applications")}><span className="grow">Applications</span></Link>
                   <Link href={to.admin("audit")} className={`node ${section === "audit" ? "cur" : ""}`} onNav={() => onNavigate("audit")}><span className="grow">Audit log</span></Link>
                   <Link href={to.admin("logs")} className={`node ${section === "logs" ? "cur" : ""}`} onNav={() => onNavigate("logs")}><span className="grow">Log shipping</span></Link>
                 </div>
@@ -234,8 +236,9 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
               {section === "branding" && isAdmin && <BrandingPanel brand={brand} onChanged={onBrandChanged} />}
               {section === "search" && isAdmin && <SearchPanel />}
               {section === "ai" && isAdmin && <AiPanel />}
-              {section === "signin" && isAdmin && <CodeSettingsPanel />}
+              {section === "signin" && isAdmin && <><CodeSettingsPanel /><CompatSettingsPanel /></>}
               {section === "tokens" && isAdmin && <TokensPanel admin spaces={allSpaces} />}
+              {section === "applications" && isAdmin && <ApplicationsPanel />}
               {section === "uploads" && isAdmin && uploads && <UploadsPanel key={uploads.attachmentMb} settings={uploads} onSaved={setUploads} />}
               {section === "bin" && isAdmin && (
                 <>
