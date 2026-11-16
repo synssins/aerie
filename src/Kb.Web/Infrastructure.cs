@@ -89,6 +89,11 @@ public sealed class BreakGlassService(
         await notifier.NotifyAsync(await directory.GetAdminIdsAsync(default), NotificationKinds.SecurityAlert,
             "Break-glass account signed in", $"The break-glass account signed in at {time.GetUtcNow():u} from {remoteIp}.", "/admin/audit", alsoEmail: true);
     }
+
+    /// <summary>The break-glass password was sent with HTTP Basic, which is refused for it (Q-0020); the Admins hear of the attempt.</summary>
+    public async Task OnBasicRefusedAsync(string? remoteIp) =>
+        await notifier.NotifyAsync(await directory.GetAdminIdsAsync(default), NotificationKinds.SecurityAlert,
+            "Break-glass password used with HTTP Basic", $"The break-glass password was sent with HTTP Basic at {time.GetUtcNow():u} from {remoteIp}. It was refused.", "/admin/audit", alsoEmail: true);
 }
 
 public static class RuntimeSettings
