@@ -14,8 +14,8 @@ namespace Kb.Web.DataCenter;
 /// <summary>
 /// HTTP Basic on the Data Center compatible surface only (contracts/behaviour/common.md, Authentication). Each request proves the password again,
 /// with Identity's lockout counting the failures. An account that must use one-time codes cannot sign in this way: a password alone would skip
-/// the code (common.md, Accounts with sign-in codes). Every other account can, the break-glass account too: each of its requests is a sign-in,
-/// audited and announced to the Admins like one through the sign-in page.
+/// the code (common.md, Accounts with sign-in codes). Nor can the break-glass account (Q-0020): its right password is refused like codes on,
+/// and the Admins are alerted to the attempt. A token in the password field still works for every account.
 /// </summary>
 public sealed class BasicAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder,
     UserManager<KbUser> users, SignInManager<KbUser> signIn, KbDbContext db, IAuditLog audit, BasicThrottle throttle)
@@ -69,7 +69,11 @@ public sealed class BasicAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions
         // The same 401 as a wrong password; the audit entry says why.
         if (await Context.RequestServices.GetRequiredService<CodeSignIn>().NeededAsync(user, Context.RequestAborted))
             return await RefuseAsync(user, name, "codes required", ip);
-        if (user.IsBreakGlass) await Context.RequestServices.GetRequiredService<BreakGlassService>().OnSignInAsync(user, ip);
+        if (user.IsBreakGlass)
+        {
+            await Context.RequestServices.GetRequiredService<BreakGlassService>().OnBasicRefusedAsync(ip);
+            return await RefuseAsync(user, name, "break-glass", ip);
+        }
 
         // shortcut: one audit entry per request, as for API tokens; batch them per account if call volume makes the audit lock a bottleneck.
         await audit.AppendAsync(new AuditEvent(AuditActions.BasicUse, user.Id, "user", user.Id.ToString(), Data: new Dictionary<string, string>

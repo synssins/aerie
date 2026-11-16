@@ -34,7 +34,7 @@ Public documents and standards consulted while building, with the version read. 
 
 | Reference | Version or date | Used for |
 |---|---|---|
-| `aerie-spec` contract release, https://github.com/synssins/aerie-spec/releases/tag/contracts-v5 | `contracts-v5`, 2026-11-15, checksums in `contracts/SHA256SUMS` (replaces `contracts-v4`) | Pinned unchanged in `contracts/`: aerie's own API, the Data Center compatible contract (T1 and the OAuth 2.0 operations), the behaviour specs including identity |
+| `aerie-spec` contract release, https://github.com/synssins/aerie-spec/releases/tag/contracts-v6 | `contracts-v6`, 2026-11-16, checksums in `contracts/SHA256SUMS` (replaces `contracts-v5`) | Pinned unchanged in `contracts/`: aerie's own API, the Data Center compatible contract (T1 and the OAuth 2.0 operations), the behaviour specs including identity |
 | RFC 7636, Proof Key for Code Exchange, https://www.rfc-editor.org/rfc/rfc7636 | 2015-09 | The `S256` transform, and its appendix B example as a test vector in `OAuthModelTests` |
 
 ## Incidents

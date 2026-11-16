@@ -71,11 +71,52 @@ public sealed class DcPlumbingTests : IAsyncLifetime
         Assert.Equal("demo", (await Basic(_f, "demo").GetJsonAsync("/rest/api/user/current")).GetProperty("username").GetString());
     }
 
+    // auth.basic.codes_exempt.ok (identity-plan.md, slice 1): a user with codes on is refused, an Admin exempts them through the API, then Basic works.
     [Fact]
-    public async Task Basic_BreakGlass_SignsIn_AndAlertsTheAdmins()
+    public async Task Basic_WorksOnceAnAdminExemptsAUserWithCodes()
     {
-        Assert.Equal("breakglass", (await Basic(_f, "breakglass", KbAppFactory.BreakGlassPassword).GetJsonAsync("/rest/api/user/current")).GetProperty("username").GetString());
-        await _f.WithDbAsync(async db => Assert.True(await db.AuditEntries.AnyAsync(a => a.Action == AuditActions.BreakGlass, Ct)));
+        var id = await UserAsync(_f, "coded", u => u.CodesRequired = true);
+        await (await Basic(_f, "coded").GetAsync("/rest/api/user/current", Ct)).ErrorAsync(HttpStatusCode.Unauthorized);
+        var admin = await _f.SignedInBreakGlassAsync();
+        Assert.Equal(HttpStatusCode.NoContent, (await admin.PutAsJsonAsync($"/api/v1/admin/users/{id}/codes/exempt", new { exempt = true }, Ct)).StatusCode);
+        Assert.Equal("coded", (await Basic(_f, "coded").GetJsonAsync("/rest/api/user/current")).GetProperty("username").GetString());
+    }
+
+    // auth.basic.codes_exempt.admin_refused (Q-0020): an Admin and the break-glass account cannot be exempted; nothing changes, and the Admin's Basic is still refused.
+    [Fact]
+    public async Task Exempting_AnAdmin_OrTheBreakGlassAccount_Is409()
+    {
+        var boss = await UserAsync(_f, "boss", u => u.IsAdmin = true);
+        var admin = await _f.SignedInBreakGlassAsync();
+        var breakGlass = await _f.WithDbValueAsync(db => db.Users.Where(u => u.IsBreakGlass).Select(u => u.Id).SingleAsync(Ct));
+        foreach (var id in new[] { boss, breakGlass })
+            Assert.Equal(HttpStatusCode.Conflict, (await admin.PutAsJsonAsync($"/api/v1/admin/users/{id}/codes/exempt", new { exempt = true }, Ct)).StatusCode);
+        await _f.WithDbAsync(async db => Assert.False(await db.Users.AnyAsync(u => (u.Id == boss || u.Id == breakGlass) && u.CodesExempt, Ct)));
+        await (await Basic(_f, "boss").GetAsync("/rest/api/user/current", Ct)).ErrorAsync(HttpStatusCode.Unauthorized);
+        // An exemption has no effect while the account is an Admin (identity.md, Accounts with sign-in codes).
+        await UserAsync(_f, "promoted", u => { u.CodesExempt = true; u.IsAdmin = true; });
+        await (await Basic(_f, "promoted").GetAsync("/rest/api/user/current", Ct)).ErrorAsync(HttpStatusCode.Unauthorized);
+    }
+
+    // Q-0020 (common.md, identity.md): password Basic is refused for the break-glass account with the wrong-password answer; the Admins are alerted.
+    [Fact]
+    public async Task Basic_BreakGlass_IsRefused_AndAlertsTheAdmins()
+    {
+        var right = await Basic(_f, "breakglass", KbAppFactory.BreakGlassPassword).GetAsync("/rest/api/user/current", Ct);
+        var wrong = await Basic(_f, "breakglass", "not-the-password").GetAsync("/rest/api/user/current", Ct);
+        Assert.Equal(await wrong.Content.ReadAsStringAsync(Ct), await right.Content.ReadAsStringAsync(Ct));
+        await right.ErrorAsync(HttpStatusCode.Unauthorized);
+        await _f.WithDbAsync(async db =>
+        {
+            Assert.True(await db.AuditEntries.AnyAsync(a => a.Action == AuditActions.BasicRefused && a.DataJson.Contains("break-glass"), Ct));
+            Assert.False(await db.AuditEntries.AnyAsync(a => a.Action == AuditActions.BasicUse, Ct));
+            Assert.True(await db.Notifications.AnyAsync(n => n.Title == "Break-glass password used with HTTP Basic", Ct));
+        });
+        // A personal token in the password field still works.
+        var admin = await _f.SignedInBreakGlassAsync();
+        var token = (await (await admin.PostAsJsonAsync("/api/v1/tokens", new { name = "Ops", kind = "Personal", scopes = new[] { new { spaceId = (Guid?)null, access = "Read" } }, days = 1 }, Ct))
+            .JsonAsync(HttpStatusCode.Created)).GetProperty("token").GetString()!;
+        Assert.Equal("breakglass", (await Basic(_f, "breakglass", token).GetJsonAsync("/rest/api/user/current")).GetProperty("username").GetString());
     }
 
     [Fact]

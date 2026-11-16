@@ -246,7 +246,8 @@ public sealed class DcFilesTests : IAsyncLifetime
         await (await _rita.GetAsync("/rest/api/search?cql=type%3Dpage&excerpt=all", Ct)).ErrorAsync(HttpStatusCode.BadRequest);
 
         // Archived spaces are left out unless asked for, and counted.
-        (await Basic(_f, "breakglass", KbAppFactory.BreakGlassPassword).PutAsync("/rest/api/space/OPS/archive", null, Ct)).EnsureSuccessStatusCode();
+        // The break-glass account's browser session (password Basic is refused for it, Q-0020).
+        (await _admin.SendAsync(new HttpRequestMessage(HttpMethod.Put, "/rest/api/space/OPS/archive") { Headers = { { "X-Atlassian-Token", "no-check" } } }, Ct)).EnsureSuccessStatusCode();
         var archived = await _rita.GetJsonAsync($"/rest/api/search?cql={Uri.EscapeDataString("type = page")}");
         Assert.Equal((0, 3), (archived.GetProperty("totalSize").GetInt32(), archived.GetProperty("archivedResultCount").GetInt32()));
         Assert.Equal(3, (await _rita.GetJsonAsync($"/rest/api/search?cql={Uri.EscapeDataString("type = page")}&includeArchivedSpaces=true")).GetProperty("totalSize").GetInt32());
