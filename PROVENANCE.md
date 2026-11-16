@@ -34,7 +34,7 @@ Public documents and standards consulted while building, with the version read. 
 
 | Reference | Version or date | Used for |
 |---|---|---|
-| `aerie-spec` contract release, https://github.com/synssins/aerie-spec/releases/tag/contracts-v4 | `contracts-v4`, 2026-11-15, checksums in `contracts/SHA256SUMS` (replaces `contracts-v3`) | Pinned unchanged in `contracts/`: aerie's own API, the Data Center compatible contract (T1 and the OAuth 2.0 operations), the behaviour specs including identity |
+| `aerie-spec` contract release, https://github.com/synssins/aerie-spec/releases/tag/contracts-v5 | `contracts-v5`, 2026-11-15, checksums in `contracts/SHA256SUMS` (replaces `contracts-v4`) | Pinned unchanged in `contracts/`: aerie's own API, the Data Center compatible contract (T1 and the OAuth 2.0 operations), the behaviour specs including identity |
 
 ## Incidents
 

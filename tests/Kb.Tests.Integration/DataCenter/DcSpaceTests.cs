@@ -208,11 +208,14 @@ public sealed class DcSpaceTests : IAsyncLifetime
         var task = await _admin.GetJsonAsync($"/rest/api/longtask/{taskId}");
         Assert.Equal(100, task.GetProperty("percentageComplete").GetInt32());
         Assert.True(task.GetProperty("successful").GetBoolean());
-        Assert.Equal("OPS", task.GetProperty("name").GetProperty("args")[0].GetString());
+        // A message's args is always empty; the values are in translation (common.md, Message objects; Q-0019).
+        var name = task.GetProperty("name");
+        Assert.Equal(("aerie.longtask.space.delete", 0, "Deleting space OPS"), (name.GetProperty("key").GetString(), name.GetProperty("args").GetArrayLength(), name.GetProperty("translation").GetString()));
         Assert.Equal(0, task.GetProperty("messages").GetArrayLength());
         Assert.True(task.GetProperty("elapsedTime").GetInt64() >= 0);
 
         var list = await _admin.GetJsonAsync("/rest/api/longtask");
+        Assert.All(list.GetProperty("results").EnumerateArray(), r => Assert.Equal(0, r.GetProperty("name").GetProperty("args").GetArrayLength()));
         Assert.Equal(100, list.GetProperty("limit").GetInt32());
         Assert.Equal(taskId, list.GetProperty("results")[0].GetProperty("id").GetString());
         // Someone who did not start it, and is not an Admin, does not see it.
