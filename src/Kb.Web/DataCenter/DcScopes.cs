@@ -75,6 +75,8 @@ public sealed partial class DcScopes
     {
         if (ApiTokenAuth.Current(http) is { } token)
             return token.Scopes().Any(s => s.Access == TokenAccess.Write) ? null : new HashSet<string>(StringComparer.Ordinal) { Read };
+        // An OAuth token holds what its scopes imply (identity.md, Scopes): WRITE implies READ, ADMIN implies WRITE.
+        if (ApiTokenAuth.OAuthCurrent(http) is { } oauth) return OAuthScopes.Expand(oauth.Token.Scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries));
         return null;
     }
 
@@ -87,6 +89,12 @@ public sealed partial class DcScopes
         var required = http.RequestServices.GetRequiredService<DcScopes>().Required(http.Request.Method, http.GetEndpoint());
         var granted = Granted(http);
         if (required is not null && (granted is null || granted.Contains(required))) return true;
+        if (required is not null && ApiTokenAuth.OAuthCurrent(http) is { } oauth)
+        {
+            if (ApiTokenAuth.HasBearer(http.Request)) http.Response.Headers.WWWAuthenticate = $"Bearer error=\"insufficient_scope\", scope=\"{required}\"";
+            await http.RequestServices.GetRequiredService<IAuditLog>().AppendAsync(new AuditEvent(AuditActions.TokenUseDenied, oauth.Grant.UserId, "oauth.token", oauth.Token.Id.ToString(),
+                Data: new Dictionary<string, string> { ["reason"] = "scope", ["needed"] = required, ["prefix"] = oauth.Token.Prefix, ["clientId"] = oauth.Client.ClientId, ["ip"] = BasicThrottle.AddressOf(http) }), http.RequestAborted);
+        }
         if (required is not null && ApiTokenAuth.Current(http) is { } token)
         {
             if (ApiTokenAuth.HasBearer(http.Request)) http.Response.Headers.WWWAuthenticate = $"Bearer error=\"insufficient_scope\", scope=\"{required}\"";

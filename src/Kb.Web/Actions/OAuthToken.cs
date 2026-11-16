@@ -126,7 +126,8 @@ internal sealed class DcOAuthTokenHandler(KbDbContext db, IPasswordHasher<KbUser
         return grantType switch
         {
             "authorization_code" => await ExchangeAsync(ctx, client!),
-            _ => OAuthEndpoint.Error(400, "unsupported_grant_type", "Only authorization_code is offered."),
+            "refresh_token" => await RefreshAsync(ctx, client!),
+            _ => OAuthEndpoint.Error(400, "unsupported_grant_type", "Only authorization_code and refresh_token are offered."),
         };
     }
 
@@ -177,9 +178,82 @@ internal sealed class DcOAuthTokenHandler(KbDbContext db, IPasswordHasher<KbUser
         var (access, refresh) = OAuthEndpoint.NewPair(db, family.Id, code.Scopes, settings, now);
         await db.OAuthGrants.Where(g => g.Id == row.g.Id).ExecuteUpdateAsync(s => s.SetProperty(g => g.LastUsedAt, now), ctx.Cancel);
         await db.SaveChangesAsync(ctx.Cancel);
+        await LimitFamiliesAsync(row.g.Id, family.Id, now, ctx.Cancel);
         ctx.Audit(AuditActions.OAuthTokenIssue, "oauth.client", client.Id.ToString(), data: new Dictionary<string, string>
             { ["clientId"] = client.ClientId, ["user"] = row.g.UserId.ToString(), ["family"] = family.Id.ToString(), ["prefix"] = access[..OAuthSecrets.PrefixShown], ["scopes"] = code.Scopes, ["ip"] = ctx.Action.Address });
         return new OAuthEndpointResult(200, OAuthEndpoint.Tokens(access, refresh, settings.AccessTokenSeconds, now, code.Scopes));
+    }
+
+    /// <summary>At most this many live token families per user and client (identity.md, Refresh rotation and reuse detection).</summary>
+    public const int MaxFamilies = 25;
+
+    /// <summary>Past <see cref="MaxFamilies"/> for this consent, the least recently used families are revoked.</summary>
+    private async Task LimitFamiliesAsync(Guid grantId, Guid keep, DateTimeOffset now, CancellationToken ct)
+    {
+        var live = await db.OAuthTokenFamilies.Where(f => f.GrantId == grantId && f.RevokedAt == null && f.Id != keep
+                && db.OAuthRefreshTokens.Any(r => r.FamilyId == f.Id && r.RotatedAt == null && r.RevokedAt == null && r.ExpiresAt > now))
+            .OrderBy(f => f.LastUsedAt).Select(f => f.Id).ToListAsync(ct);
+        foreach (var old in live.Take(Math.Max(0, live.Count - (MaxFamilies - 1)))) await OAuthEndpoint.RevokeFamilyAsync(db, old, "too many families", now, ct);
+    }
+
+    /// <summary>
+    /// A refresh (RFC 6749 section 6, RFC 9700 section 4.14.2): the presented refresh token and the access token issued with it end, and a new
+    /// pair is issued in the same family. A refresh token that was already rotated, presented again, revokes the whole family: the first of two
+    /// racing refreshes wins and the second is that reuse. <c>scope</c> may only narrow.
+    /// </summary>
+    private async Task<OAuthEndpointResult> RefreshAsync(ActionContext<DcOAuthToken> ctx, OAuthClient client)
+    {
+        var p = ctx.Action.Parameters;
+        var text = OAuthEndpoint.One(p, "refresh_token");
+        if (string.IsNullOrEmpty(text)) return OAuthEndpoint.Error(400, "invalid_request", "refresh_token is needed.");
+        // The vendor's examples send redirect_uri with a refresh; when present it must be one of the client's.
+        if (OAuthEndpoint.One(p, "redirect_uri") is { } redirect && !OAuthClientRules.Uris(client).Any(r => OAuthRedirects.Matches(r, redirect)))
+            return OAuthEndpoint.Error(400, "invalid_grant", "redirect_uri is not one registered for this client.");
+        var now = time.GetUtcNow();
+        var hash = OAuthSecrets.Hash(text);
+        var row = await (from r in db.OAuthRefreshTokens.AsNoTracking()
+                         where r.Hash == hash
+                         join f in db.OAuthTokenFamilies on r.FamilyId equals f.Id
+                         join g in db.OAuthGrants on f.GrantId equals g.Id
+                         join u in db.Users on g.UserId equals u.Id
+                         select new { r, f, g, u.DeactivatedAt }).FirstOrDefaultAsync(ctx.Cancel);
+        OAuthEndpointResult Bad(string why) => OAuthEndpoint.Error(400, "invalid_grant", why);
+        if (row is null || row.g.ClientId != client.Id) return Bad("The refresh token is unknown, or not this client's.");
+        if (row.r.RotatedAt is not null) return await RefreshReuseAsync(ctx, client, row.f.Id, now);
+        if (row.r.RevokedAt is not null || row.f.RevokedAt is not null) return Bad("The refresh token has been revoked.");
+        if (row.r.ExpiresAt <= now) return Bad("The refresh token has expired; authorize again.");
+        if (row.DeactivatedAt is not null) return Bad("The user has been disabled.");
+        var settings = await CompatAuthSettings.LoadAsync(db, ctx.Cancel);
+        if (settings.GrantMaxDays is { } days && row.g.CreatedAt.AddDays(days) <= now) return Bad("The consent has expired; authorize again.");
+        var scopes = row.f.Scopes;
+        if (OAuthEndpoint.One(p, "scope") is { } asked)
+        {
+            var held = scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (OAuthScopes.Parse(asked) is not { Count: > 0 } narrowed || !narrowed.All(held.Contains))
+                return OAuthEndpoint.Error(400, "invalid_scope", "A refresh can only keep or narrow the scopes.");
+            scopes = OAuthScopes.Format(narrowed);
+        }
+        // Rotated once: of two refreshes racing with one token, only the first changes the row; the second is reuse.
+        var won = await db.OAuthRefreshTokens.Where(r => r.Id == row.r.Id && r.RotatedAt == null).ExecuteUpdateAsync(s => s.SetProperty(r => r.RotatedAt, now), ctx.Cancel);
+        if (won != 1) return await RefreshReuseAsync(ctx, client, row.f.Id, now);
+        await db.OAuthAccessTokens.Where(t => t.Id == row.r.AccessTokenId && t.RevokedAt == null).ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, now), ctx.Cancel);
+        var (access, refresh) = OAuthEndpoint.NewPair(db, row.f.Id, scopes, settings, now);
+        await db.SaveChangesAsync(ctx.Cancel);
+        await db.OAuthTokenFamilies.Where(f => f.Id == row.f.Id).ExecuteUpdateAsync(s => s.SetProperty(f => f.Scopes, scopes).SetProperty(f => f.LastUsedAt, now), ctx.Cancel);
+        await db.OAuthGrants.Where(g => g.Id == row.g.Id).ExecuteUpdateAsync(s => s.SetProperty(g => g.LastUsedAt, now), ctx.Cancel);
+        // shortcut: one audit entry per refresh; identity.md allows rolling these up per grant per hour if the volume calls for it.
+        ctx.Audit(AuditActions.OAuthTokenRefresh, "oauth.client", client.Id.ToString(), data: new Dictionary<string, string>
+            { ["clientId"] = client.ClientId, ["user"] = row.g.UserId.ToString(), ["family"] = row.f.Id.ToString(), ["prefix"] = access[..OAuthSecrets.PrefixShown], ["scopes"] = scopes, ["ip"] = ctx.Action.Address });
+        return new OAuthEndpointResult(200, OAuthEndpoint.Tokens(access, refresh, settings.AccessTokenSeconds, now, scopes));
+    }
+
+    /// <summary>A rotated refresh token presented again is treated as stolen: the family is revoked, the consent kept, the event audited.</summary>
+    private async Task<OAuthEndpointResult> RefreshReuseAsync(ActionContext<DcOAuthToken> ctx, OAuthClient client, Guid family, DateTimeOffset now)
+    {
+        await OAuthEndpoint.RevokeFamilyAsync(db, family, "refresh token reused", now, ctx.Cancel);
+        ctx.Audit(AuditActions.OAuthTokenReuse, "oauth.client", client.Id.ToString(), data: new Dictionary<string, string>
+            { ["clientId"] = client.ClientId, ["kind"] = "refresh", ["family"] = family.ToString(), ["ip"] = ctx.Action.Address });
+        return OAuthEndpoint.Error(400, "invalid_grant", "The refresh token was already used; every token of this authorization is revoked.");
     }
 
     /// <summary>A used code presented again: the tokens issued from it are revoked (RFC 6749 section 4.1.2), and the event audited.</summary>

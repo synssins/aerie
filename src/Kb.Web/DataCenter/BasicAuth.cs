@@ -45,6 +45,8 @@ public sealed class BasicAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions
         var (name, password) = (text[..colon], text[(colon + 1)..]);
         var ip = Context.Connection.RemoteIpAddress?.ToString() ?? "";
         // A token in the password field is treated exactly like the Bearer form; sign-in codes do not apply (identity.md, HTTP Basic).
+        if (password.StartsWith(OAuthSecrets.AccessPrefix, StringComparison.Ordinal))
+            return await ApiTokenAuth.AuthenticateOAuthAsync(Context, db, Context.RequestServices.GetRequiredService<TimeProvider>(), password, SchemeName, ownerName: name);
         if (password.StartsWith(TokenFormat.Prefix, StringComparison.Ordinal))
             return await ApiTokenAuth.AuthenticateAsync(Context, db, Context.RequestServices.GetRequiredService<TimeProvider>(), password, SchemeName, ownerName: name);
 
