@@ -25,6 +25,8 @@ public sealed record DcOAuthToken : IAction<OAuthEndpointResult>
     /// <summary>Set when the Authorization header was Basic but could not be read.</summary>
     public bool BadBasic { get; init; }
     public string Address { get; init; } = "";
+    /// <summary>Whether the site's base URL is https.</summary>
+    public bool SiteIsHttps { get; init; } = true;
 }
 
 /// <summary>What the token and revoke endpoints share: parameters, client authentication, errors and the limit per client and per address.</summary>
@@ -105,7 +107,7 @@ public sealed class OAuthThrottle(Microsoft.Extensions.Options.IOptions<Kb.Core.
     }
 }
 
-internal sealed class DcOAuthTokenHandler(KbDbContext db, IPasswordHasher<KbUser> hasher, TimeProvider time, OAuthThrottle throttle) : IActionHandler<DcOAuthToken, OAuthEndpointResult>
+internal sealed class DcOAuthTokenHandler(KbDbContext db, IPasswordHasher<KbUser> hasher, TimeProvider time, OAuthThrottle throttle, IHostEnvironment env) : IActionHandler<DcOAuthToken, OAuthEndpointResult>
 {
     // The client authenticates in the handler; there is no signed-in caller to permit.
     public Task<Problem?> AuthorizeAsync(ActionContext<DcOAuthToken> ctx) => Task.FromResult<Problem?>(null);
@@ -117,6 +119,7 @@ internal sealed class DcOAuthTokenHandler(KbDbContext db, IPasswordHasher<KbUser
         // Limited before any credential is checked.
         if (throttle.Hit("address:" + a.Address) is { } wait) return OAuthEndpoint.Limited(wait);
         if ((a.Basic?.Id ?? OAuthEndpoint.One(p, "client_id")) is { } named && throttle.Hit("client:" + named) is { } clientWait) return OAuthEndpoint.Limited(clientWait);
+        if (await OAuthFlow.NeedsHttpsAsync(db, env, a.SiteIsHttps, ctx.Cancel)) return OAuthEndpoint.Error(400, "invalid_request", "OAuth 2.0 works only when this site is served over https.");
         if (p.Any(kv => kv.Value.Length > 1)) return OAuthEndpoint.Error(400, "invalid_request", "A parameter was sent more than once.");
         var grantType = OAuthEndpoint.One(p, "grant_type");
         if (string.IsNullOrEmpty(grantType)) return OAuthEndpoint.Error(400, "invalid_request", "grant_type is missing.");

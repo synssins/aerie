@@ -19,8 +19,7 @@ public sealed partial class DcContractTests : IAsyncLifetime
     /// </summary>
     private static readonly string[] NotYet =
     [
-        // OAuth 2.0: the identity work, after T1 (behaviour/identity-plan.md).
-        "POST /rest/oauth2/latest/revoke", "GET /.well-known/oauth-authorization-server",
+        // Every operation of the contract is built.
     ];
 
     [GeneratedRegex(@"^  (/(?:rest/(?:api|oauth2)|\.well-known)[^\s:]*):\s*$")]

@@ -209,6 +209,17 @@ public sealed class MatrixTests : IAsyncLifetime
                 Assert.Equal(HttpStatusCode.Created, made.StatusCode);
                 return (await made.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("client").GetProperty("id").GetGuid().ToString();
             }
+            case "oauthGrant":
+            {
+                // The consent of a user who is none of the seven callers.
+                var grant = new Kb.Core.Identity.OAuthGrant
+                {
+                    ClientId = Guid.Parse(await ValueAsync("oauthClient", space)), UserId = await NewUserAsync("grant" + Guid.NewGuid().ToString("N")[..8]), Scopes = "READ",
+                    CreatedAt = DateTimeOffset.UtcNow, LastUsedAt = DateTimeOffset.UtcNow,
+                };
+                await _f.WithDbAsync(async db => { db.OAuthGrants.Add(grant); await db.SaveChangesAsync(Ct); });
+                return grant.Id.ToString();
+            }
             case "oauthRequest":
             {
                 // Pending for a user who is none of the seven callers. Written straight to the database: starting one is not an /api/v1 route.

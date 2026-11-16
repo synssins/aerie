@@ -20,6 +20,8 @@ public sealed record DcOAuthAuthorize : IAction<OAuthAuthorizeResult>
 {
     /// <summary>The query string, each name with every value it was sent with.</summary>
     public required IReadOnlyDictionary<string, string[]> Query { get; init; }
+    /// <summary>Whether the site's base URL is https.</summary>
+    public bool SiteIsHttps { get; init; } = true;
 }
 
 public sealed record OAuthAuthorizeRequestDto(Guid Id, string ClientName, IReadOnlyList<string> Scopes, IReadOnlyList<string> AlreadyGranted, DateTimeOffset ExpiresAt);
@@ -104,17 +106,26 @@ internal static partial class OAuthFlow
         return row is null ? null : (row.r, row.c);
     }
 
+    /// <summary>
+    /// True when OAuth must refuse: a production install whose base URL is plain http, without the test-install setting that allows plain http
+    /// (identity-plan.md, slice 10). Tokens and codes would otherwise travel unencrypted.
+    /// </summary>
+    public static async Task<bool> NeedsHttpsAsync(KbDbContext db, IHostEnvironment env, bool siteIsHttps, CancellationToken ct) =>
+        !siteIsHttps && env.IsProduction() && !(await CompatAuthSettings.LoadAsync(db, ct)).AllowHttpRedirects;
+
     public static string ErrorPage(string message) =>
         $"""<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Authorization failed</title></head><body><h1>This application cannot be authorized</h1><p>{System.Net.WebUtility.HtmlEncode(message)}</p><p>Nothing was sent to the application. Tell whoever runs it.</p></body></html>""";
 }
 
-internal sealed class DcOAuthAuthorizeHandler(KbDbContext db, TimeProvider time, Microsoft.AspNetCore.Identity.UserManager<KbUser> users) : IActionHandler<DcOAuthAuthorize, OAuthAuthorizeResult>
+internal sealed class DcOAuthAuthorizeHandler(KbDbContext db, TimeProvider time, Microsoft.AspNetCore.Identity.UserManager<KbUser> users, IHostEnvironment env) : IActionHandler<DcOAuthAuthorize, OAuthAuthorizeResult>
 {
     // Anyone may start: the client and redirect URI are the check, and the user signs in on the way.
     public Task<Problem?> AuthorizeAsync(ActionContext<DcOAuthAuthorize> ctx) => Task.FromResult<Problem?>(null);
 
     public async Task<Outcome<OAuthAuthorizeResult>> HandleAsync(ActionContext<DcOAuthAuthorize> ctx)
     {
+        if (await OAuthFlow.NeedsHttpsAsync(db, env, ctx.Action.SiteIsHttps, ctx.Cancel))
+            return new OAuthAuthorizeResult(null, OAuthFlow.ErrorPage("OAuth 2.0 works only when this site is served over https. Ask your administrator."));
         var q = ctx.Action.Query;
         var repeated = q.Any(kv => kv.Value.Length > 1);
         string? One(string name) => q.TryGetValue(name, out var v) && v.Length > 0 ? v[0] : null;

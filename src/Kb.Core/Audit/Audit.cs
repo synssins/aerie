@@ -119,6 +119,8 @@ public static class AuditActions
     public const string OAuthConsentDeny = "oauth.consent.deny";
     public const string OAuthTokenIssue = "oauth.token.issue";
     public const string OAuthTokenRefresh = "oauth.token.refresh";
+    /// <summary>A user, an administrator or the client revoked a grant or some of its tokens; "by" says who.</summary>
+    public const string OAuthGrantRevoke = "oauth.grant.revoke";
     /// <summary>A used code or a rotated refresh token was presented again; the family was revoked.</summary>
     public const string OAuthTokenReuse = "oauth.token.reuse";
     public const string SettingsChange = "settings.change";

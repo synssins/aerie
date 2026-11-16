@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, Bell, ChevronRight, House, KeyRound, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { AppWindow, ArrowLeft, Bell, ChevronRight, House, KeyRound, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { Link, to } from "./Link";
 import { api } from "./api";
 import { CodeSetup } from "./Codes";
 import type { NotifyPref, Space, UserSettings } from "./api";
 import { TokensPanel } from "./Tokens";
+import { ConnectedAppsPanel } from "./ConnectedApps";
 
-export type SettingsSection = "preferences" | "notifications" | "tokens" | "signin";
+export type SettingsSection = "preferences" | "notifications" | "tokens" | "applications" | "signin";
 
 type Event = { kind: string; label: string; locked?: boolean };
 
@@ -88,6 +89,9 @@ export function SettingsView({ section, settings, isAdmin, ownsSpaces, spaces, o
         <Link href={to.settings("tokens")} className={`node ${section === "tokens" ? "cur" : ""}`} onNav={() => onSection("tokens")} aria-current={section === "tokens" ? "page" : undefined}>
           <KeyRound className="ic" aria-hidden /><span className="grow">API tokens</span>
         </Link>
+        <Link href={to.settings("applications")} className={`node ${section === "applications" ? "cur" : ""}`} onNav={() => onSection("applications")} aria-current={section === "applications" ? "page" : undefined}>
+          <AppWindow className="ic" aria-hidden /><span className="grow">Connected applications</span>
+        </Link>
         <Link href={to.settings("signin")} className={`node ${section === "signin" ? "cur" : ""}`} onNav={() => onSection("signin")} aria-current={section === "signin" ? "page" : undefined}>
           <ShieldCheck className="ic" aria-hidden /><span className="grow">Sign-in</span>
         </Link>
@@ -96,9 +100,9 @@ export function SettingsView({ section, settings, isAdmin, ownsSpaces, spaces, o
       <main className="doc wide">
         <div className="col">
           <nav className="crumb" aria-label="Breadcrumb"><Link href={to.home()} className="crumb-home" onNav={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></Link><ChevronRight className="ic sm" aria-hidden /><span>Settings</span></nav>
-          <div className="titlebar"><h1>{section === "preferences" ? "Preferences" : section === "tokens" ? "API tokens" : section === "signin" ? "Sign-in" : "Notifications"}</h1></div>
+          <div className="titlebar"><h1>{section === "preferences" ? "Preferences" : section === "tokens" ? "API tokens" : section === "applications" ? "Connected applications" : section === "signin" ? "Sign-in" : "Notifications"}</h1></div>
 
-          {section === "tokens" ? <TokensPanel admin={false} spaces={spaces} /> : section === "signin" ? <MyCodesPanel /> : section === "preferences" ? (
+          {section === "tokens" ? <TokensPanel admin={false} spaces={spaces} /> : section === "applications" ? <ConnectedAppsPanel /> : section === "signin" ? <MyCodesPanel /> : section === "preferences" ? (
             <div className="form">
               <span className="lbl">Theme</span>
               <Seg label="Theme" value={settings.theme} onChange={(v) => set("theme", v)} options={[["light", "Light"], ["dark", "Dark"], ["system", "Match system"]]} />

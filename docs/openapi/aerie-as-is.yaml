@@ -3889,6 +3889,65 @@ paths:
       security:
         - cookieAuth: []
       "x-kb-api-token": "closed"
+  "/api/v1/me/oauth/grants":
+    get:
+      tags:
+        - "me"
+      operationId: "oauth.grant.list"
+      "x-kb-action": "oauth.grant.list"
+      "x-kb-changes-data": false
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                type: "array"
+                items:
+                  "$ref": "#/components/schemas/OAuthGrantDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
+  "/api/v1/me/oauth/grants/{id}":
+    delete:
+      tags:
+        - "me"
+      operationId: "oauth.grant.revoke"
+      "x-kb-action": "oauth.grant.revoke"
+      "x-kb-changes-data": true
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      responses:
+        "204":
+          description: "No content"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
   "/api/v1/me/settings":
     get:
       tags:
@@ -7370,6 +7429,25 @@ components:
       properties:
         allow:
           type: "boolean"
+    OAuthGrantDto:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        clientName:
+          type: "string"
+        scopes:
+          type: "array"
+          items:
+            type: "string"
+        grantedAt:
+          type: "string"
+          format: "date-time"
+        lastUsedAt:
+          type: "string"
+          format: "date-time"
+          nullable: true
     OwnerRefDto:
       type: "object"
       properties:
