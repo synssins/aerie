@@ -25,6 +25,8 @@
   <ItemGroup>
     <!-- PDF export's fonts, inside the app; their license ships next to it. -->
     <EmbeddedResource Include="Fonts\*.ttf" LogicalName="Kb.Fonts.%(Filename).ttf" />
+    <!-- The pinned compatible contract: the scope of each operation is read from it (DcScopes), so the table is never written by hand. -->
+    <EmbeddedResource Include="..\..\contracts\datacenter\openapi.yaml" LogicalName="Kb.Contracts.datacenter-openapi.yaml" Link="Contracts\datacenter-openapi.yaml" />
     <None Include="Fonts\OFL.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="Fonts\OFL.txt" />
   </ItemGroup>
 </Project>

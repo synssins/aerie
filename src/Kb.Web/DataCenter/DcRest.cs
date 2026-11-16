@@ -162,6 +162,8 @@ public static class DcRest
             await (HasRouteFor(http) ? Fail(405, "This resource does not take " + http.Request.Method + ".") : Fail(404, "No such resource.")).ExecuteAsync(http);
             return;
         }
+        // The caller's scope must cover the operation before the user's own permissions are asked (identity.md, Scopes).
+        if (!await DcScopes.AllowedAsync(http)) return;
         if (!XsrfOk(http.Request) || (IsCookieCaller(http) && !IsSafe(http.Request.Method) && !HasXsrfHeader(http.Request)))
         {
             await Fail(403, "This request needs the X-Atlassian-Token header.").ExecuteAsync(http);
