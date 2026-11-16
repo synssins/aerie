@@ -44,7 +44,7 @@ function route(): { space?: string; page?: string; admin?: AdminAt; settings?: S
   if (b) return { space: b[1], bin: true };
   const a = /^\/admin(?:\/([a-z]+))?(?:\/([0-9a-f-]{36}))?$/i.exec(location.pathname);
   if (a) return { admin: { section: ADMIN_SECTIONS.includes(a[1] as AdminSection) ? a[1] as AdminSection : "spaces", spaceId: a[2] ?? null } };
-  const st = /^\/settings(?:\/(preferences|notifications|tokens|signin))?$/.exec(location.pathname);
+  const st = /^\/settings(?:\/(preferences|notifications|tokens|applications|signin))?$/.exec(location.pathname);
   if (st) return { settings: (st[1] as SettingsSection | undefined) ?? "preferences" };
   const m = /^\/(s|p)\/([0-9a-f-]{36})$/i.exec(location.pathname);
   return m ? (m[1] === "s" ? { space: m[2] } : { page: m[2] }) : {};

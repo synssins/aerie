@@ -1129,6 +1129,18 @@ Write. `UpdateOAuthClient`, answers `OAuthClientDto` ([OAuthClientDto](#oauthcli
 | Id | `Guid` | required |
 | Request | `OAuthClientRequest` ([OAuthClientRequest](#oauthclientrequest)) | required |
 
+## oauth.grant.list
+
+Read. `ListMyOAuthGrants`, answers `IReadOnlyList<OAuthGrantDto>` ([OAuthGrantDto](#oauthgrantdto)). Core only.
+
+## oauth.grant.revoke
+
+Write. `RevokeMyOAuthGrant`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `Guid` | required |
+
 ## oauth.request.decide
 
 Write. `DecideOAuthAuthorizeRequest`, answers `OAuthDecisionDto` ([OAuthDecisionDto](#oauthdecisiondto)). Core only.
@@ -1145,6 +1157,17 @@ Read. `ReadOAuthAuthorizeRequest`, answers `OAuthAuthorizeRequestDto` ([OAuthAut
 | Field | Type | |
 |---|---|---|
 | Id | `Guid` | required |
+
+## oauth.revoke
+
+Write. `DcOAuthRevoke`, answers `OAuthEndpointResult` ([OAuthEndpointResult](#oauthendpointresult)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Parameters | `IReadOnlyDictionary<string, string[]>` | required |
+| Basic | `ValueTuple<string, string>?` |  |
+| BadBasic | `bool` |  |
+| Address | `string` |  |
 
 ## oauth.token
 
@@ -4396,6 +4419,28 @@ Enum: `Same`, `Add`, `Del`.
   },
   "basicChallenge": false,
   "retryAfter": 0
+}
+```
+
+### OAuthGrantDto
+
+| Field | Type |
+|---|---|
+| id | `Guid` |
+| clientName | `string` |
+| scopes | `IReadOnlyList<string>` |
+| grantedAt | `DateTimeOffset` |
+| lastUsedAt | `DateTimeOffset?` |
+
+```json
+{
+  "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "clientName": "text",
+  "scopes": [
+    "text"
+  ],
+  "grantedAt": "2026-11-14T10:00:00\u002B00:00",
+  "lastUsedAt": "2026-11-14T10:00:00\u002B00:00"
 }
 ```
 

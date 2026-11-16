@@ -74,5 +74,21 @@
     "expect": {"anonymous": 401, "outsider": 404, "reader": 404, "contributor": 404, "supervisor": 404, "owner": 404, "admin": 404},
     "scope": "server",
     "note": "Only the user the request belongs to may decide it."
+  },
+  {
+    "action": "oauth.grant.list",
+    "method": "GET",
+    "path": "/api/v1/me/oauth/grants",
+    "expect": {"anonymous": 401, "outsider": 200, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "scope": "server",
+    "note": "Everyone signed in reads their own connected applications."
+  },
+  {
+    "action": "oauth.grant.revoke",
+    "method": "DELETE",
+    "path": "/api/v1/me/oauth/grants/{oauthGrant}",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 404, "contributor": 404, "supervisor": 404, "owner": 404, "admin": 404},
+    "scope": "server",
+    "note": "A grant is its own user's: nobody else may revoke it here, an Admin neither."
   }
 ]

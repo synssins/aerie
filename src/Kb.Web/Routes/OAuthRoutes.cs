@@ -35,10 +35,33 @@ public static class OAuthRoutes
             var r = await bus.SendAsync(new DcOAuthToken { Parameters = parameters, Basic = basic, BadBasic = badBasic, Address = BasicThrottle.AddressOf(http) }, ct);
             return r.Ok ? OAuthHttp.Write(http, r.Value!) : Results.StatusCode(r.Problem!.Status);
         }).WithAction<DcOAuthToken>();
+
+        oauth.MapPost("/revoke", async (HttpContext http, IActionBus bus, CancellationToken ct) =>
+        {
+            var (parameters, basic, badBasic, badBody) = await OAuthHttp.ReadAsync(http);
+            if (badBody) return OAuthHttp.Write(http, new OAuthEndpointResult(400, new System.Text.Json.Nodes.JsonObject { ["error"] = "invalid_request", ["error_description"] = "The form body could not be read." }));
+            var r = await bus.SendAsync(new DcOAuthRevoke { Parameters = parameters, Basic = basic, BadBasic = badBasic, Address = BasicThrottle.AddressOf(http) }, ct);
+            return r.Ok ? OAuthHttp.Write(http, r.Value!) : Results.StatusCode(r.Problem!.Status);
+        }).WithAction<DcOAuthRevoke>();
+
+        // RFC 8414: at the site root; with a context prefix, also at the root followed by that prefix (section 3).
+        IResult Metadata(HttpContext http)
+        {
+            var links = DcLinks.Of(http);
+            return Results.Json(OAuthMetadata.Document(links.Base, links.Base));
+        }
+        app.MapGet("/.well-known/oauth-authorization-server", Metadata).AllowAnonymous().WithMetadata(DcOAuthRoute.Marker);
+        if (context.Length > 0) app.MapGet("/.well-known/oauth-authorization-server" + context, Metadata).AllowAnonymous().WithMetadata(DcOAuthRoute.Marker);
     }
 
     public static void MapOAuthConsentEndpoints(this RouteGroupBuilder api)
     {
+        api.MapGet("/me/oauth/grants", (IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new ListMyOAuthGrants(), ct).ToHttp()).WithAction<ListMyOAuthGrants>();
+
+        api.MapDelete("/me/oauth/grants/{id:guid}", (Guid id, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new RevokeMyOAuthGrant { Id = id }, ct).ToHttp()).WithAction<RevokeMyOAuthGrant>();
+
         api.MapGet("/oauth/authorize-requests/{id:guid}", (Guid id, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new ReadOAuthAuthorizeRequest { Id = id }, ct).ToHttp()).WithAction<ReadOAuthAuthorizeRequest>();
 
