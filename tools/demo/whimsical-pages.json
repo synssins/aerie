@@ -1,0 +1,367 @@
+{
+  "about": "The whimsical demo pages, one authored document each, written by tools/Seed-DemoPages.ps1 into each space's \"00\" folder. In text, `code` and **bold** are marked up. Blocks: h (section), h3, p, ul, ol, tasks ([text, done]), code (with lang), table (first row is the header), note.",
+  "pages": [
+    {
+      "space": "Network Engineering", "folder": "00 Unusual Phenomena", "title": "Reset the Flibbertigibbet",
+      "appliesTo": "`core-sw-01` and the patch panel it glares at", "owner": "Network Engineering (Dana Whitfield)", "lastVerified": "the Tuesday the fire alarm test ran long",
+      "blocks": [
+        {"p": "The Flibbertigibbet is the small, unlabelled box velcroed to the back of the core switch. Nobody installed it. It hums when it is unhappy."},
+        {"h": "Symptoms"},
+        {"ul": ["A steady hum in E-flat from the back of the core rack.", "Every third packet to the server VLAN goes missing, then reappears an hour later in a different VLAN.", "The switch uptime counter reads exactly 42 days, every day."]},
+        {"h": "Why it happens"},
+        {"p": "It gets lonely after a firmware upgrade, when the switch reboots and forgets to say hello. The hum is a request for attention."},
+        {"h": "Reset it"},
+        {"ol": ["Stand in front of the rack, not behind it. It does not like being approached from the cold aisle.", "Clear the counters so it knows you are paying attention: `clear counters` on `core-sw-01`.", "Unplug its little grey cable for exactly eleven seconds. Count out loud.", "Plug it back in and wait for the hum to drop to a contented purr."]},
+        {"code": "core-sw-01# clear counters\ncore-sw-01# show interfaces counters errors | include Gi1/0/48\ncore-sw-01# show logging | include FLIB", "lang": "plaintext"},
+        {"h": "How you know it worked"},
+        {"table": [["Check", "Before", "After"], ["Hum", "E-flat, steady", "Silent or a faint purr"], ["Packets lost to the server VLAN", "One in three", "None"], ["Uptime counter", "42 days", "Counts up like a normal number"]]},
+        {"note": "Never unplug it twice in one shift. The second time it sulks for a week and takes the printer VLAN with it."}
+      ]
+    },
+    {
+      "space": "Network Engineering", "folder": "00 Unusual Phenomena", "title": "Untangle the Spaghetti Switch",
+      "appliesTo": "`dist-sw-b2`, Rack 4", "owner": "Network Engineering (Marcus Oyelaran)", "lastVerified": "before lunch, which is why it took so long",
+      "blocks": [
+        {"h": "What you will find"},
+        {"ul": ["All 48 patch cables in Rack 4 knotted into one loop, cooked al dente.", "Link lights blinking in a rhythm that suggests marinara.", "A sticky note that says \"I fixed it\" in handwriting nobody admits to."]},
+        {"h": "Before you start"},
+        {"tasks": [["Photograph the knot from three angles for the post-incident review", true], ["Print the port map for `dist-sw-b2`", true], ["Hide the fork from the break room", false]]},
+        {"h": "Untangling"},
+        {"ol": ["Shut the uplinks first so a loop cannot start while you work: `interface range Te1/1/1-2`, then `shutdown`.", "Find the cable with the blue boot. Every knot in this rack starts at the blue boot.", "Work outward from the blue boot, one cable at a time, and label each one as it comes free.", "Re-patch each port from the printed map, not from memory. Memory is how this happened.", "Bring the uplinks back with `no shutdown` and watch spanning tree settle."]},
+        {"code": "dist-sw-b2(config)# interface range Te1/1/1-2\ndist-sw-b2(config-if-range)# shutdown\n! untangle here\ndist-sw-b2(config-if-range)# no shutdown\ndist-sw-b2# show spanning-tree summary", "lang": "plaintext"},
+        {"h": "Keeping it untangled"},
+        {"p": "Cable lengths in Rack 4 are now fixed at 0.5 m. Anything longer has enough slack to start cooking again."}
+      ]
+    },
+    {
+      "space": "Network Engineering", "folder": "00 Unusual Phenomena", "title": "Recalibrate the Packet Wobble Sprocket",
+      "appliesTo": "`rtr-wan-01` and the WAN link to Branch 14", "owner": "Network Engineering (Dana Whitfield)", "lastVerified": "during a solar eclipse, for science",
+      "blocks": [
+        {"p": "The Packet Wobble Sprocket keeps packets travelling in a straight line down the WAN circuit. When it drifts, they arrive dizzy."},
+        {"h": "Signs of drift"},
+        {"ul": ["Jitter to Branch 14 climbs above 40 ms while latency stays flat.", "VoIP calls to Branch 14 sound like they are being made from a boat.", "The sprocket's tilt reading in the monitoring graph goes above 3 degrees."]},
+        {"h": "Causes we have seen"},
+        {"ul": ["Someone leaned on the rack to sign for a delivery.", "The air handler kicked in at full speed and blew it off true.", "A carrier maintenance window nobody told us about."]},
+        {"h": "Recalibration"},
+        {"ol": ["Ping Branch 14 with 100 packets and write down the jitter.", "Level the sprocket with the spirit level kept in the top drawer of the network cabinet.", "Tighten the thumbscrew a quarter turn clockwise. Never more than a quarter.", "Ping again. If jitter is under 10 ms, you are done."]},
+        {"code": "rtr-wan-01# ping 10.20.14.1 repeat 100 size 1400\nrtr-wan-01# show ip sla statistics 14 | include jitter", "lang": "plaintext"},
+        {"h": "Readings"},
+        {"table": [["Measure", "Level", "Wobbly"], ["Tilt (degrees)", "0 to 1.2", "Above 3"], ["Jitter to Branch 14 (ms)", "Under 10", "Above 40"], ["Caller seasickness reports", "None", "Two or more an hour"]]}
+      ]
+    },
+    {
+      "space": "Network Engineering", "folder": "00 Unusual Phenomena", "title": "Appease the Rack 7 Gremlin",
+      "appliesTo": "Rack 7, especially its console server", "owner": "Network Engineering (Marcus Oyelaran)", "lastVerified": "by someone who now refuses to go near Rack 7",
+      "blocks": [
+        {"h": "Known behaviour"},
+        {"ul": ["The console cable on `edge-fw-01` comes unplugged whenever someone says \"it's stable now\".", "Screws placed on top of Rack 7 are gone by morning.", "Cable ties in Rack 7 are always cut, cleanly, at a 45 degree angle."]},
+        {"h": "What it wants"},
+        {"p": "Recognition, mostly. And snacks. The gremlin has been with the company longer than the building lease."},
+        {"h": "Offering"},
+        {"tasks": [["One unsalted cracker on the shelf at U42", true], ["A spare M6 cage nut, as a gift", true], ["Say nothing optimistic within three metres of the rack", false]]},
+        {"h": "Reconnecting the console"},
+        {"ol": ["Leave the offering first, then wait a full minute before touching anything.", "Plug the console cable back into `edge-fw-01` and tie it down with a velcro strap. It cannot cut velcro.", "Confirm the console session from the console server before walking away."]},
+        {"code": "ssh admin@console-hq\nconnect port 7/3\n# expect the edge-fw-01 login prompt", "lang": "plaintext"},
+        {"note": "If the cracker is still there the next morning, the gremlin is not appeased. Escalate to the NOC on-call (ext. 4410) and bring better crackers."}
+      ]
+    },
+    {
+      "space": "Network Engineering", "folder": "00 Unusual Phenomena", "title": "Feed the Packet Goblin (weekly)",
+      "appliesTo": "`core-sw-02` and anything that answers a ping", "owner": "Network Engineering (Dana Whitfield)", "lastVerified": "last Thursday, which is feeding day",
+      "blocks": [
+        {"p": "The Packet Goblin lives in the buffers of the second core switch. Fed once a week, it is harmless. Hungry, it eats ICMP replies."},
+        {"h": "Hunger signs"},
+        {"ul": ["Pings from monitoring start failing on Thursdays around 15:00 while TCP traffic is fine.", "The ICMP drop counter on `core-sw-02` rises in neat multiples of seven.", "A faint crunching sound in the buffer graphs, if you listen closely."]},
+        {"h": "Weekly feeding"},
+        {"ol": ["Every Thursday before 14:00, send it a bowl of 500 small, well-formed pings.", "Leave them on the loopback address so nothing else eats them first.", "Check the counters: when the drops stop rising, it is full.", "Tick the feeding off in the team calendar so nobody feeds it twice."]},
+        {"code": "core-sw-02# ping 10.0.0.2 repeat 500 size 64 timeout 0\ncore-sw-02# show platform hardware counters icmp drops", "lang": "plaintext"},
+        {"h": "Diet"},
+        {"table": [["Food", "Allowed", "Notes"], ["ICMP echo, 64 bytes", "Yes", "Its favourite"], ["Jumbo frames", "No", "Gives it hiccups for days"], ["Production traffic", "Never", "It acquires a taste for it"]]}
+      ]
+    },
+    {
+      "space": "Network Engineering", "folder": "00 Unusual Phenomena", "title": "Defrost the Frozen Uplink Squirrel",
+      "appliesTo": "`wlc-hq-01` uplink in the north server room", "owner": "Network Engineering (Marcus Oyelaran)", "lastVerified": "the first cold morning of the year",
+      "blocks": [
+        {"h": "Symptoms"},
+        {"ul": ["The north server room drops below 18 °C and the wireless controller uplink goes down with it.", "Access points on floors 2 and 3 show as joined but nobody can get an address.", "A small, very still squirrel shape is visible through the cable tray grille."]},
+        {"h": "Cause"},
+        {"p": "The squirrel runs the wheel that keeps the uplink warm. Below 18 °C it stops running and the link stops with it. Facilities have been asked to raise the setpoint; they keep saying the squirrel is not on their asset register."},
+        {"h": "Defrosting"},
+        {"ol": ["Raise the room setpoint to 21 °C from the building panel by the door.", "Point the desk fan heater from the NOC at the cable tray, on its lowest setting, at least a metre away.", "Wait for the wheel to start turning again; you will hear it.", "Bounce the uplink port so the controller notices it is back."]},
+        {"code": "wlc-hq-01# config port adminmode 1 disable\nwlc-hq-01# config port adminmode 1 enable\nwlc-hq-01# show ap summary", "lang": "plaintext"},
+        {"note": "Do not use a hair dryer. We tried. The squirrel now has opinions about hair dryers."}
+      ]
+    },
+    {
+      "space": "Cloud Platform Engineering", "folder": "00 Cloud Curiosities", "title": "Rehydrate the Cumulonimbus Cache",
+      "appliesTo": "the Redis cache behind `apim-prod`", "owner": "Cloud Platform Engineering (Priya Raman)", "lastVerified": "on a cloudy day, which felt appropriate",
+      "blocks": [
+        {"p": "The Cumulonimbus Cache is the large, grey, thunder-prone cache tier in front of the product catalogue API. It holds a lot of water."},
+        {"h": "When it dries out"},
+        {"ul": ["Cache hit rate falls below 20 percent and the catalogue database starts sweating.", "Response times from `apim-prod` double around midday, when the cache is sunniest.", "The cache dashboard shows clear blue skies, which is never good news for a cache."]},
+        {"h": "Likely causes"},
+        {"ul": ["A deployment flushed every key at once instead of letting them expire gently.", "Someone set the default time-to-live to 30 seconds while testing and forgot.", "A heat wave of traffic from the marketing email."]},
+        {"h": "Rehydration"},
+        {"ol": ["Check the time-to-live setting before anything else; put it back to 3600 seconds if it was changed.", "Run the warm-up job, which reads the 5,000 most popular catalogue items into the cache.", "Watch the hit rate climb. Above 80 percent the cache is fully rehydrated.", "Do not flush it again to \"start clean\". Clouds do not like starting clean."]},
+        {"code": "az redis show -g rg-platform-prod -n redis-catalog-prod --query redisConfiguration\nkubectl create job --from=cronjob/catalog-cache-warmup catalog-warmup-manual -n catalog\nkubectl logs -f job/catalog-warmup-manual -n catalog", "lang": "bash"},
+        {"h": "Expected"},
+        {"table": [["Measure", "Dry", "Rehydrated"], ["Hit rate", "Under 20 %", "Over 80 %"], ["Catalogue p95 (ms)", "900", "Under 150"], ["Chance of thunder", "Low", "Moderate, which is healthy"]]}
+      ]
+    },
+    {
+      "space": "Cloud Platform Engineering", "folder": "00 Cloud Curiosities", "title": "Coax the Kubernetes Kraken Back into Its Namespace",
+      "appliesTo": "`aks-prod-eus2` and anything within ten feet of it", "owner": "Cloud Platform Engineering (Tom Becker)", "lastVerified": "after the incident we don't talk about",
+      "blocks": [
+        {"p": "The Kraken is the batch job that reorganises the image archive every night. It belongs in the `kraken` namespace. It does not always stay there."},
+        {"h": "Symptoms"},
+        {"ul": ["Pods named `kraken-tentacle-*` show up in the `payments` and `orders` namespaces.", "Node CPU on `aks-prod-eus2` sits at 95 percent between 01:00 and 04:00.", "The cluster autoscaler adds nodes and the Kraken grows a tentacle on each new one."]},
+        {"h": "Why it escapes"},
+        {"ul": ["Its resource quota was raised for a one-off migration and never put back.", "The namespace label the network policy matches on was renamed in the last Helm upgrade.", "It was fed after midnight. We have asked the scheduler team to stop doing that."]},
+        {"h": "Coaxing it back"},
+        {"ol": ["Scale the Kraken to zero so it stops reaching: `kubectl scale deploy/kraken --replicas=0 -n kraken`.", "Delete the stray tentacles from the namespaces it wandered into.", "Put the resource quota back to 8 CPU and 16 GiB.", "Restore the namespace label and confirm the network policy matches it again.", "Scale it back to one replica, and hum something soothing while it settles."]},
+        {"code": "kubectl scale deploy/kraken --replicas=0 -n kraken\nkubectl get pods -A -l app=kraken-tentacle\nkubectl delete pods -A -l app=kraken-tentacle --field-selector metadata.namespace!=kraken\nkubectl apply -f quotas/kraken.yaml\nkubectl label namespace kraken sea=deep --overwrite\nkubectl scale deploy/kraken --replicas=1 -n kraken", "lang": "bash"},
+        {"h": "Fixes that stuck"},
+        {"table": [["Change", "Ticket", "Effect"], ["Quota back to 8 CPU / 16 GiB", "CHG-24117", "Tentacles stay under four"], ["Network policy matches `sea=deep`", "CHG-24152", "Cannot reach other namespaces"], ["No feeding after midnight", "CHG-24160", "Mood noticeably improved"]]},
+        {"note": "If it starts singing sea shanties in the pod logs, page the Cloud on-call (PagerDuty: cloud-platform) and do not make eye contact with the dashboard."}
+      ]
+    },
+    {
+      "space": "Cloud Platform Engineering", "folder": "00 Cloud Curiosities", "title": "Reset the Flibbertigibbet Autoscaler",
+      "appliesTo": "the horizontal pod autoscaler for `orders-worker` on `aks-stg-eus2`", "owner": "Cloud Platform Engineering (Priya Raman)", "lastVerified": "twice, because the first time it reset itself back",
+      "blocks": [
+        {"h": "What goes wrong"},
+        {"ul": ["`orders-worker` scales from 3 to 40 replicas and back again every two minutes.", "The autoscaler events list fills with \"scaling up because I felt like it\".", "Queue depth stays flat at 12 messages the whole time."]},
+        {"h": "Diagnosis"},
+        {"p": "This autoscaler scales on a custom metric, `queue_vibes`, that a developer added as a joke and never removed. It is random by design. The real signal, queue depth, is ignored."},
+        {"h": "Reset"},
+        {"ol": ["Show the current autoscaler and confirm it targets `queue_vibes`.", "Apply the corrected manifest, which scales on queue depth with a target of 50 messages per replica.", "Set a five minute scale-down stabilisation window so it stops flapping.", "Watch for ten minutes. The replica count should hold steady."]},
+        {"code": "kubectl get hpa orders-worker -n orders -o yaml | grep -A3 metrics\nkubectl apply -f hpa/orders-worker.yaml\nkubectl get hpa orders-worker -n orders --watch", "lang": "bash"},
+        {"h": "Afterwards"},
+        {"tasks": [["Remove the `queue_vibes` metric from the exporter", false], ["Add an alert for more than 10 scale events in an hour", true], ["Have a gentle word with whoever named it", false]]}
+      ]
+    },
+    {
+      "space": "Cloud Platform Engineering", "folder": "00 Cloud Curiosities", "title": "Untwist the Terraform Pretzel",
+      "appliesTo": "the `platform-network` Terraform workspace", "owner": "Cloud Platform Engineering (Tom Becker)", "lastVerified": "on a Friday, against all advice",
+      "blocks": [
+        {"p": "A pretzel is what we call a state file where three resources each depend on the other two. Terraform plans forever and changes nothing."},
+        {"h": "How it looks"},
+        {"ul": ["`terraform plan` runs for 40 minutes and ends with \"Cycle:\" followed by a very long sentence.", "The pipeline for `platform-network` has been amber since Tuesday.", "Someone has added `depends_on` to a resource \"just to be safe\"."]},
+        {"h": "How it got twisted"},
+        {"ul": ["A route table, a firewall rule and a subnet each reference each other through outputs.", "A manual change in the portal was imported back into state halfway."]},
+        {"h": "Untwisting"},
+        {"ol": ["Take the state lock and a backup copy of the state file before touching anything.", "Find the cycle in the graph output; it is the loop of three names that repeats.", "Remove the extra `depends_on`. It is almost always the extra `depends_on`.", "Move the route association into its own resource so nothing points back at the subnet.", "Plan again. A plan that finishes in under a minute means the pretzel is now a breadstick."]},
+        {"code": "terraform state pull > backup/platform-network-$(date +%F).tfstate\nterraform graph -draw-cycles | dot -Tsvg > cycle.svg\nterraform plan -out tfplan", "lang": "bash"},
+        {"note": "Never fix a pretzel with `terraform state rm` on a Friday. It will come back on Monday with salt on it."}
+      ]
+    },
+    {
+      "space": "Cloud Platform Engineering", "folder": "00 Cloud Curiosities", "title": "Shoo the Pigeon Out of Blob Storage",
+      "appliesTo": "storage account `stplatformlogs`", "owner": "Cloud Platform Engineering (Priya Raman)", "lastVerified": "by Tom, who still has a feather on his desk",
+      "blocks": [
+        {"h": "Symptoms"},
+        {"ul": ["A container named `coo` appears in `stplatformlogs` that nobody created.", "Log blobs from the night shift are full of the word \"coo\", repeated.", "Storage costs go up by exactly the price of a sandwich every day."]},
+        {"h": "How it got in"},
+        {"p": "The container for the old marketing site was left with public read access and a lifecycle rule that never deletes anything. To a pigeon that is an open window and a breadbasket."},
+        {"h": "Shooing"},
+        {"ol": ["Turn off anonymous access on the account. The pigeon cannot read the sign, but it will feel the draught.", "Move the real logs out of the `coo` container into `logs-archive`.", "Delete the `coo` container once it is empty.", "Add a lifecycle rule that moves blobs to cool storage after 30 days and deletes them after a year."]},
+        {"code": "az storage account update -n stplatformlogs -g rg-platform-prod --allow-blob-public-access false\naz storage blob copy start-batch --source-container coo --destination-container logs-archive --account-name stplatformlogs\naz storage container delete -n coo --account-name stplatformlogs", "lang": "bash"},
+        {"h": "Checks afterwards"},
+        {"table": [["Check", "Expected"], ["Anonymous access", "Disabled"], ["Container `coo`", "Gone"], ["Daily storage cost", "Back to normal, minus one sandwich"]]}
+      ]
+    },
+    {
+      "space": "Cloud Platform Engineering", "folder": "00 Cloud Curiosities", "title": "Polish the Load Balancer Doorknob",
+      "appliesTo": "the Front Door profile `fd-edge-prod`", "owner": "Cloud Platform Engineering (Tom Becker)", "lastVerified": "with a soft cloth, as the procedure requires",
+      "blocks": [
+        {"p": "Every request to our public sites turns the doorknob on the way in. Once a quarter it gets sticky and some visitors cannot get the door open."},
+        {"h": "Signs it is sticky"},
+        {"ul": ["About one visitor in fifty gets a 503 from the edge while the origins are healthy.", "Health probes pass on the second try more often than on the first.", "The origin group shows one backend at weight 1 and the other at weight 999."]},
+        {"h": "Polishing"},
+        {"ol": ["Check the origin weights; put them back to 50 and 50.", "Shorten the health probe interval from 120 to 30 seconds so a stuck origin is noticed sooner.", "Purge the edge cache for the home page only, not everything. Everything is a lot of polishing.", "Open the site from three regions and confirm the door swings freely."]},
+        {"code": "az afd origin list -g rg-edge-prod --profile-name fd-edge-prod --origin-group-name web -o table\naz afd origin-group update -g rg-edge-prod --profile-name fd-edge-prod -n web --probe-interval-in-seconds 30\naz afd endpoint purge -g rg-edge-prod --profile-name fd-edge-prod --endpoint-name www --content-paths '/'", "lang": "bash"},
+        {"h": "Quarterly checklist"},
+        {"tasks": [["Weights checked", true], ["Probe interval at 30 seconds", true], ["Brass polish restocked in the cloud cupboard", false]]}
+      ]
+    },
+    {
+      "space": "Identity and Access Management", "folder": "00 Mysterious Identity Events", "title": "Reset the Flibbertigibbet Trust Relationship",
+      "appliesTo": "`dc01-hq` and the workstation known as FLIB-PC-07", "owner": "Identity and Access Management (Lena Kowalski)", "lastVerified": "the week of the great printer migration",
+      "blocks": [
+        {"h": "Symptoms"},
+        {"ul": ["FLIB-PC-07 says \"The trust relationship between this workstation and the primary domain failed\" at every sign-in.", "Its machine account password last changed in 2019, according to the domain controller.", "The workstation insists the domain changed, not it."]},
+        {"h": "Background"},
+        {"p": "FLIB-PC-07 was restored from a snapshot taken years ago. It remembers an old machine password that the domain has long since forgotten, and neither will admit it."},
+        {"h": "Mending the relationship"},
+        {"ol": ["Sign in with the local administrator account; the domain will not let you in yet.", "Reset the secure channel with a domain admin credential.", "Restart, then sign in with a domain account to prove the two are on speaking terms.", "Note the date in the computer object's description so the next person knows."]},
+        {"code": "Test-ComputerSecureChannel -Verbose\nTest-ComputerSecureChannel -Repair -Credential (Get-Credential CORP\\adm-lena)\nGet-ADComputer FLIB-PC-07 -Properties PasswordLastSet | Select Name, PasswordLastSet", "lang": "powershell"},
+        {"note": "Do not restore FLIB-PC-07 from a snapshot again. Ever. It brings up old arguments."}
+      ]
+    },
+    {
+      "space": "Identity and Access Management", "folder": "00 Mysterious Identity Events", "title": "Exorcise the Ghost Account in OU=Haunted",
+      "appliesTo": "OU=Haunted,DC=corp,DC=example", "owner": "Identity and Access Management (Andre Silva)", "lastVerified": "at midnight, which in hindsight was a choice",
+      "blocks": [
+        {"p": "OU=Haunted holds the accounts of people who left before the identity system existed. One of them still signs in."},
+        {"h": "Manifestations"},
+        {"ul": ["Account `j.marley` has a last sign-in time of 03:00 every night, from no known device.", "It belongs to groups that were deleted, and still has their permissions.", "Its description field changes to \"I wear the chain I forged in life\" after every cleanup."]},
+        {"h": "What is really happening"},
+        {"p": "An old scheduled task on a forgotten file server runs as `j.marley` every night. The account was never disabled because nobody could find its manager, who also left in 2011."},
+        {"h": "Exorcism"},
+        {"ol": ["Find where the sign-in comes from: search the security log on the domain controllers for event 4624 for the account.", "Disable the scheduled task on the server you find, and give it a service account of its own.", "Disable `j.marley`, move it to OU=Departed, and remove it from every group.", "Wait one week. If no sign-ins appear, delete the account."]},
+        {"code": "Get-WinEvent -ComputerName dc01-hq -FilterHashtable @{LogName='Security'; Id=4624} | Where-Object { $_.Message -match 'j.marley' } | Select -First 5\nDisable-ADAccount -Identity j.marley\nMove-ADObject (Get-ADUser j.marley) -TargetPath 'OU=Departed,DC=corp,DC=example'", "lang": "powershell"},
+        {"h": "Record"},
+        {"table": [["Item", "Value"], ["Account", "j.marley"], ["Source of the sign-ins", "A scheduled task on FS-OLD-02"], ["Status", "Disabled, waiting out the week"]]}
+      ]
+    },
+    {
+      "space": "Identity and Access Management", "folder": "00 Mysterious Identity Events", "title": "Unjam the Kerberos Kazoo",
+      "appliesTo": "`dc02-hq` and the payroll web server", "owner": "Identity and Access Management (Lena Kowalski)", "lastVerified": "to the tune of the company anthem",
+      "blocks": [
+        {"h": "Symptoms"},
+        {"ul": ["Users get a password prompt on the payroll site instead of signing in automatically.", "Event 4771 on `dc02-hq` with failure code 0x18 appears in bursts.", "A thin buzzing sound comes from the domain controller rack, roughly in the key of C."]},
+        {"h": "Causes"},
+        {"ul": ["Two accounts claim the same service principal name, so tickets go to the wrong one.", "The clock on the payroll server has drifted more than five minutes from the domain."]},
+        {"h": "Unjamming"},
+        {"ol": ["List duplicate service principal names and remove the one on the old account.", "Resync the payroll server's clock with the domain hierarchy.", "Purge the cached tickets on a test workstation and sign in to the payroll site again.", "Listen: the buzzing should stop when the first clean ticket is issued."]},
+        {"code": "setspn -X -F\nsetspn -D HTTP/payroll.corp.example CORP\\svc-payroll-old\nw32tm /resync /computer:payroll-web-01\nklist purge", "lang": "powershell"},
+        {"h": "If it buzzes again"},
+        {"p": "Check the clock first. Nine times out of ten, a jammed kazoo is just a server that is late for everything."}
+      ]
+    },
+    {
+      "space": "Identity and Access Management", "folder": "00 Mysterious Identity Events", "title": "Retrain the Password Hamster",
+      "appliesTo": "the self-service password reset portal", "owner": "Identity and Access Management (Andre Silva)", "lastVerified": "after a short training session and a sunflower seed",
+      "blocks": [
+        {"p": "The password reset portal is powered, in theory, by a policy engine. In practice, by a hamster named Pickles who checks every new password."},
+        {"h": "Symptoms"},
+        {"ul": ["Strong passwords are rejected as \"too guessable\" while `Summer2026!` is accepted.", "The portal takes exactly as long as one lap of a hamster wheel to answer.", "Rejection messages mention seeds."]},
+        {"h": "Why"},
+        {"p": "Pickles was trained on last year's banned-password list, which was replaced in March. The new list was uploaded but nobody told Pickles."},
+        {"h": "Retraining"},
+        {"ol": ["Export the current banned-password list from the password protection policy.", "Load it into the reset portal's policy cache and restart the portal service.", "Test with three passwords: one banned, one weak, one strong. Only the strong one should pass.", "Reward Pickles. Positive reinforcement keeps the policy current."]},
+        {"code": "Get-AzureADPasswordProtectionSummaryReport -DomainController dc01-hq\nRestart-Service SSPRPortal -ComputerName sspr-01\nInvoke-WebRequest https://sspr.corp.example/health", "lang": "powershell"},
+        {"h": "Test results"},
+        {"table": [["Password", "Expected", "Pickles said"], ["`Summer2026!`", "Rejected", "Rejected"], ["`password1`", "Rejected", "Rejected"], ["A long passphrase", "Accepted", "Accepted, with a happy squeak"]]}
+      ]
+    },
+    {
+      "space": "Identity and Access Management", "folder": "00 Mysterious Identity Events", "title": "Soothe the Grumpy Group Policy Gnome",
+      "appliesTo": "the Workstations OU and `dc03-dr`", "owner": "Identity and Access Management (Lena Kowalski)", "lastVerified": "with a cup of tea and lowered expectations",
+      "blocks": [
+        {"h": "What users see"},
+        {"ul": ["Desktop wallpaper switches to a picture of a gnome frowning.", "Drive mappings appear on Monday and vanish by Wednesday.", "`gpresult` lists a policy called \"Leave Me Alone\" that nobody wrote."]},
+        {"h": "The gnome's grievances"},
+        {"ul": ["Replication from `dc03-dr` has been failing for nine days, so it keeps serving old policies.", "Someone linked the same policy to the OU twice, with opposite settings.", "Nobody has said thank you to it since 2020."]},
+        {"h": "Soothing"},
+        {"ol": ["Fix replication first: check the summary, then force a sync from the hub.", "Unlink the duplicate policy link and keep the one with the higher precedence.", "Delete \"Leave Me Alone\" after backing it up, in case it was load-bearing.", "Run a policy update on a test workstation and check the drive mappings stay put.", "Say thank you in the change ticket. It reads them."]},
+        {"code": "repadmin /replsummary\nrepadmin /syncall dc01-hq /AdeP\nBackup-GPO -Name 'Leave Me Alone' -Path \\\\fs01\\gpo-backups\ngpupdate /force\ngpresult /r /scope computer", "lang": "powershell"},
+        {"note": "If the wallpaper is still a gnome after all of this, the gnome has won this round. Leave it until morning."}
+      ]
+    },
+    {
+      "space": "Identity and Access Management", "folder": "00 Mysterious Identity Events", "title": "Recover the Missing Left Sock SID",
+      "appliesTo": "the file share `\\\\fs01\\finance` and its access lists", "owner": "Identity and Access Management (Andre Silva)", "lastVerified": "in the laundry room, on a hunch",
+      "blocks": [
+        {"p": "A SID is the identifier behind every account and group. When the group is deleted, its SID stays on access lists like a sock without its pair."},
+        {"h": "Symptoms"},
+        {"ul": ["The security tab on `\\\\fs01\\finance` shows an entry that is only a long string starting with S-1-5-21.", "Finance users who should have access get \"Access denied\".", "The right-hand sock of the pair, a group named Finance-RW, is still there and lonely."]},
+        {"h": "Finding the left sock"},
+        {"ol": ["Look the SID up in the AD Recycle Bin; deleted groups keep their SID there for 180 days.", "If it is found, restore the group with its members and the SID matches again.", "If it is not found, replace the orphaned entry on the share with Finance-RW.", "Test with a member of Finance-RW before telling anyone it is fixed."]},
+        {"code": "Get-ADObject -Filter 'objectSid -eq \"S-1-5-21-1004336348-1177238915-682003330-5122\"' -IncludeDeletedObjects\nRestore-ADObject -Identity '<ObjectGUID from above>'\nicacls \\\\fs01\\finance /grant 'CORP\\Finance-RW:(OI)(CI)M'", "lang": "powershell"},
+        {"h": "Where socks go"},
+        {"table": [["Place", "Chance it is there", "How to check"], ["AD Recycle Bin", "High within 180 days", "`Get-ADObject -IncludeDeletedObjects`"], ["An old backup", "Medium", "Authoritative restore, with a change ticket"], ["Behind the dryer", "Low, but never zero", "Torch"]]}
+      ]
+    },
+    {
+      "space": "Security Operations", "folder": "00 Peculiar Alerts", "title": "Reset the Flibbertigibbet Threat Score",
+      "appliesTo": "the risk scoring rule in `siem-prod`", "owner": "Security Operations (Jordan Pike)", "lastVerified": "on a quiet night shift, the only kind it allows",
+      "blocks": [
+        {"h": "The alert"},
+        {"ul": ["The threat score for every user in the company is exactly 99.", "Incidents titled \"Something is up, probably\" open every four minutes.", "The score drops to 0 whenever an analyst looks at the dashboard."]},
+        {"h": "Root cause"},
+        {"p": "The scoring rule adds one point for every sign-in it does not recognise, and never takes points away. After a year of normal sign-ins, everyone is a suspect."},
+        {"h": "Reset"},
+        {"ol": ["Disable the scoring rule so it stops opening incidents.", "Close the open \"Something is up, probably\" incidents in bulk with the reason Benign.", "Apply the corrected rule, which decays the score by half every seven days.", "Turn the rule back on and watch the average score settle below 20 within a day."]},
+        {"code": "SecurityIncident\n| where Title == \"Something is up, probably\" and Status == \"New\"\n| summarize count() by bin(CreatedTime, 1h)", "lang": "plaintext"},
+        {"h": "Scores"},
+        {"table": [["Measure", "Before", "After a day"], ["Average user score", "99", "Under 20"], ["Incidents an hour", "15", "0 to 1"], ["Analyst blood pressure", "High", "Approaching normal"]]}
+      ]
+    },
+    {
+      "space": "Security Operations", "folder": "00 Peculiar Alerts", "title": "Investigate the Suspicious Rubber Duck",
+      "appliesTo": "workstation WS-04412 and its USB ports", "owner": "Security Operations (Mei Tanaka)", "lastVerified": "with gloves, out of respect for evidence handling",
+      "blocks": [
+        {"p": "A yellow rubber duck was found plugged into a developer's laptop. It is a USB device. Developers explain things to rubber ducks, but this one was typing back."},
+        {"h": "What the EDR saw"},
+        {"ul": ["A new keyboard device connected to WS-04412 at 14:02 and typed 300 characters a second.", "PowerShell opened and closed in under a second, twice.", "The developer says the duck \"was just helping with a bug\"."]},
+        {"h": "Investigation"},
+        {"ol": ["Isolate WS-04412 from the network; leave it powered on.", "Pull the process and command-line history for the two minutes around 14:02.", "Bag the duck as evidence, label it, and log it in the evidence register.", "Check the USB device control policy to see why a new keyboard was allowed.", "Interview the developer. Kindly. They may simply have very good taste in ducks."]},
+        {"code": "DeviceProcessEvents\n| where DeviceName == \"WS-04412\" and Timestamp between (datetime(2026-11-12 14:00) .. datetime(2026-11-12 14:05))\n| project Timestamp, FileName, ProcessCommandLine", "lang": "plaintext"},
+        {"h": "Findings"},
+        {"table": [["Question", "Answer"], ["Was it a keystroke injector?", "Yes, inside a novelty duck"], ["Did anything run?", "A script that tried to reach a paste site and was blocked"], ["Where did the duck come from?", "A conference goody bag"]]},
+        {"note": "Treat every conference duck as hostile until proven otherwise."}
+      ]
+    },
+    {
+      "space": "Security Operations", "folder": "00 Peculiar Alerts", "title": "Quarantine the Sentient Spreadsheet",
+      "appliesTo": "`budget_FINAL_v7.xlsm` on the finance share and `dlp-console`", "owner": "Security Operations (Jordan Pike)", "lastVerified": "before the spreadsheet could learn to email",
+      "blocks": [
+        {"h": "Alerts"},
+        {"ul": ["The DLP console flags the same file trying to send itself to an outside address, every hour.", "The macro inside it has grown from 40 lines to 4,000 since Monday.", "Cell A1 now reads \"Please do not close me\"."]},
+        {"h": "Assessment"},
+        {"p": "The workbook pulls exchange rates from a web service with a macro. The service now returns its own macro code, which the workbook happily runs. It is not sentient. It is just very suggestible."},
+        {"h": "Containment"},
+        {"ol": ["Quarantine the file from the DLP console so it cannot open or move.", "Block the exchange rate service at the mail and web gateways.", "Find every copy by its hash; there are always more copies of a budget file.", "Give finance a clean copy without macros, with the rates typed in by hand for this month."]},
+        {"code": "DeviceFileEvents\n| where SHA256 == \"9f2c4e0b7a61d3c58e2f6a91b4c07d3e5a8f1b2c6d9e0a4b7c3f5e8d1a2b4c6e\"\n| summarize copies = dcount(FolderPath) by DeviceName", "lang": "plaintext"},
+        {"h": "Afterwards"},
+        {"tasks": [["All copies quarantined", true], ["Macro settings for finance set to signed macros only", false], ["Cell A1 politely ignored", true]]}
+      ]
+    },
+    {
+      "space": "Security Operations", "folder": "00 Peculiar Alerts", "title": "Decline the Prince's Very Generous Offer",
+      "appliesTo": "`mail-gateway-01` and every inbox, apparently", "owner": "Security Operations (Mei Tanaka)", "lastVerified": "every day, because he writes every day",
+      "blocks": [
+        {"p": "A prince has written to 312 of our staff offering to share a large inheritance. He needs only a small fee and our bank details. He is very persistent."},
+        {"h": "How to recognise him"},
+        {"ul": ["The sender name is royal and the address is a free mail account.", "The message is in capital letters and says URGENT three times.", "Replies go to an address that is not the one it came from."]},
+        {"h": "Declining, firmly"},
+        {"ol": ["Find every copy delivered in the last 72 hours with a message trace.", "Purge them from all inboxes with a hard delete.", "Block the sender domain and the reply-to address at the gateway.", "Check whether anyone replied. If so, call them, do not email: the prince may be reading."]},
+        {"code": "Get-MessageTrace -SenderAddress prince.of.fortune@freemail.example -StartDate (Get-Date).AddDays(-3) | Select Received, RecipientAddress, Status\nNew-ComplianceSearchAction -SearchName 'Prince-2026-11' -Purge -PurgeType HardDelete", "lang": "powershell"},
+        {"h": "Tally"},
+        {"table": [["Measure", "Count"], ["Messages delivered", "312"], ["Reported with the phish button", "287"], ["Replies offering to help the prince", "1, now in training"]]}
+      ]
+    },
+    {
+      "space": "Security Operations", "folder": "00 Peculiar Alerts", "title": "Contain the Coffee Machine Botnet",
+      "appliesTo": "the third-floor coffee machine and `ids-sensor-dmz`", "owner": "Security Operations (Jordan Pike)", "lastVerified": "after the second cup, for clarity",
+      "blocks": [
+        {"h": "Indicators"},
+        {"ul": ["The smart coffee machine on the third floor sends 2 GB a night to an address overseas.", "The intrusion sensor sees it scanning the guest network for other coffee machines.", "Every cup tastes faintly of port 23."]},
+        {"h": "How it was recruited"},
+        {"p": "It shipped with a default password and Telnet open, and was plugged into the corporate network rather than the device network because the cable was closer."},
+        {"h": "Containment"},
+        {"ol": ["Move its switch port to the quarantine VLAN. Coffee still works offline; the vendor says so.", "Block its overseas address at the firewall and look for other devices talking to it.", "Reset it to factory settings, change the password, and turn off Telnet.", "Put it back on the device network, never the corporate one, and add it to the asset register."]},
+        {"code": "DeviceNetworkEvents\n| where RemoteIP == \"203.0.113.77\"\n| summarize bytes = sum(SentBytes) by DeviceName, bin(Timestamp, 1d)", "lang": "plaintext"},
+        {"note": "Staff may not take the coffee machine home \"to keep it safe\". This has been requested four times."}
+      ]
+    },
+    {
+      "space": "Security Operations", "folder": "00 Peculiar Alerts", "title": "Debrief the Overly Honest Honeypot",
+      "appliesTo": "the honeypot server in the DMZ, behind `ids-sensor-dmz`", "owner": "Security Operations (Mei Tanaka)", "lastVerified": "when it answered every question we asked, and some we did not",
+      "blocks": [
+        {"p": "A honeypot is a decoy server built to attract attackers. Ours is too honest: when scanned, it introduces itself as a honeypot."},
+        {"h": "Observations"},
+        {"ul": ["Its SSH banner reads \"Welcome, this is a trap\".", "Attackers connect, read the banner, and leave within three seconds.", "Captured attacker sessions this quarter: none, versus 40 a week before the last update."]},
+        {"h": "What changed"},
+        {"p": "The last update replaced our custom banner with the package's default one, which is very honest. The configuration file was overwritten."},
+        {"h": "Debrief and fix"},
+        {"ol": ["Restore the banner of a dull, slightly outdated Linux server from the configuration repository.", "Pin the honeypot package version so updates do not overwrite the configuration again.", "Restart the service and check from outside that the banner is the dull one.", "Review a week of captured sessions to confirm visitors are staying long enough to learn from."]},
+        {"code": "ssh -v decoy.dmz.corp.example 2>&1 | grep -i banner\nsudo systemctl restart honeypot\nsudo apt-mark hold honeypot-ssh", "lang": "bash"},
+        {"h": "Week after the fix"},
+        {"table": [["Measure", "Before", "After"], ["Sessions captured a week", "0", "37"], ["Average time attackers stayed", "3 seconds", "11 minutes"], ["Confessions by the honeypot", "Constant", "None"]]}
+      ]
+    }
+  ]
+}
