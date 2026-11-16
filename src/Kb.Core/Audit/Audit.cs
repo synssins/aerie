@@ -32,6 +32,9 @@ public static class AuditActions
     public const string UserCodesExempt = "user.codes.exempt";
     public const string FeedbackSettingsSave = "feedback.settings.save";
     public const string PageFeedbackSave = "page.feedback.save";
+    public const string CommentCreate = "comment.create";
+    public const string CommentEdit = "comment.edit";
+    public const string CommentDelete = "comment.delete";
     public const string BreakGlass = "auth.breakglass";
     public const string SetupAdminCreate = "setup.admin.create";
     public const string BrandUpdate = "brand.update";

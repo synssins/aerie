@@ -257,6 +257,43 @@ Write. `UpdateBrand`, answers `Unit`.
 |---|---|---|
 | ProductName | `string` | required |
 
+## comment.create
+
+Write. `CreateComment`, answers `CommentDto` ([CommentDto](#commentdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+| Text | `string?` |  |
+| ParentId | `Guid?` |  |
+
+## comment.delete
+
+Write. `DeleteComment`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| CommentId | `Guid` | required |
+
+## comment.edit
+
+Write. `EditComment`, answers `CommentDto` ([CommentDto](#commentdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| CommentId | `Guid` | required |
+| Text | `string?` |  |
+
+## comment.list
+
+Read. `ListComments`, answers `CommentListDto` ([CommentListDto](#commentlistdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+| Limit | `int?` |  |
+| Offset | `int?` |  |
+
 ## dc.attachment.create
 
 Write. `DcCreateAttachments`, answers `JsonObject`. Core only.
@@ -2696,6 +2733,136 @@ Enum: `Off`, `Admins`, `Everyone`.
 ```json
 {
   "exempt": false
+}
+```
+
+### CommentDto
+
+| Field | Type |
+|---|---|
+| id | `Guid` |
+| pageId | `Guid` |
+| parentId | `Guid?` |
+| author | `OwnerRefDto?` ([OwnerRefDto](#ownerrefdto)) |
+| text | `string?` |
+| createdAt | `DateTimeOffset` |
+| editedAt | `DateTimeOffset?` |
+| state | `string` |
+| canEdit | `bool` |
+| canDelete | `bool` |
+| canModerate | `bool` |
+| replies | `IReadOnlyList<CommentDto>` ([CommentDto](#commentdto)) |
+
+```json
+{
+  "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "pageId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "parentId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "author": {
+    "type": "text",
+    "id": "text",
+    "name": "text"
+  },
+  "text": "text",
+  "createdAt": "2026-11-14T10:00:00\u002B00:00",
+  "editedAt": "2026-11-14T10:00:00\u002B00:00",
+  "state": "text",
+  "canEdit": false,
+  "canDelete": false,
+  "canModerate": false,
+  "replies": [
+    {
+      "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "pageId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "parentId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "author": {
+        "type": "text",
+        "id": "text",
+        "name": "text"
+      },
+      "text": "text",
+      "createdAt": "2026-11-14T10:00:00\u002B00:00",
+      "editedAt": "2026-11-14T10:00:00\u002B00:00",
+      "state": "text",
+      "canEdit": false,
+      "canDelete": false,
+      "canModerate": false,
+      "replies": [
+        null
+      ]
+    }
+  ]
+}
+```
+
+### CommentEditRequest
+
+| Field | Type |
+|---|---|
+| text | `string?` |
+
+```json
+{
+  "text": "text"
+}
+```
+
+### CommentListDto
+
+| Field | Type |
+|---|---|
+| enabled | `bool` |
+| canComment | `bool` |
+| canModerate | `bool` |
+| total | `int` |
+| limit | `int` |
+| offset | `int` |
+| comments | `IReadOnlyList<CommentDto>` ([CommentDto](#commentdto)) |
+
+```json
+{
+  "enabled": false,
+  "canComment": false,
+  "canModerate": false,
+  "total": 0,
+  "limit": 0,
+  "offset": 0,
+  "comments": [
+    {
+      "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "pageId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "parentId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "author": {
+        "type": "text",
+        "id": "text",
+        "name": "text"
+      },
+      "text": "text",
+      "createdAt": "2026-11-14T10:00:00\u002B00:00",
+      "editedAt": "2026-11-14T10:00:00\u002B00:00",
+      "state": "text",
+      "canEdit": false,
+      "canDelete": false,
+      "canModerate": false,
+      "replies": [
+        null
+      ]
+    }
+  ]
+}
+```
+
+### CommentRequest
+
+| Field | Type |
+|---|---|
+| text | `string?` |
+| parentId | `Guid?` |
+
+```json
+{
+  "text": "text",
+  "parentId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
 }
 ```
 

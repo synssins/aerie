@@ -179,6 +179,50 @@ namespace Kb.Data.Migrations
                     b.ToTable("Attachments");
                 });
 
+            modelBuilder.Entity("Kb.Core.Content.Comment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AuthorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("DeletedByAuthor")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset?>("EditedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("ModeratedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("ModeratedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ParentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("State")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Text")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PageId", "ParentId", "CreatedAt");
+
+                    b.ToTable("Comments");
+                });
+
             modelBuilder.Entity("Kb.Core.Content.Page", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2161,6 +2205,15 @@ namespace Kb.Data.Migrations
                     b.HasKey("UserId", "LoginProvider", "Name");
 
                     b.ToTable("AspNetUserTokens", (string)null);
+                });
+
+            modelBuilder.Entity("Kb.Core.Content.Comment", b =>
+                {
+                    b.HasOne("Kb.Core.Content.Page", null)
+                        .WithMany()
+                        .HasForeignKey("PageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Kb.Core.Identity.OAuthAccessToken", b =>

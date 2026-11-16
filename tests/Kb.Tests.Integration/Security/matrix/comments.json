@@ -1,0 +1,35 @@
+[
+  {
+    "action": "comment.list",
+    "method": "GET",
+    "path": "/api/v1/pages/{page}/comments",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404},
+    "note": "Everyone signed in who can read the page; guests get 401 (comments.md, question Q-0027)."
+  },
+  {
+    "action": "comment.create",
+    "method": "POST",
+    "path": "/api/v1/pages/{page}/comments",
+    "body": {"text": "A comment"},
+    "expect": {"anonymous": 401, "outsider": 404, "reader": "allowed", "contributor": "allowed", "supervisor": "allowed", "owner": "allowed", "admin": "allowed"},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "comment.edit",
+    "method": "PUT",
+    "path": "/api/v1/comments/{comment}",
+    "body": {"text": "Changed"},
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 403},
+    "sensitive": {"admin": 404},
+    "note": "Only the author edits; moderators hide or delete instead (question Q-0023)."
+  },
+  {
+    "action": "comment.delete",
+    "method": "DELETE",
+    "path": "/api/v1/comments/{comment}",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 403},
+    "sensitive": {"admin": 404},
+    "note": "Slice C1: only the author deletes. Moderators delete from slice C2."
+  }
+]
