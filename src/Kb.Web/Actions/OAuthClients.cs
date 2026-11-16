@@ -142,7 +142,7 @@ internal sealed class CreateOAuthClientHandler(KbDbContext db, IAccess access, I
         await db.SaveChangesAsync(ctx.Cancel);
         // The secret is never in the audit entry, only that the client was made and how.
         ctx.Audit(AuditActions.OAuthClientCreate, "oauth.client", client.Id.ToString(), data: new Dictionary<string, string>
-            { ["clientId"] = client.ClientId, ["name"] = client.Name, ["type"] = client.Type, ["scopes"] = client.Scopes, ["redirectUris"] = string.Join(' ', f.Uris), ["requirePkce"] = client.RequirePkce.ToString() });
+            { ["clientId"] = client.ClientId, ["name"] = client.Name, ["type"] = client.Type, ["scopes"] = client.Scopes, ["redirectUris"] = string.Join(' ', f.Uris), ["requirePkce"] = client.RequirePkce.ToString(), ["ip"] = ctx.Actor.RemoteIp ?? "" });
         return new OAuthClientCreatedDto(secret, await OAuthClientRules.DtoAsync(db, client, ctx.Cancel));
     }
 }
@@ -170,7 +170,7 @@ internal sealed class UpdateOAuthClientHandler(KbDbContext db, IAccess access, T
             await db.SaveChangesAsync(ctx.Cancel);
         }
         ctx.Audit(AuditActions.OAuthClientUpdate, "oauth.client", client.Id.ToString(), data: new Dictionary<string, string>
-            { ["clientId"] = client.ClientId, ["name"] = client.Name, ["scopes"] = client.Scopes, ["redirectUris"] = string.Join(' ', f.Uris), ["requirePkce"] = client.RequirePkce.ToString(), ["enabled"] = client.Enabled.ToString() });
+            { ["clientId"] = client.ClientId, ["name"] = client.Name, ["scopes"] = client.Scopes, ["redirectUris"] = string.Join(' ', f.Uris), ["requirePkce"] = client.RequirePkce.ToString(), ["enabled"] = client.Enabled.ToString(), ["ip"] = ctx.Actor.RemoteIp ?? "" });
         return await OAuthClientRules.DtoAsync(db, client, ctx.Cancel);
     }
 }
@@ -184,7 +184,7 @@ internal sealed class DeleteOAuthClientHandler(KbDbContext db, IAccess access) :
         if (await db.OAuthClients.AsNoTracking().FirstOrDefaultAsync(c => c.Id == ctx.Action.Id, ctx.Cancel) is not { } client) return Problem.NotFound;
         // The database removes its requests, grants, codes and tokens with it.
         await db.OAuthClients.Where(c => c.Id == client.Id).ExecuteDeleteAsync(ctx.Cancel);
-        ctx.Audit(AuditActions.OAuthClientDelete, "oauth.client", client.Id.ToString(), data: new Dictionary<string, string> { ["clientId"] = client.ClientId, ["name"] = client.Name });
+        ctx.Audit(AuditActions.OAuthClientDelete, "oauth.client", client.Id.ToString(), data: new Dictionary<string, string> { ["clientId"] = client.ClientId, ["name"] = client.Name, ["ip"] = ctx.Actor.RemoteIp ?? "" });
         return new Unit();
     }
 }
@@ -200,7 +200,7 @@ internal sealed class RotateOAuthClientSecretHandler(KbDbContext db, IAccess acc
         var secret = OAuthSecrets.NewClientSecret();
         (client.SecretHash, client.SecretRotatedAt) = (OAuthClientRules.HashSecret(hasher, secret), time.GetUtcNow());
         await db.SaveChangesAsync(ctx.Cancel);
-        ctx.Audit(AuditActions.OAuthClientSecretRotate, "oauth.client", client.Id.ToString(), data: new Dictionary<string, string> { ["clientId"] = client.ClientId });
+        ctx.Audit(AuditActions.OAuthClientSecretRotate, "oauth.client", client.Id.ToString(), data: new Dictionary<string, string> { ["clientId"] = client.ClientId, ["ip"] = ctx.Actor.RemoteIp ?? "" });
         return new OAuthClientCreatedDto(secret, await OAuthClientRules.DtoAsync(db, client, ctx.Cancel));
     }
 }

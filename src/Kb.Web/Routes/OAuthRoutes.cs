@@ -20,7 +20,7 @@ public static class OAuthRoutes
         oauth.MapGet("/authorize", async (HttpContext http, IActionBus bus, CancellationToken ct) =>
         {
             var query = http.Request.Query.ToDictionary(kv => kv.Key, kv => kv.Value.Select(v => v ?? "").ToArray(), StringComparer.Ordinal);
-            var r = await bus.SendAsync(new DcOAuthAuthorize { Query = query }, ct);
+            var r = await bus.SendAsync(new DcOAuthAuthorize { Query = query, SiteIsHttps = SiteIsHttps(http) }, ct);
             if (!r.Ok) return Results.StatusCode(r.Problem!.Status);
             // Nothing here is cached: every answer names a one-time request or code.
             http.Response.Headers.CacheControl = "no-store";
@@ -32,7 +32,7 @@ public static class OAuthRoutes
         {
             var (parameters, basic, badBasic, badBody) = await OAuthHttp.ReadAsync(http);
             if (badBody) return OAuthHttp.Write(http, new OAuthEndpointResult(400, new System.Text.Json.Nodes.JsonObject { ["error"] = "invalid_request", ["error_description"] = "The form body could not be read." }));
-            var r = await bus.SendAsync(new DcOAuthToken { Parameters = parameters, Basic = basic, BadBasic = badBasic, Address = BasicThrottle.AddressOf(http) }, ct);
+            var r = await bus.SendAsync(new DcOAuthToken { Parameters = parameters, Basic = basic, BadBasic = badBasic, Address = BasicThrottle.AddressOf(http), SiteIsHttps = SiteIsHttps(http) }, ct);
             return r.Ok ? OAuthHttp.Write(http, r.Value!) : Results.StatusCode(r.Problem!.Status);
         }).WithAction<DcOAuthToken>();
 
@@ -40,7 +40,7 @@ public static class OAuthRoutes
         {
             var (parameters, basic, badBasic, badBody) = await OAuthHttp.ReadAsync(http);
             if (badBody) return OAuthHttp.Write(http, new OAuthEndpointResult(400, new System.Text.Json.Nodes.JsonObject { ["error"] = "invalid_request", ["error_description"] = "The form body could not be read." }));
-            var r = await bus.SendAsync(new DcOAuthRevoke { Parameters = parameters, Basic = basic, BadBasic = badBasic, Address = BasicThrottle.AddressOf(http) }, ct);
+            var r = await bus.SendAsync(new DcOAuthRevoke { Parameters = parameters, Basic = basic, BadBasic = badBasic, Address = BasicThrottle.AddressOf(http), SiteIsHttps = SiteIsHttps(http) }, ct);
             return r.Ok ? OAuthHttp.Write(http, r.Value!) : Results.StatusCode(r.Problem!.Status);
         }).WithAction<DcOAuthRevoke>();
 
@@ -53,6 +53,9 @@ public static class OAuthRoutes
         app.MapGet("/.well-known/oauth-authorization-server", Metadata).AllowAnonymous().WithMetadata(DcOAuthRoute.Marker);
         if (context.Length > 0) app.MapGet("/.well-known/oauth-authorization-server" + context, Metadata).AllowAnonymous().WithMetadata(DcOAuthRoute.Marker);
     }
+
+    /// <summary>The site's base URL as clients see it is https (the configured base URL, or the request's own).</summary>
+    private static bool SiteIsHttps(HttpContext http) => DcLinks.Of(http).Base.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
     public static void MapOAuthConsentEndpoints(this RouteGroupBuilder api)
     {

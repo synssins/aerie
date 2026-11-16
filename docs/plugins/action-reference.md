@@ -1083,6 +1083,7 @@ Write. `DcOAuthAuthorize`, answers `OAuthAuthorizeResult` ([OAuthAuthorizeResult
 | Field | Type | |
 |---|---|---|
 | Query | `IReadOnlyDictionary<string, string[]>` | required |
+| SiteIsHttps | `bool` |  |
 
 ## oauth.client.create
 
@@ -1168,6 +1169,7 @@ Write. `DcOAuthRevoke`, answers `OAuthEndpointResult` ([OAuthEndpointResult](#oa
 | Basic | `ValueTuple<string, string>?` |  |
 | BadBasic | `bool` |  |
 | Address | `string` |  |
+| SiteIsHttps | `bool` |  |
 
 ## oauth.token
 
@@ -1179,6 +1181,7 @@ Write. `DcOAuthToken`, answers `OAuthEndpointResult` ([OAuthEndpointResult](#oau
 | Basic | `ValueTuple<string, string>?` |  |
 | BadBasic | `bool` |  |
 | Address | `string` |  |
+| SiteIsHttps | `bool` |  |
 
 ## page.ai.review
 
