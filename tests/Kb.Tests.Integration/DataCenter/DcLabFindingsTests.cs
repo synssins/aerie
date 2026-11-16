@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Kb.Core.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using static Kb.Tests.Integration.DataCenter.DcKit;
 
 namespace Kb.Tests.Integration.DataCenter;
@@ -196,6 +197,27 @@ public sealed class DcLabFindingsTests : IAsyncLifetime
         await (await t.PostAsync(path, new StringContent("42", Encoding.UTF8, "application/json"), Ct)).ErrorAsync(HttpStatusCode.BadRequest);
     }
 
+    /// <summary>Each address's window starts at its first failure: a clock minute ending midway neither resets the count nor doubles the limit.</summary>
+    [Fact]
+    public void BasicThrottle_WindowStartsAtTheFirstFailure()
+    {
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(new DateTimeOffset(2026, 11, 15, 12, 0, 50, TimeSpan.Zero));
+        var options = Microsoft.Extensions.Options.Options.Create(new Kb.Core.Config.KbOptions());
+        options.Value.Auth.SignInsPerMinutePerAddress = 3;
+        var t = new Kb.Web.DataCenter.BasicThrottle(options, clock);
+        for (var i = 0; i < 3; i++) { t.Fail("a"); clock.Advance(TimeSpan.FromSeconds(5)); } // 12:00:50 to 12:01:00, across a clock minute
+        Assert.Equal(45, t.RetryAfter("a"));
+        Assert.Null(t.RetryAfter("b"));
+        Assert.True(t.FirstRefusal("a"));
+        Assert.False(t.FirstRefusal("a"));
+        clock.Advance(TimeSpan.FromSeconds(44));
+        Assert.Equal(1, t.RetryAfter("a"));
+        clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.Null(t.RetryAfter("a"));
+        t.Fail("a");
+        Assert.Null(t.RetryAfter("a")); // a new window, one failure in it
+    }
+
     // Q-0018: a part named file is a file whether or not it has a file name, as clients generated from the published files send it.
     [Fact]
     public async Task FilePartWithoutAFileName_IsAFile()
@@ -279,7 +301,10 @@ public sealed class DcLabFindingsTests : IAsyncLifetime
     [Fact]
     public async Task FailedBasic_IsLimited_BeforeAnyCredentialCheck_AndNoMore()
     {
-        await using var f = new KbAppFactory(KbAppFactory.NewDbPath(), settings: new Dictionary<string, string> { ["Kb:Auth:SignInsPerMinutePerAddress"] = "3" });
+        // The throttle's clock stands still, so however slowly the steps run its window cannot end midway.
+        await using var f = new KbAppFactory(KbAppFactory.NewDbPath(), settings: new Dictionary<string, string> { ["Kb:Auth:SignInsPerMinutePerAddress"] = "3" },
+            services: s => s.AddSingleton(sp => new Kb.Web.DataCenter.BasicThrottle(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Kb.Core.Config.KbOptions>>(),
+                new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow))));
         await UserAsync(f, "ravi");
         // Right credentials go through and do not count.
         Assert.Equal("ravi", (await Basic(f, "ravi").GetJsonAsync("/rest/api/user/current")).GetProperty("username").GetString());

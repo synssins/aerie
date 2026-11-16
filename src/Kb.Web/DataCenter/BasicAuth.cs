@@ -105,10 +105,14 @@ public sealed class BasicAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions
 /// </summary>
 public sealed class BasicThrottle(IOptions<Kb.Core.Config.KbOptions> options, TimeProvider time)
 {
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Window, int Count)> _failures = new(StringComparer.Ordinal);
+    // Each address's window starts at its first failure and lasts a minute, so no clock boundary resets a count midway (a window fixed to the
+    // clock's minutes would also let a caller fail twice the limit across one boundary).
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Start, int Count)> _failures = new(StringComparer.Ordinal);
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _refusedIn = new(StringComparer.Ordinal);
 
-    private long Window => time.GetUtcNow().ToUnixTimeSeconds() / 60;
+    private long Now => time.GetUtcNow().ToUnixTimeSeconds();
+
+    private static bool Open(long start, long now) => now - start < 60;
 
     public static string AddressOf(HttpContext http)
     {
@@ -118,17 +122,17 @@ public sealed class BasicThrottle(IOptions<Kb.Core.Config.KbOptions> options, Ti
 
     public void Fail(string address)
     {
-        var window = Window;
-        _failures.AddOrUpdate(address, (window, 1), (_, e) => e.Window == window ? (window, e.Count + 1) : (window, 1));
-        // shortcut: counted on each server, in memory, like aerie's other limits; old windows are dropped once many addresses are held.
-        if (_failures.Count > 10_000) foreach (var (key, e) in _failures) if (e.Window != window) _failures.TryRemove(key, out _);
-        if (_refusedIn.Count > 10_000) foreach (var (key, w) in _refusedIn) if (w != window) _refusedIn.TryRemove(key, out _);
+        var now = Now;
+        _failures.AddOrUpdate(address, (now, 1), (_, e) => Open(e.Start, now) ? (e.Start, e.Count + 1) : (now, 1));
+        // shortcut: counted on each server, in memory, like aerie's other limits; ended windows are dropped once many addresses are held.
+        if (_failures.Count > 10_000) foreach (var (key, e) in _failures) if (!Open(e.Start, now)) _failures.TryRemove(key, out _);
+        if (_refusedIn.Count > 10_000) foreach (var (key, w) in _refusedIn) if (!Open(w, now)) _refusedIn.TryRemove(key, out _);
     }
 
-    /// <summary>True for the first refusal of this address in the current window: what is audited, so a flood writes one entry a minute.</summary>
+    /// <summary>True for the first refusal of this address in its current window: what is audited, so a flood writes one entry a window.</summary>
     public bool FirstRefusal(string address)
     {
-        var window = Window;
+        var window = _failures.TryGetValue(address, out var e) ? e.Start : Now;
         var first = false;
         _refusedIn.AddOrUpdate(address, _ => { first = true; return window; }, (_, w) => { first = w != window; return window; });
         return first;
@@ -138,8 +142,9 @@ public sealed class BasicThrottle(IOptions<Kb.Core.Config.KbOptions> options, Ti
     public int? RetryAfter(string address)
     {
         var limit = options.Value.Auth.SignInsPerMinutePerAddress;
-        if (!_failures.TryGetValue(address, out var e) || e.Window != Window || e.Count < limit) return null;
-        return (int)Math.Max(1, (Window + 1) * 60 - time.GetUtcNow().ToUnixTimeSeconds());
+        var now = Now;
+        if (!_failures.TryGetValue(address, out var e) || !Open(e.Start, now) || e.Count < limit) return null;
+        return (int)Math.Max(1, e.Start + 60 - now);
     }
 
     /// <summary>Runs before authentication: a limited address gets 429 with Retry-After and its credentials are not checked.</summary>

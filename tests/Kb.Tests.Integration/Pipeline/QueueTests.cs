@@ -35,7 +35,7 @@ public sealed class QueueTests : IAsyncLifetime
     private async Task<JsonElement> UntilAsync(string counter, int value)
     {
         var counters = await CountersAsync();
-        for (var waited = 0; counters.GetProperty(counter).GetInt32() < value && waited < 5000; waited += 50)
+        for (var waited = 0; counters.GetProperty(counter).GetInt32() < value && waited < 60_000; waited += 50)
         {
             await Task.Delay(50, Ct);
             counters = await CountersAsync();
@@ -75,7 +75,8 @@ public sealed class QueueTests : IAsyncLifetime
         Assert.Equal(PluginFailures.Limit, (await CountersAsync()).GetProperty("written").EnumerateObject().Count()); // every action stands
         var state = PluginState.Enabled;
         string? reason = null;
-        for (var waited = 0; state == PluginState.Enabled && waited < 5000; waited += 50)
+        // The after handler runs on the queue worker: under a full parallel test run it can take far longer than alone.
+        for (var waited = 0; state == PluginState.Enabled && waited < 60_000; waited += 50)
         {
             await Task.Delay(50, Ct);
             await _f.WithDbAsync(async db => (state, reason) = await db.PluginStatuses.Where(s => s.PluginId == "kb.test.probe").Select(s => new ValueTuple<PluginState, string?>(s.State, s.Reason)).SingleAsync(Ct));

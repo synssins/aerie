@@ -170,6 +170,7 @@ services.AddScoped<Kb.Core.Search.ISearchProvider, SqlSearchProvider>();
 services.AddHttpClient(NetGuard.ClientName, c => { c.Timeout = TimeSpan.FromSeconds(15); c.MaxResponseContentBufferSize = ImageEndpoints.MaxImageBytes; })
     .ConfigurePrimaryHttpMessageHandler(NetGuard.Handler);
 services.AddHostedService<ImageCleanupService>();
+services.AddHostedService<Kb.Web.DataCenter.OAuthPruner>();
 services.AddScoped<IAuditLog, SqlAuditLog>();
 services.AddScoped<ISpaceAccessData, SpaceAccessData>();
 services.AddScoped<SpacePermissionService>();
