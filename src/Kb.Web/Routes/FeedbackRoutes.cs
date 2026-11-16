@@ -5,6 +5,7 @@ namespace Kb.Web;
 public sealed record PageFeedbackRequest(bool? CommentsEnabled = null, bool? RatingsEnabled = null);
 public sealed record CommentRequest(string? Text, Guid? ParentId = null);
 public sealed record CommentEditRequest(string? Text);
+public sealed record RatingRequest(string? Value, bool? Solved = null, string? Reason = null);
 
 /// <summary>Page comments and ratings, and their switches (contracts/behaviour/comments.md, ratings.md).</summary>
 public static class FeedbackRoutes
@@ -37,5 +38,23 @@ public static class FeedbackRoutes
 
         api.MapDelete("/comments/{id:guid}", (Guid id, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new DeleteComment { CommentId = id }, ct).ToHttp()).WithAction<DeleteComment>();
+
+        api.MapGet("/pages/{id:guid}/ratings", (Guid id, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new ReadRatingSummary { PageId = id }, ct).ToHttp()).WithAction<ReadRatingSummary>();
+
+        api.MapGet("/pages/{id:guid}/ratings/all", (Guid id, int? limit, int? offset, string? value, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new ListRatings { PageId = id, Limit = limit, Offset = offset, Value = value }, ct).ToHttp()).WithAction<ListRatings>();
+
+        api.MapPut("/pages/{id:guid}/ratings/mine", (Guid id, RatingRequest req, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new SaveRating { PageId = id, Value = req.Value, Solved = req.Solved, Reason = req.Reason }, ct).ToHttp()).WithAction<SaveRating>();
+
+        api.MapDelete("/pages/{id:guid}/ratings/mine", (Guid id, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new RemoveRating { PageId = id }, ct).ToHttp()).WithAction<RemoveRating>();
+
+        api.MapPost("/comments/{id:guid}/hide", (Guid id, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new HideComment { CommentId = id }, ct).ToHttp()).WithAction<HideComment>();
+
+        api.MapPost("/comments/{id:guid}/restore", (Guid id, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new RestoreComment { CommentId = id }, ct).ToHttp()).WithAction<RestoreComment>();
     }
 }

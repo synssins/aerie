@@ -92,6 +92,7 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     public DbSet<SearchTerm> SearchTerms => Set<SearchTerm>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<Comment> Comments => Set<Comment>();
+    public DbSet<Rating> Ratings => Set<Rating>();
     public DbSet<Announcement> Announcements => Set<Announcement>();
     public DbSet<StoragePlace> StoragePlaces => Set<StoragePlace>();
     public DbSet<StorageMove> StorageMoves => Set<StorageMove>();
@@ -233,6 +234,14 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
             e.HasIndex(c => new { c.PageId, c.ParentId, c.CreatedAt });
             // Purging the page purges its comments (comments.md, Pages that move, are trashed or are purged).
             e.HasOne<Page>().WithMany().HasForeignKey(c => c.PageId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<Rating>(e =>
+        {
+            e.Property(r => r.Reason).HasMaxLength(280);
+            e.Property(r => r.Version).HasMaxLength(20);
+            // One rating per person per page (ratings.md, A rating; question Q-0028).
+            e.HasIndex(r => new { r.PageId, r.UserId }).IsUnique();
+            e.HasOne<Page>().WithMany().HasForeignKey(r => r.PageId).OnDelete(DeleteBehavior.Cascade);
         });
         builder.Entity<Announcement>().Property(a => a.Title).HasMaxLength(120);
         builder.Entity<Announcement>().Property(a => a.Body).HasMaxLength(2000);

@@ -42,13 +42,27 @@ public sealed record DeleteComment : IAction<Unit>
     public required Guid CommentId { get; init; }
 }
 
+[Action("comment.hide")]
+public sealed record HideComment : IAction<Unit>
+{
+    public required Guid CommentId { get; init; }
+}
+
+[Action("comment.restore")]
+public sealed record RestoreComment : IAction<Unit>
+{
+    public required Guid CommentId { get; init; }
+}
+
+/// <summary>At most 10 comments per person per minute across the site (comments.md, Posting).</summary>
+public sealed class CommentThrottle(TimeProvider time) : PersonThrottle(time, 10);
+
 /// <summary>
-/// At most 10 comments per person per minute across the site (comments.md, Posting). The window starts at the person's first comment.
+/// A per-person limit a minute. The window starts at the person's first call in it.
 /// shortcut: counted per server, so N servers allow N times as much; move it to the database if abuse appears.
 /// </summary>
-public sealed class CommentThrottle(TimeProvider time)
+public abstract class PersonThrottle(TimeProvider time, int perMinute)
 {
-    public const int PerMinute = 10;
     private readonly ConcurrentDictionary<Guid, (long Start, int Count)> _windows = new();
 
     /// <summary>Counts a comment; null when it may go ahead, otherwise the seconds until the window ends.</summary>
@@ -59,7 +73,7 @@ public sealed class CommentThrottle(TimeProvider time)
         _windows.AddOrUpdate(user, _ => (now, 1), (_, w) =>
         {
             if (now - w.Start >= 60) return (now, 1);
-            if (w.Count >= PerMinute) { wait = (int)(60 - (now - w.Start)); return w; }
+            if (w.Count >= perMinute) { wait = (int)(60 - (now - w.Start)); return w; }
             return (w.Start, w.Count + 1);
         });
         return wait;
@@ -72,6 +86,14 @@ internal static class CommentRules
     public const int MaxText = 4000;
     public const int MaxReplies = 100;
     public static readonly TimeSpan EditWindow = TimeSpan.FromMinutes(15);
+    /// <summary>A moderator's delete is purged this long after it (comments.md, Moderation).</summary>
+    public static readonly TimeSpan PurgeAfter = TimeSpan.FromDays(30);
+
+    /// <summary>
+    /// The comment is gone: its author deleted it, or a moderator deleted it 30 days ago or more. Nothing restores it, and only a placeholder
+    /// stays while it has replies. The purge job removes what is left; until it runs, this answers the same.
+    /// </summary>
+    public static bool Gone(Comment c, DateTimeOffset now) => c.DeletedByAuthor || c.State == CommentState.Deleted && c.ModeratedAt + PurgeAfter <= now;
 
     /// <summary>The text trimmed, or null when it is empty after trimming or longer than 4000 characters (question Q-0023).</summary>
     public static string? Clean(string? text) => text?.Trim() is { Length: > 0 and <= MaxText } t ? t : null;
@@ -98,9 +120,10 @@ internal static class CommentRules
     }
 
     public static bool CanEdit(Viewer v, Comment c) =>
-        v.Session && v.Enabled && c.AuthorId == v.User && c.State == CommentState.Visible && !c.DeletedByAuthor && v.Now - c.CreatedAt <= EditWindow;
+        v.Session && v.Enabled && c.AuthorId == v.User && c.State == CommentState.Visible && !Gone(c, v.Now) && v.Now - c.CreatedAt <= EditWindow;
 
-    public static bool CanDelete(Viewer v, Comment c) => v.Session && !c.DeletedByAuthor && c.AuthorId == v.User;
+    /// <summary>The author deletes their own comment; a moderator deletes anyone's.</summary>
+    public static bool CanDelete(Viewer v, Comment c) => v.Session && !Gone(c, v.Now) && (c.AuthorId == v.User || v.Moderates);
 
     /// <summary>
     /// The page's comments as this caller sees them (comments.md, Listing). Moderators see every comment with its state; readers see visible ones
@@ -114,10 +137,10 @@ internal static class CommentRules
         var ids = all.Select(c => c.AuthorId).Distinct().ToList();
         var names = await db.Users.Where(u => ids.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.DisplayName, ct);
 
-        bool Full(Comment c) => !c.DeletedByAuthor && (v.Moderates || c.State == CommentState.Visible || c.State == CommentState.Hidden && c.AuthorId == v.User);
+        bool Full(Comment c) => !Gone(c, v.Now) && (v.Moderates || c.State == CommentState.Visible || c.State == CommentState.Hidden && c.AuthorId == v.User);
         CommentDto Dto(Comment c, bool full, IReadOnlyList<CommentDto> replies) => new(c.Id, c.PageId, c.ParentId,
             full ? new OwnerRefDto("user", c.AuthorId.ToString(), names.GetValueOrDefault(c.AuthorId, "")) : null, full ? c.Text : null, c.CreatedAt, full ? c.EditedAt : null,
-            StateName(c.State), full && CanEdit(v, c), full && CanDelete(v, c), v.Moderates && !c.DeletedByAuthor, replies);
+            StateName(c.State), full && CanEdit(v, c), full && CanDelete(v, c), v.Moderates && !Gone(c, v.Now), replies);
 
         var replies = all.Where(c => c.ParentId is not null).ToLookup(c => c.ParentId!.Value);
         var result = new List<CommentDto>();
@@ -161,7 +184,8 @@ internal sealed class ListCommentsHandler(KbDbContext db, IAccess access, SpaceP
     }
 }
 
-internal sealed class CreateCommentHandler(KbDbContext db, IAccess access, SpacePermissionService permissions, TimeProvider time, CommentThrottle throttle)
+internal sealed class CreateCommentHandler(KbDbContext db, IAccess access, SpacePermissionService permissions, TimeProvider time, CommentThrottle throttle,
+    Kb.Core.Notifications.INotifier notifier)
     : IActionHandler<CreateComment, CommentDto>
 {
     private Page? _page;
@@ -190,7 +214,28 @@ internal sealed class CreateCommentHandler(KbDbContext db, IAccess access, Space
         db.Comments.Add(c);
         await db.SaveChangesAsync(ctx.Cancel);
         ctx.Audit(AuditActions.CommentCreate, "comment", c.Id.ToString(), page.SpaceId, new Dictionary<string, string> { ["pageId"] = page.Id.ToString() });
+        await NotifyAsync(page, c, ctx.Cancel);
         return await CommentRules.OneAsync(db, v, c, ctx.Cancel);
+    }
+
+    /// <summary>
+    /// A top-level comment tells the page's owner (details.owner, when a user); a reply tells the comment's author (question Q-0026).
+    /// Never the writer, never someone who cannot read the page, never a group. The comment's text is not in it.
+    /// In-app by default; each person's preference for the kind decides.
+    /// </summary>
+    private async Task NotifyAsync(Page page, Comment c, CancellationToken ct)
+    {
+        Guid? to = null;
+        var kind = Kb.Core.Notifications.NotificationKinds.CommentPage;
+        if (c.ParentId is { } parent)
+        {
+            (to, kind) = (await db.Comments.Where(x => x.Id == parent).Select(x => (Guid?)x.AuthorId).FirstOrDefaultAsync(ct), Kb.Core.Notifications.NotificationKinds.CommentReply);
+        }
+        else if (page.OwnerType == PrincipalType.User && Guid.TryParse(page.OwnerId, out var owner)) to = owner;
+        if (to is not { } user || user == c.AuthorId || await permissions.GetRoleAsync(user, page.SpaceId, ct) is null) return;
+        var writer = await db.Users.Where(u => u.Id == c.AuthorId).Select(u => u.DisplayName).FirstOrDefaultAsync(ct) ?? "Someone";
+        var title = c.ParentId is null ? $"{writer} commented on {page.Title}" : $"{writer} replied to your comment on {page.Title}";
+        await notifier.NotifyAsync([user], kind, title, null, $"/p/{page.Id}", alsoEmail: false, ct);
     }
 }
 
@@ -201,7 +246,7 @@ internal sealed class EditCommentHandler(KbDbContext db, IAccess access, SpacePe
     public async Task<Problem?> AuthorizeAsync(ActionContext<EditComment> ctx)
     {
         if (ctx.Actor.UserId is null) return Problem.Unauthorized;
-        if (await CommentRules.FindAsync(db, access, ctx.Actor, ctx.Action.CommentId, track: true, ctx.Cancel) is not { } found || found.Comment.DeletedByAuthor) return Problem.NotFound;
+        if (await CommentRules.FindAsync(db, access, ctx.Actor, ctx.Action.CommentId, track: true, ctx.Cancel) is not { } found || CommentRules.Gone(found.Comment, time.GetUtcNow())) return Problem.NotFound;
         _found = found;
         // Only the author edits; moderators hide or delete instead (question Q-0023).
         return found.Comment.AuthorId == ctx.Actor.UserId ? null : Problem.Forbidden;
@@ -222,29 +267,139 @@ internal sealed class EditCommentHandler(KbDbContext db, IAccess access, SpacePe
     }
 }
 
-internal sealed class DeleteCommentHandler(KbDbContext db, IAccess access) : IActionHandler<DeleteComment, Unit>
+/// <summary>Finds the comment for a moderation call: 404 when it or its page is not there for the caller, or it is gone.</summary>
+internal abstract class CommentModerationHandler<TAction>(KbDbContext db, IAccess access, SpacePermissionService permissions, TimeProvider time) : IActionHandler<TAction, Unit>
+    where TAction : IAction<Unit>
 {
-    private (Comment Comment, Page Page) _found;
+    protected KbDbContext Db => db;
+    protected (Comment Comment, Page Page) Found { get; private set; }
+    protected DateTimeOffset Now { get; private set; }
+    protected bool Moderates { get; private set; }
 
-    public async Task<Problem?> AuthorizeAsync(ActionContext<DeleteComment> ctx)
+    protected abstract Guid CommentId(TAction action);
+
+    /// <summary>Who may go on once the comment is found: by default only the space's Supervisors and Owners (question Q-0024).</summary>
+    protected virtual bool Allowed(Actor actor) => Moderates;
+
+    public async Task<Problem?> AuthorizeAsync(ActionContext<TAction> ctx)
     {
         if (ctx.Actor.UserId is null) return Problem.Unauthorized;
-        if (await CommentRules.FindAsync(db, access, ctx.Actor, ctx.Action.CommentId, track: true, ctx.Cancel) is not { } found || found.Comment.DeletedByAuthor) return Problem.NotFound;
-        _found = found;
-        return found.Comment.AuthorId == ctx.Actor.UserId ? null : Problem.Forbidden;
+        Now = time.GetUtcNow();
+        if (await CommentRules.FindAsync(db, access, ctx.Actor, CommentId(ctx.Action), track: true, ctx.Cancel) is not { } found || CommentRules.Gone(found.Comment, Now)) return Problem.NotFound;
+        Found = found;
+        Moderates = await Feedback.ModeratesAsync(permissions, ctx.Actor, found.Page.SpaceId, ctx.Cancel);
+        return Allowed(ctx.Actor) ? null : Problem.Forbidden;
     }
 
-    /// <summary>
-    /// The author deletes, at any time, also while comments are off: the text goes at once and for good (question Q-0024).
-    /// With replies a placeholder stays so they keep their place; otherwise nothing is left.
-    /// </summary>
-    public async Task<Outcome<Unit>> HandleAsync(ActionContext<DeleteComment> ctx)
+    public abstract Task<Outcome<Unit>> HandleAsync(ActionContext<TAction> ctx);
+
+    protected void Audit(ActionContext<TAction> ctx, string action, string? by = null)
     {
-        var (c, page) = _found;
-        if (await db.Comments.AnyAsync(r => r.ParentId == c.Id, ctx.Cancel)) (c.Text, c.EditedAt, c.State, c.DeletedByAuthor) = (null, null, CommentState.Deleted, true);
-        else db.Comments.Remove(c);
-        await db.SaveChangesAsync(ctx.Cancel);
-        ctx.Audit(AuditActions.CommentDelete, "comment", c.Id.ToString(), page.SpaceId, new Dictionary<string, string> { ["pageId"] = page.Id.ToString(), ["by"] = "author" });
+        var data = new Dictionary<string, string> { ["pageId"] = Found.Page.Id.ToString() };
+        if (by is not null) data["by"] = by;
+        ctx.Audit(action, "comment", Found.Comment.Id.ToString(), Found.Page.SpaceId, data);
+    }
+}
+
+internal sealed class DeleteCommentHandler(KbDbContext db, IAccess access, SpacePermissionService permissions, TimeProvider time)
+    : CommentModerationHandler<DeleteComment>(db, access, permissions, time)
+{
+    protected override Guid CommentId(DeleteComment action) => action.CommentId;
+
+    protected override bool Allowed(Actor actor) => Found.Comment.AuthorId == actor.UserId || Moderates;
+
+    /// <summary>
+    /// The author deletes, at any time, also while comments are off: the text goes at once and for good, and nothing restores it (question Q-0024).
+    /// With replies a placeholder stays so they keep their place; otherwise nothing is left. A moderator who deletes their own comment deletes as its author.
+    /// A moderator deleting someone else's comment marks it deleted: only moderators see it, it can be restored, and it is purged 30 days later.
+    /// </summary>
+    public override async Task<Outcome<Unit>> HandleAsync(ActionContext<DeleteComment> ctx)
+    {
+        var c = Found.Comment;
+        if (c.AuthorId == ctx.Actor.UserId)
+        {
+            if (await Db.Comments.AnyAsync(r => r.ParentId == c.Id, ctx.Cancel)) (c.Text, c.EditedAt, c.State, c.DeletedByAuthor) = (null, null, CommentState.Deleted, true);
+            else Db.Comments.Remove(c);
+            await Db.SaveChangesAsync(ctx.Cancel);
+            Audit(ctx, AuditActions.CommentDelete, "author");
+            return new Unit();
+        }
+        if (c.State == CommentState.Deleted) return new Unit(); // already deleted: nothing changes
+        (c.State, c.ModeratedAt, c.ModeratedBy) = (CommentState.Deleted, Now, ctx.Actor.UserId);
+        await Db.SaveChangesAsync(ctx.Cancel);
+        Audit(ctx, AuditActions.CommentDelete, "moderator");
         return new Unit();
+    }
+}
+
+internal sealed class HideCommentHandler(KbDbContext db, IAccess access, SpacePermissionService permissions, TimeProvider time)
+    : CommentModerationHandler<HideComment>(db, access, permissions, time)
+{
+    protected override Guid CommentId(HideComment action) => action.CommentId;
+
+    /// <summary>Only moderators and its author see it from then on; reversible at any time. Hiding a hidden comment changes nothing.</summary>
+    public override async Task<Outcome<Unit>> HandleAsync(ActionContext<HideComment> ctx)
+    {
+        var c = Found.Comment;
+        if (c.State == CommentState.Hidden) return new Unit();
+        // shortcut: comments.md does not say what hiding a deleted comment does; it is refused, restore it first.
+        if (c.State == CommentState.Deleted) return Problem.Conflict("The comment is deleted. Restore it first.");
+        (c.State, c.ModeratedAt, c.ModeratedBy) = (CommentState.Hidden, Now, ctx.Actor.UserId);
+        await Db.SaveChangesAsync(ctx.Cancel);
+        Audit(ctx, AuditActions.CommentHide);
+        return new Unit();
+    }
+}
+
+internal sealed class RestoreCommentHandler(KbDbContext db, IAccess access, SpacePermissionService permissions, TimeProvider time)
+    : CommentModerationHandler<RestoreComment>(db, access, permissions, time)
+{
+    protected override Guid CommentId(RestoreComment action) => action.CommentId;
+
+    /// <summary>A hidden comment, or one a moderator deleted and not yet purged, becomes visible again; a visible one is 409.</summary>
+    public override async Task<Outcome<Unit>> HandleAsync(ActionContext<RestoreComment> ctx)
+    {
+        var c = Found.Comment;
+        if (c.State == CommentState.Visible) return Problem.Conflict("The comment is visible.");
+        (c.State, c.ModeratedAt, c.ModeratedBy) = (CommentState.Visible, null, null);
+        await Db.SaveChangesAsync(ctx.Cancel);
+        Audit(ctx, AuditActions.CommentRestore);
+        return new Unit();
+    }
+}
+
+/// <summary>Purges what moderators deleted 30 days ago or more: a placeholder without text stays while the comment has replies.</summary>
+public static class CommentPurge
+{
+    public static async Task<int> RunAsync(IServiceProvider services, DateTimeOffset now, CancellationToken ct)
+    {
+        await using var scope = services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<KbDbContext>();
+        var before = now - CommentRules.PurgeAfter;
+        var due = await db.Comments.Where(c => c.State == CommentState.Deleted && !c.DeletedByAuthor && c.ModeratedAt <= before).ToListAsync(ct);
+        foreach (var c in due)
+        {
+            if (await db.Comments.AnyAsync(r => r.ParentId == c.Id, ct)) (c.Text, c.EditedAt, c.DeletedByAuthor) = (null, null, true);
+            else db.Comments.Remove(c);
+        }
+        await db.SaveChangesAsync(ct);
+        return due.Count;
+    }
+}
+
+public sealed class CommentPurger(IServiceProvider services, TimeProvider time, ILogger<CommentPurger> log) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromHours(1), time);
+        while (await timer.WaitForNextTickAsync(stoppingToken))
+        {
+            try
+            {
+                var n = await CommentPurge.RunAsync(services, time.GetUtcNow(), stoppingToken);
+                if (n > 0) log.LogInformation("Purged {Count} deleted comments.", n);
+            }
+            catch (Exception e) when (e is not OperationCanceledException) { log.LogError(e, "Comment purge failed."); }
+        }
     }
 }

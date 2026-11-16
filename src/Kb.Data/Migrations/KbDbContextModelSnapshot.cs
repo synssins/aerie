@@ -414,6 +414,47 @@ namespace Kb.Data.Migrations
                     b.ToTable("PageVersions");
                 });
 
+            modelBuilder.Entity("Kb.Core.Content.Rating", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("PageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("Positive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(280)
+                        .HasColumnType("nvarchar(280)");
+
+                    b.Property<bool>("Solved")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Version")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PageId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("Ratings");
+                });
+
             modelBuilder.Entity("Kb.Core.Content.SearchTerm", b =>
                 {
                     b.Property<Guid>("PageId")
@@ -2208,6 +2249,15 @@ namespace Kb.Data.Migrations
                 });
 
             modelBuilder.Entity("Kb.Core.Content.Comment", b =>
+                {
+                    b.HasOne("Kb.Core.Content.Page", null)
+                        .WithMany()
+                        .HasForeignKey("PageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Kb.Core.Content.Rating", b =>
                 {
                     b.HasOne("Kb.Core.Content.Page", null)
                         .WithMany()

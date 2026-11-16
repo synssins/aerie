@@ -3147,6 +3147,66 @@ paths:
       security:
         - cookieAuth: []
       "x-kb-api-token": "closed"
+  "/api/v1/comments/{id}/hide":
+    post:
+      tags:
+        - "comments"
+      operationId: "comment.hide"
+      "x-kb-action": "comment.hide"
+      "x-kb-changes-data": true
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      responses:
+        "204":
+          description: "No content"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
+  "/api/v1/comments/{id}/restore":
+    post:
+      tags:
+        - "comments"
+      operationId: "comment.restore"
+      "x-kb-action": "comment.restore"
+      "x-kb-changes-data": true
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      responses:
+        "204":
+          description: "No content"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
   "/api/v1/home":
     get:
       tags:
@@ -5094,6 +5154,162 @@ paths:
         - cookieAuth: []
         - bearerAuth: []
       "x-kb-api-token": "write"
+  "/api/v1/pages/{id}/ratings":
+    get:
+      tags:
+        - "pages"
+      operationId: "rating.summary"
+      "x-kb-action": "rating.summary"
+      "x-kb-changes-data": false
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/RatingSummaryDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
+  "/api/v1/pages/{id}/ratings/all":
+    get:
+      tags:
+        - "pages"
+      operationId: "rating.list"
+      "x-kb-action": "rating.list"
+      "x-kb-changes-data": false
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        - name: "limit"
+          in: "query"
+          required: false
+          schema:
+            type: "integer"
+            format: "int32"
+            nullable: true
+        - name: "offset"
+          in: "query"
+          required: false
+          schema:
+            type: "integer"
+            format: "int32"
+            nullable: true
+        - name: "value"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/RatingListDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
+  "/api/v1/pages/{id}/ratings/mine":
+    delete:
+      tags:
+        - "pages"
+      operationId: "rating.remove"
+      "x-kb-action": "rating.remove"
+      "x-kb-changes-data": true
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      responses:
+        "204":
+          description: "No content"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
+    put:
+      tags:
+        - "pages"
+      operationId: "rating.save"
+      "x-kb-action": "rating.save"
+      "x-kb-changes-data": true
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/RatingRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/RatingSummaryDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
   "/api/v1/pages/{id}/restore":
     post:
       tags:
@@ -8252,6 +8468,91 @@ components:
               type: "string"
         traceId:
           type: "string"
+    RatingDto:
+      type: "object"
+      properties:
+        value:
+          type: "string"
+        solved:
+          type: "boolean"
+        reason:
+          type: "string"
+          nullable: true
+        version:
+          type: "string"
+        createdAt:
+          type: "string"
+          format: "date-time"
+        updatedAt:
+          type: "string"
+          format: "date-time"
+    RatingEntryDto:
+      type: "object"
+      properties:
+        user:
+          "$ref": "#/components/schemas/OwnerRefDto"
+        value:
+          type: "string"
+        solved:
+          type: "boolean"
+        reason:
+          type: "string"
+          nullable: true
+        version:
+          type: "string"
+        createdAt:
+          type: "string"
+          format: "date-time"
+        updatedAt:
+          type: "string"
+          format: "date-time"
+    RatingListDto:
+      type: "object"
+      properties:
+        total:
+          type: "integer"
+          format: "int32"
+        limit:
+          type: "integer"
+          format: "int32"
+        offset:
+          type: "integer"
+          format: "int32"
+        ratings:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/RatingEntryDto"
+    RatingRequest:
+      type: "object"
+      properties:
+        value:
+          type: "string"
+          nullable: true
+        solved:
+          type: "boolean"
+          nullable: true
+        reason:
+          type: "string"
+          nullable: true
+    RatingSummaryDto:
+      type: "object"
+      properties:
+        enabled:
+          type: "boolean"
+        canRate:
+          type: "boolean"
+        canSeeAll:
+          type: "boolean"
+        positive:
+          type: "integer"
+          format: "int32"
+        solved:
+          type: "integer"
+          format: "int32"
+        mine:
+          nullable: true
+          allOf:
+            - "$ref": "#/components/schemas/RatingDto"
     RecentPageDto:
       type: "object"
       properties:
