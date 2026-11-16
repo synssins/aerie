@@ -49,6 +49,8 @@ public sealed class AuthOptions
     public int SignInsPerMinutePerAddress { get; set; } = 30;
     /// <summary>Requests to the API by someone not signed in (reading Anyone spaces), per address.</summary>
     public int AnonymousRequestsPerMinutePerAddress { get; set; } = 120;
+    /// <summary>Requests to the OAuth 2.0 token and revoke endpoints in a minute, per client and per address, on one server.</summary>
+    public int OAuthTokenRequestsPerMinute { get; set; } = 60;
 }
 
 public sealed class EntraOptions

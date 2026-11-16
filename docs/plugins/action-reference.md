@@ -1146,6 +1146,17 @@ Read. `ReadOAuthAuthorizeRequest`, answers `OAuthAuthorizeRequestDto` ([OAuthAut
 |---|---|---|
 | Id | `Guid` | required |
 
+## oauth.token
+
+Write. `DcOAuthToken`, answers `OAuthEndpointResult` ([OAuthEndpointResult](#oauthendpointresult)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Parameters | `IReadOnlyDictionary<string, string[]>` | required |
+| Basic | `ValueTuple<string, string>?` |  |
+| BadBasic | `bool` |  |
+| Address | `string` |  |
+
 ## page.ai.review
 
 Write. `ReviewPageAi`, answers `PageDto` ([PageDto](#pagedto)). Core only.
@@ -4365,6 +4376,26 @@ Enum: `Same`, `Add`, `Del`.
 ```json
 {
   "allow": false
+}
+```
+
+### OAuthEndpointResult
+
+| Field | Type |
+|---|---|
+| status | `int` |
+| body | `JsonObject?` |
+| basicChallenge | `bool` |
+| retryAfter | `int?` |
+
+```json
+{
+  "status": 0,
+  "body": {
+    "key": {}
+  },
+  "basicChallenge": false,
+  "retryAfter": 0
 }
 ```
 
