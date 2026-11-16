@@ -27,6 +27,7 @@ public sealed class SamplePlugin : IKbPlugin
         .Job<PurgeJob>("purge")                                    // the schedule "purge" of the manifest
         .HealthCheck<TableCheck>("table")
         .EditorNode(Notice.Renderer)                               // how the server reads its editor block
+        .ImportContributor<NoticeFromFile>()                       // add to the drafts of AI imports
         .Routes(SampleRoutes.Map);                                 // under /api/v1/plugins/kb.sample/
     // #endregion
 }

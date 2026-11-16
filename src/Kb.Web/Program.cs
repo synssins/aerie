@@ -203,6 +203,7 @@ services.AddScoped<InventoryService>();
 services.AddScoped<AiService>();
 services.AddSingleton<AiRateLimiter>();
 services.AddScoped<Kb.Web.Import.ImportService>();
+services.AddSingleton<Kb.Web.Import.ImportContributors>();
 services.AddScoped<Kb.Web.DataCenter.DcContentService>();
 services.AddScoped<Kb.Web.DataCenter.DcAttachmentService>();
 services.AddSingleton<Kb.Web.DataCenter.BasicThrottle>();

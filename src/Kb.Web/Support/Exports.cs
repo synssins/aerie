@@ -71,6 +71,21 @@ public static class Exports
         return null;
     }
 
+    public const int MaxPictureBytes = 2 * 1024 * 1024, MaxPictureSide = 4000;
+    private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+    /// <summary>
+    /// A renderer's picture as an image to draw, or null to show its alt text. A plugin's bytes are not trusted: PNG only (no SVG, which
+    /// can hold script and outside references), checked by its signature and header, within the size limits.
+    /// </summary>
+    public static ExportImage? Picture(DocPicture p)
+    {
+        ArgumentNullException.ThrowIfNull(p);
+        var d = p.Content;
+        if (p.ContentType != "image/png" || d.Length is < 33 or > MaxPictureBytes || !d.AsSpan(0, 8).SequenceEqual(PngSignature) || d[12] != (byte)'I' || d[13] != (byte)'H') return null;
+        return ImageSize(d) is (> 0 and <= MaxPictureSide, > 0 and <= MaxPictureSide) and var (w, h) ? new ExportImage(d, "image/png", w, h) : null;
+    }
+
     // ---- CSV and Excel ----
 
     public static byte[] Csv(IReadOnlyList<IReadOnlyList<string>> rows)
@@ -163,6 +178,12 @@ public static class Exports
                         break;
                     case DocImage i:
                         body.Append(WordParagraph([new DocRun($"[image: {i.Alt}]", Italic: true)], main, 22, 160));
+                        break;
+                    case DocPicture p when Picture(p) is { } pic:
+                        body.Append(WordImage(main, pic, new DocImage(null, p.Alt, p.Width), drawingId++));
+                        break;
+                    case DocPicture p:
+                        body.Append(WordParagraph([new DocRun($"[image: {p.Alt}]", Italic: true)], main, 22, 160));
                         break;
                 }
             }
@@ -340,6 +361,15 @@ public static class Exports
                 case DocImage i:
                     var missing = sec.AddParagraph($"[image: {i.Alt}]");
                     missing.Format.Font.Italic = true;
+                    break;
+                case DocPicture p when Picture(p) is { } pic:
+                    var drawn = sec.AddImage("base64:" + Convert.ToBase64String(pic.Data));
+                    drawn.LockAspectRatio = true;
+                    drawn.Width = M.Unit.FromPoint(Math.Min((p.Width is > 0 ? Math.Min(p.Width.Value, pic.Width) : pic.Width) * 0.75, MaxImagePt));
+                    sec.AddParagraph().Format.SpaceAfter = 4;
+                    break;
+                case DocPicture p:
+                    sec.AddParagraph($"[image: {p.Alt}]").Format.Font.Italic = true;
                     break;
             }
         }
