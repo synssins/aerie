@@ -20,7 +20,7 @@ public sealed partial class DcContractTests : IAsyncLifetime
     private static readonly string[] NotYet =
     [
         // OAuth 2.0: the identity work, after T1 (behaviour/identity-plan.md).
-        "GET /rest/oauth2/latest/authorize", "POST /rest/oauth2/latest/token", "POST /rest/oauth2/latest/revoke", "GET /.well-known/oauth-authorization-server",
+        "POST /rest/oauth2/latest/token", "POST /rest/oauth2/latest/revoke", "GET /.well-known/oauth-authorization-server",
     ];
 
     [GeneratedRegex(@"^  (/(?:rest/(?:api|oauth2)|\.well-known)[^\s:]*):\s*$")]
@@ -50,7 +50,7 @@ public sealed partial class DcContractTests : IAsyncLifetime
 
     private List<string> Routed() =>
         [.. _f.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
-            .Where(e => e.Metadata.GetMetadata<DcRoute>() is not null)
+            .Where(e => e.Metadata.GetMetadata<DcRoute>() is not null || e.Metadata.GetMetadata<DcOAuthRoute>() is not null)
             .SelectMany(e => e.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods.Select(m => $"{m} {Constraint().Replace(e.RoutePattern.RawText!, "{$1}")}"))
             .Distinct()];
 

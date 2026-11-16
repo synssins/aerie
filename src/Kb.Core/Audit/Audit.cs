@@ -115,6 +115,8 @@ public static class AuditActions
     public const string OAuthClientUpdate = "oauth.client.update";
     public const string OAuthClientSecretRotate = "oauth.client.secret.rotate";
     public const string OAuthClientDelete = "oauth.client.delete";
+    public const string OAuthConsentGrant = "oauth.consent.grant";
+    public const string OAuthConsentDeny = "oauth.consent.deny";
     public const string SettingsChange = "settings.change";
     public const string PluginEnable = "plugin.enable";
     public const string PluginDisable = "plugin.disable";

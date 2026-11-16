@@ -1076,6 +1076,14 @@ Write. `MarkNotification`, answers `Unit`.
 
 Write. `MarkAllNotifications`, answers `Unit`.
 
+## oauth.authorize
+
+Write. `DcOAuthAuthorize`, answers `OAuthAuthorizeResult` ([OAuthAuthorizeResult](#oauthauthorizeresult)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Query | `IReadOnlyDictionary<string, string[]>` | required |
+
 ## oauth.client.create
 
 Write. `CreateOAuthClient`, answers `OAuthClientCreatedDto` ([OAuthClientCreatedDto](#oauthclientcreateddto)). Core only.
@@ -1120,6 +1128,23 @@ Write. `UpdateOAuthClient`, answers `OAuthClientDto` ([OAuthClientDto](#oauthcli
 |---|---|---|
 | Id | `Guid` | required |
 | Request | `OAuthClientRequest` ([OAuthClientRequest](#oauthclientrequest)) | required |
+
+## oauth.request.decide
+
+Write. `DecideOAuthAuthorizeRequest`, answers `OAuthDecisionDto` ([OAuthDecisionDto](#oauthdecisiondto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `Guid` | required |
+| Allow | `bool` | required |
+
+## oauth.request.read
+
+Read. `ReadOAuthAuthorizeRequest`, answers `OAuthAuthorizeRequestDto` ([OAuthAuthorizeRequestDto](#oauthauthorizerequestdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Id | `Guid` | required |
 
 ## page.ai.review
 
@@ -2965,6 +2990,20 @@ Enum: `Off`, `Admins`, `Everyone`.
 }
 ```
 
+### DecideOAuthAuthorizeRequest
+
+| Field | Type |
+|---|---|
+| id | `Guid` |
+| allow | `bool` |
+
+```json
+{
+  "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "allow": false
+}
+```
+
 ### DeleteSpaceRequest
 
 | Field | Type |
@@ -4172,6 +4211,44 @@ Enum: `Same`, `Add`, `Del`.
 }
 ```
 
+### OAuthAuthorizeRequestDto
+
+| Field | Type |
+|---|---|
+| id | `Guid` |
+| clientName | `string` |
+| scopes | `IReadOnlyList<string>` |
+| alreadyGranted | `IReadOnlyList<string>` |
+| expiresAt | `DateTimeOffset` |
+
+```json
+{
+  "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "clientName": "text",
+  "scopes": [
+    "text"
+  ],
+  "alreadyGranted": [
+    "text"
+  ],
+  "expiresAt": "2026-11-14T10:00:00\u002B00:00"
+}
+```
+
+### OAuthAuthorizeResult
+
+| Field | Type |
+|---|---|
+| location | `string?` |
+| errorPage | `string?` |
+
+```json
+{
+  "location": "text",
+  "errorPage": "text"
+}
+```
+
 ### OAuthClientCreatedDto
 
 | Field | Type |
@@ -4264,6 +4341,30 @@ Enum: `Same`, `Add`, `Del`.
   ],
   "requirePkce": false,
   "enabled": false
+}
+```
+
+### OAuthDecisionDto
+
+| Field | Type |
+|---|---|
+| redirectTo | `string` |
+
+```json
+{
+  "redirectTo": "text"
+}
+```
+
+### OAuthDecisionRequest
+
+| Field | Type |
+|---|---|
+| allow | `bool` |
+
+```json
+{
+  "allow": false
 }
 ```
 
@@ -4865,6 +4966,18 @@ Enum: `Enabled`, `Disabled`, `DisabledByCore`.
 ### PrincipalType
 
 Enum: `User`, `Group`.
+
+### ReadOAuthAuthorizeRequest
+
+| Field | Type |
+|---|---|
+| id | `Guid` |
+
+```json
+{
+  "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+}
+```
 
 ### RecentPageDto
 

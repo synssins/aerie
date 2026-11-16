@@ -13,6 +13,12 @@ public sealed class DcDownloadRoute
 }
 
 /// <summary>Marks a route of the Data Center compatible surface (contracts/datacenter/openapi.yaml).</summary>
+/// <summary>Marks the OAuth 2.0 endpoints under /rest/oauth2 (identity.md, OAuth 2.0).</summary>
+public sealed class DcOAuthRoute
+{
+    public static readonly DcOAuthRoute Marker = new();
+}
+
 public sealed class DcRoute
 {
     public static readonly DcRoute Marker = new();
@@ -126,7 +132,8 @@ public static class DcRest
     {
         ArgumentNullException.ThrowIfNull(http);
         ArgumentNullException.ThrowIfNull(next);
-        if (IsUnderOAuth(http))
+        // Under /rest/oauth2 only the OAuth endpoints answer; any other path is 404.
+        if (IsUnderOAuth(http) && http.GetEndpoint()?.Metadata.GetMetadata<DcOAuthRoute>() is null)
         {
             await Fail(404, "No such resource.").ExecuteAsync(http);
             return;

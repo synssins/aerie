@@ -57,5 +57,22 @@
     "body": {"basicPasswordEnabled": true, "allowHttpRedirects": false, "codeSeconds": 300, "accessTokenSeconds": 3600, "refreshTokenDays": 90},
     "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
     "scope": "server"
+  },
+  {
+    "action": "oauth.request.read",
+    "method": "GET",
+    "path": "/api/v1/oauth/authorize-requests/{oauthRequest}",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 404, "contributor": 404, "supervisor": 404, "owner": 404, "admin": 404},
+    "scope": "server",
+    "note": "A pending authorization request is its own user's: everyone else, an Admin too, gets 404."
+  },
+  {
+    "action": "oauth.request.decide",
+    "method": "POST",
+    "path": "/api/v1/oauth/authorize-requests/{oauthRequest}/decision",
+    "body": {"allow": true},
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 404, "contributor": 404, "supervisor": 404, "owner": 404, "admin": 404},
+    "scope": "server",
+    "note": "Only the user the request belongs to may decide it."
   }
 ]
