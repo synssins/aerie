@@ -61,6 +61,8 @@ public static class RuntimeSettingKeys
 {
     public const string ExternalAdminVerifiedAt = "ExternalAdminVerifiedAt";
     public const string LocalSignInDisabled = "LocalSignInDisabled";
+    /// <summary>"false" turns off the password in HTTP Basic on the compatible surface for everyone; tokens in Basic still work (identity.md).</summary>
+    public const string CompatBasicPasswordEnabled = "Compat.BasicPasswordEnabled";
     /// <summary>Who must use one-time codes at sign-in: "admins" (the default) or "everyone".</summary>
     public const string CodesRequiredFor = "CodesRequiredFor";
     /// <summary>Raised by every plugin change. A server that started with an older number restarts.</summary>

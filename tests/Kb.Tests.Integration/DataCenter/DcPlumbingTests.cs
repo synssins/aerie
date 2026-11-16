@@ -51,7 +51,7 @@ public sealed class DcPlumbingTests : IAsyncLifetime
             Assert.Empty(r.Headers.WwwAuthenticate); // no Basic challenge: a browser shows no password dialog (identity.md)
         }
         await (await Basic(_f, "nobody").GetAsync("/rest/api/user/current", Ct)).ErrorAsync(HttpStatusCode.Unauthorized);
-        await _f.WithDbAsync(async db => Assert.True(await db.AuditEntries.AnyAsync(a => a.Action == AuditActions.SignInFailed && a.ActorId == id && a.DataJson.Contains("basic"), Ct)));
+        await _f.WithDbAsync(async db => Assert.True(await db.AuditEntries.AnyAsync(a => a.Action == AuditActions.BasicRefused && a.ActorId == id, Ct)));
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public sealed class DcPlumbingTests : IAsyncLifetime
         var wrong = await Basic(_f, "coded", "not-the-password").GetAsync("/rest/api/user/current", Ct);
         Assert.Equal(await wrong.Content.ReadAsStringAsync(Ct), await right.Content.ReadAsStringAsync(Ct));
         await right.ErrorAsync(HttpStatusCode.Unauthorized);
-        await _f.WithDbAsync(async db => Assert.True(await db.AuditEntries.AnyAsync(a => a.Action == AuditActions.SignInFailed && a.ActorId == coded && a.DataJson.Contains("codes required"), Ct)));
+        await _f.WithDbAsync(async db => Assert.True(await db.AuditEntries.AnyAsync(a => a.Action == AuditActions.BasicRefused && a.ActorId == coded && a.DataJson.Contains("codes required"), Ct)));
         // An Admin uses codes by policy.
         await UserAsync(_f, "boss", u => u.IsAdmin = true);
         await (await Basic(_f, "boss").GetAsync("/rest/api/user/current", Ct)).ErrorAsync(HttpStatusCode.Unauthorized);

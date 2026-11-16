@@ -13,7 +13,11 @@ public sealed class DcSpaceTests : IAsyncLifetime
     private readonly KbAppFactory _f = new(KbAppFactory.NewDbPath());
     private HttpClient _admin = null!;
 
-    public async ValueTask InitializeAsync() => _admin = await _f.SignedInBreakGlassAsync();
+    public async ValueTask InitializeAsync()
+    {
+        _admin = await _f.SignedInBreakGlassAsync();
+        _admin.DefaultRequestHeaders.Add("X-Atlassian-Token", "no-check"); // a cookie caller's writes need it (identity.md, Sessions)
+    }
     public async ValueTask DisposeAsync() => await _f.DisposeAsync();
 
     /// <summary>A space made through aerie's own API, with these people in it (role by name).</summary>

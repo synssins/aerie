@@ -79,8 +79,10 @@ public static class ApiTokenAuth
         if (Refused(http) is { } refused)
         {
             // Only a token that exists is recorded. One that never existed is not, so the audit log cannot be flooded with guesses.
-            await http.RequestServices.GetRequiredService<IAuditLog>().AppendAsync(new AuditEvent(AuditActions.TokenRefused, refused.Token.OwnerUserId, "token", refused.Token.Id.ToString(),
-                Data: new Dictionary<string, string> { ["reason"] = refused.Reason, ["ip"] = ip }), http.RequestAborted);
+            // On the compatible surface the refusal has the name identity.md gives it; the token is named by id and prefix only.
+            var action = Kb.Web.DataCenter.DcRest.IsUnderRoot(http) ? AuditActions.TokenUseDenied : AuditActions.TokenRefused;
+            await http.RequestServices.GetRequiredService<IAuditLog>().AppendAsync(new AuditEvent(action, refused.Token.OwnerUserId, "token", refused.Token.Id.ToString(),
+                Data: new Dictionary<string, string> { ["reason"] = refused.Reason, ["ip"] = ip, ["prefix"] = refused.Token.Prefix }), http.RequestAborted);
         }
         if (HasBearer(http.Request) && Current(http) is null)
         {
@@ -161,7 +163,8 @@ public sealed class ApiTokenAuthHandler(IOptionsMonitor<AuthenticationSchemeOpti
     protected override Task HandleChallengeAsync(AuthenticationProperties properties)
     {
         Response.StatusCode = StatusCodes.Status401Unauthorized;
-        Response.Headers.WWWAuthenticate = "Bearer";
+        // On the compatible surface, RFC 6750 section 3 (identity.md, Errors on protected calls).
+        Response.Headers.WWWAuthenticate = Kb.Web.DataCenter.DcRest.IsUnderRoot(Context) ? "Bearer error=\"invalid_token\"" : "Bearer";
         return Task.CompletedTask;
     }
 
