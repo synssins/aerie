@@ -37,6 +37,8 @@ public static class AuditActions
     public const string CommentDelete = "comment.delete";
     public const string CommentHide = "comment.hide";
     public const string CommentRestore = "comment.restore";
+    public const string RatingSave = "rating.save";
+    public const string RatingRemove = "rating.remove";
     public const string BreakGlass = "auth.breakglass";
     public const string SetupAdminCreate = "setup.admin.create";
     public const string BrandUpdate = "brand.update";

@@ -18,6 +18,7 @@ import { TagInput } from "./TagInput";
 import { MenuButton, type MenuItem } from "./ui";
 import { PageFeedbackSwitches } from "./Feedback";
 import { PageComments } from "./Comments";
+import { PageRating } from "./Ratings";
 
 export const LANGUAGES = ["plaintext", "powershell", "bash", "shell", "sql", "json", "yaml", "xml", "ini", "csharp", "javascript", "typescript", "python", "go", "java", "css", "markdown", "diff"];
 
@@ -437,6 +438,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
             </table>
           </section>
         )}
+        {!editing && !guest && !isNew && page.kind === "Page" && <PageRating pageId={page.id} />}
         {!editing && !guest && !isNew && page.kind === "Page" && <PageComments pageId={page.id} />}
       </div>
       {!editing && headings.length > 0 && (

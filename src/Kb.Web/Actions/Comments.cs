@@ -54,13 +54,15 @@ public sealed record RestoreComment : IAction<Unit>
     public required Guid CommentId { get; init; }
 }
 
+/// <summary>At most 10 comments per person per minute across the site (comments.md, Posting).</summary>
+public sealed class CommentThrottle(TimeProvider time) : PersonThrottle(time, 10);
+
 /// <summary>
-/// At most 10 comments per person per minute across the site (comments.md, Posting). The window starts at the person's first comment.
+/// A per-person limit a minute. The window starts at the person's first call in it.
 /// shortcut: counted per server, so N servers allow N times as much; move it to the database if abuse appears.
 /// </summary>
-public sealed class CommentThrottle(TimeProvider time)
+public abstract class PersonThrottle(TimeProvider time, int perMinute)
 {
-    public const int PerMinute = 10;
     private readonly ConcurrentDictionary<Guid, (long Start, int Count)> _windows = new();
 
     /// <summary>Counts a comment; null when it may go ahead, otherwise the seconds until the window ends.</summary>
@@ -71,7 +73,7 @@ public sealed class CommentThrottle(TimeProvider time)
         _windows.AddOrUpdate(user, _ => (now, 1), (_, w) =>
         {
             if (now - w.Start >= 60) return (now, 1);
-            if (w.Count >= PerMinute) { wait = (int)(60 - (now - w.Start)); return w; }
+            if (w.Count >= perMinute) { wait = (int)(60 - (now - w.Start)); return w; }
             return (w.Start, w.Count + 1);
         });
         return wait;

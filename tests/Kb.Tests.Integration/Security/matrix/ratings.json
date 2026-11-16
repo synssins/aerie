@@ -1,0 +1,25 @@
+[
+  {
+    "action": "rating.summary",
+    "method": "GET",
+    "path": "/api/v1/pages/{page}/ratings",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404},
+    "note": "Everyone signed in who can read the page; negatives only to Supervisors and Owners (ratings.md, questions Q-0027, Q-0029)."
+  },
+  {
+    "action": "rating.save",
+    "method": "PUT",
+    "path": "/api/v1/pages/{page}/ratings/mine",
+    "body": {"value": "positive"},
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "sensitive": {"admin": 404}
+  },
+  {
+    "action": "rating.remove",
+    "method": "DELETE",
+    "path": "/api/v1/pages/{page}/ratings/mine",
+    "expect": {"anonymous": 401, "outsider": 404, "reader": 204, "contributor": 204, "supervisor": 204, "owner": 204, "admin": 204},
+    "sensitive": {"admin": 404}
+  }
+]

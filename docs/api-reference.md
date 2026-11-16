@@ -183,6 +183,9 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | POST | `/api/v1/pages/{id:guid}/format` | `page.format` | `FormatRequest` ([FormatRequest](plugins/action-reference.md#formatrequest)) | `FormatDto` ([FormatDto](plugins/action-reference.md#formatdto)) | Yes | Needed | No |
 | GET | `/api/v1/pages/{id:guid}/markdown` | `page.markdown` |  | `PageMarkdownDto` ([PageMarkdownDto](plugins/action-reference.md#pagemarkdowndto)) | No | Needed | Read |
 | POST | `/api/v1/pages/{id:guid}/move` | `page.move` | `MoveRequest` ([MoveRequest](plugins/action-reference.md#moverequest)) | `PageDto` ([PageDto](plugins/action-reference.md#pagedto)) | Yes | Needed | Write |
+| GET | `/api/v1/pages/{id:guid}/ratings` | `rating.summary` |  | `RatingSummaryDto` ([RatingSummaryDto](plugins/action-reference.md#ratingsummarydto)) | No | Needed | No |
+| DELETE | `/api/v1/pages/{id:guid}/ratings/mine` | `rating.remove` |  | `Unit` | Yes | Needed | No |
+| PUT | `/api/v1/pages/{id:guid}/ratings/mine` | `rating.save` | `RatingRequest` ([RatingRequest](plugins/action-reference.md#ratingrequest)) | `RatingSummaryDto` ([RatingSummaryDto](plugins/action-reference.md#ratingsummarydto)) | Yes | Needed | No |
 | POST | `/api/v1/pages/{id:guid}/restore` | `page.restore` |  | `RestoredPageDto` ([RestoredPageDto](plugins/action-reference.md#restoredpagedto)) | Yes | Needed | No |
 | GET | `/api/v1/pages/{id:guid}/versions` | `page.version.list` |  | `IReadOnlyList<VersionDto>` ([VersionDto](plugins/action-reference.md#versiondto)) | No | Needed | Read |
 | GET | `/api/v1/pages/{id:guid}/versions/{version}` | `page.version.read` |  | `VersionContentDto` ([VersionContentDto](plugins/action-reference.md#versioncontentdto)) | No | Needed | Read |

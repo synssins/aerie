@@ -1532,6 +1532,33 @@ Read. `ListPrincipals`, answers `IReadOnlyList<PrincipalDto>` ([PrincipalDto](#p
 |---|---|---|
 | Query | `string?` |  |
 
+## rating.remove
+
+Write. `RemoveRating`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+
+## rating.save
+
+Write. `SaveRating`, answers `RatingSummaryDto` ([RatingSummaryDto](#ratingsummarydto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+| Value | `string?` |  |
+| Solved | `bool?` |  |
+| Reason | `string?` |  |
+
+## rating.summary
+
+Read. `ReadRatingSummary`, answers `RatingSummaryDto` ([RatingSummaryDto](#ratingsummarydto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+
 ## role.create
 
 Write. `CreateRole`, answers `RoleDto` ([RoleDto](#roledto)). Core only.
@@ -5330,6 +5357,73 @@ Enum: `Enabled`, `Disabled`, `DisabledByCore`.
 ### PrincipalType
 
 Enum: `User`, `Group`.
+
+### RatingDto
+
+| Field | Type |
+|---|---|
+| value | `string` |
+| solved | `bool` |
+| reason | `string?` |
+| version | `string` |
+| createdAt | `DateTimeOffset` |
+| updatedAt | `DateTimeOffset` |
+
+```json
+{
+  "value": "text",
+  "solved": false,
+  "reason": "text",
+  "version": "text",
+  "createdAt": "2026-11-14T10:00:00\u002B00:00",
+  "updatedAt": "2026-11-14T10:00:00\u002B00:00"
+}
+```
+
+### RatingRequest
+
+| Field | Type |
+|---|---|
+| value | `string?` |
+| solved | `bool?` |
+| reason | `string?` |
+
+```json
+{
+  "value": "text",
+  "solved": false,
+  "reason": "text"
+}
+```
+
+### RatingSummaryDto
+
+| Field | Type |
+|---|---|
+| enabled | `bool` |
+| canRate | `bool` |
+| canSeeAll | `bool` |
+| positive | `int` |
+| solved | `int` |
+| mine | `RatingDto?` ([RatingDto](#ratingdto)) |
+
+```json
+{
+  "enabled": false,
+  "canRate": false,
+  "canSeeAll": false,
+  "positive": 0,
+  "solved": 0,
+  "mine": {
+    "value": "text",
+    "solved": false,
+    "reason": "text",
+    "version": "text",
+    "createdAt": "2026-11-14T10:00:00\u002B00:00",
+    "updatedAt": "2026-11-14T10:00:00\u002B00:00"
+  }
+}
+```
 
 ### ReadOAuthAuthorizeRequest
 
