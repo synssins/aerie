@@ -47,7 +47,7 @@ describe("AI assist", () => {
     render(<DialogProvider><AssistDialog spaceId="s1" pageId="p1" title="Restart" contentJson={current} onApply={onApply} onClose={() => {}} /></DialogProvider>);
     await userEvent.type(screen.getByLabelText("Pasted material"), "New step");
     await userEvent.upload(screen.getByLabelText("Files"), new File(["x"], "shot.png", { type: "image/png" }));
-    await userEvent.click(screen.getByRole("button", { name: "Build the page" }));
+    await userEvent.click(screen.getByRole("button", { name: "Build page" }));
     await waitFor(() => expect(calls[0]?.key).toBe("POST /spaces/s1/assist"));
     expect(calls[0].body).toMatchObject({ pageId: "p1", title: "Restart", contentJson: current, text: "New step", files: [{ name: "shot.png" }] });
 
@@ -64,6 +64,14 @@ describe("AI assist", () => {
     expect(JSON.parse(applied.contentJson).content.map((n: { content?: { text: string }[] }) => n.content?.[0].text)).toEqual(["Intro", "Steps", "New step", "Notes", "Note"]);
     expect(applied.tags).toEqual(["vpn"]);
     expect(applied.appliesTo).toEqual([]);
+  });
+
+  it("with nothing pasted, the button organizes the page", async () => {
+    server(() => ({}));
+    render(<DialogProvider><AssistDialog spaceId="s1" pageId="p1" title="Restart" contentJson={current} onApply={() => {}} onClose={() => {}} /></DialogProvider>);
+    expect(screen.getByRole("button", { name: "Organize page" })).toBeTruthy();
+    await userEvent.type(screen.getByLabelText("Pasted material"), "x");
+    expect(screen.getByRole("button", { name: "Build page" })).toBeTruthy();
   });
 
   it("a flagged page says so, and an Owner can mark it reviewed", async () => {

@@ -20,6 +20,9 @@ public static partial class DocFormat
     /// </summary>
     public sealed record Unit(int N, string Kind, string Text, JsonObject Node, JsonArray? Content, JsonObject? List, int ItemOf);
 
+    /// <summary>A spelling or grammar correction the model proposes for a unit: a word or short phrase as written, and its correction.</summary>
+    public sealed record Fix(string From, string To);
+
     /// <summary>Removed units in a row: what they said, and what says the same and stays.</summary>
     public sealed record Removal(IReadOnlyList<int> Units, string Text, string SameAs);
 
@@ -63,9 +66,11 @@ public static partial class DocFormat
     /// The page rebuilt with the roles. Keep: units the person chose to keep although they were found to be duplicates. Splits: for
     /// a paragraph that runs several items together ("Owner: ... Last verified: ..."), the text each item after the first starts with;
     /// the paragraph is cut there, each item a paragraph of its own. A cut not found at a word start in the text is ignored.
+    /// Fixes: spelling and grammar corrections per unit, made in its text only where <see cref="FixError"/> finds none, never in
+    /// code (a code block or inline code), quoted text, or a word that looks like an identifier, host name or path.
     /// </summary>
     public static (JsonObject Doc, List<Removal> Removed) Restructure(JsonObject doc, IReadOnlyDictionary<int, string> roles, IReadOnlySet<int>? keep = null,
-        IReadOnlyDictionary<int, IReadOnlyList<string>>? splits = null)
+        IReadOnlyDictionary<int, IReadOnlyList<string>>? splits = null, IReadOnlyDictionary<int, IReadOnlyList<Fix>>? fixes = null)
     {
         var units = Units(doc);
         // A short line after a line break in a list item, with no end punctuation, is a title stuck to the item ("Procedure"),
@@ -113,6 +118,7 @@ public static partial class DocFormat
                     listFrom = u.List;
                 }
                 lastItem = u.Node.DeepClone().AsObject();
+                Correct(lastItem, fixes?.GetValueOrDefault(u.N));
                 lastItemN = u.N;
                 list!["content"]!.AsArray().Add(lastItem);
                 continue;
@@ -121,10 +127,13 @@ public static partial class DocFormat
             {
                 // A line that stays with its item: back after a line break, as it was.
                 para["content"]!.AsArray().Add(new JsonObject { ["type"] = "hardBreak" });
-                foreach (var x in u.Content!) para["content"]!.AsArray().Add(x!.DeepClone());
+                var line = u.Content!.DeepClone().AsArray();
+                Correct(line, fixes?.GetValueOrDefault(u.N));
+                foreach (var x in line) para["content"]!.AsArray().Add(x!.DeepClone());
                 continue;
             }
             var content = u.Content?.DeepClone().AsArray() ?? new JsonArray(new JsonObject { ["type"] = "text", ["text"] = u.Text });
+            Correct(content, fixes?.GetValueOrDefault(u.N));
             if (role is "step" or "bullet")
             {
                 code = null; lastItem = null; lastItemN = -1;
@@ -183,6 +192,89 @@ public static partial class DocFormat
             i++;
         }
         return true;
+    }
+
+    /// <summary>
+    /// Why a proposed fix is not a spelling or grammar correction, or null when it is one: the same numbers, one to three words on
+    /// each side and at most one more or fewer, the same first letter, and only a few letters changed (one in four, at least one).
+    /// Anything else changes content (a number, another word, the opposite, a rewording) and is refused.
+    /// </summary>
+    public static string? FixError(Fix fix)
+    {
+        var (from, to) = (fix.From.Trim(), fix.To.Trim());
+        if (from.Length is 0 or > 100 || to.Length is 0 or > 100) return "empty or too long";
+        if (from == to) return "no change";
+        if (!Digits().Matches(from).Select(m => m.Value).SequenceEqual(Digits().Matches(to).Select(m => m.Value))) return "changes a number";
+        var (wf, wt) = (AiGuard.Words(from).Count, AiGuard.Words(to).Count);
+        if (wf is < 1 or > 3 || wt is < 1 or > 3 || Math.Abs(wf - wt) > 1) return "changes the words";
+        var (a, b) = (from.ToLowerInvariant(), to.ToLowerInvariant());
+        if (a == b) return null; // capitals only
+        if (a.FirstOrDefault(char.IsLetterOrDigit) != b.FirstOrDefault(char.IsLetterOrDigit)) return "another word";
+        return Distance(a, b) <= Math.Max(1, Math.Max(a.Length, b.Length) / 4.0) ? null : "another word";
+    }
+
+    // Letters changed between two texts, a swap of two neighbours counting once (optimal string alignment).
+    private static int Distance(string a, string b)
+    {
+        var d = new int[a.Length + 1, b.Length + 1];
+        for (var i = 0; i <= a.Length; i++) d[i, 0] = i;
+        for (var j = 0; j <= b.Length; j++) d[0, j] = j;
+        for (var i = 1; i <= a.Length; i++)
+            for (var j = 1; j <= b.Length; j++)
+            {
+                var cost = a[i - 1] == b[j - 1] ? 0 : 1;
+                d[i, j] = Math.Min(Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1), d[i - 1, j - 1] + cost);
+                if (i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1]) d[i, j] = Math.Min(d[i, j], d[i - 2, j - 2] + 1);
+            }
+        return d[a.Length, b.Length];
+    }
+
+    [GeneratedRegex(@"\d+")]
+    private static partial Regex Digits();
+
+    // Written like an identifier, host name, path, address or version: never corrected.
+    [GeneratedRegex(@"[-_./\\@:=#<>`\d]|\p{Ll}\p{Lu}")]
+    private static partial Regex IdentifierLike();
+
+    /// <summary>The fixes made in the text nodes under a node (or in an inline content array): not in code, not inside quotes.</summary>
+    private static void Correct(JsonNode node, IReadOnlyList<Fix>? fixes)
+    {
+        if (fixes is not { Count: > 0 }) return;
+        var usable = fixes.Where(f => FixError(f) is null && !IdentifierLike().IsMatch(f.From.Trim())).ToList();
+        if (usable.Count == 0) return;
+        void Walk(JsonNode? n)
+        {
+            if (n is JsonArray arr) { foreach (var x in arr) Walk(x); return; }
+            if (n is not JsonObject o) return;
+            if (o["type"]?.GetValue<string>() == "codeBlock") return;
+            if (o["text"] is JsonValue t)
+            {
+                if ((o["marks"] as JsonArray ?? []).Any(m => m?["type"]?.GetValue<string>() == "code")) return;
+                var text = t.GetValue<string>();
+                foreach (var f in usable) text = Replace(text, f.From.Trim(), f.To.Trim());
+                o["text"] = text;
+                return;
+            }
+            Walk(o["content"]);
+        }
+        Walk(node);
+    }
+
+    // Each whole-word use of from, outside double quotes, becomes to.
+    private static string Replace(string text, string from, string to)
+    {
+        static bool Wordy(string s, int i) => i >= 0 && i < s.Length && (char.IsLetterOrDigit(s[i]) || s[i] is '-' or '_' or '/' or '\\' or '@'
+            || (s[i] == '.' && i + 1 < s.Length && char.IsLetterOrDigit(s[i + 1])));
+        var sb = new System.Text.StringBuilder();
+        var at = 0;
+        for (var i = text.IndexOf(from, StringComparison.Ordinal); i >= 0; i = text.IndexOf(from, i + from.Length, StringComparison.Ordinal))
+        {
+            var quoted = text[..i].Count(c => c is '"' or '\u201C' or '\u201D') % 2 == 1;
+            if (quoted || Wordy(text, i - 1) || Wordy(text, i + from.Length)) continue;
+            sb.Append(text, at, i - at).Append(to);
+            at = i + from.Length;
+        }
+        return sb.Append(text, at, text.Length - at).ToString();
     }
 
     /// <summary>Inline content cut before each of the texts, in order, where one starts a word; marks stay with their text.</summary>

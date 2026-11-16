@@ -28,6 +28,7 @@ public sealed class ImportFlowTests : IAsyncLifetime
     {
         public int Calls;
         public bool ChangeWords;
+        public bool ChangeFact;
         public string Destination = "inbox";
         public bool SawPicture;
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
@@ -49,9 +50,14 @@ public sealed class ImportFlowTests : IAsyncLifetime
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 string Text(string line) => line[(line.IndexOf(") ", StringComparison.Ordinal) + 2)..].TrimStart('1', '.', ' ').TrimEnd('.');
                 // A line of run-together label and value items is cut where the second and third start.
+                // A misspelt line gets its fix (with ChangeFact, a number changed instead).
                 var roles = new JsonArray([.. lines.Select((line, n) => (JsonNode)(line.Contains("Owner:", StringComparison.Ordinal)
                     ? new JsonObject { ["n"] = n, ["role"] = "paragraph", ["split"] = new JsonArray("Owner:", "Last verified:", "Nowhere:") }
+                    : line.Contains("Mofdnitoring", StringComparison.Ordinal)
+                    ? new JsonObject { ["n"] = n, ["role"] = "paragraph", ["fix"] = new JsonArray(ChangeFact
+                        ? new JsonObject { ["from"] = "40", ["to"] = "50" } : new JsonObject { ["from"] = "Mofdnitoring", ["to"] = "Monitoring" }) }
                     : new JsonObject { ["n"] = n, ["role"] = !seen.Add(Text(line)) ? "duplicate" : n == 0 ? "heading2" : "step" }))]);
+                if (!system.Contains("\"fix\"", StringComparison.Ordinal) || !system.Contains("spelling", StringComparison.Ordinal)) roles = [];
                 if (!system.Contains("\"split\"", StringComparison.Ordinal)) roles = [];
                 if (ChangeWords) roles[0]!["n"] = 99;
                 content = new JsonObject { ["roles"] = roles }.ToJsonString();
@@ -452,5 +458,36 @@ public sealed class ImportFlowTests : IAsyncLifetime
         var again = await (await _admin.PostAsJsonAsync($"/api/v1/pages/{id}/format", new { contentJson = before, roles = preview.GetProperty("roles"), keep = Array.Empty<int>() }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct);
         Assert.Equal(preview.GetProperty("contentJson").GetString(), again.GetProperty("contentJson").GetString());
         Assert.Equal(calls, _model.Calls);
+    }
+
+    [Fact]
+    public async Task Format_CorrectsSpelling_InTextOnly_ShowsItInTheChanges_AndRefusesAChangedFact()
+    {
+        var page = (await (await _admin.PostAsJsonAsync($"/api/v1/spaces/{_space}/pages", new
+        {
+            kind = "Page", title = "Kraken",
+            contentJson = """{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Mofdnitoring shows 40 tentacles; run "},{"type":"text","marks":[{"type":"code"}],"text":"Mofdnitoring"},{"type":"text","text":" again."}]}]}""",
+        }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct));
+        var id = page.GetProperty("id").GetGuid();
+        var before = page.GetProperty("contentJson").GetString();
+        var r = await _admin.PostAsJsonAsync($"/api/v1/pages/{id}/format", new { contentJson = before }, Ct);
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var preview = await r.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        Assert.Equal("Monitoring shows 40 tentacles; run Mofdnitoring again.", Kb.Core.Content.DocText.Plain(preview.GetProperty("contentJson").GetString()).Trim());
+        // Shown in the changed lines before it is accepted, and kept in the roles to build the preview again.
+        Assert.Contains(preview.GetProperty("diff").EnumerateArray(), d => d.GetProperty("op").GetString() == "Add" && d.GetProperty("text").GetString()!.Contains("Monitoring shows", StringComparison.Ordinal));
+        Assert.Contains(preview.GetProperty("diff").EnumerateArray(), d => d.GetProperty("op").GetString() == "Del" && d.GetProperty("text").GetString()!.Contains("Mofdnitoring shows", StringComparison.Ordinal));
+        Assert.Equal("Monitoring", preview.GetProperty("roles")[0].GetProperty("fix")[0].GetProperty("to").GetString());
+        var calls = _model.Calls;
+        var again = await (await _admin.PostAsJsonAsync($"/api/v1/pages/{id}/format", new { contentJson = before, roles = preview.GetProperty("roles"), keep = Array.Empty<int>() }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct);
+        Assert.Equal(preview.GetProperty("contentJson").GetString(), again.GetProperty("contentJson").GetString());
+        Assert.Equal(calls, _model.Calls);
+
+        // A "fix" that changes a number changes a fact: the whole result is refused, the model's or one sent back.
+        _model.ChangeFact = true;
+        var refused = await _admin.PostAsJsonAsync($"/api/v1/pages/{id}/format", new { contentJson = before }, Ct);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, refused.StatusCode);
+        var sentBack = await _admin.PostAsJsonAsync($"/api/v1/pages/{id}/format", new { contentJson = before, roles = new[] { new { n = 0, role = "paragraph", fix = new[] { new { from = "40", to = "50" } } } } }, Ct);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, sentBack.StatusCode);
     }
 }

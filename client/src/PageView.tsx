@@ -586,7 +586,7 @@ export function Toolbar({ editor, onImages }: { editor: Editor; onImages: (files
 }
 
 /** What Format answers: the proposed page, its changed lines, the duplicates it took out, and the roles to build it again. */
-type FormatResult = { contentJson: string; diff: DiffLine[]; removed: { units: number[]; text: string; sameAs: string }[]; roles: { n: number; role: string; split?: string[] | null }[] };
+type FormatResult = { contentJson: string; diff: DiffLine[]; removed: { units: number[]; text: string; sameAs: string }[]; roles: { n: number; role: string; split?: string[] | null; fix?: { from: string; to: string }[] | null }[] };
 
 /** A page's content drawn as the page draws it, not to edit. */
 function Rendered({ json, extensions }: { json: string; extensions: ReturnType<typeof makeExtensions> }) {
