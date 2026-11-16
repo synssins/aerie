@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api";
 import { useDialogs } from "../Dialogs";
+import { aiChanged } from "../aiFeatures";
 
 export type AiAccess = "Off" | "Admins" | "Everyone";
 export type AiSettings = {
@@ -51,7 +52,7 @@ export function AiPanel() {
     setStatus(null);
     try {
       const d = await api.put<Dto>("/admin/ai", { settings, apiKey: key });
-      setDto(d); setForm(d.settings); setKey(null); setStatus("Saved.");
+      setDto(d); setForm(d.settings); setKey(null); setStatus("Saved."); aiChanged();
     } catch (err) {
       setStatus(err instanceof ApiError && err.body?.errors ? Object.values(err.body.errors).flat()[0] ?? "Not saved." : "Not saved.");
     } finally { setBusy(false); }

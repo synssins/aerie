@@ -117,4 +117,118 @@ public sealed class DocFormatTests
         Assert.True(DocFormat.Same("Run the reset from the jump host and confirm the counters are back to normal", "Run the reset from the jump host and confirm all counters are back to normal"));
         Assert.False(DocFormat.Same("", ""));
     }
+
+    private static JsonObject T(string text, string mark) => new() { ["type"] = "text", ["text"] = text, ["marks"] = new JsonArray(new JsonObject { ["type"] = mark }) };
+
+    /// <summary>Label and value items run together in one paragraph, as the demo pages have them.</summary>
+    private static JsonObject Metadata() => new()
+    {
+        ["type"] = "doc",
+        ["content"] = new JsonArray(
+            P(T("Applies to:", "bold"), T(" "), T("kv-platform-prod", "code"), T(" and anything within ten feet of it. "), T("Owner:", "bold"),
+              T(" Cloud Platform Engineering. "), T("Last verified:", "bold"), T(" after the incident we don't talk about.")),
+            H("Symptoms")),
+    };
+
+    [Fact]
+    public void ARunTogetherParagraph_IsCutWhereTheModelSaysEachItemStarts_KeepingItsMarksAndEveryWord()
+    {
+        var splits = new Dictionary<int, IReadOnlyList<string>> { [0] = ["Owner:", "Last verified:"] };
+        var (doc, removed) = DocFormat.Restructure(Metadata(), new Dictionary<int, string> { [0] = "paragraph" }, null, splits);
+        Assert.Empty(removed);
+        var blocks = doc["content"]!.AsArray();
+        Assert.Equal(["paragraph", "paragraph", "paragraph", "heading"], blocks.Select(n => n!["type"]!.GetValue<string>()));
+        string Line(int i) => DocText.Plain(new JsonObject { ["type"] = "doc", ["content"] = new JsonArray(blocks[i]!.DeepClone()) }.ToJsonString()).Trim();
+        Assert.Equal("Applies to: kv-platform-prod and anything within ten feet of it.", Line(0));
+        Assert.Equal("Owner: Cloud Platform Engineering.", Line(1));
+        Assert.Equal("Last verified: after the incident we don't talk about.", Line(2));
+        // Each label keeps its bold, the value its code mark.
+        Assert.Equal("bold", blocks[1]!["content"]![0]!["marks"]![0]!["type"]!.GetValue<string>());
+        Assert.Equal("Owner:", blocks[1]!["content"]![0]!["text"]!.GetValue<string>());
+        Assert.Equal("code", blocks[0]!["content"]![2]!["marks"]![0]!["type"]!.GetValue<string>());
+        Assert.True(DocFormat.OnlyPageWords(Plain(Metadata()), Plain(doc)));
+    }
+
+    [Fact]
+    public void ACutThatIsNotInTheText_OrNotAtAWordStart_OrInAHeading_IsIgnored()
+    {
+        var splits = new Dictionary<int, IReadOnlyList<string>> { [0] = ["Nowhere:", "wner:", "Applies to:", "Owner: Cloud Platform Engineering. Last verified: after the incident we don't talk about. And more"], [1] = ["toms"] };
+        var (doc, _) = DocFormat.Restructure(Metadata(), new Dictionary<int, string> { [0] = "paragraph" }, null, splits);
+        Assert.Equal(["paragraph", "heading"], doc["content"]!.AsArray().Select(n => n!["type"]!.GetValue<string>()));
+        Assert.Equal(Plain(Metadata()), Plain(doc));
+    }
+
+    private static readonly IReadOnlyDictionary<int, string> NoRoles = new Dictionary<int, string>();
+
+    [Fact]
+    public void ASpellingFix_IsMadeInText_ButNeverInCode_Identifiers_OrQuotedText()
+    {
+        var page = new JsonObject
+        {
+            ["type"] = "doc",
+            ["content"] = new JsonArray(
+                P(T("Mofdnitoring shows the Kraken. Run "), T("Mofdnitoring", "code"), T(" on kv-platfrom-prod.")),
+                new JsonObject { ["type"] = "codeBlock", ["attrs"] = new JsonObject { ["language"] = "bash" }, ["content"] = new JsonArray(T("echo Mofdnitoring")) },
+                P(T("The log says \"Mofdnitoring failed\" and Mofdnitoring stops.")),
+                Ol(Li(T("Check teh pods.")))),
+        };
+        var fix = new DocFormat.Fix("Mofdnitoring", "Monitoring");
+        var fixes = new Dictionary<int, IReadOnlyList<DocFormat.Fix>>
+        {
+            [0] = [fix, new("kv-platfrom-prod", "kv-platform-prod")], [1] = [fix], [2] = [fix], [3] = [new("teh", "the")],
+        };
+        var (doc, _) = DocFormat.Restructure(page, NoRoles, null, null, fixes);
+        var blocks = doc["content"]!.AsArray();
+        string Line(int i) => DocText.Plain(new JsonObject { ["type"] = "doc", ["content"] = new JsonArray(blocks[i]!.DeepClone()) }.ToJsonString()).Trim();
+        Assert.Equal("Monitoring shows the Kraken. Run Mofdnitoring on kv-platfrom-prod.", Line(0)); // inline code and a host name stay
+        Assert.Equal("echo Mofdnitoring", Line(1));                                                  // a code block stays
+        Assert.Equal("The log says \"Mofdnitoring failed\" and Monitoring stops.", Line(2));        // a quoted message stays
+        Assert.Equal("Check the pods.", Line(3));                                                     // list items too
+        Assert.Equal("code", blocks[0]!["content"]![1]!["marks"]![0]!["type"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData("Mofdnitoring", "Monitoring")]
+    [InlineData("teh", "the")]
+    [InlineData("recieve", "receive")]
+    [InlineData("a", "an")]
+    [InlineData("dont", "don't")]
+    [InlineData("kubernetes", "Kubernetes")]
+    public void ACorrection_IsAllowed(string from, string to) => Assert.Null(DocFormat.FixError(new(from, to)));
+
+    [Theory]
+    [InlineData("40", "50")]                       // a number
+    [InlineData("enabled", "disabled")]            // the opposite
+    [InlineData("Owner", "Manager")]               // another word
+    [InlineData("restart", "reboot")]              // a rewording
+    [InlineData("the pods", "all of the pods")]    // added words
+    [InlineData("Check", "")]                      // a removal
+    public void AChangeOfContent_IsNotACorrection(string from, string to)
+    {
+        Assert.NotNull(DocFormat.FixError(new(from, to)));
+        // Nor is it made, whatever the caller passes.
+        var page = new JsonObject { ["type"] = "doc", ["content"] = new JsonArray(P(T($"Check {from} now."))) };
+        var (doc, _) = DocFormat.Restructure(page, NoRoles, null, null, new Dictionary<int, IReadOnlyList<DocFormat.Fix>> { [0] = [new(from, to)] });
+        Assert.Equal(Plain(page), Plain(doc));
+    }
+
+    [Fact]
+    public void ASplit_OnAPartWhoseRoleIsNotParagraph_IsIgnored()
+    {
+        var splits = new Dictionary<int, IReadOnlyList<string>> { [0] = ["Owner:", "Last verified:"] };
+        foreach (var roles in new[] { NoRoles, new Dictionary<int, string> { [0] = "keep" }, new Dictionary<int, string> { [0] = "note" } })
+        {
+            var (doc, _) = DocFormat.Restructure(Metadata(), roles, null, splits);
+            Assert.Single(doc["content"]!.AsArray(), n => n!["type"]!.GetValue<string>() != "heading");
+        }
+    }
+
+    [Fact]
+    public void AWordWithACapitalAfterItsFirstLetter_IsWrittenLikeAnIdentifier_AndStays()
+    {
+        var page = new JsonObject { ["type"] = "doc", ["content"] = new JsonArray(P(T("Check MOnitoring and AKs and Monitorng."))) };
+        var fixes = new Dictionary<int, IReadOnlyList<DocFormat.Fix>> { [0] = [new("MOnitoring", "Monitoring"), new("AKs", "AKS"), new("Monitorng", "Monitoring")] };
+        var (doc, _) = DocFormat.Restructure(page, NoRoles, null, null, fixes);
+        Assert.Equal("Check MOnitoring and AKs and Monitoring.", Plain(doc).Trim());
+    }
 }

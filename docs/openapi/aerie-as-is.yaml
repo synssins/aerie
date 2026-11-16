@@ -7316,6 +7316,13 @@ components:
           items:
             "$ref": "#/components/schemas/FormatRoleDto"
           nullable: true
+    FormatFixDto:
+      type: "object"
+      properties:
+        from:
+          type: "string"
+        to:
+          type: "string"
     FormatRemovedDto:
       type: "object"
       properties:
@@ -7353,6 +7360,16 @@ components:
           format: "int32"
         role:
           type: "string"
+        split:
+          type: "array"
+          items:
+            type: "string"
+          nullable: true
+        fix:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/FormatFixDto"
+          nullable: true
     GrantRoleRequest:
       type: "object"
       properties:

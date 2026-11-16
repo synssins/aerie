@@ -127,7 +127,7 @@ export function AssistDialog({ spaceId, pageId, title, contentJson, onApply, onC
           <div className="dlg-actions">
             <button type="button" className="tb" onClick={onClose}>Cancel</button>
             <button type="button" className="tb primary" disabled={busy} onClick={() => void run()}>
-              {busy ? "Working…" : text.trim() || files.length ? "Build the page" : "Put the page in order"}
+              {busy ? "Working…" : text.trim() || files.length ? "Build page" : "Organize page"}
             </button>
           </div>
         </>

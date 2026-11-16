@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { DialogProvider } from "../Dialogs";
 import { AiPanel, type AiSettings } from "./AiSettings";
+import { AI_CHANGED } from "../aiFeatures";
 
 HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) { this.setAttribute("open", ""); };
 HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) { this.removeAttribute("open"); };
@@ -60,10 +61,15 @@ describe("AI settings", () => {
     await userEvent.selectOptions(await screen.findByLabelText("Model"), await screen.findByRole("option", { name: "qwen3" }));
     await userEvent.click(within(screen.getByRole("radiogroup", { name: "Import" })).getByRole("radio", { name: "Everyone with access" }));
     await userEvent.type(screen.getByLabelText("API key"), "sk-1");
+    const changed = vi.fn();
+    window.addEventListener(AI_CHANGED, changed);
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(calls.find((c) => c.key === "PUT /admin/ai")?.body).toMatchObject({
       apiKey: "sk-1", settings: { enabled: true, baseUrl: "http://192.168.1.86:8093", model: "qwen3", reasoning: false, features: { import: "Everyone" } },
     }));
+    // The app's feature buttons are told, so a feature turned on shows without reloading.
+    await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
+    window.removeEventListener(AI_CHANGED, changed);
   });
 
   it("Test connection shows the model, the time and whether reasoning came back", async () => {

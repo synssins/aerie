@@ -24,6 +24,7 @@ Where every fixture, asset, bundled file and outside reference in this repositor
 | `tests/Kb.Tests.Integration/Security/matrix/*.json` | Security test matrix: which caller may call which route | Written for aerie from its own routes |
 | `tests/plugins/**` | Test plugins (dependent, library, probe) | Written for aerie's plugin tests |
 | `plugins/**` | Sample and email plugins | Written for aerie |
+| `tools/demo/whimsical-pages.json` | Whimsical demo pages (made-up systems, people and procedures) that `tools/Seed-DemoPages.ps1` writes | Written for aerie |
 | `docs/api-reference.md`, `docs/plugins/action-reference.md` | Generated references | Generated from aerie's own code by tests |
 | `docs/openapi/aerie-as-is.yaml` | Aerie's own API (`/api/v1`) as OpenAPI 3.0.3, as it behaves today | Generated from aerie's own routes and action types by the test `OpenApiExport_IsUpToDate` (`KB_WRITE_REFS=1`) |
 | `src/Kb.Web/DataCenter/DcUserJson.cs` (`AvatarSvg`) | Default profile picture (grey square, white head and shoulders) served at `/images/avatar/default.svg` | Drawn for aerie |
@@ -34,7 +35,7 @@ Public documents and standards consulted while building, with the version read. 
 
 | Reference | Version or date | Used for |
 |---|---|---|
-| `aerie-spec` contract release, https://github.com/synssins/aerie-spec/releases/tag/contracts-v8 | `contracts-v8`, 2026-11-16, checksums in `contracts/SHA256SUMS` (replaces `contracts-v6`) | Pinned unchanged in `contracts/`: aerie's own API, the Data Center compatible contract (T1 and the OAuth 2.0 operations), the behaviour specs including identity, comments, ratings, AI search and import grouping |
+| `aerie-spec` contract release, https://github.com/synssins/aerie-spec/releases/tag/contracts-v9 | `contracts-v9`, 2026-11-16, checksums in `contracts/SHA256SUMS` (replaces `contracts-v8`) | Pinned unchanged in `contracts/`: aerie's own API, the Data Center compatible contract (T1 and the OAuth 2.0 operations), the behaviour specs including identity, comments, ratings, AI search, import grouping and page format |
 | RFC 7636, Proof Key for Code Exchange, https://www.rfc-editor.org/rfc/rfc7636 | 2015-09 | The `S256` transform, and its appendix B example as a test vector in `OAuthModelTests` |
 
 ## Incidents

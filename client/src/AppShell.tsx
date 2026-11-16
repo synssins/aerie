@@ -1,4 +1,5 @@
 import { ImportView } from "./Import";
+import { useAiFeatures } from "./aiFeatures";
 import { InventoryView } from "./Inventory";
 import { Link, to } from "./Link";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
@@ -91,8 +92,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
   const [invView, setInvView] = useState(false);
   // The AI import inbox (the importer's own drafts) and the Format button, shown when the AI features are open to this person.
   const [importAt, setImportAt] = useState<{ itemId: string | null } | null>(null);
-  const [ai, setAi] = useState({ canImport: false, canFormat: false, canAssist: false });
-  useEffect(() => { if (me) void api.get<{ canImport: boolean; canFormat: boolean; canAssist?: boolean }>("/imports").then((l) => setAi({ canImport: l.canImport, canFormat: l.canFormat, canAssist: !!l.canAssist })).catch(() => undefined); }, [me]);
+  const ai = useAiFeatures(!!me);
   useEffect(() => { if (me) void api.get<{ canView: boolean }>("/inventory/me").then((m) => setInvView(m.canView)).catch(() => setInvView(false)); }, [me]);
   // What the person is looking at, for the scripts of plugins.
   useEffect(() => { currentView.set({ page: page?.id ? page : null, space: current }); }, [page, current]);

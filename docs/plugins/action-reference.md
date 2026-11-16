@@ -3583,9 +3583,29 @@ Enum: `Same`, `Add`, `Del`.
   "roles": [
     {
       "n": 0,
-      "role": "text"
+      "role": "text",
+      "split": [
+        "text"
+      ],
+      "fix": [
+        null
+      ]
     }
   ]
+}
+```
+
+### FormatFixDto
+
+| Field | Type |
+|---|---|
+| from | `string` |
+| to | `string` |
+
+```json
+{
+  "from": "text",
+  "to": "text"
 }
 ```
 
@@ -3621,7 +3641,13 @@ Enum: `Same`, `Add`, `Del`.
   "roles": [
     {
       "n": 0,
-      "role": "text"
+      "role": "text",
+      "split": [
+        "text"
+      ],
+      "fix": [
+        null
+      ]
     }
   ],
   "keep": [
@@ -3636,11 +3662,22 @@ Enum: `Same`, `Add`, `Del`.
 |---|---|
 | n | `int` |
 | role | `string` |
+| split | `IReadOnlyList<string>?` |
+| fix | `IReadOnlyList<FormatFixDto>?` ([FormatFixDto](#formatfixdto)) |
 
 ```json
 {
   "n": 0,
-  "role": "text"
+  "role": "text",
+  "split": [
+    "text"
+  ],
+  "fix": [
+    {
+      "from": "text",
+      "to": "text"
+    }
+  ]
 }
 ```
 
