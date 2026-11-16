@@ -117,6 +117,9 @@ public static class AuditActions
     public const string OAuthClientDelete = "oauth.client.delete";
     public const string OAuthConsentGrant = "oauth.consent.grant";
     public const string OAuthConsentDeny = "oauth.consent.deny";
+    public const string OAuthTokenIssue = "oauth.token.issue";
+    /// <summary>A used code or a rotated refresh token was presented again; the family was revoked.</summary>
+    public const string OAuthTokenReuse = "oauth.token.reuse";
     public const string SettingsChange = "settings.change";
     public const string PluginEnable = "plugin.enable";
     public const string PluginDisable = "plugin.disable";

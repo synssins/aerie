@@ -26,6 +26,15 @@ public static class OAuthRoutes
             http.Response.Headers.CacheControl = "no-store";
             return r.Value!.ErrorPage is { } page ? Results.Content(page, "text/html; charset=utf-8", statusCode: StatusCodes.Status400BadRequest) : Results.Redirect(r.Value.Location!);
         }).WithAction<DcOAuthAuthorize>();
+
+        // Called by servers, not browsers: no XSRF header (identity.md, The token endpoint).
+        oauth.MapPost("/token", async (HttpContext http, IActionBus bus, CancellationToken ct) =>
+        {
+            var (parameters, basic, badBasic, badBody) = await OAuthHttp.ReadAsync(http);
+            if (badBody) return OAuthHttp.Write(http, new OAuthEndpointResult(400, new System.Text.Json.Nodes.JsonObject { ["error"] = "invalid_request", ["error_description"] = "The form body could not be read." }));
+            var r = await bus.SendAsync(new DcOAuthToken { Parameters = parameters, Basic = basic, BadBasic = badBasic, Address = BasicThrottle.AddressOf(http) }, ct);
+            return r.Ok ? OAuthHttp.Write(http, r.Value!) : Results.StatusCode(r.Problem!.Status);
+        }).WithAction<DcOAuthToken>();
     }
 
     public static void MapOAuthConsentEndpoints(this RouteGroupBuilder api)
