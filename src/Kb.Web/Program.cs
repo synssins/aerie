@@ -281,6 +281,7 @@ api.MapAttachmentEndpoints();
 api.MapStorageEndpoints();
 api.MapTokenEndpoints();
 api.MapOAuthClientEndpoints();
+api.MapFeedbackEndpoints();
 api.MapOAuthConsentEndpoints();
 api.MapLogEndpoints();
 api.MapPluginAdminEndpoints();

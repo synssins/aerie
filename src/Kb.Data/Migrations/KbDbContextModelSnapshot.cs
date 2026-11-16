@@ -196,6 +196,9 @@ namespace Kb.Data.Migrations
                     b.Property<bool>("BinHidden")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("CommentsEnabled")
+                        .HasColumnType("bit");
+
                     b.Property<string>("ContentJson")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -232,6 +235,9 @@ namespace Kb.Data.Migrations
 
                     b.Property<Guid?>("ParentId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("RatingsEnabled")
+                        .HasColumnType("bit");
 
                     b.Property<int?>("ReviewMonths")
                         .HasColumnType("int");
@@ -1783,6 +1789,9 @@ namespace Kb.Data.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("RatingsEnabled")
+                        .HasColumnType("bit");
 
                     b.Property<int?>("RecycleDays")
                         .HasColumnType("int");

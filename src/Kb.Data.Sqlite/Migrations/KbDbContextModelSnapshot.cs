@@ -191,6 +191,9 @@ namespace Kb.Data.Sqlite.Migrations
                     b.Property<bool>("BinHidden")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("CommentsEnabled")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("ContentJson")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -227,6 +230,9 @@ namespace Kb.Data.Sqlite.Migrations
 
                     b.Property<Guid?>("ParentId")
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("RatingsEnabled")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int?>("ReviewMonths")
                         .HasColumnType("INTEGER");
@@ -1766,6 +1772,9 @@ namespace Kb.Data.Sqlite.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("RatingsEnabled")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int?>("RecycleDays")
                         .HasColumnType("INTEGER");

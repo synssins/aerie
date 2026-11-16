@@ -707,6 +707,18 @@ Write. `SaveDraft`, answers `DraftSavedDto` ([DraftSavedDto](#draftsaveddto)).
 | BaseVersion | `string` | required |
 | Tags | `IReadOnlyList<string>?` |  |
 
+## feedback.settings.read
+
+Read. `ReadFeedbackSettings`, answers `FeedbackSettingsDto` ([FeedbackSettingsDto](#feedbacksettingsdto)). Core only.
+
+## feedback.settings.save
+
+Write. `SaveFeedbackSettings`, answers `FeedbackSettingsDto` ([FeedbackSettingsDto](#feedbacksettingsdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Settings | `FeedbackSettingsDto` ([FeedbackSettingsDto](#feedbacksettingsdto)) | required |
+
 ## group.create
 
 Write. `CreateGroup`, answers `GroupDto` ([GroupDto](#groupdto)). Core only.
@@ -1272,6 +1284,24 @@ Read. `ExportPageTable`, answers `FileOut`.
 | Number | `int` | required |
 | Format | `string?` |  |
 
+## page.feedback.read
+
+Read. `ReadPageFeedback`, answers `PageFeedbackDto` ([PageFeedbackDto](#pagefeedbackdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+
+## page.feedback.save
+
+Write. `SavePageFeedback`, answers `PageFeedbackDto` ([PageFeedbackDto](#pagefeedbackdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+| CommentsEnabled | `bool?` |  |
+| RatingsEnabled | `bool?` |  |
+
 ## page.format
 
 Write. `FormatPage`, answers `FormatDto` ([FormatDto](#formatdto)). Core only.
@@ -1648,6 +1678,7 @@ Write. `UpdateSpace`, answers `SpaceDto` ([SpaceDto](#spacedto)).
 | IsSensitive | `bool?` |  |
 | Visibility | `SpaceVisibility?` ([SpaceVisibility](#spacevisibility)) |  |
 | CommentsEnabled | `bool?` |  |
+| RatingsEnabled | `bool?` |  |
 | AgingDays | `int?` |  |
 | AgingAudience | `AgingAudience?` ([AgingAudience](#agingaudience)) |  |
 | RecycleDays | `int?` |  |
@@ -1665,6 +1696,7 @@ Write. `UpdateSpaceAdmin`, answers `SpaceDto` ([SpaceDto](#spacedto)).
 | IsSensitive | `bool?` |  |
 | Visibility | `SpaceVisibility?` ([SpaceVisibility](#spacevisibility)) |  |
 | CommentsEnabled | `bool?` |  |
+| RatingsEnabled | `bool?` |  |
 | AgingDays | `int?` |  |
 | AgingAudience | `AgingAudience?` ([AgingAudience](#agingaudience)) |  |
 | RecycleDays | `int?` |  |
@@ -3190,6 +3222,38 @@ Enum: `Same`, `Add`, `Del`.
 }
 ```
 
+### FeedbackLevelsDto
+
+| Field | Type |
+|---|---|
+| site | `bool` |
+| space | `bool` |
+| page | `bool` |
+| effective | `bool` |
+
+```json
+{
+  "site": false,
+  "space": false,
+  "page": false,
+  "effective": false
+}
+```
+
+### FeedbackSettingsDto
+
+| Field | Type |
+|---|---|
+| commentsEnabled | `bool` |
+| ratingsEnabled | `bool` |
+
+```json
+{
+  "commentsEnabled": false,
+  "ratingsEnabled": false
+}
+```
+
 ### FileStoreField
 
 | Field | Type |
@@ -4604,6 +4668,44 @@ Enum: `Same`, `Add`, `Del`.
 }
 ```
 
+### PageFeedbackDto
+
+| Field | Type |
+|---|---|
+| comments | `FeedbackLevelsDto` ([FeedbackLevelsDto](#feedbacklevelsdto)) |
+| ratings | `FeedbackLevelsDto` ([FeedbackLevelsDto](#feedbacklevelsdto)) |
+
+```json
+{
+  "comments": {
+    "site": false,
+    "space": false,
+    "page": false,
+    "effective": false
+  },
+  "ratings": {
+    "site": false,
+    "space": false,
+    "page": false,
+    "effective": false
+  }
+}
+```
+
+### PageFeedbackRequest
+
+| Field | Type |
+|---|---|
+| commentsEnabled | `bool?` |
+| ratingsEnabled | `bool?` |
+
+```json
+{
+  "commentsEnabled": false,
+  "ratingsEnabled": false
+}
+```
+
 ### PageKind
 
 Enum: `Folder`, `Page`.
@@ -5390,6 +5492,7 @@ Enum: `User`, `Group`.
 | recycleDays | `int?` |
 | createdAt | `DateTimeOffset` |
 | reviewMonths | `int?` |
+| ratingsEnabled | `bool` |
 
 ```json
 {
@@ -5405,7 +5508,8 @@ Enum: `User`, `Group`.
   "agingAudience": "text",
   "recycleDays": 0,
   "createdAt": "2026-11-14T10:00:00\u002B00:00",
-  "reviewMonths": 0
+  "reviewMonths": 0,
+  "ratingsEnabled": false
 }
 ```
 
@@ -5837,6 +5941,7 @@ Enum: `Personal`, `Service`.
 | agingAudience | `AgingAudience?` ([AgingAudience](#agingaudience)) |
 | recycleDays | `int?` |
 | reviewMonths | `int?` |
+| ratingsEnabled | `bool?` |
 
 ```json
 {
@@ -5848,7 +5953,8 @@ Enum: `Personal`, `Service`.
   "agingDays": 0,
   "agingAudience": "Everyone",
   "recycleDays": 0,
-  "reviewMonths": 0
+  "reviewMonths": 0,
+  "ratingsEnabled": false
 }
 ```
 

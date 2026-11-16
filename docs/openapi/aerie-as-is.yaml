@@ -533,6 +533,65 @@ paths:
       security:
         - cookieAuth: []
       "x-kb-api-token": "closed"
+  "/api/v1/admin/feedback":
+    get:
+      tags:
+        - "admin"
+      operationId: "feedback.settings.read"
+      "x-kb-action": "feedback.settings.read"
+      "x-kb-changes-data": false
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/FeedbackSettingsDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
+    put:
+      tags:
+        - "admin"
+      operationId: "feedback.settings.save"
+      "x-kb-action": "feedback.settings.save"
+      "x-kb-changes-data": true
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/FeedbackSettingsDto"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/FeedbackSettingsDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
   "/api/v1/admin/groups":
     get:
       tags:
@@ -4689,6 +4748,79 @@ paths:
         - cookieAuth: []
         - bearerAuth: []
       "x-kb-api-token": "read"
+  "/api/v1/pages/{id}/feedback":
+    get:
+      tags:
+        - "pages"
+      operationId: "page.feedback.read"
+      "x-kb-action": "page.feedback.read"
+      "x-kb-changes-data": false
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/PageFeedbackDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
+    put:
+      tags:
+        - "pages"
+      operationId: "page.feedback.save"
+      "x-kb-action": "page.feedback.save"
+      "x-kb-changes-data": true
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/PageFeedbackRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/PageFeedbackDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
   "/api/v1/pages/{id}/format":
     post:
       tags:
@@ -6625,6 +6757,24 @@ components:
       properties:
         reason:
           type: "string"
+    FeedbackLevelsDto:
+      type: "object"
+      properties:
+        site:
+          type: "boolean"
+        space:
+          type: "boolean"
+        page:
+          type: "boolean"
+        effective:
+          type: "boolean"
+    FeedbackSettingsDto:
+      type: "object"
+      properties:
+        commentsEnabled:
+          type: "boolean"
+        ratingsEnabled:
+          type: "boolean"
     FileStoreField:
       type: "object"
       properties:
@@ -7550,6 +7700,22 @@ components:
         aiFlag:
           type: "string"
           nullable: true
+    PageFeedbackDto:
+      type: "object"
+      properties:
+        comments:
+          "$ref": "#/components/schemas/FeedbackLevelsDto"
+        ratings:
+          "$ref": "#/components/schemas/FeedbackLevelsDto"
+    PageFeedbackRequest:
+      type: "object"
+      properties:
+        commentsEnabled:
+          type: "boolean"
+          nullable: true
+        ratingsEnabled:
+          type: "boolean"
+          nullable: true
     PageKind:
       type: "string"
       enum:
@@ -8093,6 +8259,8 @@ components:
           type: "integer"
           format: "int32"
           nullable: true
+        ratingsEnabled:
+          type: "boolean"
     SpaceRole:
       type: "string"
       enum:
@@ -8415,6 +8583,9 @@ components:
         reviewMonths:
           type: "integer"
           format: "int32"
+          nullable: true
+        ratingsEnabled:
+          type: "boolean"
           nullable: true
     UploadSettingsDto:
       type: "object"

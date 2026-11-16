@@ -40,6 +40,8 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | DELETE | `/api/v1/admin/brand/logo/{variant}` | `brand.logo.remove` |  | `Unit` | Yes | Needed | No |
 | PUT | `/api/v1/admin/brand/logo/{variant}` | `brand.logo.set` |  | `Unit` | Yes | Needed | No |
 | PUT | `/api/v1/admin/brand/theme` | `brand.theme.save` | `ThemeDto` ([ThemeDto](plugins/action-reference.md#themedto)) | `ThemeDto` ([ThemeDto](plugins/action-reference.md#themedto)) | Yes | Needed | No |
+| GET | `/api/v1/admin/feedback` | `feedback.settings.read` |  | `FeedbackSettingsDto` ([FeedbackSettingsDto](plugins/action-reference.md#feedbacksettingsdto)) | No | Needed | No |
+| PUT | `/api/v1/admin/feedback` | `feedback.settings.save` | `FeedbackSettingsDto` ([FeedbackSettingsDto](plugins/action-reference.md#feedbacksettingsdto)) | `FeedbackSettingsDto` ([FeedbackSettingsDto](plugins/action-reference.md#feedbacksettingsdto)) | Yes | Needed | No |
 | GET | `/api/v1/admin/groups` | `group.list` |  | `IReadOnlyList<GroupDto>` ([GroupDto](plugins/action-reference.md#groupdto)) | No | Needed | No |
 | POST | `/api/v1/admin/groups` | `group.create` | `GroupNameRequest` ([GroupNameRequest](plugins/action-reference.md#groupnamerequest)) | `GroupDto` ([GroupDto](plugins/action-reference.md#groupdto)) | Yes | Needed | No |
 | DELETE | `/api/v1/admin/groups/{id:guid}` | `group.delete` |  | `Unit` | Yes | Needed | No |
@@ -170,6 +172,8 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | GET | `/api/v1/pages/{id:guid}/export` | `page.export` |  | `FileOut` | No | Needed | Read |
 | GET | `/api/v1/pages/{id:guid}/export/code/{n:int}` | `page.export.code` |  | `FileOut` | No | Needed | Read |
 | GET | `/api/v1/pages/{id:guid}/export/table/{n:int}` | `page.export.table` |  | `FileOut` | No | Needed | Read |
+| GET | `/api/v1/pages/{id:guid}/feedback` | `page.feedback.read` |  | `PageFeedbackDto` ([PageFeedbackDto](plugins/action-reference.md#pagefeedbackdto)) | No | Needed | No |
+| PUT | `/api/v1/pages/{id:guid}/feedback` | `page.feedback.save` | `PageFeedbackRequest` ([PageFeedbackRequest](plugins/action-reference.md#pagefeedbackrequest)) | `PageFeedbackDto` ([PageFeedbackDto](plugins/action-reference.md#pagefeedbackdto)) | Yes | Needed | No |
 | POST | `/api/v1/pages/{id:guid}/format` | `page.format` | `FormatRequest` ([FormatRequest](plugins/action-reference.md#formatrequest)) | `FormatDto` ([FormatDto](plugins/action-reference.md#formatdto)) | Yes | Needed | No |
 | GET | `/api/v1/pages/{id:guid}/markdown` | `page.markdown` |  | `PageMarkdownDto` ([PageMarkdownDto](plugins/action-reference.md#pagemarkdowndto)) | No | Needed | Read |
 | POST | `/api/v1/pages/{id:guid}/move` | `page.move` | `MoveRequest` ([MoveRequest](plugins/action-reference.md#moverequest)) | `PageDto` ([PageDto](plugins/action-reference.md#pagedto)) | Yes | Needed | Write |

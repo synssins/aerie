@@ -30,6 +30,8 @@ public static class AuditActions
     public const string CodesOff = "auth.codes.off";
     public const string UserCodesReset = "user.codes.reset";
     public const string UserCodesExempt = "user.codes.exempt";
+    public const string FeedbackSettingsSave = "feedback.settings.save";
+    public const string PageFeedbackSave = "page.feedback.save";
     public const string BreakGlass = "auth.breakglass";
     public const string SetupAdminCreate = "setup.admin.create";
     public const string BrandUpdate = "brand.update";
