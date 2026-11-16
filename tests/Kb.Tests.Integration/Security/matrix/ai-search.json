@@ -1,0 +1,11 @@
+[
+  {
+    "action": "search.answer",
+    "method": "POST",
+    "path": "/api/v1/search/answer",
+    "body": {"question": "How do I restart it?"},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 403},
+    "scope": "server",
+    "note": "AI search is Off until an Admin turns the search feature on (ai-search.md, When it is available)."
+  }
+]

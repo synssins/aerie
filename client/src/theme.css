@@ -387,6 +387,13 @@ textarea { resize: both; max-width: 100%; }
 .history td { padding: 3px 18px 3px 0; }
 .history td:first-child { color: var(--ink); font-weight: 500; }
 
+/* AI search: the ask box on the search page; the answer is plain text */
+.ask { margin: 12px 0 20px; }
+.ask-row { display: flex; gap: 8px; }
+.ask-row input { flex: 1; min-width: 0; }
+.ask-answer { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.ask-sources { margin: 8px 0 0; padding-left: 22px; }
+
 /* Rating under the page */
 .rating { margin-top: 24px; }
 .rating-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

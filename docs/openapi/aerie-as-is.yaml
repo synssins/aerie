@@ -5591,6 +5591,39 @@ paths:
                 "$ref": "#/components/schemas/Problem"
       security: []
       "x-kb-api-token": "read"
+  "/api/v1/search/answer":
+    post:
+      tags:
+        - "search"
+      operationId: "search.answer"
+      "x-kb-action": "search.answer"
+      "x-kb-changes-data": true
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/SearchAnswerRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/SearchAnswerDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
   "/api/v1/setup":
     post:
       tags:
@@ -6777,6 +6810,32 @@ components:
         at:
           type: "string"
           format: "date-time"
+    AuditAiSearchDto:
+      type: "object"
+      properties:
+        question:
+          type: "string"
+        questionLength:
+          type: "integer"
+          format: "int32"
+        outcome:
+          type: "string"
+        spaceId:
+          type: "string"
+          format: "uuid"
+          nullable: true
+        pages:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/AuditAiSearchPageDto"
+    AuditAiSearchPageDto:
+      type: "object"
+      properties:
+        pageId:
+          type: "string"
+          format: "uuid"
+        version:
+          type: "string"
     AuditEntryDto:
       type: "object"
       properties:
@@ -6802,6 +6861,10 @@ components:
         token:
           type: "string"
           nullable: true
+        aiSearch:
+          nullable: true
+          allOf:
+            - "$ref": "#/components/schemas/AuditAiSearchDto"
     AuditVerifyResult:
       type: "object"
       properties:
@@ -7889,6 +7952,8 @@ components:
           items:
             type: "string"
           nullable: true
+        aiSearch:
+          type: "boolean"
     MoveRequest:
       type: "object"
       properties:
@@ -8675,6 +8740,45 @@ components:
           items:
             type: "string"
           nullable: true
+    SearchAnswerDto:
+      type: "object"
+      properties:
+        outcome:
+          type: "string"
+        answer:
+          type: "string"
+        sources:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/SearchAnswerSourceDto"
+    SearchAnswerRequest:
+      type: "object"
+      properties:
+        question:
+          type: "string"
+          nullable: true
+        spaceId:
+          type: "string"
+          format: "uuid"
+          nullable: true
+    SearchAnswerSourceDto:
+      type: "object"
+      properties:
+        n:
+          type: "integer"
+          format: "int32"
+        pageId:
+          type: "string"
+          format: "uuid"
+        title:
+          type: "string"
+        spaceId:
+          type: "string"
+          format: "uuid"
+        spaceName:
+          type: "string"
+        url:
+          type: "string"
     SearchHitDto:
       type: "object"
       properties:

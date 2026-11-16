@@ -1601,6 +1601,15 @@ Write. `UpdateRole`, answers `RoleDto` ([RoleDto](#roledto)). Core only.
 | Name | `string` | required |
 | Permissions | `IReadOnlyList<string>` | required |
 
+## search.answer
+
+Write. `AnswerSearch`, answers `SearchAnswerDto` ([SearchAnswerDto](#searchanswerdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Question | `string?` |  |
+| SpaceId | `Guid?` |  |
+
 ## search.query
 
 Read. `SearchPages`, answers `SearchResponse` ([SearchResponse](#searchresponse)).
@@ -2548,6 +2557,45 @@ Enum: `Off`, `Admins`, `Everyone`.
 }
 ```
 
+### AuditAiSearchDto
+
+| Field | Type |
+|---|---|
+| question | `string` |
+| questionLength | `int` |
+| outcome | `string` |
+| spaceId | `Guid?` |
+| pages | `IReadOnlyList<AuditAiSearchPageDto>` ([AuditAiSearchPageDto](#auditaisearchpagedto)) |
+
+```json
+{
+  "question": "text",
+  "questionLength": 0,
+  "outcome": "text",
+  "spaceId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "pages": [
+    {
+      "pageId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "version": "text"
+    }
+  ]
+}
+```
+
+### AuditAiSearchPageDto
+
+| Field | Type |
+|---|---|
+| pageId | `Guid` |
+| version | `string` |
+
+```json
+{
+  "pageId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "version": "text"
+}
+```
+
 ### AuditEntryDto
 
 | Field | Type |
@@ -2560,6 +2608,7 @@ Enum: `Off`, `Admins`, `Everyone`.
 | targetId | `string?` |
 | via | `string` |
 | token | `string?` |
+| aiSearch | `AuditAiSearchDto?` ([AuditAiSearchDto](#auditaisearchdto)) |
 
 ```json
 {
@@ -2570,7 +2619,19 @@ Enum: `Off`, `Admins`, `Everyone`.
   "targetType": "text",
   "targetId": "text",
   "via": "text",
-  "token": "text"
+  "token": "text",
+  "aiSearch": {
+    "question": "text",
+    "questionLength": 0,
+    "outcome": "text",
+    "spaceId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+    "pages": [
+      {
+        "pageId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+        "version": "text"
+      }
+    ]
+  }
 }
 ```
 
@@ -2773,7 +2834,8 @@ Enum: `Off`, `Admins`, `Everyone`.
     "canAnnounce": false,
     "permissions": [
       "text"
-    ]
+    ],
+    "aiSearch": false
   }
 }
 ```
@@ -4473,6 +4535,7 @@ Enum: `Same`, `Add`, `Del`.
 | isBreakGlass | `bool` |
 | canAnnounce | `bool` |
 | permissions | `IReadOnlyList<string>?` |
+| aiSearch | `bool` |
 
 ```json
 {
@@ -4484,7 +4547,8 @@ Enum: `Same`, `Add`, `Del`.
   "canAnnounce": false,
   "permissions": [
     "text"
-  ]
+  ],
+  "aiSearch": false
 }
 ```
 
@@ -5708,6 +5772,67 @@ Enum: `User`, `Group`.
   "tags": [
     "text"
   ]
+}
+```
+
+### SearchAnswerDto
+
+| Field | Type |
+|---|---|
+| outcome | `string` |
+| answer | `string` |
+| sources | `IReadOnlyList<SearchAnswerSourceDto>` ([SearchAnswerSourceDto](#searchanswersourcedto)) |
+
+```json
+{
+  "outcome": "text",
+  "answer": "text",
+  "sources": [
+    {
+      "n": 0,
+      "pageId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "title": "text",
+      "spaceId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "spaceName": "text",
+      "url": "text"
+    }
+  ]
+}
+```
+
+### SearchAnswerRequest
+
+| Field | Type |
+|---|---|
+| question | `string?` |
+| spaceId | `Guid?` |
+
+```json
+{
+  "question": "text",
+  "spaceId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+}
+```
+
+### SearchAnswerSourceDto
+
+| Field | Type |
+|---|---|
+| n | `int` |
+| pageId | `Guid` |
+| title | `string` |
+| spaceId | `Guid` |
+| spaceName | `string` |
+| url | `string` |
+
+```json
+{
+  "n": 0,
+  "pageId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "title": "text",
+  "spaceId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "spaceName": "text",
+  "url": "text"
 }
 ```
 

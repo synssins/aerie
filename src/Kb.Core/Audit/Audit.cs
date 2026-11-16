@@ -39,6 +39,7 @@ public static class AuditActions
     public const string CommentRestore = "comment.restore";
     public const string RatingSave = "rating.save";
     public const string RatingRemove = "rating.remove";
+    public const string SearchAnswer = "search.answer";
     public const string BreakGlass = "auth.breakglass";
     public const string SetupAdminCreate = "setup.admin.create";
     public const string BrandUpdate = "brand.update";

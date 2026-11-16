@@ -106,7 +106,7 @@ internal sealed class SignOutHandler(SignInManager<KbUser> signIn, UserManager<K
     }
 }
 
-internal sealed class ReadMeHandler(UserManager<KbUser> users, KbDbContext db, Kb.Core.Plugins.PluginRegistry plugins) : IActionHandler<ReadMe, MeResponse>
+internal sealed class ReadMeHandler(UserManager<KbUser> users, KbDbContext db, Kb.Core.Plugins.PluginRegistry plugins, AiService ai) : IActionHandler<ReadMe, MeResponse>
 {
     private KbUser? _me;
 
@@ -118,7 +118,7 @@ internal sealed class ReadMeHandler(UserManager<KbUser> users, KbDbContext db, K
         var u = _me!;
         // A request made with an API token holds no global permission, as it is never an Admin's.
         var held = ctx.Actor.TokenId is null ? await PluginPermissions.HeldAsync(db, plugins, u.Id, u.IsAdmin, ctx.Cancel) : [];
-        return new MeResponse(u.Id, u.UserName!, u.DisplayName, u.IsAdmin, u.IsBreakGlass, u.IsAdmin || u.CanAnnounce, held);
+        return new MeResponse(u.Id, u.UserName!, u.DisplayName, u.IsAdmin, u.IsBreakGlass, u.IsAdmin || u.CanAnnounce, held, await AiSearch.AvailableAsync(ai, ctx.Actor, ctx.Cancel));
     }
 }
 
