@@ -387,6 +387,11 @@ textarea { resize: both; max-width: 100%; }
 .history td { padding: 3px 18px 3px 0; }
 .history td:first-child { color: var(--ink); font-weight: 500; }
 
+/* Rating under the page */
+.rating { margin-top: 24px; }
+.rating-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rating-reason textarea { width: 100%; max-width: 100%; }
+
 /* Comments under the page: plain text, line breaks kept */
 .comments { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 4px; }
 .comment-thread { margin: 14px 0; }

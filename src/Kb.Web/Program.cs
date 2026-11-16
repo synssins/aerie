@@ -209,6 +209,7 @@ services.AddSingleton<Kb.Web.DataCenter.BasicThrottle>();
 services.AddSingleton<Kb.Web.DataCenter.DcScopes>();
 services.AddSingleton<Kb.Web.Actions.OAuthThrottle>();
 services.AddSingleton<Kb.Web.Actions.CommentThrottle>();
+services.AddSingleton<Kb.Web.Actions.RatingThrottle>();
 services.AddHostedService<Kb.Web.Actions.CommentPurger>();
 services.AddSingleton<Kb.Web.Import.ImportWorker>();
 services.AddHostedService(sp => sp.GetRequiredService<Kb.Web.Import.ImportWorker>());
