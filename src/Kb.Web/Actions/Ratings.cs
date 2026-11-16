@@ -17,6 +17,22 @@ public sealed record RatingDto(string Value, bool Solved, string? Reason, string
 public sealed record RatingSummaryDto(bool Enabled, bool CanRate, bool CanSeeAll, int Positive, int Solved,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Negative, RatingDto? Mine);
 
+/// <summary>One rating as the space's Supervisors and Owners see it: who, what, why, when.</summary>
+public sealed record RatingEntryDto(OwnerRefDto User, string Value, bool Solved, string? Reason, string Version, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+
+public sealed record RatingListDto(int Total, int Limit, int Offset, IReadOnlyList<RatingEntryDto> Ratings);
+
+/// <summary>Every rating of the page, newest change first: for the space's Supervisors and Owners only.</summary>
+[Action("rating.list", Read = true)]
+public sealed record ListRatings : IAction<RatingListDto>
+{
+    public required Guid PageId { get; init; }
+    public int? Limit { get; init; }
+    public int? Offset { get; init; }
+    /// <summary>positive or negative; null for both.</summary>
+    public string? Value { get; init; }
+}
+
 [Action("rating.summary", Read = true)]
 public sealed record ReadRatingSummary : IAction<RatingSummaryDto>
 {
@@ -64,9 +80,41 @@ internal static class RatingRules
         var counts = enabled || seesAll
             ? await db.Ratings.Where(r => r.PageId == page.Id && r.Positive).GroupBy(_ => 1).Select(g => new { Positive = g.Count(), Solved = g.Count(r => r.Solved) }).FirstOrDefaultAsync(ct)
             : null;
+        // The negative count only for those who see all; for everyone else the field is not in the answer at all.
+        int? negative = seesAll ? await db.Ratings.CountAsync(r => r.PageId == page.Id && !r.Positive, ct) : null;
         var mine = await db.Ratings.AsNoTracking().FirstOrDefaultAsync(r => r.PageId == page.Id && r.UserId == actor.UserId, ct);
-        return new RatingSummaryDto(enabled, enabled && actor.TokenId is null && page.Kind == PageKind.Page, seesAll, counts?.Positive ?? 0, counts?.Solved ?? 0, null,
+        return new RatingSummaryDto(enabled, enabled && actor.TokenId is null && page.Kind == PageKind.Page, seesAll, counts?.Positive ?? 0, counts?.Solved ?? 0, negative,
             mine is null ? null : new RatingDto(ValueName(mine.Positive), mine.Solved, mine.Reason, mine.Version, mine.CreatedAt, mine.UpdatedAt));
+    }
+}
+
+internal sealed class ListRatingsHandler(KbDbContext db, IAccess access, SpacePermissionService permissions) : IActionHandler<ListRatings, RatingListDto>
+{
+    private Page? _page;
+
+    // Supervisors and Owners of the space only, a held role (question Q-0029): an Admin without one gets 403 like a Reader.
+    public async Task<Problem?> AuthorizeAsync(ActionContext<ListRatings> ctx)
+    {
+        (var problem, _page) = await RatingRules.FindAsync(db, access, ctx.Actor, ctx.Action.PageId, track: false, ctx.Cancel);
+        return problem ?? (await Feedback.ModeratesAsync(permissions, ctx.Actor, _page!.SpaceId, ctx.Cancel) ? null : Problem.Forbidden);
+    }
+
+    public async Task<Outcome<RatingListDto>> HandleAsync(ActionContext<ListRatings> ctx)
+    {
+        var a = ctx.Action;
+        var (limit, offset) = (a.Limit ?? 50, a.Offset ?? 0);
+        if (limit is < 1 or > 200) return Problem.Invalid("limit", "1-200.");
+        if (offset < 0) return Problem.Invalid("offset", "0 or more.");
+        if (a.Value is not (null or "positive" or "negative")) return Problem.Invalid("value", "positive or negative.");
+        var q = db.Ratings.AsNoTracking().Where(r => r.PageId == _page!.Id);
+        if (a.Value is { } v) q = q.Where(r => r.Positive == (v == "positive"));
+        var total = await q.CountAsync(ctx.Cancel);
+        // shortcut: ordered in memory, as SQLite cannot order by a DateTimeOffset; page in the database if a page gathers many thousands of ratings.
+        var rows = (await q.ToListAsync(ctx.Cancel)).OrderByDescending(r => r.UpdatedAt).ThenBy(r => r.Id).Skip(offset).Take(limit).ToList();
+        var ids = rows.Select(r => r.UserId).ToList();
+        var names = await db.Users.Where(u => ids.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.DisplayName, ctx.Cancel);
+        return new RatingListDto(total, limit, offset, [.. rows.Select(r => new RatingEntryDto(new OwnerRefDto("user", r.UserId.ToString(), names.GetValueOrDefault(r.UserId, "")),
+            RatingRules.ValueName(r.Positive), r.Solved, r.Reason, r.Version, r.CreatedAt, r.UpdatedAt))]);
     }
 }
 

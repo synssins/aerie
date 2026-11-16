@@ -47,6 +47,18 @@ describe("page rating", () => {
     expect(calls.some((c) => c.key === "DELETE /pages/p1/ratings/mine")).toBe(true);
   });
 
+  it("shows Supervisors the negative count and every rating", async () => {
+    const entry = { user: { type: "user", id: "u1", name: "Rita" }, value: "negative", solved: false, reason: "Step 4 fails", version: "1.0", createdAt: "2026-11-16T10:00:00Z", updatedAt: "2026-11-16T10:00:00Z" };
+    server({
+      "GET /pages/p1/ratings": () => ({ body: summary({ canSeeAll: true, negative: 1 }) }),
+      "GET /pages/p1/ratings/all": () => ({ body: { total: 1, limit: 50, offset: 0, ratings: [entry] } }),
+    });
+    render(<PageRating pageId="p1" />);
+    expect(await screen.findByText(/1 found it not helpful/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Show ratings" }));
+    expect(await screen.findByText("Step 4 fails")).toBeTruthy();
+  });
+
   it("shows nothing when ratings are off and you have no rating", async () => {
     server({ "GET /pages/p1/ratings": () => ({ body: summary({ enabled: false, canRate: false }) }) });
     const { container } = render(<PageRating pageId="p1" />);

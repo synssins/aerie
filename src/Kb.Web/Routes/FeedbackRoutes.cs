@@ -42,6 +42,9 @@ public static class FeedbackRoutes
         api.MapGet("/pages/{id:guid}/ratings", (Guid id, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new ReadRatingSummary { PageId = id }, ct).ToHttp()).WithAction<ReadRatingSummary>();
 
+        api.MapGet("/pages/{id:guid}/ratings/all", (Guid id, int? limit, int? offset, string? value, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new ListRatings { PageId = id, Limit = limit, Offset = offset, Value = value }, ct).ToHttp()).WithAction<ListRatings>();
+
         api.MapPut("/pages/{id:guid}/ratings/mine", (Guid id, RatingRequest req, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new SaveRating { PageId = id, Value = req.Value, Solved = req.Solved, Reason = req.Reason }, ct).ToHttp()).WithAction<SaveRating>();
 

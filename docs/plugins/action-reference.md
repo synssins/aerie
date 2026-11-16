@@ -1532,6 +1532,17 @@ Read. `ListPrincipals`, answers `IReadOnlyList<PrincipalDto>` ([PrincipalDto](#p
 |---|---|---|
 | Query | `string?` |  |
 
+## rating.list
+
+Read. `ListRatings`, answers `RatingListDto` ([RatingListDto](#ratinglistdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| PageId | `Guid` | required |
+| Limit | `int?` |  |
+| Offset | `int?` |  |
+| Value | `string?` |  |
+
 ## rating.remove
 
 Write. `RemoveRating`, answers `Unit`. Core only.
@@ -5377,6 +5388,66 @@ Enum: `User`, `Group`.
   "version": "text",
   "createdAt": "2026-11-14T10:00:00\u002B00:00",
   "updatedAt": "2026-11-14T10:00:00\u002B00:00"
+}
+```
+
+### RatingEntryDto
+
+| Field | Type |
+|---|---|
+| user | `OwnerRefDto` ([OwnerRefDto](#ownerrefdto)) |
+| value | `string` |
+| solved | `bool` |
+| reason | `string?` |
+| version | `string` |
+| createdAt | `DateTimeOffset` |
+| updatedAt | `DateTimeOffset` |
+
+```json
+{
+  "user": {
+    "type": "text",
+    "id": "text",
+    "name": "text"
+  },
+  "value": "text",
+  "solved": false,
+  "reason": "text",
+  "version": "text",
+  "createdAt": "2026-11-14T10:00:00\u002B00:00",
+  "updatedAt": "2026-11-14T10:00:00\u002B00:00"
+}
+```
+
+### RatingListDto
+
+| Field | Type |
+|---|---|
+| total | `int` |
+| limit | `int` |
+| offset | `int` |
+| ratings | `IReadOnlyList<RatingEntryDto>` ([RatingEntryDto](#ratingentrydto)) |
+
+```json
+{
+  "total": 0,
+  "limit": 0,
+  "offset": 0,
+  "ratings": [
+    {
+      "user": {
+        "type": "text",
+        "id": "text",
+        "name": "text"
+      },
+      "value": "text",
+      "solved": false,
+      "reason": "text",
+      "version": "text",
+      "createdAt": "2026-11-14T10:00:00\u002B00:00",
+      "updatedAt": "2026-11-14T10:00:00\u002B00:00"
+    }
+  ]
 }
 ```
 

@@ -5188,6 +5188,59 @@ paths:
       security:
         - cookieAuth: []
       "x-kb-api-token": "closed"
+  "/api/v1/pages/{id}/ratings/all":
+    get:
+      tags:
+        - "pages"
+      operationId: "rating.list"
+      "x-kb-action": "rating.list"
+      "x-kb-changes-data": false
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        - name: "limit"
+          in: "query"
+          required: false
+          schema:
+            type: "integer"
+            format: "int32"
+            nullable: true
+        - name: "offset"
+          in: "query"
+          required: false
+          schema:
+            type: "integer"
+            format: "int32"
+            nullable: true
+        - name: "value"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/RatingListDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
   "/api/v1/pages/{id}/ratings/mine":
     delete:
       tags:
@@ -8416,6 +8469,42 @@ components:
         updatedAt:
           type: "string"
           format: "date-time"
+    RatingEntryDto:
+      type: "object"
+      properties:
+        user:
+          "$ref": "#/components/schemas/OwnerRefDto"
+        value:
+          type: "string"
+        solved:
+          type: "boolean"
+        reason:
+          type: "string"
+          nullable: true
+        version:
+          type: "string"
+        createdAt:
+          type: "string"
+          format: "date-time"
+        updatedAt:
+          type: "string"
+          format: "date-time"
+    RatingListDto:
+      type: "object"
+      properties:
+        total:
+          type: "integer"
+          format: "int32"
+        limit:
+          type: "integer"
+          format: "int32"
+        offset:
+          type: "integer"
+          format: "int32"
+        ratings:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/RatingEntryDto"
     RatingRequest:
       type: "object"
       properties:

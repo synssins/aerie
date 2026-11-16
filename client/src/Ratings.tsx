@@ -1,8 +1,42 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError } from "./api";
+import { api, ApiError, fmtDateTime } from "./api";
+
+/** For the space's Supervisors and Owners: every rating, who gave it, why and when, newest change first. */
+function AllRatings({ pageId }: { pageId: string }) {
+  const [list, setList] = useState<RatingList | null>(null);
+  const [filter, setFilter] = useState<"" | "positive" | "negative">("");
+  useEffect(() => { void api.get<RatingList>(`/pages/${pageId}/ratings/all${filter ? `?value=${filter}` : ""}`).then(setList).catch(() => setList(null)); }, [pageId, filter]);
+  if (!list) return null;
+  return (
+    <div className="rating-all">
+      <div className="seg" role="radiogroup" aria-label="Show">
+        {([["", "All"], ["negative", "Not helpful"], ["positive", "Helpful"]] as const).map(([v, t]) => (
+          <button key={v} type="button" role="radio" aria-checked={filter === v} className={filter === v ? "on" : ""} onClick={() => setFilter(v)}>{t}</button>
+        ))}
+      </div>
+      <table className="grid-table">
+        <thead><tr><th>Who</th><th>Rating</th><th>Reason</th><th>Version</th><th>When</th></tr></thead>
+        <tbody>
+          {list.ratings.map((r) => (
+            <tr key={r.user.id}>
+              <td>{r.user.name}</td>
+              <td>{r.value === "negative" ? "Not helpful" : r.solved ? "Solved" : "Helpful"}</td>
+              <td className="comment-text">{r.reason}</td>
+              <td>{r.version}</td>
+              <td className="muted">{fmtDateTime(r.updatedAt)}</td>
+            </tr>
+          ))}
+          {list.ratings.length === 0 && <tr><td colSpan={5} className="muted">No ratings.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 /** The caller's own rating and what they see of the page's ratings (contracts/behaviour/ratings.md). Readers never see negatives. */
 export type MyRating = { value: "positive" | "negative"; solved: boolean; reason: string | null; version: string; createdAt: string; updatedAt: string };
+export type RatingEntry = { user: { type: string; id: string; name: string }; value: "positive" | "negative"; solved: boolean; reason: string | null; version: string; createdAt: string; updatedAt: string };
+export type RatingList = { total: number; limit: number; offset: number; ratings: RatingEntry[] };
 export type RatingSummary = { enabled: boolean; canRate: boolean; canSeeAll: boolean; positive: number; solved: number; negative?: number; mine: MyRating | null };
 
 /** Under a page: rate it positive or negative (with an optional reason), or say it solved your problem. */
@@ -11,12 +45,13 @@ export function PageRating({ pageId }: { pageId: string }) {
   const [asking, setAsking] = useState(false);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const load = useCallback(async () => {
     try { const r = await api.get<RatingSummary>(`/pages/${pageId}/ratings`); setS(typeof r?.positive === "number" ? r : null); }
     catch { setS(null); }
   }, [pageId]);
   useEffect(() => { setS(null); setAsking(false); setReason(""); void load(); }, [load]);
-  if (!s || (!s.enabled && !s.mine)) return null;
+  if (!s || (!s.enabled && !s.mine && !s.canSeeAll)) return null;
 
   async function save(body: { value: "positive" | "negative"; solved?: boolean; reason?: string }) {
     setError(null);
@@ -53,6 +88,13 @@ export function PageRating({ pageId }: { pageId: string }) {
       {(s.positive > 0 || s.solved > 0) && (
         <p className="muted small">{s.positive} found this helpful{s.solved > 0 && `; it solved the problem for ${s.solved}`}.</p>
       )}
+      {s.canSeeAll && (
+        <p className="muted small">
+          {s.negative ?? 0} found it not helpful (only the space's Supervisors and Owners see this).{" "}
+          <button type="button" className="link" onClick={() => setShowAll(!showAll)}>{showAll ? "Hide ratings" : "Show ratings"}</button>
+        </p>
+      )}
+      {s.canSeeAll && showAll && <AllRatings pageId={pageId} />}
       {mine && <p className="muted small">Your rating: {mine.value === "negative" ? "not helpful" : mine.solved ? "solved my problem" : "helpful"}. <button type="button" className="link" onClick={() => void remove()}>Remove</button></p>}
       {error && <p className="form-error" role="alert">{error}</p>}
     </section>
