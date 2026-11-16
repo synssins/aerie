@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { AskBox } from "./AiSearch";
 import { ChevronRight, FileText, Folder, House, Megaphone, RotateCcw, Trash2, X } from "lucide-react";
 import { Link, to } from "./Link";
 import { api, fmtDateTime, type Announcement, type BinItem, type DiffLine, type Home, type Me, type Page, type PageVersion, type SearchResponse, type Space } from "./api";
@@ -79,7 +80,7 @@ export function BinView({ space, onHome, onOpenSpace, onRestored, onOpen, onEmpt
 }
 
 /** tag: every page with that tag (in the spaces the person may read), instead of a text search. */
-export function SearchView({ query, tag = null, onHome, onOpen, onTag }: { query: string; tag?: string | null; onHome: () => void; onOpen: (id: string) => void; onTag?: (tag: string) => void }) {
+export function SearchView({ query, tag = null, onHome, onOpen, onTag, aiSearch = false }: { query: string; tag?: string | null; onHome: () => void; onOpen: (id: string) => void; onTag?: (tag: string) => void; aiSearch?: boolean }) {
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [offset, setOffset] = useState(0);
   useEffect(() => { setOffset(0); }, [query, tag]);
@@ -96,6 +97,7 @@ export function SearchView({ query, tag = null, onHome, onOpen, onTag }: { query
         <div className="col">
           <Crumbs onHome={onHome}><Sep /><b>Search</b></Crumbs>
           <div className="titlebar"><h1>{tag ? <>Tag <span className="chip">{tag}</span></> : `“${query}”`}</h1></div>
+          {aiSearch && !tag && <AskBox key={query} initial={query} onOpen={onOpen} />}
           {result && <p className="muted">{result.total === 1 ? "1 result" : `${result.total} results`}</p>}
           <div className="results">
             {result?.hits.map((h) => (
