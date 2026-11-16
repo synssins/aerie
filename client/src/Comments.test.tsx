@@ -64,6 +64,19 @@ describe("page comments", () => {
     expect(calls.some((c) => c.key === "DELETE /comments/c1")).toBe(true);
   });
 
+  it("lets a moderator hide, restore and delete", async () => {
+    const calls = server({
+      "GET /pages/p1/comments": () => ({ body: list({ canModerate: true, total: 2, comments: [comment({ canModerate: true, canDelete: true }), comment({ id: "c2", state: "hidden", canModerate: true, canDelete: true })] }) }),
+      "POST /comments/c1/hide": () => ({ status: 204 }),
+      "POST /comments/c2/restore": () => ({ status: 204 }),
+    });
+    show();
+    expect(await screen.findByText("Hidden by a moderator")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Hide" }));
+    await userEvent.click(screen.getByRole("button", { name: "Restore" }));
+    expect(calls.map((c) => c.key)).toEqual(expect.arrayContaining(["POST /comments/c1/hide", "POST /comments/c2/restore"]));
+  });
+
   it("says why a comment was refused", async () => {
     server({ "GET /pages/p1/comments": () => ({ body: list({}) }), "POST /pages/p1/comments": () => ({ status: 429, body: { status: 429 } }) });
     show();

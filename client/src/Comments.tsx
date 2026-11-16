@@ -49,9 +49,16 @@ function OneComment({ c, onChanged, onReply }: { c: Comment; onChanged: () => Pr
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Your own comment goes for good; a moderator's delete of someone else's can be restored for 30 days.
+  const mine = c.canEdit || (c.canDelete && !c.canModerate);
   async function remove() {
-    if (!await dialogs.confirm({ title: "Delete this comment?", body: "The text is removed for good.", ok: "Delete", danger: true, focusCancel: true })) return;
+    const body = mine ? "The text is removed for good." : "Only the space's Supervisors and Owners will see it. It can be restored for 30 days.";
+    if (!await dialogs.confirm({ title: "Delete this comment?", body, ok: "Delete", danger: true, focusCancel: true })) return;
     try { await api.del(`/comments/${c.id}`); await onChanged(); }
+    catch (err) { setError(why(err)); }
+  }
+  async function moderate(what: "hide" | "restore") {
+    try { await api.post(`/comments/${c.id}/${what}`); await onChanged(); }
     catch (err) { setError(why(err)); }
   }
 
@@ -62,6 +69,7 @@ function OneComment({ c, onChanged, onReply }: { c: Comment; onChanged: () => Pr
         <b>{c.author.name}</b>
         <span className="muted small">{fmtDateTime(c.createdAt)}{c.editedAt && " (edited)"}</span>
         {c.state === "hidden" && <span className="muted small">Hidden by a moderator</span>}
+        {c.state === "deleted" && <span className="muted small">Deleted by a moderator</span>}
       </div>
       {editing ? (
         <Composer label="Edit comment" initial={c.text ?? ""} ok="Save" onCancel={() => setEditing(false)}
@@ -73,7 +81,9 @@ function OneComment({ c, onChanged, onReply }: { c: Comment; onChanged: () => Pr
         <div className="comment-tools">
           {onReply && <button type="button" className="link" onClick={onReply}>Reply</button>}
           {c.canEdit && <button type="button" className="link" onClick={() => setEditing(true)}>Edit</button>}
-          {c.canDelete && <button type="button" className="link" onClick={() => void remove()}>Delete</button>}
+          {c.canModerate && c.state === "visible" && <button type="button" className="link" onClick={() => void moderate("hide")}>Hide</button>}
+          {c.canModerate && c.state !== "visible" && <button type="button" className="link" onClick={() => void moderate("restore")}>Restore</button>}
+          {c.canDelete && c.state !== "deleted" && <button type="button" className="link" onClick={() => void remove()}>Delete</button>}
         </div>
       )}
       {error && <p className="form-error" role="alert">{error}</p>}

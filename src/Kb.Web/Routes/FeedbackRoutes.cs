@@ -37,5 +37,11 @@ public static class FeedbackRoutes
 
         api.MapDelete("/comments/{id:guid}", (Guid id, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new DeleteComment { CommentId = id }, ct).ToHttp()).WithAction<DeleteComment>();
+
+        api.MapPost("/comments/{id:guid}/hide", (Guid id, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new HideComment { CommentId = id }, ct).ToHttp()).WithAction<HideComment>();
+
+        api.MapPost("/comments/{id:guid}/restore", (Guid id, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new RestoreComment { CommentId = id }, ct).ToHttp()).WithAction<RestoreComment>();
     }
 }
