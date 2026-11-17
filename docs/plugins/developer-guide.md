@@ -1,9 +1,9 @@
 # Plugin developer guide
 
 This guide covers what is built today. The last section lists what is planned and not built.
-The examples come from the sample plugin in `plugins/Kb.Plugin.Sample`: readers acknowledge a page, and a Supervisor sees who has.
+The examples come from the sample plugin, [`plugins/Kb.Plugin.Sample`](https://github.com/synssins/aerie/tree/main/plugins/Kb.Plugin.Sample) in the public repository: readers acknowledge a page, and a Supervisor sees who has.
 
-Related: [building and packaging](packaging.md) (project file, package layout, names, what an install checks), [manifest reference](manifest-reference.md), [action reference](action-reference.md) (every action, its fields, and every type with an example of its JSON), [API reference](../api-reference.md), [example: an outbound-headers plugin](example-outbound-headers.md), [admin guide](admin-guide.md).
+Related: [building and packaging](packaging.md) (project file, package layout, names, what an install checks), [manifest reference](manifest-reference.md), [action reference](action-reference.md) (every action, its fields, and every type with an example of its JSON), [page content](#page-content) (the format of `ContentJson`), [testing a plugin](#testing-a-plugin), [API reference](../api-reference.md), [example: an outbound-headers plugin](example-outbound-headers.md), [admin guide](admin-guide.md).
 
 ## What a plugin is
 
@@ -440,8 +440,9 @@ export default function (kb) {
 }
 ```
 
-- Take React from `/shared/v1/react.js` (also `/shared/v1/react-jsx-runtime.js` and `/shared/v1/react-dom.js`), and the editor from `/shared/v1/tiptap-react.js`. They hand back the app's own copies. A script that brings its own React breaks hooks; a node made with another copy of the editor is not a node of this one.
-- The app serves only the `ui/` folder of a loaded plugin, to people who are signed in, and only these file types: js, css, json, map, svg, png, jpg, webp, woff2.
+- Take React from `/shared/v1/react.js` (also `/shared/v1/react-jsx-runtime.js` and `/shared/v1/react-dom.js`), and the editor from `/shared/v1/tiptap-react.js`. They hand back the app's own copies. A script that brings its own React breaks hooks; a node made with another copy of the editor is not a node of this one. [What each one exports](#the-shared-modules).
+- The app serves only the `ui/` folder of a loaded plugin, to people who are signed in, and only these file types: `.js`, `.css`, `.json`, `.map`, `.svg`, `.png`, `.jpg`, `.webp`, `.woff2`. Any other file of the folder answers 404: `.mjs`, `.cjs`, `.jpeg`, `.gif`, `.woff`, `.ttf`, `.html` and `.wasm` among them. The script the manifest names must end in `.js`.
+- So a library that is published as a set of `.mjs` modules cannot be loaded as it is: the browser asks for files the app does not serve. Bundle it into your own `.js` files with a bundler, or use the library's single-file browser build (one `.js` file) and load it with a `<script>` element whose `src` is `new URL("./lib.js", import.meta.url).href`.
 - The browser keeps the script itself for good: its address carries the package's hash. Every other file of the folder (a stylesheet, a module the script imports) is asked for again each time, so a new package is seen at once.
 - The default export may return a promise. The app does not wait for it before it starts the next plugin's script; if it fails later, that is written to the server's log.
 - `kb.slots.add(slot, item)` adds to a named place of a screen. Today's slots: `page.tools` (buttons in the page's tool row: `id`, `label`, `onClick(ctx)`), `page.panel` (parts of the page's right panel: `id`, `title`, `render(ctx)`), both with the context `{ page }`, `editor.toolbar` (buttons of the editor's toolbar, with the context `{ editor }`), and `header.gear` (entries at the end of the gear menu in the header: `id`, `label`, `onClick()`; the way to a screen of the plugin's own). `order` places an item; `when(ctx)` shows it only when it answers true.
@@ -455,6 +456,110 @@ export default function (kb) {
 - A script runs in every signed-in person's browser with that person's session. It can do in the browser whatever that person can.
 
 The rules of the app's screens hold for a plugin's parts: no help text and no placeholder text; the right panel holds facts about the thing, not controls for it beyond what the app puts there; use the app's class names (`tb` for a button, `muted`, `small`).
+
+### The shared modules
+
+Each module under `/shared/v1/` re-exports every named export of one library, at the version the app is built with, and its default export when the library has one. They are written when the app is built, from the installed packages.
+
+| Module | Library | What it has |
+|---|---|---|
+| `/shared/v1/react.js` | `react` 19 | Everything of React: `createElement`, `Fragment`, `useState`, `useEffect`, `useRef`, `useMemo`, `useCallback`, `useContext`, `createContext`, `memo`, `lazy`, `Suspense`, ... |
+| `/shared/v1/react-jsx-runtime.js` | `react/jsx-runtime` | `jsx`, `jsxs`, `Fragment`: what a JSX compiler's output imports. |
+| `/shared/v1/react-dom.js` | `react-dom` | `createPortal`, `flushSync`, ... |
+| `/shared/v1/tiptap-react.js` | `@tiptap/react` 3.33.0 | The editor, with everything of `@tiptap/core`: `Node`, `Mark`, `Extension`, `mergeAttributes`, `InputRule`, `PasteRule`, `nodeInputRule`, `markInputRule`, and for a node drawn by React `ReactNodeViewRenderer`, `NodeViewWrapper`, `NodeViewContent`, `useEditor`, `EditorContent`. |
+
+- A node's own `addNodeView()` is part of `Node.create(...)`, so it can return a node view that is a plain DOM element (`{ dom }`) or use `ReactNodeViewRenderer`.
+- `@tiptap/pm` (ProseMirror) is not shared, so a plugin cannot import `Plugin` or `PluginKey` from it. A copy of your own of ProseMirror does not work with the app's editor.
+- The editor's own extensions (StarterKit, tables, task lists, images, code blocks) are not shared. They are part of every editor already.
+- The library versions are those of the app you run, and change with it.
+
+## Page content
+
+A page's content is the `ContentJson` of `page.create`, `page.save` and `PageDto`: a string holding the editor's document as JSON, in the editor's (TipTap 3, ProseMirror) document format.
+A plugin that reads or changes a page works on that JSON.
+
+- The top is one node of type `doc`. `page.create` and `page.save` refuse anything else ("Not an editor document."), and a string over 5,000,000 characters.
+- A node is an object: `type` (its name), `attrs` (its attributes, optional), `content` (its child nodes, optional). A text node is `{ "type": "text", "text": "...", "marks": [...] }`; a mark is `{ "type": "bold" }` or, with attributes, `{ "type": "link", "attrs": { "href": "..." } }`.
+- The server stores the string as it was sent and never rewrites it. A node of a type it does not know is kept, and is read as a plugin's node ([below](#editor-blocks)).
+- A page made with `ContentJson` null holds `{"type":"doc","content":[]}`.
+
+The node types the editor has by itself. Any other type is a plugin's.
+
+| Type | Holds | Attributes the server reads |
+|---|---|---|
+| `doc` | blocks | |
+| `paragraph` | inline content | |
+| `heading` | inline content | `level`: the editor writes 2, 3 or 4; the server reads 1 to 6, and 2 when it is missing |
+| `bulletList`, `orderedList` | `listItem` | |
+| `listItem` | blocks: a `paragraph` first, then more blocks or a nested list | |
+| `taskList` | `taskItem` | |
+| `taskItem` | like `listItem` | `checked`: true or false |
+| `blockquote` | blocks | |
+| `codeBlock` | text only, no marks | `language`: the language's name (`powershell`, `bash`, `json`, `plaintext`, ...) |
+| `table` | `tableRow` | |
+| `tableRow` | `tableHeader` or `tableCell` | |
+| `tableHeader`, `tableCell` | blocks, usually one `paragraph` | |
+| `horizontalRule` | nothing | |
+| `image` | nothing | `src`: `/api/v1/images/<id>` for an image stored in the space; `alt`; `width` in pixels |
+| `hardBreak` | nothing: a line break inside a paragraph | |
+| `text` | `text`, `marks` | |
+
+The marks the editor has by itself: `bold`, `italic`, `underline`, `strike`, `code`, `link` (`href`). The Markdown outputs drop `underline`; the Word and PDF exports keep every one.
+The editor writes more attributes than the server reads (an ordered list's `start`, a cell's `colspan`, `rowspan` and `colwidth`, an image's `title` and `height`). They are stored and shown by the editor; search, Markdown and exports do not use them.
+
+A small complete document: a heading, a paragraph with a bold word, a numbered list, a code block and a table.
+
+```json
+{
+  "type": "doc",
+  "content": [
+    { "type": "heading", "attrs": { "level": 2 }, "content": [ { "type": "text", "text": "Restart the service" } ] },
+    { "type": "paragraph", "content": [
+      { "type": "text", "text": "Do this on " },
+      { "type": "text", "marks": [ { "type": "bold" } ], "text": "each" },
+      { "type": "text", "text": " server." } ] },
+    { "type": "orderedList", "content": [
+      { "type": "listItem", "content": [ { "type": "paragraph", "content": [ { "type": "text", "text": "Stop the service." } ] } ] },
+      { "type": "listItem", "content": [ { "type": "paragraph", "content": [ { "type": "text", "text": "Start it again." } ] } ] } ] },
+    { "type": "codeBlock", "attrs": { "language": "powershell" }, "content": [ { "type": "text", "text": "Restart-Service KbWorker" } ] },
+    { "type": "table", "content": [
+      { "type": "tableRow", "content": [
+        { "type": "tableHeader", "content": [ { "type": "paragraph", "content": [ { "type": "text", "text": "Server" } ] } ] },
+        { "type": "tableHeader", "content": [ { "type": "paragraph", "content": [ { "type": "text", "text": "Port" } ] } ] } ] },
+      { "type": "tableRow", "content": [
+        { "type": "tableCell", "content": [ { "type": "paragraph", "content": [ { "type": "text", "text": "app01" } ] } ] },
+        { "type": "tableCell", "content": [ { "type": "paragraph", "content": [ { "type": "text", "text": "8080" } ] } ] } ] } ] }
+  ]
+}
+```
+
+- An AI import drafts its pages with the same types: `heading`, `paragraph`, `bulletList`, `orderedList` (numbered steps), `listItem`, `codeBlock`, `blockquote` (notes and warnings), `table` with `tableHeader` and `tableCell`, `image`, `hardBreak`, and the marks `bold`, `italic` and `code`. What is stored is the content the importer reviewed and accepted.
+- A page is stored as its writer sent it, by the editor or by anyone who calls the API. Read it with care: a node may lack `content`, hold `null`, or be of a type you do not expect. The core's own readers walk into the `content` of any node they do not know, so its text is never lost.
+- There is no chart or diagram block in the core, and no format for one. A plugin that wants charts or diagrams brings its own: an [editor block](#editor-blocks) of its own type, the library that draws it in the browser (in its `ui/` folder), and a renderer for the server.
+
+To make a page, send `page.create` with `Kind` set to `"Page"` or `"Folder"`, written exactly so: the names are case-sensitive, and any other value is refused ("Folder or Page."). A folder holds no content: its `ContentJson` is ignored. `ParentId` must be a folder of the same space, or null for the top of the space.
+
+### Adding an image or an attachment
+
+`image.add` and `attachment.add` take the file as an `UploadContent`. It is an abstract class: a plugin derives its own and passes it.
+
+```csharp
+public sealed class BytesFile(string name, byte[] data) : UploadContent
+{
+    public override string? FileName => name;
+    public override long? Length => data.Length;
+    // Every call starts at the first byte.
+    public override Task<Stream> OpenReadAsync(CancellationToken ct) => Task.FromResult<Stream>(new MemoryStream(data, writable: false));
+}
+
+var image = await bus.SendAsync(new AddImage { SpaceId = spaceId, File = new BytesFile("chart.png", png) }, ct);
+// image.Value.Url is "/api/v1/images/<id>": the src of an image node of a page in that space.
+```
+
+- Both actions record who added the file, so they need a person: they answer 401 to a plugin's own work (a job, an after handler, a health check). Send them where the actor is a person (a before hook, a handler, a route), with that person's rights: they need the right to create and edit pages in the space.
+- `image.add` takes PNG, JPEG, GIF or WebP, 20 MB at most. An SVG is not an image: attach it, or draw it in the browser.
+- `attachment.add` takes any file up to the size an Admin set (Administration > Uploads).
+- A before hook on `page.create` that adds an image runs before the page is made. If the page is then refused, the image is stored and no page shows it.
 
 ## Editor blocks
 
@@ -528,6 +633,21 @@ private static string Text(JsonElement node) =>
 - Inside a table cell a plugin's node is read as its text only (`Plain`, or the text inside it): a cell is one line of text in Markdown and in exports.
 - A `DocTable` a renderer answers is part of the Word and PDF export, but it is not one of the page's tables in the Export menu (CSV, Excel). A `DocImage` is drawn only for an image the page itself shows in an image of the editor.
 - Pages saved before the plugin was installed keep their old search words until they are saved again or an Admin selects Rebuild index (Administration > Search).
+
+`MarkdownLines` is what the Markdown outputs show: history and its diffs, the AI assist and import diffs, and the page an agent reads (`page.markdown`). `Blocks` is what the Word and PDF exports show. Neither is used for the other: a node that should look like code in both answers a fenced block in `MarkdownLines` and a `DocCode` in `Blocks`.
+The blocks a renderer can answer in `Blocks`:
+
+| Block | Word | PDF |
+|---|---|---|
+| `DocParagraph(Runs, Heading = 0, Marker = null, Indent = 0, Quote = false)` | A paragraph. `Heading` 1 to 6 is a bold heading in a larger size; `Marker` is put before the text (a bullet, `1.`); `Indent` indents by list level; `Quote` makes it italic with a grey line at its left. | The same; a quote is italic and grey. |
+| `DocRun(Text, Bold, Italic, Underline, Strike, Code, Href)` | One run of text in a paragraph. `Code` sets Consolas. `Href` is a link when it is an absolute `http`, `https` or `mailto` address, else blue underlined text. A line break in `Text` is a line break. | The same, with Courier New for `Code`. |
+| `DocCode(Language, Text)` | Each line of `Text` as a line in Consolas, 9.5 pt, on a grey background, then an empty paragraph. | One paragraph in Courier New, 9 pt, on a light grey background; leading spaces are kept and a tab is four spaces. |
+| `DocTable(Rows, HeaderRow)` | A table with a border; the first row bold when `HeaderRow`. | A table of equal columns across the text width. |
+| `DocImage(ImageId, Alt, Width)` | The stored image with that id, when the page itself shows it in an `image` node. Otherwise the text `[image: <Alt>]`. | The same; a GIF is shown as its alt text. |
+| `DocRule()` | A horizontal line. | A horizontal line. |
+
+- `DocCode.Language` is not used by the Word or PDF export: there is no syntax colouring. It must not be null (use `"plaintext"`); a block with a null in it gives the placeholder.
+- The core's own `codeBlock` node gives a `DocCode` with its `language` attribute, and in Markdown a fenced code block with the language after the opening fence.
 
 **Content is never lost.** The server stores a page as the editor sent it and never rewrites it. An editor that does not know a node (the plugin is disabled, removed, or its script failed) shows a box with the type's name. The box can be moved or deleted, not edited, and a save sends the content back as it was. When the plugin is back, so is the block.
 Text with a mark the editor does not know shows as plain text and can be edited; the mark stays on it and is saved with it. Among several marks on one text its place may change, which changes nothing a reader sees.
@@ -655,7 +775,22 @@ public sealed class MyScanner : IMalwareScanner
 - Each scanner gets its own stream of the file's bytes.
 - Attachments and images added to pages directly are not scanned today; only imports are.
 
-Imports are core-only: a plugin cannot hook them, read them or send them to the model. Their pages are made by the normal actions (`page.create`, `page.save`, `image.add`, `attachment.add`) as the importer, so hooks on those run.
+### What a plugin sees of an import
+
+The import actions (`import.*`) are core-only: a plugin cannot hook them, send them or read their data.
+**A plugin cannot read the uploaded file, the text the app read from it, or the AI's draft.** It sees only what the importer accepts, when the import sends the normal actions as the importer, and so runs the hooks on those:
+
+| The importer accepts | Actions sent, in this order |
+|---|---|
+| A draft as new page(s) | `page.create` with `Kind` `"Folder"`, when the importer typed a new folder's name. Then, for each picture the page shows, `image.add` into the target space. Then `page.create` with `Kind` `"Page"`, for each page. |
+| A draft into an existing page (`AcceptRequest.updatePageId`) | `image.add` for each picture, then `page.save` on that page: a major version (`Major` true), `BaseVersion` the page's current version, `Note` `"Imported from <file names>"`. |
+| Either, with details | `page.details.save` (core-only) for each page. |
+| Either, with "attach the originals" | `attachment.add` on the first page, once for each original file. |
+
+- `ContentJson` is the draft as the importer accepted it ([page content](#page-content)); its pictures already point to the space's images (`/api/v1/images/<id>`). A before hook on `page.create` or `page.save` may change it, as for any caller.
+- The uploaded file reaches a plugin only when the importer chooses to attach the originals: a before hook on `attachment.add` then gets it in `ctx.Action.File` and can read it (`OpenReadAsync`). That happens after the pages are made.
+- Once an item is accepted or discarded, the app deletes its stored files and the text read from them.
+- A hook cannot tell an import's `page.create` or `page.save` from a person's: [below](#where-the-call-comes-from).
 
 ## Who the caller is
 
@@ -667,6 +802,23 @@ Every action carries an actor (`ctx.Actor`). It is one of:
 - **Nobody** (`ActorKind.Anonymous`): someone not signed in. They read only spaces open to Anyone that are not sensitive.
 
 `IAccess` answers for all of them; ask it rather than checking the kind yourself.
+
+### Where the call comes from
+
+`ctx.Actor.Source` says how the action was started. The values:
+
+| `Source` | `Kind` | When |
+|---|---|---|
+| `web` | `User` or `Anonymous` | Every action started by a request: the browser, an API token, a plugin's route, and every action the core sends while it handles a request (an import's `page.create`, for example). |
+| `job` | `Plugin` | A plugin's job (`IKbJob`), and every action it sends. |
+| `queue` | `Plugin` | A plugin's after handler, and every action it sends. |
+| `health` | `Plugin` | A plugin's health check, and every action it sends. |
+
+`ctx.Actor.PluginId` names the plugin for `job`, `queue` and `health`. `ctx.Name` is the action's own name (`page.create`), never the action that sent it.
+
+**A hook cannot tell a page an import makes from a page a person makes.** The import sends `page.create` and `page.save` as the importer, with source `web`, inside the importer's request, exactly as the editor does.
+Content does not tell them apart either: the app's editor stores nothing for a new page until its first save, which is a `page.create` with everything the person wrote.
+The only mark an import leaves on the action is the `Note` of an import into an existing page (`"Imported from ..."`), and a person can type the same note.
 
 ### Spaces open to more people
 
@@ -689,6 +841,7 @@ A plugin can serve other plugins.
 
 - It lists the assemblies it shares in `exports`, by assembly name without `.dll`. A plugin that names it in `requires` sees those assemblies, and no other plugin's.
 - It defines an extension point as a record. A dependent adds one with `app.Add(new TheRecord(...))`. The library reads them from `IRegistrations.All<TheRecord>()`.
+  `IPluginApp.Add<T>(T registration)` and `All<T>()` require `T : class`: make the extension point a `record` or a `class`, not a `record struct`. A stand-in `IPluginApp` in a test must declare the same constraint.
 - It defines an action. A dependent hooks it exactly as it would hook a core action.
 - A required plugin cannot be disabled or removed while a plugin that requires it is enabled.
 
@@ -717,6 +870,25 @@ The plugin stays disabled until an Admin selects Enable. Uploading a new version
 - `minKbVersion`: the lowest app version the plugin runs on.
 
 The contract and the app are at 0.3.0, and can still change before 1.0.0. 0.3.0 added `IOutboundRequestDecorator`, the inventory sync action and its records, and page details on `PageDto`; a plugin that uses them says `"abstractionsVersion": "0.3.0"`. See [packaging](packaging.md#versions).
+
+Editor blocks (`EditorNode`, `NodeRenderer` and the `Doc*` blocks) and the browser script (`ui`, `uiApiVersion` 1.0.0) were added while the contract was still numbered 0.2.0, so 0.2.0 does not say whether an app has them. A plugin that uses them says `"abstractionsVersion": "0.3.0"`: every app at 0.3.0 has them.
+
+## Testing a plugin
+
+A plugin's own tests run without the app, as an ordinary test project that references the plugin and the contract. The [outbound-headers example](example-outbound-headers.md) has one.
+
+What a test can build and call directly:
+
+- Extension points (`IMalwareScanner`, `IOutboundRequestDecorator`, `IEmailSender`, `IAuditSink`, ...): plain interfaces.
+- After handlers: `AfterAsync(action, result, e, ct)` takes the action record, its result and an `ActionEvent`, which all have public constructors.
+- Jobs (`RunAsync(ct)`), with a stand-in `IActionBus` that answers the actions the job sends. `Outcome<T>` converts from a value or a `Problem`.
+- Renderers: call `Renderer.Plain`, `MarkdownLines` and `Blocks` with a node parsed by `JsonDocument.Parse(...).RootElement`.
+- `Configure`, with a stand-in `IPluginApp` whose `Add<T>(T registration) where T : class` keeps what it is given; check the `BeforeHook`, `AfterHandler`, `ActionHandler` and `NodeRenderer` records.
+
+What a test cannot build: `ActionContext<T>` and `Actor` have no public constructor. Only the app makes them, so a plugin cannot act as someone else. A before hook, a result filter or an action handler therefore cannot be called from a plugin's test as it is.
+Keep such a class thin: put the decision in a method that takes the action (and what it needs) and returns the changed action or the `Problem`, test that method, and leave the hook to call it and set `ctx.Action`.
+
+The whole plugin, hooks included, is tested in the app: install the package on a test instance, or run the repository's package test ([packaging](packaging.md#check-a-package-with-the-apps-tests)), which installs it in a throwaway database and checks that it loads.
 
 ## Planned, not built
 

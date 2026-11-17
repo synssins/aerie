@@ -8,7 +8,8 @@ Related: [developer guide](developer-guide.md), [manifest reference](manifest-re
 ## What you need
 
 - The .NET 10 SDK. A plugin targets `net10.0`, the app's own framework.
-- `Kb.Plugins.Abstractions`: the contract, the one assembly of the app a plugin compiles against. There is no NuGet package. Take it from the public repository, at the tag or commit of the app version you build for. Either:
+- `Kb.Plugins.Abstractions`: the contract, the one assembly of the app a plugin compiles against. There is no NuGet package, and the repository has no release tags yet. Take the DLL the app itself runs, or build it from the repository. One of:
+  - **From the installed app.** Every installation has the exact contract it runs, `Kb.Plugins.Abstractions.dll`, in the app's folder: `/app/` in the container image (copy it out of a running container), the site's folder on IIS. `Kb.Plugins.Data.dll` is beside it. This is the surest way to match the app you install on.
   - **Project reference.** Clone the repository and reference `src/Kb.Plugins.Abstractions/Kb.Plugins.Abstractions.csproj`. This is how the plugins in `plugins/` are built.
   - **DLL reference.** Build the contract once and reference the DLL:
 
@@ -17,7 +18,7 @@ Related: [developer guide](developer-guide.md), [manifest reference](manifest-re
     dotnet build aerie/src/Kb.Plugins.Abstractions -c Release -o lib
     ```
 
-    `lib/Kb.Plugins.Abstractions.dll` is the file to reference.
+    `lib/Kb.Plugins.Abstractions.dll` is the file to reference. Built from `main`, it is the newest contract, which may have members the app you run does not have yet.
 - `Kb.Plugins.Data` as well, only when the plugin has tables of its own (`src/Kb.Plugins.Data`). It brings Entity Framework Core.
 - Reference nothing else of the app. `Kb.Core`, `Kb.Data` and `Kb.Web` are not part of the contract and change without notice.
 
@@ -91,7 +92,7 @@ example.gateway-headers-1.0.0.kbplugin
 - `kb-plugin.json` is at the top of the zip, not inside a folder. The zip holds the files of the build output, not the folder that holds them.
 - The main assembly is at the top, named by the manifest's `assembly` (default `<id>.dll`). Its file name has no `/`, `\` or `:`.
 - Libraries are at the top too: an assembly is found as `<assembly name>.dll` in the plugin's folder.
-- `ui/` holds the browser script and the files it loads. Only these types are served from it: js, css, json, map, svg, png, jpg, webp, woff2.
+- `ui/` holds the browser script and the files it loads. Only these types are served from it: `.js`, `.css`, `.json`, `.map`, `.svg`, `.png`, `.jpg`, `.webp`, `.woff2`. Anything else answers 404, `.mjs` and `.jpeg` included: bundle a library shipped as `.mjs` modules into `.js` files, or use its single-file browser build ([developer guide](developer-guide.md#screens)).
 - Entry names use `/` between folders, as the zip format says. No entry name is absolute, holds `..`, or has a `:`.
 - Folders may be stored as entries of their own (`ui/`) or not.
 - Names are compared without regard to case.
@@ -209,7 +210,13 @@ The [manifest reference](manifest-reference.md#what-refuses-an-install) lists ev
 | `uiApiVersion` | The browser script API, **1.0.0**. Needed when the plugin has a script. |
 
 What came with 0.3.0: `IOutboundRequestDecorator` (headers on the AI service's calls), the inventory sync action and its records, page details on `PageDto`. A plugin that uses them says `"abstractionsVersion": "0.3.0"`, so an older app refuses it instead of failing at start.
-The contract can still change before 1.0.0. Build against the version of the app you install on.
+Editor blocks and the browser script came while the contract was still numbered 0.2.0: a plugin that uses them says `"abstractionsVersion": "0.3.0"` too.
+
+The contract can still change before 1.0.0, and the app checks only the number: two builds of the app at 0.3.0 may differ in what the contract has. In practice:
+
+1. Compile against the `Kb.Plugins.Abstractions.dll` taken from the installation you will install on ([above](#what-you-need)). A member your plugin uses that the app does not have is then a compile error, not a failure at start.
+2. Set `abstractionsVersion` and `minKbVersion` to that app's version, **0.3.0** today.
+3. After the app is updated, build again against the new DLL. A plugin that no longer fits is "Disabled by core" at start, with the reason on the Plugins screen.
 
 ## Check a package with the app's tests
 
