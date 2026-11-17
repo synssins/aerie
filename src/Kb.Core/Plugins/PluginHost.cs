@@ -189,11 +189,13 @@ public static class PluginRuntime
 internal sealed class PluginContext(PluginManifest manifest, PluginSettingsSnapshot settings) : IPluginContext
 {
     public PluginManifest Manifest { get; } = manifest;
-    public string? GetSetting(string key) =>
+    // The settings the app adds for a sign-in method (client id and secret) are the app's: the plugin reads none of them.
+    public string? GetSetting(string key) => SignInSettings.IsReserved(key) ? null :
         settings.Get(Manifest.Id, key) ?? Manifest.Settings.FirstOrDefault(d => d.Key == key && !d.Secret && d.Type != "secret")?.Default;
 
     public Task<string?> GetSecretAsync(string key, CancellationToken ct = default) =>
-        settings.SecretReader is { } read ? read(Manifest.Id, key, ct) : throw new InvalidOperationException("Secrets are read after startup, not while a plugin is configured.");
+        SignInSettings.IsReserved(key) ? Task.FromResult<string?>(null)
+        : settings.SecretReader is { } read ? read(Manifest.Id, key, ct) : throw new InvalidOperationException("Secrets are read after startup, not while a plugin is configured.");
 }
 
 /// <summary>Blocks plugin HTTP calls to hosts not declared in the manifest.</summary>

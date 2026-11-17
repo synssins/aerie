@@ -54,6 +54,20 @@ After installing or updating a plugin that adds blocks, select Rebuild index (Ad
 Select the gear left of a plugin's name (or its row) to open its page. It holds everything about that plugin: its description and state, Disable or Enable and Remove, its settings, the minimum roles of its permissions, and on the right what it provides, needs and reads, its health checks and jobs.
 A plugin may add panels of its own below its settings, for what it keeps (a list of files it was given, for example). Only Admins see the page; a panel that fails says so and the rest of the page works.
 
+## Sign-in methods
+
+A plugin may add a sign-in method: a button on the sign-in screen ("Sign in with ...") that signs people in through an OpenID Connect provider. The app runs the sign-in and checks the provider's answer; the plugin only says where the provider is.
+
+To set one up:
+
+1. Open the plugin's page. It shows the method's redirect address, the address the provider sends people back to. It is this site's address as you reached it, so open the page through the address people use.
+2. At the provider, register this app as a web application with that redirect address. Note the client ID and client secret the provider gives.
+3. On the plugin's page, set **Client ID** and **Client secret**, and save. The button shows on the sign-in screen from then on. The secret is stored encrypted and never shown again.
+4. Decide **New accounts**. Off (the default): only people who already have an account here sign in, matched by the email address the provider verified, and linked to that provider for good at their first sign-in. On: a person the provider vouches for who has no account gets one, never an Administrator and in no space; give them roles as for anyone.
+
+An account that is turned off is refused. An Administrator still gives their one-time code. Password sign-in and the break-glass account keep working whatever a plugin does; in [Safe Mode](#safe-mode) no plugin is loaded, so only they are. Deleting an account removes its link: the person is unknown here again.
+The audit log records each start (`auth.method.start`), success (`auth.signin` with the method), refusal (`auth.signin.failed` with the reason), and each account linked (`user.signin.link`) or made (`user.signin.create`).
+
 ## Settings and secrets
 
 A plugin's settings are on its page. A secret that is set shows as dots. Its value is never loaded into the browser; type a new value to replace it.
@@ -123,6 +137,6 @@ Select a plugin to see its health checks and its jobs (last run, next run, last 
 | `plugin.remove` | A plugin was removed. |
 | `plugin.data.delete` | Its tables were dropped: with the removal ("Delete data" ticked), or later from the list. |
 | `plugin.lock.release` | |
-| `plugin.settings.change` | Carries the keys that changed. |
+| `plugin.settings.change` | Carries the keys that changed. A sign-in method's client id and secret are among them as `signIn.<method>.clientId` and `signIn.<method>.clientSecret`, never their values. |
 | `plugin.permissions.change` | The minimum role of a space permission was changed. Carries the keys and roles. |
 | `user.permissions.set` | A global permission was given to a person or taken back. |

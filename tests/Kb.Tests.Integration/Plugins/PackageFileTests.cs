@@ -10,7 +10,7 @@ namespace Kb.Tests.Integration.Plugins;
 /// <summary>
 /// A package built the way the developer guide says (tools/pack-plugin.ps1), installed through the Plugins screen's route,
 /// loaded after the restart, used, then removed. KB_PLUGIN_PACKAGE names the .kbplugin file; without it the test does nothing.
-/// For the sample: KB_PLUGIN_PACKAGE=artifacts/plugins/kb.sample-2.3.1.kbplugin.
+/// For the sample: KB_PLUGIN_PACKAGE=artifacts/plugins/kb.sample-2.4.0.kbplugin.
 /// </summary>
 public sealed class PackageFileTests : IAsyncLifetime
 {

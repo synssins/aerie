@@ -107,8 +107,8 @@ The complete manifest of this package:
   "publisher": "Example Ltd",
   "description": "Adds two secret headers to the AI service's calls to one host.",
   "assembly": "Example.GatewayHeaders.dll",
-  "minKbVersion": "0.7.0",
-  "abstractionsVersion": "0.7.0",
+  "minKbVersion": "0.8.0",
+  "abstractionsVersion": "0.8.0",
   "extensionPoints": ["outbound-request-decorator"],
   "settings": [
     { "key": "Host", "label": "Host the headers are sent to", "type": "text", "required": true },
@@ -205,10 +205,11 @@ The [manifest reference](manifest-reference.md#what-refuses-an-install) lists ev
 | Field | Meaning |
 |---|---|
 | `version` | Your plugin's version. An update must be higher than the installed one. To go back, remove the plugin (keep its data) and upload the older package. |
-| `abstractionsVersion` | The contract version you built against. The app's is **0.7.0**. Before 1.0.0 a plugin fits when its major number is the app's and it is not higher: a plugin built for 0.1.0 to 0.7.0 runs on 0.7.0. |
-| `minKbVersion` | The lowest app version you run on. The app is **0.7.0**. |
+| `abstractionsVersion` | The contract version you built against. The app's is **0.8.0**. Before 1.0.0 a plugin fits when its major number is the app's and it is not higher: a plugin built for 0.1.0 to 0.8.0 runs on 0.8.0. |
+| `minKbVersion` | The lowest app version you run on. The app is **0.8.0**. |
 | `uiApiVersion` | The browser script API, **1.1.0** (1.0.0 scripts run as they did). Needed when the plugin has a script. |
 
+What came with 0.8.0: sign-in methods, a button on the sign-in screen for an OpenID Connect provider, with the sign-in run by the app ([developer guide](developer-guide.md#sign-in-methods)). The provider's hosts go in `outboundHosts`. A plugin that uses them says `"abstractionsVersion": "0.8.0"`. Setting keys starting with `signIn.` are the app's from 0.8.0 on, and a manifest that declares one is refused.
 What came with 0.7.0: a setting's help, default, unit, bounds and option labels, and the plugin's own page in Administration > Plugins, where its script adds panels and uploads files to its routes ([developer guide](developer-guide.md#panels-on-the-plugins-own-page)). A plugin that uses them says `"abstractionsVersion": "0.7.0"`, and `"uiApiVersion": "1.1.0"` for the script.
 What came with 0.6.0: file kinds a plugin claims, so a file of a kind the app does not read reaches the plugin's import contributor ([developer guide](developer-guide.md#file-kinds-the-app-does-not-read)). A plugin that uses them says `"abstractionsVersion": "0.6.0"`.
 What came with 0.5.0: draft contributors, which read an import's draft and say where their nodes go ([developer guide](developer-guide.md#adding-to-the-draft-from-its-text-draft-contributors)). A plugin that uses them says `"abstractionsVersion": "0.5.0"`.

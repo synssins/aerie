@@ -121,7 +121,9 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
-        builder.Entity<KbUser>().HasIndex(u => u.ExternalId);
+        // A sign-in method links a person by issuer plus subject: one account per link.
+        builder.Entity<KbUser>().Property(u => u.ExternalIssuer).HasMaxLength(400);
+        builder.Entity<KbUser>().HasIndex(u => new { u.ExternalIssuer, u.ExternalId }).IsUnique();
         builder.Entity<KbGroup>().HasIndex(g => g.Key).IsUnique();
         builder.Entity<KbGroupMember>().HasKey(m => new { m.GroupId, m.UserId });
         builder.Entity<KbGroupMember>().HasIndex(m => m.UserId);

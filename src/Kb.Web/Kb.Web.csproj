@@ -5,6 +5,7 @@
   <ItemGroup>
     <PackageReference Include="ExcelDataReader" />
     <PackageReference Include="MimeKit" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
     <PackageReference Include="PdfPig" />
     <ProjectReference Include="..\Kb.Core\Kb.Core.csproj" />
     <ProjectReference Include="..\Kb.Data\Kb.Data.csproj" />

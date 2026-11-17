@@ -251,6 +251,20 @@ describe("Plugins", () => {
     expect(await screen.findByText("Restarting")).toBeTruthy();
     expect(calls.find((c) => c.key === "POST /plugins")?.body).toBeInstanceOf(File);
   });
+  it("shows a sign-in method's redirect address on its plugin's page, with its settings in the form", async () => {
+    const withMethod = plugin({
+      ...probe, signInMethods: [{ id: "kb.test.probe/corp", name: "Sign in with Corp ID", redirectAddress: "https://kb.example/api/v1/auth/methods/kb.test.probe/corp/callback" }],
+      settings: [setting({ key: "signIn.corp.clientId", label: "Client ID" }), setting({ key: "signIn.corp.clientSecret", label: "Client secret", secret: true })],
+    });
+    server({ "GET /plugins": list([withMethod]), "GET /plugins/kb.test.probe/settings": () => ({ body: { values: {}, secretsSet: [] } }) });
+    show();
+    await userEvent.click(await screen.findByRole("button", { name: "Settings of Test probe" }));
+    const address = await screen.findByLabelText("Redirect address of Sign in with Corp ID");
+    expect((address as HTMLInputElement).value).toBe("https://kb.example/api/v1/auth/methods/kb.test.probe/corp/callback");
+    expect((address as HTMLInputElement).readOnly).toBe(true);
+    expect(await screen.findByLabelText("Client ID")).toBeTruthy();
+  });
+
   it("opens a plugin's page from the gear left of its name", async () => {
     server({ "GET /plugins": list([plugin({ description: "Sends email." }), probe]), "GET /plugins/kb.test.probe/settings": () => ({ body: { values: {}, secretsSet: ["Token"] } }) });
     show();

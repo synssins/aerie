@@ -16,14 +16,14 @@ A list may be left out (it is then empty) but may not be `null`, and no item of 
 | `name` | text | the id | The name people see. |
 | `description` | text | none | One line about what it does. |
 | `assembly` | text | `<id>.dll` | The file name of the main assembly, at the top of the package. A file name only: no `/`, `\` or `:`. |
-| `minKbVersion` | text | `0.1.0` | The lowest app version it runs on. The app is at 0.7.0. |
-| `abstractionsVersion` | text | `0.1.0` | The version of `Kb.Plugins.Abstractions` it was built against. The app's is 0.7.0; a plugin fits when its major number is the app's and it is not higher. |
+| `minKbVersion` | text | `0.1.0` | The lowest app version it runs on. The app is at 0.8.0. |
+| `abstractionsVersion` | text | `0.1.0` | The version of `Kb.Plugins.Abstractions` it was built against. The app's is 0.8.0; a plugin fits when its major number is the app's and it is not higher. |
 | `uiApiVersion` | text | none | The version of the script API its script was written for: `1.0.0`, or `1.1.0` for a script that adds panels to the plugin's page or uploads with `kb.api.upload`. The app's is 1.1.0. Needed when the plugin has a script: without it the install is refused. |
 | `enforcing` | true or false | false | True when the plugin enforces a rule. If the core disables it, the actions it guarded stay locked until an Admin releases the lock. |
 | `requires` | list | empty | The plugins it needs. See below. |
 | `exports` | list of text | empty | The assemblies it shares with the plugins that require it, by assembly name without `.dll` (`My.Lib`). |
 | `extensionPoints` | list of text | empty | The extension points it supplies, for example `email-sender`, `audit-sink`, `malware-scanner`, `outbound-request-decorator`. Shown on the Plugins screen; the app does not act on it. The services the plugin registers are what count. |
-| `outboundHosts` | list of text | empty | The only hosts the plugin's own `HttpClient` may call (host names, no scheme or path). It does not apply to the core's calls a plugin decorates. |
+| `outboundHosts` | list of text | empty | The only hosts the plugin's own `HttpClient` may call (host names, no scheme or path). It does not apply to the core's calls a plugin decorates. A [sign-in method](developer-guide.md#sign-in-methods)'s provider is reached through it too: list the hosts of the issuer, the token endpoint and the keys. |
 | `settings` | list | empty | The settings an Admin sets in the app. See below. |
 | `permissions` | list | empty | The permissions it declares. See below. |
 | `schedules` | list | empty | The jobs it runs. See below. |
@@ -40,7 +40,7 @@ A list may be left out (it is then empty) but may not be `null`, and no item of 
 
 | Property | Type | Default | Meaning |
 |---|---|---|---|
-| `key` | text | required | The name the plugin reads the setting by. Case-sensitive. |
+| `key` | text | required | The name the plugin reads the setting by. Case-sensitive. A key starting with `signIn.` (any case) is the app's: it holds a sign-in method's client id and secret. |
 | `label` | text | required | The label on the Plugins screen. |
 | `type` | text | `text` | `text`, `secret`, `number`, `toggle`, `select` or `multiline`. A toggle is stored as `true` or `false`. Every value reaches the plugin as text. `secret` is the same as `"secret": true`. A `multiline` value arrives with LF (`\n`) line ends, whatever the browser or an API caller sent. |
 | `options` | list of text | none | The choices of a `select`. |
@@ -100,6 +100,7 @@ The upload answers with one of these, and nothing is stored.
 | Setting KeepDays: the default is refused: At most 3650 days. | The `default` does not fit the setting's type, options or bounds. |
 | Setting Token: a secret has no default. | A secret has a `default`. |
 | Setting Shape: optionLabels names "x", which is not one of the options. | A label for a value that is not in `options`. |
+| Setting signIn.x: keys starting with "signIn." are the app's. | A key the app keeps for sign-in methods (from 0.8.0). |
 | Permission <key>: scope is space or global. | The names are lower case. |
 | Permission <key>: defaultRole is Reader, Contributor, Supervisor or Owner. | A space permission with another default role. The names are case-sensitive. |
 | Permission <key> is listed twice. | |

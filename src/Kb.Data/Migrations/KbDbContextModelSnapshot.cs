@@ -916,6 +916,10 @@ namespace Kb.Data.Migrations
                     b.Property<string>("ExternalId")
                         .HasColumnType("nvarchar(450)");
 
+                    b.Property<string>("ExternalIssuer")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
                     b.Property<bool>("IsAdmin")
                         .HasColumnType("bit");
 
@@ -964,8 +968,6 @@ namespace Kb.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ExternalId");
-
                     b.HasIndex("NormalizedEmail")
                         .HasDatabaseName("EmailIndex");
 
@@ -973,6 +975,10 @@ namespace Kb.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("UserNameIndex")
                         .HasFilter("[NormalizedUserName] IS NOT NULL");
+
+                    b.HasIndex("ExternalIssuer", "ExternalId")
+                        .IsUnique()
+                        .HasFilter("[ExternalIssuer] IS NOT NULL AND [ExternalId] IS NOT NULL");
 
                     b.ToTable("AspNetUsers", (string)null);
                 });

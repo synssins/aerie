@@ -25,6 +25,12 @@ public static class AuditActions
     public const string SignIn = "auth.signin";
     public const string SignInFailed = "auth.signin.failed";
     public const string SignOut = "auth.signout";
+    /// <summary>A sign-in with a sign-in method started (the browser went to the provider). Its success is auth.signin, its refusal auth.signin.failed, each with the method.</summary>
+    public const string SignInMethodStart = "auth.method.start";
+    /// <summary>A sign-in method linked an existing account to the person at the provider (issuer and subject), by its verified email address.</summary>
+    public const string UserSignInLink = "user.signin.link";
+    /// <summary>A sign-in method made a new account for a person the provider vouches for (the method's "new accounts" setting is on).</summary>
+    public const string UserSignInCreate = "user.signin.create";
     public const string CodeFailed = "auth.code.failed";
     public const string CodesEnroll = "auth.codes.enroll";
     public const string CodesOff = "auth.codes.off";

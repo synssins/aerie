@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from "react";
-import { api, ApiError, type Brand, type Me } from "./api";
+import { useEffect, useState, type FormEvent } from "react";
+import { api, ApiError, type Brand, type Me, type SignInMethod, type SignInOutcome } from "./api";
 import { BrandLogo } from "./Branding";
 import { CodeSetup, CodeStep, stepOf } from "./Codes";
 
@@ -9,6 +9,17 @@ export function SignIn({ brand, onSignedIn }: { brand: Brand; onSignedIn: (me: M
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState<"code" | "enroll" | null>(null);
+  const [methods, setMethods] = useState<SignInMethod[]>([]);
+
+  // The sign-in methods of plugins (buttons, drawn by the app), and what the last one left: a refusal to show, or the code step.
+  useEffect(() => {
+    api.get<SignInMethod[]>("/auth/methods").then(setMethods).catch(() => setMethods([]));
+    api.get<SignInOutcome>("/auth/methods/outcome").then((o) => {
+      if (o.step) setStep(o.step);
+      else if (o.message) setError(o.message);
+    }).catch(() => {});
+  }, []);
+  const back = encodeURIComponent(location.pathname + location.search + location.hash);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -41,6 +52,14 @@ export function SignIn({ brand, onSignedIn }: { brand: Brand; onSignedIn: (me: M
           <span>{brand.productName}</span>
         </div>
         <h1 id="signin-title">Sign in</h1>
+        {methods.length > 0 && (
+          <>
+            <div className="signin-methods">
+              {methods.map((m) => <a key={m.id} className="btn" href={`/api/v1/auth/methods/${m.id}/start?returnTo=${back}`}>{m.name}</a>)}
+            </div>
+            <div className="signin-or">or</div>
+          </>
+        )}
         <label>
           User name
           <input autoComplete="username" value={userName} onChange={(e) => setUserName(e.target.value)} required />

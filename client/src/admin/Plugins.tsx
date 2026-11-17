@@ -131,6 +131,13 @@ export function Plugins({ area, onHome }: { area: string; onHome: () => void }) 
                 {selected.origin !== "BuiltIn" && <button type="button" className="tb" disabled={restarting} onClick={() => setRemoving(true)}>Remove</button>}
                 {selected.locked && <button type="button" className="tb" disabled={restarting} onClick={() => void change(() => api.post(`/admin/plugins/${selected.id}/release-lock`), "Not released.")}>Release lock</button>}
               </div>}
+              {(selected.signInMethods ?? []).map((m) => (
+                <section key={m.id} className="plugin-panel" aria-label={m.name}>
+                  <h2>{m.name}</h2>
+                  <p>Register this app with the provider using this redirect address, then set the client ID and secret below.</p>
+                  <input className="mono wide" readOnly value={m.redirectAddress} aria-label={`Redirect address of ${m.name}`} onFocus={(e) => e.currentTarget.select()} />
+                </section>
+              ))}
               {selected.settings.length > 0 && <SettingsForm key={selected.id} plugin={selected} onRestart={() => setRestarting(true)} />}
               {!selected.removed && selected.permissions.some((p) => p.scope === "space") && <PermissionsForm key={`${selected.id}-permissions`} plugin={selected} />}
               {selected.loaded && <PluginPanels key={`${selected.id}-panels`} plugin={{ id: selected.id, version: selected.version }} />}
@@ -148,6 +155,7 @@ export function Plugins({ area, onHome }: { area: string; onHome: () => void }) 
             <h3>Source</h3><div>{selected.source}</div>
             <h3>Provides</h3>{list(selected.extensionPoints)}
             <h3>Reads for import</h3>{list(selected.importFileKinds)}
+            <h3>Sign-in methods</h3>{list((selected.signInMethods ?? []).map((m) => m.name))}
             <h3>Requires</h3>{list(selected.requires)}
             <h3>Required by</h3>{list(selected.requiredBy)}
             <h3>Outbound hosts</h3>{list(selected.outboundHosts)}

@@ -22,12 +22,13 @@ public sealed class PluginSettingsStore
     private readonly PluginWatcher _watcher;
     private readonly IAppRestarter _restarter;
     private readonly TimeProvider _time;
+    private readonly IRegistrations _registrations;
 
     public PluginSettingsStore(IServiceScopeFactory scopes, PluginRegistry registry, PluginSettingsSnapshot snapshot, IDataProtectionProvider protection,
-        PluginWatcher watcher, IAppRestarter restarter, TimeProvider time)
+        PluginWatcher watcher, IAppRestarter restarter, TimeProvider time, IRegistrations registrations)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        (_scopes, _registry, _snapshot, _protection, _watcher, _restarter, _time) = (scopes, registry, snapshot, protection, watcher, restarter, time);
+        (_scopes, _registry, _snapshot, _protection, _watcher, _restarter, _time, _registrations) = (scopes, registry, snapshot, protection, watcher, restarter, time, registrations);
         // From here on a plugin's context can read its secrets.
         snapshot.SecretReader = GetSecretAsync;
     }
@@ -37,6 +38,19 @@ public sealed class PluginSettingsStore
         ArgumentNullException.ThrowIfNull(setting);
         return setting.Secret || setting.Type == "secret";
     }
+
+    /// <summary>
+    /// The plugin's settings: its manifest's, then the ones the app adds for each sign-in method it registered (when it is loaded).
+    /// </summary>
+    public static IReadOnlyList<PluginSetting> Definitions(PluginManifest manifest, IRegistrations registrations)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        ArgumentNullException.ThrowIfNull(registrations);
+        var methods = registrations.All<SignInMethodReg>().Where(r => r.PluginId == manifest.Id).Select(r => (r.Value.Id, r.Value.Name)).ToList();
+        return methods.Count == 0 ? manifest.Settings : [.. manifest.Settings, .. SignInSettings.For(methods)];
+    }
+
+    public IReadOnlyList<PluginSetting> Definitions(PluginManifest manifest) => Definitions(manifest, _registrations);
 
     private IDataProtector Protector(string pluginId) => _protection.CreateProtector("kb.plugin.secret:" + pluginId);
 
@@ -58,7 +72,7 @@ public sealed class PluginSettingsStore
     {
         ArgumentNullException.ThrowIfNull(values);
         if (_registry.Find(pluginId) is not { } plugin) return Problem.NotFound;
-        var definitions = plugin.Manifest.Settings;
+        var definitions = Definitions(plugin.Manifest);
         if (values.Keys.FirstOrDefault(k => definitions.All(d => d.Key != k)) is { } unknown) return Problem.Invalid(unknown, "Unknown setting.");
 
         await using var scope = _scopes.CreateAsyncScope();
@@ -123,7 +137,7 @@ public sealed class PluginSettingsStore
     private async Task ReloadAsync(KbDbContext db, CancellationToken ct) =>
         _snapshot.Replace((await db.PluginSettingValues.AsNoTracking().Where(v => !v.Secret).ToListAsync(ct)).Where(v => !DeclaredSecret(v.PluginId, v.Key)).Select(v => (v.PluginId, v.Key, v.Value)));
 
-    private bool DeclaredSecret(string pluginId, string key) => _registry.Find(pluginId)?.Manifest.Settings.Any(d => d.Key == key && IsSecret(d)) == true;
+    private bool DeclaredSecret(string pluginId, string key) => _registry.Find(pluginId) is { } p && Definitions(p.Manifest).Any(d => d.Key == key && IsSecret(d));
 
     /// <summary>
     /// A value saved while its setting was not a secret stays in clear when an update of the plugin makes the setting one.

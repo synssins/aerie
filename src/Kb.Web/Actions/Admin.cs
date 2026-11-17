@@ -209,7 +209,7 @@ internal sealed class DeleteUserHandler(KbDbContext db, IAccess access, TimeProv
         var u = _user!;
         if (u.Id == ctx.Actor.UserId) return Problem.Conflict("You can't delete your own account.");
         if (u.IsBreakGlass) return Problem.Conflict("The break-glass account can't be deleted.");
-        if (u.Source != UserSource.Local) return Problem.Conflict("Only local users can be deleted.");
+        if (u.Source is not (UserSource.Local or UserSource.SignInMethod)) return Problem.Conflict("Only local users and users of a sign-in method can be deleted.");
         await Gate.WaitAsync(ctx.Cancel);
         try { return await DeleteAsync(ctx, u); }
         finally { Gate.Release(); }
@@ -229,6 +229,8 @@ internal sealed class DeleteUserHandler(KbDbContext db, IAccess access, TimeProv
         // A request that read the account before this moment and writes it after (a failed sign-in, saved settings) is refused, not written over this.
         u.ConcurrencyStamp = Guid.NewGuid().ToString();
         (u.Email, u.NormalizedEmail, u.PhoneNumber) = (null, null, null);
+        // The link to a sign-in method goes too: the person is unknown here again, and the method's "new accounts" setting decides.
+        (u.ExternalIssuer, u.ExternalId) = (null, null);
         // Its user name is free for a new account; this one keeps a name nobody can type at the sign-in.
         u.UserName = $"deleted-{u.Id:N}";
         u.NormalizedUserName = u.UserName.ToUpperInvariant();

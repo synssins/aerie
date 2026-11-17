@@ -118,6 +118,10 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | POST | `/api/v1/auth/local/code` | `auth.signin.code` | `CodeRequest` ([CodeRequest](plugins/action-reference.md#coderequest)) | `MeResponse` ([MeResponse](plugins/action-reference.md#meresponse)) | Yes | Not needed | No |
 | POST | `/api/v1/auth/local/password` | `auth.password.set` | `SetPasswordRequest` ([SetPasswordRequest](plugins/action-reference.md#setpasswordrequest)) | `Unit` | Yes | Not needed | No |
 | POST | `/api/v1/auth/local/signin` | `auth.signin` | `SignInRequest` ([SignInRequest](plugins/action-reference.md#signinrequest)) | `MeResponse` ([MeResponse](plugins/action-reference.md#meresponse)) | Yes | Not needed | No |
+| GET | `/api/v1/auth/methods` | `auth.methods.list` |  | `IReadOnlyList<SignInMethodDto>` ([SignInMethodDto](plugins/action-reference.md#signinmethoddto)) | No | Not needed | No |
+| GET | `/api/v1/auth/methods/outcome` | `auth.methods.outcome` |  | `SignInOutcome` ([SignInOutcome](plugins/action-reference.md#signinoutcome)) | Yes | Not needed | No |
+| GET | `/api/v1/auth/methods/{plugin}/{method}/callback` | `auth.method.finish` |  | `SignInRedirect` ([SignInRedirect](plugins/action-reference.md#signinredirect)) | Yes | Not needed | No |
+| GET | `/api/v1/auth/methods/{plugin}/{method}/start` | `auth.method.start` |  | `SignInRedirect` ([SignInRedirect](plugins/action-reference.md#signinredirect)) | Yes | Not needed | No |
 | POST | `/api/v1/auth/signout` | `auth.signout` |  | `Unit` | Yes | Needed | No |
 | GET | `/api/v1/bin/pages/{id:guid}` | `bin.page.read` |  | `BinPageDto` ([BinPageDto](plugins/action-reference.md#binpagedto)) | No | Needed | No |
 | GET | `/api/v1/brand` | `brand.read` |  | `BrandDto` ([BrandDto](plugins/action-reference.md#branddto)) | No | Not needed | Read |

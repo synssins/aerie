@@ -31,6 +31,7 @@ public sealed class SamplePlugin : IKbPlugin
         .ImportContributor<NoticeFromFile>()                       // add to the drafts of AI imports
         .DraftContributor<NoticeFromDraft>()                       // ... from the text the AI drafted
         .ImportFileKinds(".notice")                                // a kind the app does not read: drafted by this plugin
+        .SignInMethod<SampleSignIn>("example", "Sign in with Example ID") // a button on the sign-in screen
         .Routes(SampleRoutes.Map);                                 // under /api/v1/plugins/kb.sample/
     // #endregion
 }
@@ -44,5 +45,6 @@ public sealed class SampleSettings(IPluginContext context)
     // The manifest gives KeepDays a default (365) and bounds (0 to 3650): the app returns the default while none is saved and refuses a
     // value out of bounds, so the value is always a number here.
     public int KeepDays => int.Parse(context.GetSetting("KeepDays")!, System.Globalization.CultureInfo.InvariantCulture);
+    public string? SignInDomain => context.GetSetting("SignInDomain")?.Trim() is { Length: > 0 } d ? d : null;
 }
 // #endregion
