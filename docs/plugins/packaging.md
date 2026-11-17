@@ -1,7 +1,7 @@
 # Building and packaging a plugin
 
 How to build a plugin outside this repository, what goes in the package, and what the app checks when an Admin uploads it.
-Every step here was run as written, against app version 0.3.0; 0.4.0 to 0.7.0 changed none of them.
+Every step here was run as written, against app version 0.3.0; 0.4.0 to 0.8.0 changed none of them.
 
 Related: [developer guide](developer-guide.md), [manifest reference](manifest-reference.md), [example: an outbound-headers plugin](example-outbound-headers.md), [admin guide](admin-guide.md).
 
@@ -75,7 +75,7 @@ Ship your own assembly, its `.pdb` (a stack trace then names lines), its `.deps.
 
 ## The package
 
-A package is a zip file. Name it `<id>-<version>.kbplugin`. The upload screen offers `.kbplugin` and `.zip` files, and the app reads the content, not the name: a `.zip` of the same content installs the same way.
+A package is a zip archive (the ZIP format), and nothing else: a tar, tar.gz or 7z archive is refused ("Not a plugin package."), whatever its name. Name it `<id>-<version>.kbplugin`. The upload screen offers `.kbplugin` and `.zip` files, and the app reads the content, not the name: a `.zip` of the same content installs the same way.
 
 ```
 example.gateway-headers-1.0.0.kbplugin
@@ -220,7 +220,7 @@ Editor blocks and the browser script came while the contract was still numbered 
 The contract can still change before 1.0.0, and the app checks only the number: two builds of the app at 0.3.0 may differ in what the contract has. In practice:
 
 1. Compile against the `Kb.Plugins.Abstractions.dll` taken from the installation you will install on ([above](#what-you-need)). A member your plugin uses that the app does not have is then a compile error, not a failure at start.
-2. Set `abstractionsVersion` and `minKbVersion` to that app's version, **0.7.0** today.
+2. Set `abstractionsVersion` and `minKbVersion` to that app's version, **0.8.0** today.
 3. After the app is updated, build again against the new DLL. A plugin that no longer fits is "Disabled by core" at start, with the reason on the Plugins screen.
 
 ## Check a package with the app's tests
