@@ -67,4 +67,15 @@ public sealed partial class ThemeTests : IAsyncLifetime
         var names = table.Split('\n').Select(l => TokenName().Match(l)).Where(m => m.Success).Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal);
         Assert.Equal(ThemeTokens.All.Order(StringComparer.Ordinal), names.Order(StringComparer.Ordinal));
     }
+
+    /// <summary>The developer guide lists every color a plugin may use.</summary>
+    [Fact]
+    public void TheDeveloperGuide_ListsEveryToken()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Kb.sln"))) dir = dir.Parent;
+        var guide = File.ReadAllText(Path.Combine(dir!.FullName, "docs", "plugins", "developer-guide.md"));
+        var missing = ThemeTokens.All.Where(t => !guide.Contains($"| `{t}` |", StringComparison.Ordinal)).ToList();
+        Assert.True(missing.Count == 0, "Not in the guide: " + string.Join(", ", missing));
+    }
 }
