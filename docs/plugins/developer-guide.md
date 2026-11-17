@@ -61,6 +61,7 @@ public void Configure(IPluginApp app, IPluginContext context) => app
     .Handle<Acknowledge, AckCount, AcknowledgeHandler>()       // its own actions
     .Handle<CountAcks, AckCount, CountAcksHandler>()
     .Handle<ReadAcks, AckList, ReadAcksHandler>()
+    .Handle<ReadAckTotals, AckTotals, ReadAckTotalsHandler>()
     .Before<SavePage, MajorNeedsNote>()                        // refuse a core action
     .After<SavePage, PageDto, ClearOnMajor>()                  // react once a core action has succeeded
     .Job<PurgeJob>("purge")                                    // the schedule "purge" of the manifest
@@ -90,13 +91,18 @@ public sealed class SampleSettings(IPluginContext context)
 {
     public bool RequireNoteOnMajor => context.GetSetting("RequireNoteOnMajor") == "true";
     public bool ResetOnMajor => context.GetSetting("ResetOnMajor") == "true";
-    public int KeepDays => int.TryParse(context.GetSetting("KeepDays"), out var days) && days >= 0 ? days : 365;
+    // The manifest gives KeepDays a default (365) and bounds (0 to 3650): the app returns the default while none is saved and refuses a
+    // value out of bounds, so the value is always a number here.
+    public int KeepDays => int.Parse(context.GetSetting("KeepDays")!, System.Globalization.CultureInfo.InvariantCulture);
 }
 ```
 
-- `GetSetting` returns the current value each time. A change applies without a restart, unless the setting says `"restart": true`.
+- `GetSetting` returns the current value each time, or the setting's `default` while nothing is saved. A change applies without a restart, unless the setting says `"restart": true`.
 - A secret (`"secret": true`) is stored protected. The app never sends it back to the browser and never writes it to a log.
   Read it with `await context.GetSecretAsync(key)`, after start only.
+- A setting can say more than its label ([the manifest's fields](manifest-reference.md#settings)). `help` is a sentence shown under the field. `default` is what `GetSetting` returns while nothing is saved, and the empty field shows it; the plugin no longer treats an empty value as "use my default". `unit` is shown after the field ("MB", "days"). For a number, `min` and `max` are checked when an Admin saves: a value out of bounds answers "At least 1 MB." or "At most 500 MB.", under the field. A select's `optionLabels` gives what the list shows for each stored value. Keep the label to the thing itself ("Largest file"), and put the unit, the default and the explanation in their own fields.
+- A setting whose default does not fit its own type or bounds, a `min` above its `max`, bounds on a setting that is not a number, a default for a secret, or a label for an option that is not listed, is refused at install ("Setting KeepDays: the default is refused: At most 3650 days.").
+- An Admin sets them on the plugin's page in Administration > Plugins: the gear left of its name, or a click on its row.
 
 ## Actions and the bus
 
@@ -180,7 +186,12 @@ public sealed record ReadAcks : IAction<AckList>
     public required Guid PageId { get; init; }
 }
 
+/// <summary>How many acknowledgements are kept, on how many pages. For Admins: the plugin's panel on its page in Administration > Plugins.</summary>
+[Action("sample.acks.totals", Read = true)]
+public sealed record ReadAckTotals : IAction<AckTotals>;
+
 public sealed record AckCount(int Count, bool Mine);
+public sealed record AckTotals(int Acknowledgements, int Pages);
 public sealed record AckEntry(string Name, string Version, DateTime AtUtc);
 public sealed record AckList(IReadOnlyList<AckEntry> People);
 ```
@@ -205,6 +216,8 @@ public static class SampleRoutes
             bus.SendAsync(new CountAcks { PageId = id }, ct).ToHttp()).WithAction<CountAcks>();
         group.MapGet("/pages/{id:guid}/acks", (Guid id, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new ReadAcks { PageId = id }, ct).ToHttp()).WithAction<ReadAcks>();
+        group.MapGet("/totals", (IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new ReadAckTotals(), ct).ToHttp()).WithAction<ReadAckTotals>();
     }
 }
 ```
@@ -431,8 +444,25 @@ function Acknowledged({ kb, page }) {
     (people ?? []).map((p) => h("div", { key: p.name, className: "muted small" }, `${p.name}, version ${p.version}`)));
 }
 
+/**
+ * A panel on the plugin's own page in Administration > Plugins: what the plugin keeps. Only Admins see the page; the route checks too.
+ * It uses the app's classes: "grid-table" for a table, "muted" for a quiet line.
+ */
+function Totals({ kb }) {
+  const [totals, setTotals] = useState(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { kb.api.get("/totals").then(setTotals).catch(() => setFailed(true)); }, [kb]);
+  if (failed) return h("p", { className: "form-error", role: "alert" }, "Not read.");
+  if (!totals) return null;
+  return h("table", { className: "grid-table" },
+    h("tbody", null,
+      h("tr", null, h("td", null, "Acknowledgements"), h("td", null, String(totals.acknowledgements))),
+      h("tr", null, h("td", null, "Pages"), h("td", null, String(totals.pages)))));
+}
+
 /** Called once, after sign-in, with the host: everything the script may use of the app. */
 export default function (kb) {
+  kb.slots.add("plugin.settings", { id: "totals", title: "Acknowledgements kept", render: () => h(Totals, { kb }) });
   kb.slots.add("page.panel", { id: "acknowledged", title: "Acknowledged", render: (c) => h(Acknowledged, { kb, page: c.page }) });
   kb.slots.add("page.tools", {
     id: "acknowledge",
@@ -448,17 +478,68 @@ export default function (kb) {
 - So a library that is published as a set of `.mjs` modules cannot be loaded as it is: the browser asks for files the app does not serve. Bundle it into your own `.js` files with a bundler, or use the library's single-file browser build (one `.js` file) and load it with a `<script>` element whose `src` is `new URL("./lib.js", import.meta.url).href`.
 - The browser keeps the script itself for good: its address carries the package's hash. Every other file of the folder (a stylesheet, a module the script imports) is asked for again each time, so a new package is seen at once.
 - The default export may return a promise. The app does not wait for it before it starts the next plugin's script; if it fails later, that is written to the server's log.
-- `kb.slots.add(slot, item)` adds to a named place of a screen. Today's slots: `page.tools` (buttons in the page's tool row: `id`, `label`, `onClick(ctx)`), `page.panel` (parts of the page's right panel: `id`, `title`, `render(ctx)`), both with the context `{ page }`, `editor.toolbar` (buttons of the editor's toolbar, with the context `{ editor }`), and `header.gear` (entries at the end of the gear menu in the header: `id`, `label`, `onClick()`; the way to a screen of the plugin's own). `order` places an item; `when(ctx)` shows it only when it answers true.
-- `kb.api` calls the plugin's own routes (`/api/v1/plugins/<id>/...`); `kb.core` calls the app's API. The server answers what the signed-in person may see.
+- `kb.slots.add(slot, item)` adds to a named place of a screen. Today's slots: `page.tools` (buttons in the page's tool row: `id`, `label`, `onClick(ctx)`), `page.panel` (parts of the page's right panel: `id`, `title`, `render(ctx)`), both with the context `{ page }`, `editor.toolbar` (buttons of the editor's toolbar, with the context `{ editor }`), and `header.gear` (entries at the end of the gear menu in the header: `id`, `label`, `onClick()`; the way to a screen of the plugin's own), and `plugin.settings` (panels on the plugin's own page in Administration > Plugins: `id`, `title`, `render(ctx)`, [below](#panels-on-the-plugins-own-page)). `order` places an item; `when(ctx)` shows it only when it answers true.
+- `kb.api` calls the plugin's own routes (`/api/v1/plugins/<id>/...`), and `kb.api.upload` sends them a file ([below](#uploading-a-file-from-a-panel)); `kb.core` calls the app's API. The server answers what the signed-in person may see.
 - `kb.me()` is the person signed in now. The script is started once per page load, so call `kb.me()` when you need it and do not keep its answer: another person may sign in without a reload.
 - `kb.current.page()` and `kb.current.space()` are what the person is looking at; `kb.current.subscribe(fn)` tells when that changes. Either can be null.
 - `kb.navigate(path)` goes to an address inside the app. Someone in the middle of an edit is asked first, as for a click on a link, and may stay.
-- `kb.screens.add({ path, title, render(rest), panel })` adds a screen of the plugin's own at `/x/<plugin id>/<path>`, inside the app's three panels. `panel` names a slot that fills the right panel. Lead to it from the gear menu: `kb.slots.add("header.gear", { id: "reports", label: "Reports", onClick: () => kb.navigate("/x/<plugin id>/reports") })`.
+- `kb.screens.add({ path, title, render(rest), panel })` adds a screen of the plugin's own at `/x/<plugin id>/<path>`, inside the app's three panels. `panel` names a slot that fills the right panel. Lead to it from the gear menu: `kb.slots.add("header.gear", { id: "reports", label: "Reports", onClick: () => kb.navigate("/x/<plugin id>/reports") })`. What only an Admin manages (lists the plugin keeps, files it was given) belongs in a [panel on its page](#panels-on-the-plugins-own-page), not in a screen of its own.
 - `kb.dialogs.confirm(...)` and `kb.dialogs.ask(...)` are the app's own dialogs ([their options](#dialogs-and-a-surface-over-the-whole-window)). Never use a browser popup (`alert`, `confirm`, `prompt`).
 - What a plugin draws sits inside an error boundary. A part that throws is left out and written to the server's log; the screen stays. Script errors are never counted as failures of the plugin.
 - A script runs in every signed-in person's browser with that person's session. It can do in the browser whatever that person can.
 
-The rules of the app's screens hold for a plugin's parts: no help text and no placeholder text; the right panel holds facts about the thing, not controls for it beyond what the app puts there; use the app's class names (`tb` for a button, `muted`, `small`).
+The rules of the app's screens hold for a plugin's parts: no help text and no placeholder text (a setting's `help` and `default` are drawn by the app, under and in its field); the right panel holds facts about the thing, not controls for it beyond what the app puts there; use the app's class names (`tb` for a button, `muted`, `small`).
+
+### Panels on the plugin's own page
+
+Each plugin has a page in Administration > Plugins: the gear left of its name opens it. The app draws its description, its state, Disable or Enable and Remove, its settings and its permissions there. A plugin's script adds panels of its own below them, in the slot `plugin.settings`:
+
+```js
+kb.slots.add("plugin.settings", { id: "files", title: "Libraries", render: (c) => h(Libraries, { kb }) });
+```
+
+- The app shows a panel only on the page of the plugin that added it, and only Admins see that page. The panel's own calls still go to the plugin's routes, which check the caller themselves: the sample's `/totals` answers 403 to anyone who is not an Admin.
+- `render(ctx)` gets `{ plugin: { id, version } }`. Use `kb` as anywhere else: `kb.api` for the plugin's routes, `kb.dialogs.confirm` and `kb.dialogs.ask` before a removal or a rename.
+- Each panel sits in a boundary of its own. A panel that throws shows "This part of the plugin failed. The rest of the page works." in its place, and the error goes to the server's log; the app's parts of the page and the other panels stay.
+- The page is drawn only for a plugin this server loaded: a disabled plugin's script does not run, so it has no panels.
+- How a panel looks: the app gives it its title as a heading. Use the app's classes, so plugin pages do not each invent their own:
+
+  | For | Use |
+  |---|---|
+  | A list of things (files, rows) | `<table className="grid-table">` with `<thead>` and `<th>`; actions in a last cell `<td className="actions">` |
+  | A button | `className="tb"`; the main action of the panel `"tb primary"`, a removal `"tb danger"` |
+  | A form | `<form className="form">`: a `<label className="lbl">` then the field, in pairs; `className="hint"` for a line under a field; `className="form-error"` with `role="alert"` for what went wrong |
+  | A quiet line, a count, a date | `className="muted"`, `"small"` |
+  | A row of buttons over a table | `<div className="ptools row">` |
+
+  No icons of your own beside the app's, no colours of your own: the [theme's colours](#the-themes-colours) when a panel draws something.
+
+### Uploading a file from a panel
+
+`kb.api.upload(path, file, options)` posts a file to one of the plugin's routes as the raw request body: `Content-Type: application/octet-stream`, and `X-File-Name` the file's name, URL-encoded (a `File`'s own name, or `options.name`). `options.onProgress(sent, total)` is called as the bytes go out. It answers the route's JSON, and throws the same error as `kb.api` for a refusal (`e.status`, `e.body`).
+
+```js
+const input = Object.assign(document.createElement("input"), { type: "file" });
+input.onchange = () => kb.api.upload("/libraries", input.files[0], { onProgress: (sent, total) => setDone(Math.round(100 * sent / total)) })
+  .then(reload).catch((e) => setError(e.body?.detail ?? "Not uploaded."));
+input.click();
+```
+
+The route reads the body as a stream. ASP.NET Core refuses a request body over 30,000,000 bytes unless the route raises its limit, before it reads the body; behind IIS, the site's `web.config` limit (`maxAllowedContentLength`, also 30,000,000 bytes unless set) applies first, and an Admin raises it there ([admin guide](admin-guide.md#the-upload-size-limit)). A file over either limit answers 413.
+
+```csharp
+group.MapPost("/libraries", async (HttpRequest request, IActionBus bus, CancellationToken ct) =>
+{
+    // Set before the body is read. 100 MB here; read your own setting for it.
+    if (request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } cap) cap.MaxRequestBodySize = 100L * 1024 * 1024;
+    var name = Path.GetFileName(Uri.UnescapeDataString(request.Headers["X-File-Name"].ToString()));
+    var file = UploadContent.FromStream(name, _ => Task.FromResult(request.Body), request.ContentLength);
+    return (await bus.SendAsync(new AddLibrary { File = file }, ct)).ToHttp();
+}).WithAction<AddLibrary>();
+```
+
+- The body can be read once. The action that takes it (`[JsonIgnore] public required UploadContent File { get; init; }`) counts the bytes it reads and refuses more than its own limit.
+- Nothing scans a file sent to a plugin's route. A plugin that keeps uploaded files checks what it reads.
 
 ### The shared modules
 
@@ -1101,7 +1182,8 @@ The plugin stays disabled until an Admin selects Enable. Uploading a new version
 - `abstractionsVersion`: the version of `Kb.Plugins.Abstractions` the plugin was built against. The app refuses a plugin built for a newer one.
 - `minKbVersion`: the lowest app version the plugin runs on.
 
-The contract and the app are at 0.6.0, and can still change before 1.0.0.
+The contract and the app are at 0.7.0, and can still change before 1.0.0.
+0.7.0 added a setting's `help`, `default`, `unit`, `min`, `max` and `optionLabels` ([settings](#settings-and-secrets)), and `GetSetting` returns the default while nothing is saved; a plugin that uses them says `"abstractionsVersion": "0.7.0"`. Its browser script API is 1.1.0: the slot `plugin.settings` ([panels](#panels-on-the-plugins-own-page)) and `kb.api.upload` ([uploading](#uploading-a-file-from-a-panel)); a script that uses them says `"uiApiVersion": "1.1.0"`. Nothing of 0.6.0 changed: a plugin built for 0.6.0 or earlier loads as it did, and its settings read and save as they did.
 0.6.0 added [file kinds a plugin claims](#file-kinds-the-app-does-not-read) (`app.ImportFileKinds(...)`, `ImportFileKindReg`); a plugin that uses them says `"abstractionsVersion": "0.6.0"`. Nothing of 0.5.0 changed, and a plugin built for 0.5.0 or earlier loads as it did.
 0.5.0 added [draft contributors](#adding-to-the-draft-from-its-text-draft-contributors) (`IDraftContributor`, `ImportDraft`, `DraftPage`, `DraftContribution`, `DraftAddition`, `DraftPlace`, `app.DraftContributor<T>()`); a plugin that uses them says `"abstractionsVersion": "0.5.0"`. It changed one thing a 0.4.0 contributor can see: the 512 KB limit is now counted in UTF-8 bytes, where 0.4.0 counted characters, so an answer of mostly non-ASCII text holds less. Everything else of 0.4.0 is unchanged, and a plugin built for 0.4.0 or earlier loads as it did.
 0.4.0 added [import contributors](#adding-to-the-draft-import-contributors) (`IImportContributor`, `ImportedFile`, `ImportContribution`, `app.ImportContributor<T>()`), `DocPicture` for [exports](#editor-blocks), `UploadContent.FromBytes` and `FromStream` ([adding a file](#adding-an-image-or-an-attachment)), and `ActorSources` with `Actor.ImportItemId` ([where the call comes from](#where-the-call-comes-from)); a plugin that uses them says `"abstractionsVersion": "0.4.0"`. It changed one thing a 0.3.0 plugin can see: an accepted import's actions have source `import`, not `web`. Everything else of 0.3.0 is unchanged, and a plugin built for 0.3.0 or earlier loads as it did.

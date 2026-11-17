@@ -1,5 +1,5 @@
 import type { AnyExtension } from "@tiptap/react";
-import { api, type Me, type Page, type Space } from "../api";
+import { api, ApiError, type Me, type Page, type Space } from "../api";
 import { editorExtensions } from "../editor/extensions";
 import { current } from "./current";
 import { reportUiError } from "./errors";
@@ -7,9 +7,12 @@ import { screens, type ScreenDef } from "./screens";
 import { slots } from "./slots";
 
 /** The version of what a plugin's script may use. The manifest's uiApiVersion must not be newer. */
-export const UI_API_VERSION = "1.0.0";
+export const UI_API_VERSION = "1.1.0";
 
 type Api = { get<T>(path: string): Promise<T>; post<T>(path: string, body?: unknown): Promise<T>; put<T>(path: string, body?: unknown): Promise<T>; patch<T>(path: string, body?: unknown): Promise<T>; del<T>(path: string): Promise<T> };
+/** name: sent as X-File-Name (a File's own name by default). onProgress: bytes sent so far, of the whole. */
+type UploadOptions = { name?: string; onProgress?: (sent: number, total: number) => void };
+type PluginApi = Api & { upload<T>(path: string, file: Blob, options?: UploadOptions): Promise<T> };
 type ConfirmOptions = { title: string; body?: string; ok?: string; cancel?: string; danger?: boolean };
 type AskOptions = { title: string; label: string; initial?: string; ok?: string };
 
@@ -39,8 +42,8 @@ export type KbHost = {
   plugin: { id: string; version: string };
   /** Add to the named places of the app's screens. What is added is known as this plugin's. */
   slots: { add(slot: string, item: Parameters<typeof slots.add>[1]): void; hide: typeof slots.hide; move: typeof slots.move; names: typeof slots.names };
-  /** The plugin's own routes: /api/v1/plugins/<id>/... */
-  api: Api;
+  /** The plugin's own routes: /api/v1/plugins/<id>/... `upload` posts a file as the raw body, with progress. */
+  api: PluginApi;
   /** The app's API: /api/v1/... The server answers what the signed-in person may see. */
   core: Api;
   me(): Me;
@@ -58,12 +61,36 @@ const rooted = (root: string): Api => ({
   get: (p) => api.get(root + p), post: (p, b) => api.post(root + p, b), put: (p, b) => api.put(root + p, b), patch: (p, b) => api.patch(root + p, b), del: (p) => api.del(root + p),
 });
 
+/**
+ * Posts a file as the raw request body (Content-Type application/octet-stream, X-File-Name its name, URL-encoded), reporting progress.
+ * Answers the response's JSON, or nothing for an empty answer; a refusal throws ApiError with the server's body.
+ */
+export function uploadRaw<T>(url: string, file: Blob, options: UploadOptions = {}): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", url);
+    x.withCredentials = true;
+    x.setRequestHeader("Content-Type", "application/octet-stream");
+    const name = options.name ?? (file instanceof File ? file.name : "file");
+    x.setRequestHeader("X-File-Name", encodeURIComponent(name));
+    if (options.onProgress) x.upload.onprogress = (e) => options.onProgress!(e.loaded, e.lengthComputable ? e.total : file.size);
+    x.onload = () => {
+      let body: any = null;
+      try { body = x.responseText ? JSON.parse(x.responseText) : null; } catch { body = null; }
+      if (x.status >= 200 && x.status < 300) resolve((body ?? undefined) as T);
+      else reject(new ApiError(x.status, x.statusText, body));
+    };
+    x.onerror = () => reject(new ApiError(0, "The upload did not reach the server."));
+    x.send(file);
+  });
+}
+
 export function makeHost(plugin: { id: string; version: string }, me: Me): KbHost {
   return {
     uiApiVersion: UI_API_VERSION,
     plugin,
     slots: { add: (slot, item) => slots.add(slot, item, plugin.id), hide: slots.hide, move: slots.move, names: slots.names },
-    api: rooted(`/plugins/${plugin.id}`),
+    api: { ...rooted(`/plugins/${plugin.id}`), upload: (p, file, o) => uploadRaw(`/api/v1/plugins/${plugin.id}${p}`, file, o) },
     core: rooted(""),
     me: () => session.me ?? me,
     current: {

@@ -5190,7 +5190,15 @@ Enum: `Folder`, `Page`.
       "options": [
         "text"
       ],
-      "restart": false
+      "restart": false,
+      "help": "text",
+      "default": "text",
+      "unit": "text",
+      "min": 0.5,
+      "max": 0.5,
+      "optionLabels": {
+        "key": "text"
+      }
     }
   ],
   "replaces": [
@@ -5364,6 +5372,12 @@ Enum: `BuiltIn`, `Uploaded`.
 | type | `string` |
 | options | `IReadOnlyList<string>?` |
 | restart | `bool` |
+| help | `string?` |
+| default | `string?` |
+| unit | `string?` |
+| min | `Decimal?` |
+| max | `Decimal?` |
+| optionLabels | `IReadOnlyDictionary<string, string>?` |
 
 ```json
 {
@@ -5375,7 +5389,15 @@ Enum: `BuiltIn`, `Uploaded`.
   "options": [
     "text"
   ],
-  "restart": false
+  "restart": false,
+  "help": "text",
+  "default": "text",
+  "unit": "text",
+  "min": 0.5,
+  "max": 0.5,
+  "optionLabels": {
+    "key": "text"
+  }
 }
 ```
 

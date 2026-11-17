@@ -5,8 +5,8 @@
   "publisher": "Kb first-party",
   "description": "Readers acknowledge a page. The reference plugin of the developer guide.",
   "assembly": "Kb.Plugin.Sample.dll",
-  "minKbVersion": "0.6.0",
-  "abstractionsVersion": "0.6.0",
+  "minKbVersion": "0.7.0",
+  "abstractionsVersion": "0.7.0",
   "extensionPoints": [],
   "outboundHosts": [],
   "settings": [
@@ -22,8 +22,13 @@
     },
     {
       "key": "KeepDays",
-      "label": "Days an acknowledgement is kept",
-      "type": "number"
+      "label": "Keep acknowledgements for",
+      "type": "number",
+      "unit": "days",
+      "default": "365",
+      "min": 0,
+      "max": 3650,
+      "help": "Older ones are deleted once a day. 0 deletes them all at the next run."
     }
   ],
   "schedules": [
@@ -40,7 +45,7 @@
       "defaultRole": "Supervisor"
     }
   ],
-  "uiApiVersion": "1.0.0",
+  "uiApiVersion": "1.1.0",
   "ui": {
     "script": "ui/index.js"
   }

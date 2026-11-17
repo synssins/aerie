@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { DialogProvider } from "../Dialogs";
 import type { PluginInfo, PluginSetting } from "../api";
 import { Plugins } from "./Plugins";
+import { slots } from "../kit/slots";
 
 const setting = (s: Partial<PluginSetting> & { key: string; label: string }): PluginSetting => ({ secret: false, required: false, type: "text", options: null, restart: false, ...s });
 const plugin = (p: Partial<PluginInfo>): PluginInfo => ({
@@ -42,7 +43,7 @@ const list = (plugins: PluginInfo[], safeMode = false) => () => ({ body: { plugi
 const show = () => render(<DialogProvider><Plugins area="Administration" onHome={() => {}} /></DialogProvider>);
 
 HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) { this.setAttribute("open", ""); };
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); slots.clear(); });
 
 describe("Plugins", () => {
   it("lists plugins with their state", async () => {
@@ -249,5 +250,58 @@ describe("Plugins", () => {
     await userEvent.upload(screen.getByLabelText("Plugin package"), new File([new Uint8Array([1, 2, 3])], "probe.kbplugin"));
     expect(await screen.findByText("Restarting")).toBeTruthy();
     expect(calls.find((c) => c.key === "POST /plugins")?.body).toBeInstanceOf(File);
+  });
+  it("opens a plugin's page from the gear left of its name", async () => {
+    server({ "GET /plugins": list([plugin({ description: "Sends email." }), probe]), "GET /plugins/kb.test.probe/settings": () => ({ body: { values: {}, secretsSet: ["Token"] } }) });
+    show();
+    const gear = await screen.findByRole("button", { name: "Settings of Test probe" });
+    expect(gear.closest("td")?.textContent).toBe("Test probe"); // in the name's cell, before the name
+    await userEvent.click(gear);
+    expect(await screen.findByRole("heading", { name: "Test probe", level: 1 })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Disable" })).toBeTruthy();
+    expect(await screen.findByLabelText("Greeting")).toBeTruthy();
+  });
+
+  it("shows a setting's help, unit, default and option labels, and keeps the default out of what is saved", async () => {
+    const tidy = plugin({
+      id: "kb.tidy", name: "Tidy", origin: "Uploaded", settings: [
+        setting({ key: "MaxMb", label: "Largest file", type: "number", unit: "MB", default: "50", min: 1, max: 500, help: "Larger files are refused." }),
+        setting({ key: "Shape", label: "Shape", type: "select", options: ["sq", "rd"], optionLabels: { sq: "Square", rd: "Round" }, default: "rd" }),
+        setting({ key: "Loud", label: "Loud", type: "toggle", default: "true" }),
+      ],
+    });
+    const calls = server({
+      "GET /plugins": list([tidy]),
+      "GET /plugins/kb.tidy/settings": () => ({ body: { values: {}, secretsSet: [] } }),
+      "PUT /plugins/kb.tidy/settings": () => ({ status: 400, body: { errors: { MaxMb: ["At most 500 MB."] } } }),
+    });
+    show();
+    await userEvent.click(await screen.findByRole("button", { name: "Settings of Tidy" }));
+    const size = await screen.findByLabelText("Largest file");
+    expect([size.getAttribute("placeholder"), size.getAttribute("min"), size.getAttribute("max"), size.getAttribute("aria-describedby")]).toEqual(["50", "1", "500", "ps-MaxMb-h"]);
+    expect(screen.getByText("Larger files are refused.").id).toBe("ps-MaxMb-h");
+    expect(size.parentElement?.textContent).toBe("MB");
+    const shape = screen.getByLabelText("Shape") as HTMLSelectElement;
+    expect([...shape.options].map((o) => [o.value, o.textContent])).toEqual([["", "Default (Round)"], ["sq", "Square"], ["rd", "Round"]]);
+    expect(screen.getByRole("switch", { name: "Loud" }).getAttribute("aria-checked")).toBe("true");
+    await userEvent.type(size, "900");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(calls.find((c) => c.key === "PUT /plugins/kb.tidy/settings")?.body).toEqual({ values: { MaxMb: "900", Shape: "", Loud: "" } });
+    expect(await screen.findByText("At most 500 MB.")).toBeTruthy();
+  });
+
+  it("draws the panels a plugin added to its own page, and a panel that throws only says so", async () => {
+    server({ "GET /plugins": list([probe, plugin({})]), "GET /plugins/kb.test.probe/settings": () => ({ body: { values: {}, secretsSet: [] } }) });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    slots.add("plugin.settings", { id: "files", title: "Libraries", render: (c: { plugin: { id: string } }) => <p>Files of {c.plugin.id}</p> }, "kb.test.probe");
+    slots.add("plugin.settings", { id: "bad", title: "Broken part", render: () => { throw new Error("boom"); } }, "kb.test.probe");
+    slots.add("plugin.settings", { id: "other", title: "Not mine", render: () => <p>Other plugin</p> }, "kb.email.smtp");
+    show();
+    await userEvent.click(await screen.findByRole("button", { name: "Settings of Test probe" }));
+    expect(await screen.findByText("Files of kb.test.probe")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Libraries" })).toBeTruthy();
+    expect(within(screen.getByRole("region", { name: "Broken part" })).getByRole("alert").textContent).toBe("This part of the plugin failed. The rest of the page works.");
+    expect(screen.queryByText("Other plugin")).toBeNull();
+    expect(screen.getByRole("button", { name: "Disable" })).toBeTruthy();
   });
 });

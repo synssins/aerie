@@ -95,7 +95,11 @@ export type ApiToken = {
   id: string; name: string; kind: "Personal" | "Service"; prefix: string; scopes: TokenScope[]; ownerId: string; owner: string;
   createdAt: string; expiresAt: string; revokedAt: string | null; lastUsedAt: string | null; state: "Active" | "Expired" | "Revoked";
 };
-export type PluginSetting = { key: string; label: string; secret: boolean; required: boolean; type: string; options: string[] | null; restart: boolean };
+/** help, default, unit, min, max, optionLabels: optional (contract 0.7.0); a plugin built for an earlier contract has none of them. */
+export type PluginSetting = {
+  key: string; label: string; secret: boolean; required: boolean; type: string; options: string[] | null; restart: boolean;
+  help?: string | null; default?: string | null; unit?: string | null; min?: number | null; max?: number | null; optionLabels?: Record<string, string> | null;
+};
 export type AdminUser = { id: string; userName: string; displayName: string; source: string; isAdmin: boolean; isBreakGlass: boolean; createdAt: string; deactivatedAt: string | null; canAnnounce: boolean; permissions: string[]; groups?: string[]; codesExempt?: boolean };
 export type Group = { id: string; key: string; name: string; isLocal: boolean; members: number };
 export type GroupMember = { userId: string; userName: string; displayName: string; source: string };

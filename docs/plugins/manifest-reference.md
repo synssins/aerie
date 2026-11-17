@@ -16,9 +16,9 @@ A list may be left out (it is then empty) but may not be `null`, and no item of 
 | `name` | text | the id | The name people see. |
 | `description` | text | none | One line about what it does. |
 | `assembly` | text | `<id>.dll` | The file name of the main assembly, at the top of the package. A file name only: no `/`, `\` or `:`. |
-| `minKbVersion` | text | `0.1.0` | The lowest app version it runs on. The app is at 0.6.0. |
-| `abstractionsVersion` | text | `0.1.0` | The version of `Kb.Plugins.Abstractions` it was built against. The app's is 0.6.0; a plugin fits when its major number is the app's and it is not higher. |
-| `uiApiVersion` | text | none | The version of the script API its script was written for: `1.0.0`. Needed when the plugin has a script: without it the install is refused. |
+| `minKbVersion` | text | `0.1.0` | The lowest app version it runs on. The app is at 0.7.0. |
+| `abstractionsVersion` | text | `0.1.0` | The version of `Kb.Plugins.Abstractions` it was built against. The app's is 0.7.0; a plugin fits when its major number is the app's and it is not higher. |
+| `uiApiVersion` | text | none | The version of the script API its script was written for: `1.0.0`, or `1.1.0` for a script that adds panels to the plugin's page or uploads with `kb.api.upload`. The app's is 1.1.0. Needed when the plugin has a script: without it the install is refused. |
 | `enforcing` | true or false | false | True when the plugin enforces a rule. If the core disables it, the actions it guarded stay locked until an Admin releases the lock. |
 | `requires` | list | empty | The plugins it needs. See below. |
 | `exports` | list of text | empty | The assemblies it shares with the plugins that require it, by assembly name without `.dll` (`My.Lib`). |
@@ -44,6 +44,12 @@ A list may be left out (it is then empty) but may not be `null`, and no item of 
 | `label` | text | required | The label on the Plugins screen. |
 | `type` | text | `text` | `text`, `secret`, `number`, `toggle`, `select` or `multiline`. A toggle is stored as `true` or `false`. Every value reaches the plugin as text. `secret` is the same as `"secret": true`. A `multiline` value arrives with LF (`\n`) line ends, whatever the browser or an API caller sent. |
 | `options` | list of text | none | The choices of a `select`. |
+| `optionLabels` | object | none | For a `select`: what the list shows for a stored value, `{ "sq": "Square" }`. An option without one shows its value. A label for a value that is not in `options` is refused at install. |
+| `help` | text | none | A sentence shown under the field. |
+| `default` | text | none | What `GetSetting` returns while nothing is saved, shown in the empty field (a toggle shows it as its state, a select names it). It must fit the setting's type and bounds; a secret has none. A `required` setting with a default counts as set. |
+| `unit` | text | none | Shown after the field: `MB`, `days`. Named in the refusal of a number out of bounds ("At most 500 MB."). |
+| `min` | number | none | For a `number`: the lowest value an Admin may save. |
+| `max` | number | none | For a `number`: the highest value an Admin may save. Not lower than `min`. |
 | `secret` | true or false | false | Stored protected, never sent back to the browser, never logged. Read with `GetSecretAsync`, after start; `GetSetting` answers null for it. |
 | `required` | true or false | false | Saving the settings answers "Required." while it is empty. A secret that is already stored counts as set: saving the other settings keeps it and passes. Clearing it answers "Required.". |
 | `restart` | true or false | false | A change restarts the app. Use it for a setting the plugin reads only while it is configured. |
@@ -89,6 +95,11 @@ The upload answers with one of these, and nothing is stored.
 | Version <version> is already installed. | Raise the version. |
 | A newer version is installed. | An update must be higher. To go back, remove the plugin and upload the older package. |
 | A plugin with a script needs uiApiVersion. | `ui.script` is set and `uiApiVersion` is not. |
+| Setting KeepDays: min is more than max. | A number's `min` is above its `max`. |
+| Setting KeepDays: min and max are for a number. | `min` or `max` on a setting whose type is not `number`. |
+| Setting KeepDays: the default is refused: At most 3650 days. | The `default` does not fit the setting's type, options or bounds. |
+| Setting Token: a secret has no default. | A secret has a `default`. |
+| Setting Shape: optionLabels names "x", which is not one of the options. | A label for a value that is not in `options`. |
 | Permission <key>: scope is space or global. | The names are lower case. |
 | Permission <key>: defaultRole is Reader, Contributor, Supervisor or Owner. | A space permission with another default role. The names are case-sensitive. |
 | Permission <key> is listed twice. | |

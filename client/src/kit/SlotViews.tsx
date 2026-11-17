@@ -2,12 +2,15 @@ import { Component, type ReactNode } from "react";
 import { reportUiError } from "./errors";
 import { useSlot, type ActionItem, type SectionItem } from "./slots";
 
-/** What a plugin draws sits inside one of these: when it throws, that part is left out and reported, and the screen stays. */
-export class PluginBoundary extends Component<{ source: string; where: string; children: ReactNode }, { failed: boolean }> {
+/**
+ * What a plugin draws sits inside one of these: when it throws, that part is left out (or `fallback` is shown in its place) and reported,
+ * and the screen stays.
+ */
+export class PluginBoundary extends Component<{ source: string; where: string; fallback?: ReactNode; children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
   componentDidCatch(error: unknown) { reportUiError(this.props.source, this.props.where, error); }
-  render() { return this.state.failed ? null : this.props.children; }
+  render() { return this.state.failed ? (this.props.fallback ?? null) : this.props.children; }
 }
 
 function ToolButton({ item, ctx, source, slot }: { item: ActionItem; ctx: unknown; source: string; slot: string }) {
@@ -42,6 +45,24 @@ function Section({ item, ctx }: { item: SectionItem; ctx: unknown }) {
   const body = item.render(ctx);
   return <>{item.title && <h3>{item.title}</h3>}{body}</>;
 }
+
+/**
+ * The panels a plugin added to its own page (slot "plugin.settings"): only the ones this plugin added, each under its title, each in a
+ * boundary of its own that says so when it fails.
+ */
+export function PluginPanels({ plugin }: { plugin: { id: string; version: string } }) {
+  const ctx = { plugin };
+  return <>{useSlot<SectionItem>("plugin.settings", ctx).filter((e) => e.source === plugin.id).map((e) => (
+    <section key={e.item.id} className="plugin-panel" aria-label={e.item.title ?? e.item.id}>
+      {e.item.title && <h2>{e.item.title}</h2>}
+      <PluginBoundary source={e.source} where="plugin.settings" fallback={<p className="form-error" role="alert">This part of the plugin failed. The rest of the page works.</p>}>
+        <Body render={() => e.item.render(ctx)} />
+      </PluginBoundary>
+    </section>
+  ))}</>;
+}
+
+const Body = ({ render }: { render: () => ReactNode }) => <>{render()}</>;
 
 /** The section items of a slot, each under its title: the parts of a panel. */
 export function SlotSections({ slot, ctx }: { slot: string; ctx: unknown }) {

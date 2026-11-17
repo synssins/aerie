@@ -664,6 +664,13 @@ label.inline { display: inline-flex; align-items: center; gap: 8px; font-size: 1
 
 /* Administration > Plugins */
 .state-line { margin: 10px 0 12px; }
+.plugin-name { display: inline-flex; align-items: center; gap: 8px; }
+.tb.icon.gear { height: 26px; padding: 0 5px; }
+.tb.icon.gear .ic { margin: 0; }
+.plugin-desc { margin: 8px 0 0; max-width: 72ch; }
+.form .hint { grid-column: 2; margin: -2px 0 0; color: var(--ink2); font-size: 12.5px; max-width: 60ch; }
+.plugin-panel { margin-top: 28px; }
+.plugin-panel > h2 { font-size: 15px; margin: 0 0 10px; }
 .form + .form, .ptools.row + .form { margin-top: 18px; }
 .check { display: flex; align-items: center; gap: 8px; margin: 12px 0 4px; }
 

@@ -27,8 +27,25 @@ function Acknowledged({ kb, page }) {
     (people ?? []).map((p) => h("div", { key: p.name, className: "muted small" }, `${p.name}, version ${p.version}`)));
 }
 
+/**
+ * A panel on the plugin's own page in Administration > Plugins: what the plugin keeps. Only Admins see the page; the route checks too.
+ * It uses the app's classes: "grid-table" for a table, "muted" for a quiet line.
+ */
+function Totals({ kb }) {
+  const [totals, setTotals] = useState(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { kb.api.get("/totals").then(setTotals).catch(() => setFailed(true)); }, [kb]);
+  if (failed) return h("p", { className: "form-error", role: "alert" }, "Not read.");
+  if (!totals) return null;
+  return h("table", { className: "grid-table" },
+    h("tbody", null,
+      h("tr", null, h("td", null, "Acknowledgements"), h("td", null, String(totals.acknowledgements))),
+      h("tr", null, h("td", null, "Pages"), h("td", null, String(totals.pages)))));
+}
+
 /** Called once, after sign-in, with the host: everything the script may use of the app. */
 export default function (kb) {
+  kb.slots.add("plugin.settings", { id: "totals", title: "Acknowledgements kept", render: () => h(Totals, { kb }) });
   kb.slots.add("page.panel", { id: "acknowledged", title: "Acknowledged", render: (c) => h(Acknowledged, { kb, page: c.page }) });
   kb.slots.add("page.tools", {
     id: "acknowledge",

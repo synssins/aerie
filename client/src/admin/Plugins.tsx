@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ChevronRight, House, Upload } from "lucide-react";
+import { ChevronRight, House, Settings, Upload } from "lucide-react";
 import { api, ApiError, fmtDateTime, upload, type PluginHealth, type PluginInfo, type PluginPermissions, type PluginSetting } from "../api";
 import { useDialogs } from "../Dialogs";
+import { PluginPanels } from "../kit/SlotViews";
 
 type PluginList = { plugins: PluginInfo[]; safeMode: boolean };
 type SettingsData = { values: Record<string, string | null>; secretsSet: string[] };
@@ -12,7 +13,8 @@ const stateText = (p: PluginInfo) => p.removed ? "Removed, data kept" : p.state 
 const isSecret = (s: PluginSetting) => s.secret || s.type === "secret";
 
 /**
- * Administration › Plugins: what is installed, and for one plugin its state, its settings and what it asks for.
+ * Administration › Plugins: what is installed, and for one plugin its page (opened by the gear left of its name, or a click on its row):
+ * its state, its settings, what it asks for, and the panels its own script adds.
  * Every change restarts the app; the screen says so and comes back by itself.
  */
 export function Plugins({ area, onHome }: { area: string; onHome: () => void }) {
@@ -97,7 +99,16 @@ export function Plugins({ area, onHome }: { area: string; onHome: () => void }) 
               <tbody>
                 {data.plugins.map((p) => (
                   <tr key={p.id} className={`row ${p.state === "Enabled" ? "" : "off"}`} onClick={() => { setSelectedId(p.id); setError(null); }}>
-                    <td>{p.name}</td><td>{p.version}</td><td className="muted">{p.publisher}</td><td>{stateText(p)}</td>
+                    <td>
+                      <span className="plugin-name">
+                        <button type="button" className="tb icon gear" aria-label={`Settings of ${p.name}`} title={`Settings of ${p.name}`}
+                          onClick={(e) => { e.stopPropagation(); setSelectedId(p.id); setError(null); }}>
+                          <Settings className="ic" aria-hidden />
+                        </button>
+                        {p.name}
+                      </span>
+                    </td>
+                    <td>{p.version}</td><td className="muted">{p.publisher}</td><td>{stateText(p)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -106,6 +117,7 @@ export function Plugins({ area, onHome }: { area: string; onHome: () => void }) 
 
           {selected && (
             <>
+              {selected.description && <p className="plugin-desc">{selected.description}</p>}
               <p className="state-line">{selected.state === "DisabledByCore" ? `Disabled by core: ${selected.reason ?? ""}` : stateText(selected)}</p>
               {selected.removed && (
                 <div className="ptools row">
@@ -121,6 +133,7 @@ export function Plugins({ area, onHome }: { area: string; onHome: () => void }) 
               </div>}
               {selected.settings.length > 0 && <SettingsForm key={selected.id} plugin={selected} onRestart={() => setRestarting(true)} />}
               {!selected.removed && selected.permissions.some((p) => p.scope === "space") && <PermissionsForm key={`${selected.id}-permissions`} plugin={selected} />}
+              {selected.loaded && <PluginPanels key={`${selected.id}-panels`} plugin={{ id: selected.id, version: selected.version }} />}
             </>
           )}
         </div>
@@ -286,28 +299,43 @@ function SettingsForm({ plugin, onRestart }: { plugin: PluginInfo; onRestart: ()
         : <input id={id} type="password" autoComplete="new-password" value={secrets[d.key] ?? ""} onChange={(e) => { setSecrets((all) => ({ ...all, [d.key]: e.target.value })); setStatus(null); }} />;
     }
     const v = values[d.key] ?? "";
+    // Nothing saved: the plugin gets the default, so the field shows it (as the placeholder of a text, the state of a toggle).
+    const shown = d.default ?? "";
+    const help = d.help ? `${id}-h` : undefined;
+    const optionLabel = (o: string) => d.optionLabels?.[o] ?? o;
+    const withUnit = (field: ReactNode) => d.unit ? <div className="unit">{field}<span>{d.unit}</span></div> : field;
     switch (d.type) {
-      case "toggle": return <button id={id} type="button" role="switch" aria-checked={v === "true"} aria-labelledby={`${id}-l`} className={`sw ${v === "true" ? "on" : ""}`} onClick={() => set(d.key, v === "true" ? "false" : "true")} />;
-      case "select": return (
-        <select id={id} className="sel" value={v} onChange={(e) => set(d.key, e.target.value)}>
-          {!(d.options ?? []).includes("") && <option value="" />}
-          {(d.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
+      case "toggle": {
+        const on = (v || shown) === "true";
+        return <button id={id} type="button" role="switch" aria-checked={on} aria-labelledby={`${id}-l`} aria-describedby={help} className={`sw ${on ? "on" : ""}`} onClick={() => set(d.key, on ? "false" : "true")} />;
+      }
+      case "select": return withUnit(
+        <select id={id} className="sel" value={v} aria-describedby={help} onChange={(e) => set(d.key, e.target.value)}>
+          {!(d.options ?? []).includes("") && <option value="">{d.default ? `Default (${optionLabel(d.default)})` : ""}</option>}
+          {(d.options ?? []).map((o) => <option key={o} value={o}>{optionLabel(o)}</option>)}
+        </select>,
       );
-      case "multiline": return <textarea id={id} value={v} onChange={(e) => set(d.key, e.target.value)} />;
-      case "number": return <div className="unit"><input id={id} type="number" value={v} onChange={(e) => set(d.key, e.target.value)} /></div>;
-      default: return <input id={id} type="text" value={v} spellCheck={false} onChange={(e) => set(d.key, e.target.value)} />;
+      case "multiline": return <textarea id={id} value={v} placeholder={shown || undefined} aria-describedby={help} onChange={(e) => set(d.key, e.target.value)} />;
+      case "number": return (
+        <div className="unit">
+          <input id={id} type="number" value={v} placeholder={shown || undefined} min={d.min ?? undefined} max={d.max ?? undefined} aria-describedby={help} onChange={(e) => set(d.key, e.target.value)} />
+          {d.unit && <span>{d.unit}</span>}
+        </div>
+      );
+      default: return withUnit(<input id={id} type="text" value={v} placeholder={shown || undefined} spellCheck={false} aria-describedby={help} onChange={(e) => set(d.key, e.target.value)} />);
     }
   };
 
+  // noValidate: the app checks the bounds and says so in its own words, under the field.
   return (
-    <form className="form" onSubmit={save}>
+    <form className="form" noValidate onSubmit={save}>
       {plugin.settings.map((d) => {
         const dots = isSecret(d) && secrets[d.key] === null;
         return (
           <FieldRow key={d.key} label={d.label} id={dots ? undefined : `ps-${d.key}`} labelId={d.type === "toggle" ? `ps-${d.key}-l` : undefined} top={d.type === "multiline"}
             error={errors[d.key] && <p className="form-error wide" role="alert">{errors[d.key][0]}</p>}>
             {control(d)}
+            {d.help && <p className="hint" id={`ps-${d.key}-h`}>{d.help}</p>}
           </FieldRow>
         );
       })}
