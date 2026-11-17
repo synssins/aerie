@@ -67,6 +67,7 @@ public void Configure(IPluginApp app, IPluginContext context) => app
     .HealthCheck<TableCheck>("table")
     .EditorNode(Notice.Renderer)                               // how the server reads its editor block
     .ImportContributor<NoticeFromFile>()                       // add to the drafts of AI imports
+    .DraftContributor<NoticeFromDraft>()                       // ... from the text the AI drafted
     .Routes(SampleRoutes.Map);                                 // under /api/v1/plugins/kb.sample/
 ```
 
@@ -638,7 +639,7 @@ A small complete document: a heading, a paragraph with a bold word, a numbered l
 }
 ```
 
-- An AI import drafts its pages with the same types: `heading`, `paragraph`, `bulletList`, `orderedList` (numbered steps), `listItem`, `codeBlock`, `blockquote` (notes and warnings), `table` with `tableHeader` and `tableCell`, `image`, `hardBreak`, and the marks `bold`, `italic` and `code`, followed by the nodes [import contributors](#adding-to-the-draft-import-contributors) add. A `codeBlock` the AI drafts has the `language` the model gave it, in lower case, or `plaintext`: a fenced block of a Markdown file usually keeps its language, but the model decides. What is stored is the content the importer reviewed and accepted.
+- An AI import drafts its pages with the same types: `heading`, `paragraph`, `bulletList`, `orderedList` (numbered steps), `listItem`, `codeBlock`, `blockquote` (notes and warnings), `table` with `tableHeader` and `tableCell`, `image`, `hardBreak`, and the marks `bold`, `italic` and `code`, with the nodes [import contributors](#adding-to-the-draft-import-contributors) and [draft contributors](#adding-to-the-draft-from-its-text-draft-contributors) add. A `codeBlock` the AI drafts has the `language` the model gave it, in lower case, or `plaintext`: a fenced block of a Markdown file usually keeps its language, but the model decides. What is stored is the content the importer reviewed and accepted.
 - A page is stored as its writer sent it, by the editor or by anyone who calls the API. Read it with care: a node may lack `content`, hold `null`, or be of a type you do not expect. The core's own readers walk into the `content` of any node they do not know, so its text is never lost.
 - There is no chart or diagram block in the core, and no format for one. A plugin that wants charts or diagrams brings its own: an [editor block](#editor-blocks) of its own type, the library that draws it in the browser (in its `ui/` folder), and a renderer for the server.
 
@@ -910,21 +911,79 @@ public sealed class NoticeFromFile : IImportContributor
 ```
 
 - **When.** Once for each file of an item, after every scanner has passed the file and the AI has drafted the item, before the importer sees the draft. Not for a blocked file, a zip itself (its entries are files of their own), a system file, or a picture inside a document; not for an item the AI could not draft.
-- **What it gets.** `ImportedFile(ImportItemId, Path, FileName, Length, OpenReadAsync)`. Each call of `OpenReadAsync` gives a new read-only stream of the file's bytes, so each contributor reads its own. There is no content type: read the name and the bytes.
+- **What it gets.** `ImportedFile(ImportItemId, Path, FileName, Length, OpenReadAsync)`. `Length` is the file's exact size in bytes. Each call of `OpenReadAsync` gives a new read-only stream of the file's bytes, so each contributor reads its own. The stream is a seekable stream over the whole file, which the core has read into memory: a zip (a `.docx`) can be opened on it directly, without a copy. There is no content type: read the name and the bytes.
 - **How it runs.** Made new for each call, with the plugin's services, in a scope of its own, as its plugin: an actor of kind Plugin with source `import` and `ImportItemId` set. It reads what a plugin may read (no sensitive space), and an action that records a person (`page.create`, `attachment.add`) answers 401.
-- **What it answers.** Null, or `ImportContribution(Nodes)`: block nodes as a page stores them ([page content](#page-content)), at most 50 of them and 512 KB of JSON. Each must be an object whose `type` is a string other than `doc` and `text`. A node of the plugin's own type needs its [editor block](#editor-blocks) for the importer to see and edit it.
-- **What the importer sees.** The nodes are added at the end of the first page of the draft, file by file, and the draft's warnings name each plugin and file ("Charts added 2 blocks from flow.drawio at the end of the first page."). The importer reviews them with the rest, and can change or delete them before accepting.
+- **What it answers.** Null, or `ImportContribution(Nodes)`: block nodes as a page stores them ([page content](#page-content)), at most 50 of them and 512 KB of JSON ([how they are counted](#how-the-limits-are-counted)). Each must be an object whose `type` is a string other than `doc` and `text`. A node of the plugin's own type needs its [editor block](#editor-blocks) for the importer to see and edit it.
+- **What the importer sees.** The nodes are added at the end of the first page of the draft, file by file. A file contributor cannot choose the page or the place: a plugin that should put its nodes elsewhere (a diagram next to the text that describes it, on the second page) adds them from a [draft contributor](#adding-to-the-draft-from-its-text-draft-contributors) instead, which says where. The draft's warnings name each plugin and file ("Charts added 2 blocks from flow.drawio at the end of the first page."). The importer reviews them with the rest, and can change or delete them before accepting.
 - **What is checked.** The nodes are copied when the call returns. When the draft is accepted they are saved by `page.create` or `page.save` like any content: the same checks, the same hooks. Nothing of them is sent to the model.
-- **Limits.** A call that throws, runs past 10 seconds, or answers what the core cannot use adds nothing for that file. It is written to the log and counted as a failure of the plugin ([five in ten minutes disable it](#what-the-core-disables-a-plugin-for)). Its token is cancelled at the limit. The import goes on.
+- **Limits.** A call that throws, runs past 10 seconds, or answers what the core cannot use adds nothing for that file. It is written to the log and counted as a failure of the plugin ([five in ten minutes disable it](#what-the-core-disables-a-plugin-for)). At the limit its token is cancelled and the core stops waiting ([time](#how-the-limits-are-counted)). The import goes on.
 - **Sensitive content.** Contributors are not called for an item in which the core finds a secret (a password, a key, a token: the same finder that marks the draft), or whose upload named a sensitive space as its destination. The draft then says "Plugins were not given these files: they hold a secret, or go to a sensitive space." An importer who chooses a sensitive space only when accepting has already let the contributors read the files: choose it at upload.
 - **Audit.** Each contribution writes `import.contribute`, with the importer as the actor and the plugin's id, the file's path and SHA-256, and the number of nodes.
 - **Files.** A contributor adds nodes, not files. A plugin that wants a picture on the page sends `image.add` ([above](#adding-an-image-or-an-attachment)) from a before hook on the `page.create` or `page.save` that accepting sends (source `import`), where the actor is the importer, and puts the image's address in the content.
 - `IRecordImporter`, declared in the contract, is something else: records synced from another system. It is not called.
 
+### Adding to the draft from its text: draft contributors
+
+An import contributor sees a file, not what the AI drafted from it. A plugin that builds content from the draft's text (a chart of the procedure the page describes) registers an `IDraftContributor` with `app.DraftContributor<T>()`. It is called once for each item, with the draft's pages, and says where its nodes go. The sample repeats a paragraph that starts "Notice:" as its notice block, after the page's introduction:
+
+<!-- sample:draft -->
+```csharp
+/// <summary>
+/// Adds to an AI import's draft from its text: a paragraph that starts "Notice:" in a drafted page is repeated as a notice near the top
+/// of that page, after its introduction, so the importer reviews it with the rest. It reads the draft and answers where its nodes go.
+/// </summary>
+public sealed class NoticeFromDraft : IDraftContributor
+{
+    public Task<DraftContribution?> ContributeAsync(ImportDraft draft, CancellationToken ct)
+    {
+        var additions = new List<DraftAddition>();
+        for (var i = 0; i < draft.Pages.Count; i++)
+        {
+            using var doc = JsonDocument.Parse(draft.Pages[i].ContentJson);
+            var blocks = doc.RootElement.TryGetProperty("content", out var c) ? c.EnumerateArray().ToList() : [];
+            if (blocks.Any(b => b.GetProperty("type").GetString() == "sampleNotice")) continue; // a file already gave this page its notice
+            var notice = blocks.Where(b => b.GetProperty("type").GetString() == "paragraph" && b.TryGetProperty("content", out _))
+                .Select(b => string.Concat(b.GetProperty("content").EnumerateArray().Select(t => t.TryGetProperty("text", out var x) ? x.GetString() : "")))
+                .FirstOrDefault(t => t.StartsWith("Notice:", StringComparison.Ordinal))?[7..].Trim();
+            if (string.IsNullOrEmpty(notice)) continue;
+            var node = JsonSerializer.SerializeToElement(new { type = "sampleNotice", content = new[] { new { type = "text", text = notice } } });
+            additions.Add(new DraftAddition(i, DraftPlace.AfterIntroduction, [node]));
+        }
+        return Task.FromResult(additions.Count == 0 ? null : new DraftContribution(additions));
+    }
+}
+```
+
+- **When.** Once for each item the AI drafted, after every [import contributor](#adding-to-the-draft-import-contributors) has added its nodes, before the importer sees the draft. Draft contributors run one after another, in the order the plugins were loaded; each sees what the ones before it added. Not for an item the AI could not draft.
+- **What it gets.** `ImportDraft(ImportItemId, Pages, Files)`. `Pages` are the draft's pages in order, each a `DraftPage(Title, ContentJson)`: the page's content as a page stores it ([page content](#page-content)), the AI's blocks with the import contributors' nodes already in them. The draft's pictures point to the import's own copies (`/api/v1/imports/files/<id>`) until the draft is accepted. `Files` are the paths of the item's files that were read. It is a copy: changing it changes nothing. It is not the text the app read from the files.
+- **What it answers.** Null, or `DraftContribution(Additions)`: each a `DraftAddition(Page, Place, Nodes)`. `Page` is the page's index in `Pages` (0 is the first). `Place` is one of:
+
+  | `DraftPlace` | The nodes go |
+  |---|---|
+  | `End` | After the page's last block. |
+  | `Start` | Before the page's first block. |
+  | `AfterIntroduction` | Before the first `heading` that has a block before it: after an opening paragraph, or, on a page that starts with a heading, after that first section. At the end when the page has no such heading. |
+
+  Additions to one place keep the order of the answer. The places are found on the page as it was before this contributor's additions. The nodes are checked as an import contributor's are, with the limits counted over all the additions of one answer together ([below](#how-the-limits-are-counted)).
+- **What the importer sees.** The nodes in the draft where they were put, and a warning naming the plugin and the pages ("Charts added 1 block to "Restart the cluster"."). They review, change or delete them with the rest; accepting saves what they kept.
+- **How it runs, sensitive content, failures, audit.** As for an import contributor: in its own scope, as its plugin (source `import`, `ImportItemId` set), within 10 seconds; never for an item with a secret or bound for a sensitive space. An answer that names a page the draft does not have, or a place that is not one of the three, is a failure like any other: nothing of it is added. Each contribution writes `import.contribute` with the plugin's id, the pages (`pages`, their indexes) and the number of nodes.
+- **Retry.** Retry on an import item drafts it again from the files: the AI drafts new pages, and every contributor runs again on them. Nothing is kept from the earlier draft, so nothing is added twice.
+- **After the draft is accepted.** The `page.create` or `page.save` that accepting sends has `ctx.Actor.Source` `import` and `ctx.Actor.ImportItemId` set ([where the call comes from](#where-the-call-comes-from)). A plugin that also builds its content in a before hook on those actions (for pages made by hand) skips a page that already holds it: look for its own node type in `ContentJson`, as the sample's contributor does on the draft. The importer may have deleted the node in review; a plugin that should not add it back then checks `Source` first, and leaves a page from an import as the importer accepted it.
+
+### How the limits are counted
+
+For both kinds of contributor:
+
+- **Nodes.** At most 50 nodes in one answer: the entries of `Nodes`, or of all the additions' `Nodes` together. A node's own content (a table's rows) is not counted.
+- **Size.** At most 512 KB (524,288 bytes): the JSON of each node as the plugin gave it, counted in UTF-8 bytes and added up over the nodes of the answer. Write compact JSON; `JsonSerializer.SerializeToElement` does.
+- **Over a limit.** The whole answer is dropped, not cut: nothing of it is added, and it counts as a failure of the plugin.
+- **Time.** The limit is 10 seconds for each call. At the limit the core stops waiting, cancels the call's token, and goes on with the import; whatever the call answers later is dropped, and it counts as a failure. The call itself goes on running until it returns, so code that does not look at the token (a long parse) uses the processor until it ends. Check `ct` in long loops.
+
+
 ### What a plugin sees of an import
 
 The import actions (`import.*`) are core-only: a plugin cannot hook them, send them or read their data.
-A plugin reads an import's files only through an [import contributor](#adding-to-the-draft-import-contributors). It cannot read the text the app read from a file or the AI's draft. Then it sees what the importer accepts, when the import sends the normal actions as the importer, and so runs the hooks on those:
+A plugin reads an import's files only through an [import contributor](#adding-to-the-draft-import-contributors), and its draft only through a [draft contributor](#adding-to-the-draft-from-its-text-draft-contributors). It cannot read the text the app read from a file. Then it sees what the importer accepts, when the import sends the normal actions as the importer, and so runs the hooks on those:
 
 | The importer accepts | Actions sent, in this order |
 |---|---|
@@ -962,7 +1021,7 @@ Every action carries an actor (`ctx.Actor`). It is one of:
 | `queue` | `Plugin` | A plugin's after handler, and every action it sends. |
 | `health` | `Plugin` | A plugin's health check, and every action it sends. |
 | `import` | `User` | The actions sent when the importer accepts a draft ([which](#what-a-plugin-sees-of-an-import)), as the importer. |
-| `import` | `Plugin` | An [import contributor](#adding-to-the-draft-import-contributors), and every action it sends. |
+| `import` | `Plugin` | An [import contributor](#adding-to-the-draft-import-contributors) or a [draft contributor](#adding-to-the-draft-from-its-text-draft-contributors), and every action it sends. |
 
 `ctx.Actor.PluginId` names the plugin for `job`, `queue`, `health` and a contributor's `import`. `ctx.Actor.ImportItemId` is the import item's id when `Source` is `import`, and null otherwise. `ctx.Name` is the action's own name (`page.create`), never the action that sent it.
 
@@ -1008,7 +1067,7 @@ Sign-in, setup and plugin administration are never locked.
 - A requirement that is missing, disabled or too old; a circular requirement.
 - A plugin built for a newer plugin API or a newer app.
 - A hook, a handler or a job on an action that is not open to plugins, or a second handler for an action.
-- Five failures in ten minutes: a hook, a filter, an after handler, a job, an import contributor, an audit sink or an email sender that threw, or whose own time limit ran out. A job or an import contributor that runs past its limit counts too, and so does a contributor's answer the core cannot use.
+- Five failures in ten minutes: a hook, a filter, an after handler, a job, an import or draft contributor, an audit sink or an email sender that threw, or whose own time limit ran out. A job or a contributor that runs past its limit counts too, and so does a contributor's answer the core cannot use.
 
 The plugin stays disabled until an Admin selects Enable. Uploading a new version does not enable it. Plugins that require it are disabled with it; an enforcing one among them is locked.
 
@@ -1018,7 +1077,8 @@ The plugin stays disabled until an Admin selects Enable. Uploading a new version
 - `abstractionsVersion`: the version of `Kb.Plugins.Abstractions` the plugin was built against. The app refuses a plugin built for a newer one.
 - `minKbVersion`: the lowest app version the plugin runs on.
 
-The contract and the app are at 0.4.0, and can still change before 1.0.0.
+The contract and the app are at 0.5.0, and can still change before 1.0.0.
+0.5.0 added [draft contributors](#adding-to-the-draft-from-its-text-draft-contributors) (`IDraftContributor`, `ImportDraft`, `DraftPage`, `DraftContribution`, `DraftAddition`, `DraftPlace`, `app.DraftContributor<T>()`); a plugin that uses them says `"abstractionsVersion": "0.5.0"`. It changed one thing a 0.4.0 contributor can see: the 512 KB limit is now counted in UTF-8 bytes, where 0.4.0 counted characters, so an answer of mostly non-ASCII text holds less. Everything else of 0.4.0 is unchanged, and a plugin built for 0.4.0 or earlier loads as it did.
 0.4.0 added [import contributors](#adding-to-the-draft-import-contributors) (`IImportContributor`, `ImportedFile`, `ImportContribution`, `app.ImportContributor<T>()`), `DocPicture` for [exports](#editor-blocks), `UploadContent.FromBytes` and `FromStream` ([adding a file](#adding-an-image-or-an-attachment)), and `ActorSources` with `Actor.ImportItemId` ([where the call comes from](#where-the-call-comes-from)); a plugin that uses them says `"abstractionsVersion": "0.4.0"`. It changed one thing a 0.3.0 plugin can see: an accepted import's actions have source `import`, not `web`. Everything else of 0.3.0 is unchanged, and a plugin built for 0.3.0 or earlier loads as it did.
 0.3.0 added `IOutboundRequestDecorator`, the inventory sync action and its records, and page details on `PageDto`; a plugin that uses them says `"abstractionsVersion": "0.3.0"`. See [packaging](packaging.md#versions).
 

@@ -21,7 +21,8 @@ namespace Kb.Tests.Integration;
 /// <summary>
 /// Plugins' import contributors (contract 0.4.0): they read each scanned file of an import and add nodes to its draft, within limits;
 /// one that fails is skipped and counted against its plugin; nothing is given to them from an item with a secret or bound for a sensitive
-/// space. The actions an accepted draft sends say they come from the import, and only the core can say so.
+/// space. The actions an accepted draft sends say they come from the import, and only the core can say so. Draft contributors (0.5.0)
+/// read the drafted pages and add where they say; a retry drafts anew, so nothing is added twice.
 /// </summary>
 public sealed class ImportContributorTests : IAsyncLifetime
 {
@@ -52,6 +53,8 @@ public sealed class ImportContributorTests : IAsyncLifetime
         public readonly ConcurrentBag<(string File, bool Writable, string Text, Actor Actor)> Calls = [];
         public readonly ConcurrentBag<(string Action, Actor Actor)> Hooks = [];
         public readonly ConcurrentBag<(string Plugin, string Where)> Failures = [];
+        public readonly ConcurrentBag<(ImportDraft Draft, Actor Actor)> Drafts = [];
+        public readonly ConcurrentBag<string> Created = [];
     }
 
     private sealed class Recorder(Seen seen) : IPluginFailures
@@ -98,9 +101,29 @@ public sealed class ImportContributorTests : IAsyncLifetime
             Task.FromResult<ImportContribution?>(Nodes("""{"type":"doc","content":[]}"""));
     }
 
+    private sealed class DraftGood(Seen seen, IActorAccessor actor) : IDraftContributor
+    {
+        public Task<DraftContribution?> ContributeAsync(ImportDraft draft, CancellationToken ct)
+        {
+            seen.Drafts.Add((draft, actor.Current));
+            return Task.FromResult<DraftContribution?>(new([new DraftAddition(0, DraftPlace.Start, Nodes("""{"type":"draftChart","attrs":{"from":"text"}}""").Nodes)]));
+        }
+    }
+
+    private sealed class NoSuchPage : IDraftContributor
+    {
+        public Task<DraftContribution?> ContributeAsync(ImportDraft draft, CancellationToken ct) =>
+            Task.FromResult<DraftContribution?>(new([new DraftAddition(draft.Pages.Count, DraftPlace.End, Nodes("""{"type":"paragraph"}""").Nodes)]));
+    }
+
     private sealed class Origin(Seen seen) : IBeforeAction<CreatePage>, IBeforeAction<AddAttachment>
     {
-        public Task<Problem?> BeforeAsync(ActionContext<CreatePage> ctx) { seen.Hooks.Add((ctx.Name, ctx.Actor)); return Task.FromResult<Problem?>(null); }
+        public Task<Problem?> BeforeAsync(ActionContext<CreatePage> ctx)
+        {
+            seen.Hooks.Add((ctx.Name, ctx.Actor));
+            if (ctx.Action.ContentJson is { } c) seen.Created.Add(c);
+            return Task.FromResult<Problem?>(null);
+        }
         public Task<Problem?> BeforeAsync(ActionContext<AddAttachment> ctx) { seen.Hooks.Add((ctx.Name, ctx.Actor)); return Task.FromResult<Problem?>(null); }
     }
 
@@ -119,6 +142,8 @@ public sealed class ImportContributorTests : IAsyncLifetime
         regs.Add("kb.test.slow", new ImportContributorReg(typeof(Slow)));
         regs.Add("kb.test.toomany", new ImportContributorReg(typeof(TooMany)));
         regs.Add("kb.test.notablock", new ImportContributorReg(typeof(NotABlock)));
+        regs.Add("kb.test.draft", new DraftContributorReg(typeof(DraftGood)));
+        regs.Add("kb.test.nosuchpage", new DraftContributorReg(typeof(NoSuchPage)));
         regs.Add("kb.test.origin", new BeforeHook(typeof(CreatePage), typeof(Origin), false));
         regs.Add("kb.test.origin", new BeforeHook(typeof(AddAttachment), typeof(Origin), false));
         var seen = _seen;
@@ -196,8 +221,9 @@ public sealed class ImportContributorTests : IAsyncLifetime
             _seen.Failures.Where(f => f.Where == "import contributor").Select(f => f.Plugin).Order(StringComparer.Ordinal));
         await _f.WithDbAsync(async db =>
         {
-            var entry = await db.AuditEntries.SingleAsync(a => a.Action == AuditActions.ImportContribute, Ct);
-            Assert.Contains("kb.test.good", entry.DataJson, StringComparison.Ordinal);
+            var entries = await db.AuditEntries.Where(a => a.Action == AuditActions.ImportContribute).Select(a => a.DataJson).ToListAsync(Ct);
+            Assert.Single(entries, e => e!.Contains("kb.test.good", StringComparison.Ordinal));
+            Assert.Single(entries, e => e!.Contains("kb.test.draft", StringComparison.Ordinal));
         });
     }
 
@@ -211,7 +237,48 @@ public sealed class ImportContributorTests : IAsyncLifetime
         (await _admin.PatchAsJsonAsync($"/api/v1/admin/spaces/{_space}", new { isSensitive = true }, Ct)).EnsureSuccessStatusCode();
         await DraftAsync(new { spaceId = _space }, "flow.drawio", "<mxfile/>");
         Assert.Empty(_seen.Calls);
+        Assert.Empty(_seen.Drafts);
         Assert.Empty(_seen.Failures);
+    }
+
+    [Fact]
+    public async Task ADraftContributor_SeesTheDraft_ItsNodesGoWhereItSays_TheyAreSaved_AndARetryAddsThemOnce()
+    {
+        var detail = await DraftAsync(new { }, "flow.drawio", "<mxfile/>");
+        var item = detail.GetProperty("id").GetGuid();
+
+        // It saw the drafted page with the file contributor's node already in it, as its plugin, from the import.
+        var (draft, actor) = Assert.Single(_seen.Drafts);
+        Assert.Equal(item, draft.ImportItemId);
+        var page = Assert.Single(draft.Pages);
+        Assert.Equal("Flow", page.Title);
+        Assert.Contains("The flow.", page.ContentJson, StringComparison.Ordinal);
+        Assert.Contains("probeBox", page.ContentJson, StringComparison.Ordinal);
+        Assert.Equal(["flow.drawio"], draft.Files);
+        Assert.Equal((ActorKind.Plugin, "kb.test.draft", ActorSources.Import, (Guid?)item), (actor.Kind, actor.PluginId, actor.Source, actor.ImportItemId));
+
+        // Its node is at the start, the file's at the end; it is named in the warnings. One naming a page the draft lacks added nothing.
+        var nodes = JsonNode.Parse(FirstPage(detail))!["content"]!.AsArray();
+        Assert.Equal(["draftChart", "paragraph", "probeBox"], nodes.Select(n => n!["type"]!.GetValue<string>()));
+        Assert.Contains(Warnings(detail), w => w == "kb.test.draft added 1 block to \"Flow\".");
+        Assert.Contains(("kb.test.nosuchpage", "draft contributor"), _seen.Failures);
+
+        // A retry drafts the page again: the contributors run again, and the node is there once.
+        Assert.True((await _cara.PostAsync($"/api/v1/imports/items/{item}/retry", null, Ct)).IsSuccessStatusCode);
+        var worker = _f.Services.GetRequiredService<ImportWorker>();
+        for (var i = 0; i < 20 && await worker.RunOnceAsync(Ct); i++) { }
+        detail = await _cara.GetFromJsonAsync<JsonElement>($"/api/v1/imports/items/{item}", Ct);
+        Assert.Equal(2, _seen.Drafts.Count);
+        Assert.Single(JsonNode.Parse(FirstPage(detail))!["content"]!.AsArray(), n => n!["type"]!.GetValue<string>() == "draftChart");
+
+        // Accepting saves it: the page.create a plugin's hook sees comes from this import and already holds the node.
+        var accept = await _cara.PostAsJsonAsync($"/api/v1/imports/items/{item}/accept", new
+        {
+            pages = new[] { new { title = "Flow", contentJson = FirstPage(detail), tags = (string[]?)null } }, spaceId = _space,
+        }, Ct);
+        Assert.Equal(HttpStatusCode.OK, accept.StatusCode);
+        Assert.Contains(_seen.Hooks, h => h.Action == "page.create" && h.Actor.ImportItemId == item);
+        Assert.Contains("draftChart", Assert.Single(_seen.Created), StringComparison.Ordinal);
     }
 
     [Fact]
