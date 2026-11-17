@@ -20,7 +20,12 @@ public static partial class DocBuilder
             ["type"] = new JsonObject { ["enum"] = new JsonArray("heading", "paragraph", "steps", "bullets", "code", "table", "note", "image") },
             ["text"] = new JsonObject { ["type"] = "string" },
             ["level"] = new JsonObject { ["type"] = "integer" },
-            ["items"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" } },
+            ["items"] = new JsonObject
+            {
+                ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" },
+                ["description"] = "The items of a \"steps\" or \"bullets\" block, one string each. A list under an item stays in that item's string: after the item's text, " +
+                    "one line per sub-item, indented two spaces per level, starting with \"- \" (bullet) or \"1. \" (numbered).",
+            },
             ["rows"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" } } },
             ["language"] = new JsonObject { ["type"] = "string" },
             ["image"] = new JsonObject { ["type"] = "string" },
@@ -57,7 +62,7 @@ public static partial class DocBuilder
                     // A list's lead-in ("Steps", "Before you start") is text too: kept above the list.
                     if (b.Items.Any(i => i.Trim().Length > 0) && b.Text.Trim().Length > 0) content.Add(Node("paragraph", Inline(b.Text.Trim())));
                     content.Add(Node(b.Type == "steps" ? "orderedList" : "bulletList",
-                        new JsonArray([.. items.Select(i => (JsonNode)Node("listItem", new JsonArray(Node("paragraph", Inline(i)))))])));
+                        new JsonArray([.. items.Select(i => (JsonNode)ListItem(i))])));
                     break;
                 case "code":
                     content.Add(Node("codeBlock", b.Text.Length > 0 ? new JsonArray(Text(b.Text)) : null, new JsonObject { ["language"] = string.IsNullOrWhiteSpace(b.Language) ? "plaintext" : b.Language.Trim().ToLowerInvariant() }));
@@ -81,6 +86,46 @@ public static partial class DocBuilder
             }
         }
         return new JsonObject { ["type"] = "doc", ["content"] = content };
+    }
+
+    [GeneratedRegex(@"^([ \t]*)(?:[-*•]|(\d+)[.)])[ \t]+(\S.*)$")]
+    private static partial Regex SubItem();
+
+    /// <summary>
+    /// A list item from its text. The blocks have no nested lists, so a list under an item arrives in the item's text: each line
+    /// after the first that starts with "- ", "* " or "1. " is an item of a list under it, nested by its indentation. Any other
+    /// line carries on the item above it, after a line break.
+    /// </summary>
+    private static JsonObject ListItem(string text)
+    {
+        static JsonObject Item(string t) => Node("listItem", new JsonArray(Node("paragraph", Inline(t))));
+        var lines = text.Replace("\r", "", StringComparison.Ordinal).Split('\n').Where(l => l.Trim().Length > 0).ToList();
+        var root = Item(lines[0]);
+        var item = root;
+        var open = new List<(int Indent, JsonObject List)>(); // the lists under the item, innermost last
+        foreach (var line in lines.Skip(1))
+        {
+            var m = SubItem().Match(line);
+            if (!m.Success)
+            {
+                var para = item["content"]![0]!["content"]!.AsArray();
+                para.Add(new JsonObject { ["type"] = "hardBreak" });
+                foreach (var part in Inline(line.Trim())) para.Add(part!.DeepClone());
+                continue;
+            }
+            var indent = m.Groups[1].Length;
+            while (open.Count > 1 && open[^1].Indent > indent) open.RemoveAt(open.Count - 1);
+            if (open.Count == 0 || open[^1].Indent < indent)
+            {
+                var list = Node(m.Groups[2].Success ? "orderedList" : "bulletList");
+                list["content"] = new JsonArray();
+                (open.Count == 0 ? root : open[^1].List["content"]!.AsArray()[^1]!)["content"]!.AsArray().Add(list);
+                open.Add((indent, list));
+            }
+            item = Item(m.Groups[3].Value);
+            open[^1].List["content"]!.AsArray().Add(item);
+        }
+        return root;
     }
 
     private static JsonObject Node(string type, JsonArray? content = null, JsonObject? attrs = null)

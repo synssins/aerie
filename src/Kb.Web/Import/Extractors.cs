@@ -272,9 +272,9 @@ public static partial class Extractors
     private static partial Regex HtmlHeading();
     [GeneratedRegex(@"<img\b[^>]*?src\s*=\s*[""']([^""']+)[""'][^>]*>", RegexOptions.IgnoreCase)]
     private static partial Regex HtmlImg();
-    [GeneratedRegex(@"<li\b[^>]*>", RegexOptions.IgnoreCase)]
-    private static partial Regex HtmlLi();
-    [GeneratedRegex(@"</?(p|div|br|tr|table|ul|ol|section|article|blockquote|pre|hr)\b[^>]*>", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"<(/?)(ul|ol|li)\b[^>]*>", RegexOptions.IgnoreCase)]
+    private static partial Regex HtmlList();
+    [GeneratedRegex(@"</?(p|div|br|tr|table|section|article|blockquote|pre|hr)\b[^>]*>", RegexOptions.IgnoreCase)]
     private static partial Regex HtmlBreak();
     [GeneratedRegex(@"</t[dh]\s*>", RegexOptions.IgnoreCase)]
     private static partial Regex HtmlCellEnd();
@@ -291,12 +291,19 @@ public static partial class Extractors
         var s = Hidden().Replace(html, "");
         s = HtmlHeading().Replace(s, m => $"\n\n{new string('#', int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture))} {Tag().Replace(m.Groups[2].Value, "").Trim()}\n\n");
         s = HtmlImg().Replace(s, m => $"\n![]({Path.GetFileName(Uri.UnescapeDataString(m.Groups[1].Value.Split('?')[0]))})\n");
-        s = HtmlLi().Replace(s, "\n- ");
+        // A list item is a line with its mark, indented two spaces per level (\u0001 holds a level until the lines are trimmed).
+        var lists = new Stack<bool>();
+        s = HtmlList().Replace(s, m =>
+        {
+            var tag = m.Groups[2].Value.ToLowerInvariant();
+            if (tag != "li") { if (m.Groups[1].Length == 0) lists.Push(tag == "ol"); else lists.TryPop(out _); return "\n"; }
+            return m.Groups[1].Length > 0 ? "" : $"\n{new string('\u0001', Math.Max(lists.Count - 1, 0))}{(lists.TryPeek(out var ordered) && ordered ? "1. " : "- ")}";
+        });
         s = HtmlCellEnd().Replace(s, " | ");
         s = HtmlBreak().Replace(s, "\n");
         s = WebUtility.HtmlDecode(Tag().Replace(s, ""));
         s = string.Join('\n', s.Split('\n').Select(l => Spaces().Replace(l, " ").Trim()));
-        return Blank().Replace(s, "\n\n").Trim();
+        return Blank().Replace(s, "\n\n").Trim().Replace("\u0001", "  ", StringComparison.Ordinal);
     }
 
     private static Extraction Mht(byte[] data)
@@ -371,11 +378,17 @@ public static partial class Extractors
         using var zip = new ZipArchive(new MemoryStream(data));
         var doc = Xml(zip, "word/document.xml") ?? throw new InvalidDataException("No document.");
         var rels = Rels(zip, "word/document.xml");
+        // Which levels of which lists are numbered: a list's number names its definition, which has a format per level.
+        var numbering = Xml(zip, "word/numbering.xml")?.Root;
+        var numbered = new HashSet<(string, string)>();
+        foreach (var num in numbering?.Elements(W + "num") ?? [])
+            foreach (var lvl in numbering!.Elements(W + "abstractNum").Where(a => (string?)a.Attribute(W + "abstractNumId") == (string?)num.Element(W + "abstractNumId")?.Attribute(W + "val")).Elements(W + "lvl"))
+                if ((string?)lvl.Element(W + "numFmt")?.Attribute(W + "val") is not (null or "bullet" or "none")) numbered.Add(((string?)num.Attribute(W + "numId") ?? "", (string?)lvl.Attribute(W + "ilvl") ?? "0"));
         var sb = new StringBuilder();
         var body = doc.Root!.Element(W + "body")!;
         foreach (var block in body.Elements())
         {
-            if (block.Name == W + "p") sb.Append(Paragraph(block, rels)).Append('\n');
+            if (block.Name == W + "p") sb.Append(Paragraph(block, rels, numbered)).Append('\n');
             else if (block.Name == W + "tbl")
             {
                 var rows = block.Elements(W + "tr").Select(tr => (IReadOnlyList<string>)tr.Elements(W + "tc")
@@ -386,10 +399,10 @@ public static partial class Extractors
         return Extraction.Of(Blank().Replace(sb.ToString(), "\n\n").Trim(), Media(zip, "word/media/"));
     }
 
-    private static string Paragraph(XElement p, Dictionary<string, string> rels)
+    private static string Paragraph(XElement p, Dictionary<string, string> rels, HashSet<(string, string)> numbered)
     {
         var style = (string?)p.Element(W + "pPr")?.Element(W + "pStyle")?.Attribute(W + "val") ?? "";
-        var list = p.Element(W + "pPr")?.Element(W + "numPr") is not null;
+        var list = p.Element(W + "pPr")?.Element(W + "numPr");
         var sb = new StringBuilder();
         foreach (var node in p.Descendants())
         {
@@ -404,7 +417,11 @@ public static partial class Extractors
         var heading = HeadingLevel().Match(style);
         if (heading.Success) return $"\n{new string('#', Math.Clamp(int.Parse(heading.Groups[1].Value, CultureInfo.InvariantCulture), 1, 6))} {text}\n";
         if (style.Equals("Title", StringComparison.OrdinalIgnoreCase)) return $"\n# {text}\n";
-        return list ? $"- {text}" : $"\n{text}\n";
+        if (list is null) return $"\n{text}\n";
+        // A list item: its mark, indented two spaces per level. A level with no known number format reads as a bullet.
+        var level = (string?)list.Element(W + "ilvl")?.Attribute(W + "val") ?? "0";
+        var mark = (string?)list.Element(W + "numId")?.Attribute(W + "val") is { } num && numbered.Contains((num, level)) ? "1. " : "- ";
+        return $"{new string(' ', 2 * (int.TryParse(level, CultureInfo.InvariantCulture, out var n) ? Math.Clamp(n, 0, 8) : 0))}{mark}{text}";
     }
 
     [GeneratedRegex(@"^(?:Heading|heading)\s?([1-6])$")]
@@ -482,7 +499,7 @@ public static partial class Extractors
             foreach (var img in el.Descendants(Draw + "image")) sb.Append(CultureInfo.InvariantCulture, $"![]({Path.GetFileName((string?)img.Attribute(XLink + "href") ?? "")})\n");
             if (t.Length == 0) continue;
             if (el.Name == Text + "h") sb.Append(CultureInfo.InvariantCulture, $"\n{new string('#', Math.Clamp((int?)el.Attribute(Text + "outline-level") ?? 1, 1, 6))} {t}\n\n");
-            else sb.Append(el.Ancestors(Text + "list-item").Any() ? $"- {t}\n" : $"{t}\n\n");
+            else sb.Append(el.Ancestors(Text + "list-item").Count() is > 0 and var depth ? $"{new string(' ', 2 * (depth - 1))}- {t}\n" : $"{t}\n\n");
         }
         return Extraction.Of(sb.ToString().Trim(), Media(zip, "Pictures/"));
     }

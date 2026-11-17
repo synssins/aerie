@@ -281,4 +281,76 @@ public sealed class ImportExtractTests
         Assert.Contains("plain words", redacted, StringComparison.Ordinal);
         Assert.Empty(Sensitive.Find("Restart the print spooler. The password policy requires 15 characters."));
     }
+
+    /// <summary>A list as text, one line per item: its mark, indented two spaces per level; a line break in an item as " / ".</summary>
+    private static string Outline(JsonNode list, int depth = 0) => string.Concat(list["content"]!.AsArray().Select(item =>
+        new string(' ', depth * 2) + (list["type"]!.GetValue<string>() == "orderedList" ? "1. " : "- ") +
+        string.Concat((item!["content"]![0]!["content"] as JsonArray ?? []).Select(n => n!["type"]!.GetValue<string>() == "hardBreak" ? " / " : n["text"]!.GetValue<string>())) + "\n" +
+        string.Concat(item["content"]!.AsArray().Skip(1).Select(sub => Outline(sub!, depth + 1)))));
+
+    private static string BuiltList(string type, params string[] items) =>
+        Outline(Assert.Single(DocBuilder.Build([new AiBlock(type, "", 0, items, [], "", "")], _ => null)["content"]!.AsArray())!);
+
+    [Fact]
+    public void ListItems_WithIndentedMarkedLines_BecomeNestedLists()
+    {
+        // The stored page of the first report: sub-bullets came back inside the item's text.
+        Assert.Equal(
+            "1. Is the front light amber or blue?\n" +
+            "  - blue and no POST -> go to \"the display\" below\n" +
+            "  - amber blinking -> read the LCD panel. ...\n" +
+            "  - no light at all -> is it plugged in? ...\n" +
+            "1. Still nothing?\n",
+            BuiltList("steps",
+                "Is the front light amber or blue?\n   - blue and no POST -> go to \"the display\" below\n   - amber blinking -> read the LCD panel. ...\n   - no light at all -> is it plugged in? ...",
+                "Still nothing?"));
+
+        // Numbered under bullets; "*" and "1)" marks; no indentation at all.
+        Assert.Equal("- Tools\n  1. Screwdriver\n  1. Torch\n- Parts\n  - DIMM\n  - PSU\n",
+            BuiltList("bullets", "Tools\n  1. Screwdriver\n  2) Torch", "Parts\n* DIMM\n* PSU"));
+
+        // Three levels, with lines that carry on an item's text at each level, and a step back out.
+        Assert.Equal(
+            "- NO -> the couch / It used to be a cow.\n" +
+            "  - Is the couch available?\n" +
+            "    - yes -> carry it to the door / Leave it facing rack 3.\n" +
+            "    - no -> a belt\n" +
+            "  - Say the service tag.\n",
+            BuiltList("bullets",
+                "NO -> the couch\n  It used to be a cow.\n  - Is the couch available?\n    - yes -> carry it to the door\n      Leave it facing rack 3.\n    - no -> a belt\n  - Say the service tag."));
+
+        // Marks inside a nested item still apply; an item of several plain lines is as before.
+        Assert.Contains("\"bold\"", DocBuilder.Build([new AiBlock("steps", "", 0, ["Open\n  - **Settings**"], [], "", "")], _ => null).ToJsonString(), StringComparison.Ordinal);
+        Assert.Equal("1. One / two\n", BuiltList("steps", "One\ntwo"));
+    }
+
+    [Fact]
+    public void NestedLists_KeepTheirDepth_InTheTextTheModelReads()
+    {
+        const string Md = "1. Check the light\n   - blue\n     - deep\n2. Log in\n\n- Tools\n\t1. Screwdriver";
+        Assert.Equal(Md, Extractors.Extract("a.md", U(Md)).Text);
+        Assert.Equal(Md, Extractors.Extract("a.txt", U(Md.Replace("\n", "\r\n", StringComparison.Ordinal))).Text);
+        Assert.Equal(Md, ImportService.Compact(Md).TrimEnd());
+
+        const string Lists = "1. Check the light\n  - blue\n    - deep\n  - amber\n1. Log in\n- Tools\n  1. Screwdriver";
+        var html = Extractors.Extract("a.html", U("<body><ol><li>Check the light<ul><li>blue<ul><li>deep</li></ul></li><li>amber</li></ul></li>\n <li>Log in</li></ol>" +
+            "<ul><li>Tools<ol><li>Screwdriver</li></ol></li></ul></body>")).Text;
+        Assert.Equal(Lists, string.Join('\n', html.Split('\n').Where(l => l.Length > 0)));
+
+        const string Wns = "xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"";
+        static string P(int num, int level, string text) => $"<w:p><w:pPr><w:numPr><w:ilvl w:val=\"{level}\"/><w:numId w:val=\"{num}\"/></w:numPr></w:pPr><w:r><w:t>{text}</w:t></w:r></w:p>";
+        var docx = Extractors.Extract("a.docx", Zip(
+            ("word/document.xml", U($"<w:document {Wns}><w:body>{P(1, 0, "Check the light")}{P(1, 1, "blue")}{P(1, 2, "deep")}{P(1, 1, "amber")}{P(1, 0, "Log in")}{P(2, 0, "Tools")}{P(2, 1, "Screwdriver")}</w:body></w:document>")),
+            ("word/numbering.xml", U($"<w:numbering {Wns}>" +
+                "<w:abstractNum w:abstractNumId=\"7\"><w:lvl w:ilvl=\"0\"><w:numFmt w:val=\"decimal\"/></w:lvl><w:lvl w:ilvl=\"1\"><w:numFmt w:val=\"bullet\"/></w:lvl><w:lvl w:ilvl=\"2\"><w:numFmt w:val=\"bullet\"/></w:lvl></w:abstractNum>" +
+                "<w:abstractNum w:abstractNumId=\"8\"><w:lvl w:ilvl=\"0\"><w:numFmt w:val=\"bullet\"/></w:lvl><w:lvl w:ilvl=\"1\"><w:numFmt w:val=\"lowerLetter\"/></w:lvl></w:abstractNum>" +
+                "<w:num w:numId=\"1\"><w:abstractNumId w:val=\"7\"/></w:num><w:num w:numId=\"2\"><w:abstractNumId w:val=\"8\"/></w:num></w:numbering>")))).Text;
+        Assert.Equal(Lists, docx);
+
+        const string Ons = "xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\"";
+        var odt = Extractors.Extract("a.odt", Zip(("content.xml", U($"<office:document-content {Ons}><office:body><office:text><text:list><text:list-item><text:p>Check the light</text:p>" +
+            "<text:list><text:list-item><text:p>blue</text:p><text:list><text:list-item><text:p>deep</text:p></text:list-item></text:list></text:list-item></text:list>" +
+            "</text:list-item></text:list></office:text></office:body></office:document-content>")))).Text;
+        Assert.Equal("- Check the light\n  - blue\n    - deep", odt);
+    }
 }
