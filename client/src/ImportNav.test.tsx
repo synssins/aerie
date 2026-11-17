@@ -83,3 +83,18 @@ describe("import navigation", () => {
     expect(location.pathname).toBe(`/s/${SPACE}`);
   });
 });
+
+describe("recently viewed", () => {
+  it("is kept per account: a list another account left in this browser is not shown", async () => {
+    localStorage.setItem("kb.recent", JSON.stringify([{ id: PAGE, title: "Old shared list" }]));
+    localStorage.setItem("kb.recent.u2", JSON.stringify([{ id: PAGE, title: "Someone else's page" }]));
+    localStorage.setItem("kb.recent.u1", JSON.stringify([{ id: PAGE, title: "My own page" }]));
+    server();
+    render(<DialogProvider><App /></DialogProvider>);
+    expect(await screen.findByText("My own page")).toBeTruthy();
+    expect(screen.queryByText("Someone else's page")).toBeNull();
+    expect(screen.queryByText("Old shared list")).toBeNull();
+    expect(localStorage.getItem("kb.recent")).toBeNull();
+    localStorage.clear();
+  });
+});

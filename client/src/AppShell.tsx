@@ -53,7 +53,7 @@ function route(): { space?: string; page?: string; admin?: AdminAt; settings?: S
 
 function store(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* storage blocked */ } }
 function stored(key: string) { try { return localStorage.getItem(key); } catch { return null; } }
-function storedViews(): RecentView[] { try { return JSON.parse(stored("kb.recent") ?? "[]") as RecentView[]; } catch { return []; } }
+function storedViews(key: string): RecentView[] { try { return JSON.parse(stored(key) ?? "[]") as RecentView[]; } catch { return []; } }
 
 // What an entry of the gear menu is handed: nothing of the screen. An entry leads somewhere (kb.navigate).
 const GEAR_CTX = {};
@@ -97,7 +97,13 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
   // What the person is looking at, for the scripts of plugins.
   useEffect(() => { currentView.set({ page: page?.id ? page : null, space: current }); }, [page, current]);
   const [moving, setMoving] = useState<Page | null>(null);
-  const [viewed, setViewed] = useState<RecentView[]>(storedViews);
+  // Recently viewed is kept in the browser, one list per account: another account on the same browser never sees these titles.
+  const recentKey = `kb.recent.${me?.id ?? "guest"}`;
+  const [viewed, setViewed] = useState<RecentView[]>(() => storedViews(recentKey));
+  useEffect(() => {
+    try { localStorage.removeItem("kb.recent"); } catch { /* storage blocked */ } // the list from before it was per account
+    setViewed(storedViews(recentKey));
+  }, [recentKey]);
   const searchRef = useRef<HTMLInputElement>(null);
   const [showGear, setShowGear] = useState(false);
   const [showNew, setShowNew] = useState(false);
@@ -160,13 +166,13 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
     if (p.kind === "Page") {
       setViewed((old) => {
         const next = [{ id: p.id, title: p.title }, ...old.filter((v) => v.id !== p.id)].slice(0, 8);
-        store("kb.recent", JSON.stringify(next));
+        store(recentKey, JSON.stringify(next));
         return next;
       });
     }
     setOpen((o) => ({ ...o, [p.spaceId]: true, ...Object.fromEntries(p.path.map((c) => [c.id, true])) }));
     void loadTree(p.spaceId);
-  }, [loadTree, reset]);
+  }, [loadTree, reset, recentKey]);
 
   const applyRoute = useCallback(async (all: Space[], start: string) => {
     const r = route();
@@ -374,7 +380,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
     if (!current || !await dialogs.confirm({ title: `Move “${p.title}” to the recycle bin?`, ok: "Delete", danger: true })) return;
     try { await api.del(`/pages/${p.id}`); }
     catch { await dialogs.confirm({ title: "Not deleted.", body: p.kind === "Folder" ? "The folder holds pages you can't delete." : undefined, ok: "OK" }); return; }
-    setViewed((old) => { const next = old.filter((v) => v.id !== p.id); store("kb.recent", JSON.stringify(next)); return next; });
+    setViewed((old) => { const next = old.filter((v) => v.id !== p.id); store(recentKey, JSON.stringify(next)); return next; });
     if (p.parentId) { void showPage(p.parentId, spaces); go(`/p/${p.parentId}`); }
     else { showSpace(current); go(`/s/${current.id}`); }
   }
