@@ -90,6 +90,8 @@ public static class AuditActions
     public const string RoleCreate = "role.create";
     public const string AiCall = "ai.call";
     public const string ImportAccept = "import.accept";
+    /// <summary>A plugin's import contributor added nodes to a draft. Data: plugin, file, sha256, nodes.</summary>
+    public const string ImportContribute = "import.contribute";
     public const string ImportQuarantine = "import.quarantine";
     public const string ImportPurge = "import.purge";
     public const string ImportReject = "import.reject";

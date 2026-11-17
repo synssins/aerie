@@ -26,7 +26,8 @@ internal sealed class BytesUpload(string name, byte[] data) : UploadContent
 /// their own rights decide. Every guardrail of the AI service applies to each call.
 /// </summary>
 public sealed partial class ImportService(KbDbContext db, IFileStore store, AiService ai, InventoryService inventory, IAccess access,
-    Kb.Core.Search.ISearchProvider search, IEnumerable<IMalwareScanner> scanners, IAuditLog audit, TimeProvider time, DocRenderers renderers)
+    Kb.Core.Search.ISearchProvider search, IEnumerable<IMalwareScanner> scanners, IAuditLog audit, TimeProvider time, DocRenderers renderers,
+    ImportContributors contributors)
 {
     public const int MaxFilesPerBatch = 1000;
     public const string FileUrl = "/api/v1/imports/files/";
@@ -375,6 +376,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         var added = outWords.Where(w => !inWords.Contains(w) && w.Length > 3).Distinct().ToList();
         if (source.Length > 0 && outWords.Count > 0 && added.Count > Math.Max(8, outWords.Distinct().Count() / 10))
             warnings.Add($"The draft uses words that are not in the source ({string.Join(", ", added.Take(12))}). Confirm the document is correct before saving.");
+        await ContributeAsync(item, batch, files, findings.Count > 0, pages[0], warnings, ct);
 
         var tags = (output["tags"]?.AsArray() ?? []).Select(t => t!.GetValue<string>().Trim().ToLowerInvariant()).Where(t => t.Length is > 0 and <= 50 && !t.Contains(',')).ToList();
         var appliesTo = new JsonArray();
@@ -454,6 +456,27 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         item.Title = CleanTitle(title, fileName: false);
         item.ProposalJson = proposal.ToJsonString();
         (item.Status, item.Error) = (ImportStatus.Ready, null);
+    }
+
+    /// <summary>
+    /// Plugins' import contributors add their nodes to the end of the first page, each named in the warnings so the importer sees
+    /// what a plugin added. They never read an item that holds a secret or that goes to a sensitive space.
+    /// </summary>
+    private async Task ContributeAsync(ImportItem item, ImportBatch batch, IReadOnlyList<ImportFile> files, bool secret, JsonObject page, List<string> warnings, CancellationToken ct)
+    {
+        if (!contributors.Any) return;
+        if (secret || (batch.TargetSpaceId is { } ts && await db.Spaces.AnyAsync(s => s.Id == ts && s.IsSensitive, ct)))
+        {
+            warnings.Add("Plugins were not given these files: they hold a secret, or go to a sensitive space.");
+            return;
+        }
+        var read = files.Where(f => !f.Embedded && f.Kind is not ("Blocked" or "Container" or "Skipped")).ToList();
+        var content = page["doc"]!["content"]!.AsArray();
+        foreach (var c in await contributors.RunAsync(item, read, ReadAsync, ct))
+        {
+            foreach (var n in c.Nodes) content.Add(n);
+            warnings.Add($"{c.PluginName} added {c.Nodes.Count} block{(c.Nodes.Count == 1 ? "" : "s")} from {c.FileName} at the end of the first page.");
+        }
     }
 
     // ---------- accepting

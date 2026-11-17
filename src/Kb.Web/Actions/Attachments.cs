@@ -33,8 +33,10 @@ internal sealed class AddAttachmentHandler(KbDbContext db, IAccess access, IFile
         var key = a.Id.ToString("N");
         // Streamed to the store, never held whole in memory. The file is still arriving, so this one write takes the token:
         // a request that goes away ends the upload, and the store keeps nothing of it.
-        // shortcut: the stream is not disposed, as before (it is the request's body); dispose it once an upload can come from somewhere else.
-        a.Size = await store.SaveAsync(key, await file.OpenReadAsync(ctx.Cancel), max, ctx.Cancel);
+        // The request's body is the request's to close; a file made by a plugin or an import is closed here.
+        var body = await file.OpenReadAsync(ctx.Cancel);
+        try { a.Size = await store.SaveAsync(key, body, max, ctx.Cancel); }
+        finally { if (file is not AttachmentUpload) await body.DisposeAsync(); }
         if (a.Size < 0) return TooLarge(max);
         if (a.Size == 0)
         {

@@ -48,6 +48,7 @@ public sealed class DocRenderers
         DocCode c => c.Language is not null && c.Text is not null,
         DocTable t => t.Rows is not null && t.Rows.All(row => row is not null && row.All(cell => cell is not null)),
         DocImage i => i.Alt is not null,
+        DocPicture p => p.ContentType is not null && p.Content is not null && p.Alt is not null,
         DocRule => true,
         _ => false,
     };

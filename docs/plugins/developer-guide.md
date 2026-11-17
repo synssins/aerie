@@ -66,6 +66,7 @@ public void Configure(IPluginApp app, IPluginContext context) => app
     .Job<PurgeJob>("purge")                                    // the schedule "purge" of the manifest
     .HealthCheck<TableCheck>("table")
     .EditorNode(Notice.Renderer)                               // how the server reads its editor block
+    .ImportContributor<NoticeFromFile>()                       // add to the drafts of AI imports
     .Routes(SampleRoutes.Map);                                 // under /api/v1/plugins/kb.sample/
 ```
 
@@ -451,7 +452,7 @@ export default function (kb) {
 - `kb.current.page()` and `kb.current.space()` are what the person is looking at; `kb.current.subscribe(fn)` tells when that changes. Either can be null.
 - `kb.navigate(path)` goes to an address inside the app. Someone in the middle of an edit is asked first, as for a click on a link, and may stay.
 - `kb.screens.add({ path, title, render(rest), panel })` adds a screen of the plugin's own at `/x/<plugin id>/<path>`, inside the app's three panels. `panel` names a slot that fills the right panel. Lead to it from the gear menu: `kb.slots.add("header.gear", { id: "reports", label: "Reports", onClick: () => kb.navigate("/x/<plugin id>/reports") })`.
-- `kb.dialogs.confirm(...)` and `kb.dialogs.ask(...)` are the app's own dialogs. Never use a browser popup (`alert`, `confirm`, `prompt`).
+- `kb.dialogs.confirm(...)` and `kb.dialogs.ask(...)` are the app's own dialogs ([their options](#dialogs-and-a-surface-over-the-whole-window)). Never use a browser popup (`alert`, `confirm`, `prompt`).
 - What a plugin draws sits inside an error boundary. A part that throws is left out and written to the server's log; the screen stays. Script errors are never counted as failures of the plugin.
 - A script runs in every signed-in person's browser with that person's session. It can do in the browser whatever that person can.
 
@@ -473,6 +474,109 @@ Each module under `/shared/v1/` re-exports every named export of one library, at
 - The editor's own extensions (StarterKit, tables, task lists, images, code blocks) are not shared. They are part of every editor already.
 - The library versions are those of the app you run, and change with it.
 
+### Dialogs, and a surface over the whole window
+
+`kb.dialogs.confirm(options)` answers true or false. `kb.dialogs.ask(options)` answers the text typed, trimmed, or null when the person cancels.
+
+| Call | Options |
+|---|---|
+| `confirm` | `title` (needed); `body`, a line of text under it; `ok`, the label of the button that answers true ("OK" when left out); `cancel` ("Cancel"); `danger`: true makes the OK button red; `focusCancel`: true makes Enter press Cancel, for what cannot be undone. |
+| `ask` | `title` and `label` (the field's label), both needed; `initial`, the field's first value; `ok`; `validate(text)`, which answers a message to show under the field, or null to accept the text. An empty answer is refused ("Required."). The field takes 200 characters at most. |
+
+```js
+if (changed && !(await kb.dialogs.confirm({ title: "Discard your changes to this chart?", ok: "Discard", cancel: "Keep editing", danger: true }))) return;
+const name = await kb.dialogs.ask({ title: "Rename the chart", label: "Name", initial: chart.name });
+```
+
+- One dialog at a time: a dialog opened while another is open answers the first as cancelled (false, or null).
+- The app's dialogs are `<dialog>` elements opened with `showModal()`.
+
+A surface over the whole window (an editor that needs the whole screen, opened from inside a page edit) is a `<dialog>` element of the script's own, opened with `showModal()`. There is no call of the app for it: the browser does what such a surface needs.
+
+```js
+const surface = document.createElement("dialog");
+surface.className = "acme-surface"; // in the plugin's stylesheet, below
+surface.setAttribute("aria-label", "Chart editor");
+surface.addEventListener("close", () => surface.remove());
+document.body.append(surface);
+// Fill it with elements of your own. surface.close() closes it.
+surface.showModal();
+```
+
+```css
+.acme-surface { inset: 0; width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: var(--paper); color: var(--ink); }
+```
+
+- The browser puts it in its top layer, above everything of the app: menus, popups, notices.
+- While it is open the rest of the page cannot be clicked or reached with Tab. Escape fires its `cancel` event and closes it. `preventDefault()` on that event keeps it open while you ask first; the browser may close it anyway on a second Escape, so save what the person did on `close`. When it closes, the browser gives focus back to where it was.
+- A `kb.dialogs` call made while it is open shows above it, and the surface comes back when that dialog closes.
+- Remove it when it closes, as above. A surface left open when the person leaves the page stays over the next screen.
+
+### The theme's colours
+
+Every colour of the app is a CSS variable, with a Day and a Night value. An Admin can change any of them (Administration > Branding > Theme colors), and a person switches between Day and Night, so read them with `var(...)` each time and never copy their values.
+
+| Group | Variable | What it colours |
+|---|---|---|
+| Header | `--nav` | Header |
+| Header | `--nav-fg` | Header text |
+| Header | `--nav-ink` | Header text, quiet |
+| Header | `--nav-hover` | Header button, hover |
+| Header | `--nav-active` | Header button, on |
+| Header | `--logo-bg` | Logo badge |
+| Header | `--logo-ink` | Logo badge text |
+| Header | `--search-bg` | Search box |
+| Header | `--search-ink` | Search text |
+| Header | `--search-ink2` | Search hint and icon |
+| Header | `--search-line` | Search key outline |
+| Header | `--avatar-bg` | Account badge |
+| Header | `--avatar-ink` | Account badge text |
+| Header | `--badge-bg` | Unread count |
+| Header | `--badge-ink` | Unread count text |
+| Surfaces | `--stage` | Behind the app |
+| Surfaces | `--paper` | Page |
+| Surfaces | `--rail` | Tree and side panel |
+| Surfaces | `--line` | Lines and borders |
+| Surfaces | `--hover` | Row, hover |
+| Surfaces | `--toolbar-bg` | Editor toolbar |
+| Surfaces | `--switch-knob` | Switch knob |
+| Surfaces | `--scrollbar-thumb` | Scroll bar |
+| Surfaces | `--scrollbar-track` | Scroll bar track |
+| Text | `--ink` | Text |
+| Text | `--ink2` | Text, quiet |
+| Text | `--link` | Links |
+| Text | `--folder` | Folder icons |
+| Accent | `--accent` | Accent |
+| Accent | `--accent-ink` | Text on accent |
+| Accent | `--cur-bg` | Selected item |
+| Accent | `--focus` | Focus ring |
+| Accent | `--selection` | Selected text |
+| Accent | `--btn-primary` | Primary button |
+| Accent | `--btn-primary-ink` | Primary button text |
+| Notices | `--warn-bg` | Notice |
+| Notices | `--warn-line` | Notice outline |
+| Notices | `--warn-ink` | Notice text |
+| Notices | `--danger` | Danger and errors |
+| Notices | `--danger-ink` | Text on danger buttons |
+| Notices | `--success` | Added (history, diffs) |
+| Notices | `--removed` | Removed (history, diffs) |
+| Content | `--tag-bg` | Tags and pills |
+| Content | `--tag-ink` | Tag text |
+| Content | `--code-bg` | Code block |
+| Content | `--code-ink` | Code text |
+| Content | `--code-comment` | Code: comments |
+| Content | `--code-keyword` | Code: keywords |
+| Content | `--code-string` | Code: strings |
+| Content | `--code-number` | Code: numbers |
+| Content | `--code-variable` | Code: variables |
+| Content | `--code-title` | Code: names |
+| Content | `--code-deletion` | Code: deletions |
+| Content | `--code-meta` | Code: other |
+
+- There is no `--bg`: a surface like a page is `--paper`, what is behind it `--stage`, a side panel `--rail`.
+- Quiet text, and marks that should be seen but not read (the dots of a grid), use `--ink2` or `--line`.
+- The colours of the app's highlighted code (`--code-*`) are those of a dark code block in both themes.
+
 ## Page content
 
 A page's content is the `ContentJson` of `page.create`, `page.save` and `PageDto`: a string holding the editor's document as JSON, in the editor's (TipTap 3, ProseMirror) document format.
@@ -481,6 +585,7 @@ A plugin that reads or changes a page works on that JSON.
 - The top is one node of type `doc`. `page.create` and `page.save` refuse anything else ("Not an editor document."), and a string over 5,000,000 characters.
 - A node is an object: `type` (its name), `attrs` (its attributes, optional), `content` (its child nodes, optional). A text node is `{ "type": "text", "text": "...", "marks": [...] }`; a mark is `{ "type": "bold" }` or, with attributes, `{ "type": "link", "attrs": { "href": "..." } }`.
 - The server stores the string as it was sent and never rewrites it. A node of a type it does not know is kept, and is read as a plugin's node ([below](#editor-blocks)).
+- An attribute may hold any JSON value, an object or an array too: the server keeps it as it is. In the browser, the editor keeps only the attributes a node's extension declares (`addAttributes`), so a plugin's node declares every attribute it stores.
 - A page made with `ContentJson` null holds `{"type":"doc","content":[]}`.
 
 The node types the editor has by itself. Any other type is a plugin's.
@@ -533,7 +638,7 @@ A small complete document: a heading, a paragraph with a bold word, a numbered l
 }
 ```
 
-- An AI import drafts its pages with the same types: `heading`, `paragraph`, `bulletList`, `orderedList` (numbered steps), `listItem`, `codeBlock`, `blockquote` (notes and warnings), `table` with `tableHeader` and `tableCell`, `image`, `hardBreak`, and the marks `bold`, `italic` and `code`. What is stored is the content the importer reviewed and accepted.
+- An AI import drafts its pages with the same types: `heading`, `paragraph`, `bulletList`, `orderedList` (numbered steps), `listItem`, `codeBlock`, `blockquote` (notes and warnings), `table` with `tableHeader` and `tableCell`, `image`, `hardBreak`, and the marks `bold`, `italic` and `code`, followed by the nodes [import contributors](#adding-to-the-draft-import-contributors) add. A `codeBlock` the AI drafts has the `language` the model gave it, in lower case, or `plaintext`: a fenced block of a Markdown file usually keeps its language, but the model decides. What is stored is the content the importer reviewed and accepted.
 - A page is stored as its writer sent it, by the editor or by anyone who calls the API. Read it with care: a node may lack `content`, hold `null`, or be of a type you do not expect. The core's own readers walk into the `content` of any node they do not know, so its text is never lost.
 - There is no chart or diagram block in the core, and no format for one. A plugin that wants charts or diagrams brings its own: an [editor block](#editor-blocks) of its own type, the library that draws it in the browser (in its `ui/` folder), and a renderer for the server.
 
@@ -541,24 +646,23 @@ To make a page, send `page.create` with `Kind` set to `"Page"` or `"Folder"`, wr
 
 ### Adding an image or an attachment
 
-`image.add` and `attachment.add` take the file as an `UploadContent`. It is an abstract class: a plugin derives its own and passes it.
+`image.add` and `attachment.add` take the file as an `UploadContent`. Make one from bytes or from a stream:
 
 ```csharp
-public sealed class BytesFile(string name, byte[] data) : UploadContent
-{
-    public override string? FileName => name;
-    public override long? Length => data.Length;
-    // Every call starts at the first byte.
-    public override Task<Stream> OpenReadAsync(CancellationToken ct) => Task.FromResult<Stream>(new MemoryStream(data, writable: false));
-}
-
-var image = await bus.SendAsync(new AddImage { SpaceId = spaceId, File = new BytesFile("chart.png", png) }, ct);
+var image = await bus.SendAsync(new AddImage { SpaceId = spaceId, File = UploadContent.FromBytes("chart.png", png) }, ct);
 // image.Value.Url is "/api/v1/images/<id>": the src of an image node of a page in that space.
+
+var file = await bus.SendAsync(new AddAttachment { PageId = pageId, File = UploadContent.FromStream("report.csv", OpenReportAsync, length: null) }, ct);
 ```
+
+- `FromStream` calls its `open` function for each read, and each stream must start at the first byte. The action closes the stream. `length` may be null: the action counts the bytes it reads, so a length that is wrong does not get a file past a limit.
+- An `UploadContent` has no content type. `image.add` reads the type from the bytes; `attachment.add` serves every attachment as a download.
+- On an app before 0.4.0, which has neither, derive a class of your own from `UploadContent` (`FileName`, `Length`, `OpenReadAsync`).
 
 - Both actions record who added the file, so they need a person: they answer 401 to a plugin's own work (a job, an after handler, a health check). Send them where the actor is a person (a before hook, a handler, a route), with that person's rights: they need the right to create and edit pages in the space.
 - `image.add` takes PNG, JPEG, GIF or WebP, 20 MB at most. An SVG is not an image: attach it, or draw it in the browser.
 - `attachment.add` takes any file up to the size an Admin set (Administration > Uploads).
+- Neither action scans the file, whoever sends it: only the files of an AI import are scanned ([below](#import-the-virus-scan-hook)).
 - A before hook on `page.create` that adds an image runs before the page is made. If the page is then refused, the image is stored and no page shows it.
 
 ## Editor blocks
@@ -596,7 +700,7 @@ function addNotice(kb) {
 ```
 
 - The node's `name` is its type in the stored page. Choose one no other plugin will use.
-- A script can load a stylesheet from its own `ui/` folder, as above. Use the app's colour variables (`--ink`, `--line`, `--warn-bg`, ...) so the block follows the theme.
+- A script can load a stylesheet from its own `ui/` folder, as above. Use the app's colour variables (`--ink`, `--line`, `--warn-bg`, ...: [all of them](#the-themes-colours)) so the block follows the theme.
 - Every editor made after the call has the extensions. A page that is open and not being edited is drawn again with them.
 - Extensions passed in one call are checked together, so one may name another (a block and the title node it holds). Pass such a set in one call.
 - A node that is drawn as a `<p>` needs `priority: 60` (or more) in its `parseHTML` rule, as above. Without it the editor's own rule for `<p>` wins and a copied block is pasted as a plain paragraph.
@@ -631,7 +735,7 @@ private static string Text(JsonElement node) =>
 - `Plain` given, the text inside the node is no longer indexed by itself: return it from `Plain` if search should find it.
 - One renderer per node type. A plugin that registers one for a node of the editor itself, or for a type another plugin renders, is not loaded.
 - Inside a table cell a plugin's node is read as its text only (`Plain`, or the text inside it): a cell is one line of text in Markdown and in exports.
-- A `DocTable` a renderer answers is part of the Word and PDF export, but it is not one of the page's tables in the Export menu (CSV, Excel). A `DocImage` is drawn only for an image the page itself shows in an image of the editor.
+- A `DocTable` a renderer answers is part of the Word and PDF export, but it is not one of the page's tables in the Export menu (CSV, Excel). A `DocImage` is drawn only for an image the page itself shows in an image of the editor; for a picture of the block's own, answer a `DocPicture`.
 - Pages saved before the plugin was installed keep their old search words until they are saved again or an Admin selects Rebuild index (Administration > Search).
 
 `MarkdownLines` is what the Markdown outputs show: history and its diffs, the AI assist and import diffs, and the page an agent reads (`page.markdown`). `Blocks` is what the Word and PDF exports show. Neither is used for the other: a node that should look like code in both answers a fenced block in `MarkdownLines` and a `DocCode` in `Blocks`.
@@ -645,6 +749,11 @@ The blocks a renderer can answer in `Blocks`:
 | `DocTable(Rows, HeaderRow)` | A table with a border; the first row bold when `HeaderRow`. | A table of equal columns across the text width. |
 | `DocImage(ImageId, Alt, Width)` | The stored image with that id, when the page itself shows it in an `image` node. Otherwise the text `[image: <Alt>]`. | The same; a GIF is shown as its alt text. |
 | `DocRule()` | A horizontal line. | A horizontal line. |
+| `DocPicture(ContentType, Content, Alt, Width = null)` | A picture the renderer drew, when `ContentType` is `image/png` and `Content` is a PNG (its signature and header are checked) of at most 2 MB and 4000 pixels a side. `Width` is in CSS pixels, at most the text width; null draws it at its own width. Anything else is the text `[image: <Alt>]`. `Alt` is the picture's description in the file. | The same. |
+
+- A `DocPicture` is drawn from PNG only. SVG is never drawn: a plugin's SVG can hold script and references to other hosts, which an export must not carry. Draw the picture as PNG on the server, or answer the `Alt` text and a table of what the picture shows.
+- A renderer runs on every export of the page, so a picture drawn there is drawn each time: keep it quick, or keep the PNG in the node's attributes when the block is saved.
+- Markdown does not have pictures: it shows what `MarkdownLines` gives.
 
 - `DocCode.Language` is not used by the Word or PDF export: there is no syntax colouring. It must not be null (use `"plaintext"`); a block with a null in it gives the placeholder.
 - The core's own `codeBlock` node gives a `DocCode` with its `language` attribute, and in Markdown a fenced code block with the language after the opening fence.
@@ -695,6 +804,7 @@ An extension point is an interface of the contract that the core calls. A plugin
 | `IMalwareScanner` | `services.AddSingleton<IMalwareScanner, MyScanner>()` | Every scanner, for every file of an AI import. [Below](#import-the-virus-scan-hook). |
 | `IOutboundRequestDecorator` | `services.AddSingleton<IOutboundRequestDecorator>(...)` | Every decorator, for each call of the AI service. [Below](#the-ai-service-and-outbound-headers). |
 
+- An import contributor is registered in `Configure` with `app.ImportContributor<T>()`, not as a service, so the core knows which plugin it belongs to. [Below](#adding-to-the-draft-import-contributors).
 - `ProviderId` is the plugin's id. The app does not check it, but uses it: to choose the email sender, and to count a failure against the right plugin. Use your manifest id.
 - Declare what the plugin supplies in the manifest's `extensionPoints` (`email-sender`, `audit-sink`, ...). It is shown on the Plugins screen; the app does not act on it.
 - Declared in the contract and not called by the core yet: `IMapProvider`, `IAiProvider`, `IRecordImporter`, `IPageAction`, `IExportFormat`, `IDnsProvider`, and `Kb.Plugins.ISearchProvider` (the app's search does not go through it). A plugin that registers one loads, and nothing calls it.
@@ -775,10 +885,46 @@ public sealed class MyScanner : IMalwareScanner
 - Each scanner gets its own stream of the file's bytes.
 - Attachments and images added to pages directly are not scanned today; only imports are.
 
+### Adding to the draft: import contributors
+
+A plugin can read each file of an import and add content of its own to the draft, before the importer reviews it. It registers an `IImportContributor` in `Configure` with `app.ImportContributor<T>()`. The sample turns a file named `*.notice.txt` into its notice block:
+
+<!-- sample:import -->
+```csharp
+/// <summary>
+/// Adds to an AI import's draft: a file named "*.notice.txt" becomes a notice at the end of the page drafted from it.
+/// It gets the file only after every virus scanner passed it, as a read-only stream, and answers editor nodes as a page stores them.
+/// </summary>
+public sealed class NoticeFromFile : IImportContributor
+{
+    public async Task<ImportContribution?> ContributeAsync(ImportedFile file, CancellationToken ct)
+    {
+        if (!file.FileName.EndsWith(".notice.txt", StringComparison.OrdinalIgnoreCase) || file.Length > 10_000) return null;
+        await using var stream = await file.OpenReadAsync(ct);
+        var line = (await new StreamReader(stream).ReadLineAsync(ct))?.Trim();
+        if (string.IsNullOrEmpty(line)) return null;
+        var node = JsonSerializer.SerializeToElement(new { type = "sampleNotice", content = new[] { new { type = "text", text = line } } });
+        return new ImportContribution([node]);
+    }
+}
+```
+
+- **When.** Once for each file of an item, after every scanner has passed the file and the AI has drafted the item, before the importer sees the draft. Not for a blocked file, a zip itself (its entries are files of their own), a system file, or a picture inside a document; not for an item the AI could not draft.
+- **What it gets.** `ImportedFile(ImportItemId, Path, FileName, Length, OpenReadAsync)`. Each call of `OpenReadAsync` gives a new read-only stream of the file's bytes, so each contributor reads its own. There is no content type: read the name and the bytes.
+- **How it runs.** Made new for each call, with the plugin's services, in a scope of its own, as its plugin: an actor of kind Plugin with source `import` and `ImportItemId` set. It reads what a plugin may read (no sensitive space), and an action that records a person (`page.create`, `attachment.add`) answers 401.
+- **What it answers.** Null, or `ImportContribution(Nodes)`: block nodes as a page stores them ([page content](#page-content)), at most 50 of them and 512 KB of JSON. Each must be an object whose `type` is a string other than `doc` and `text`. A node of the plugin's own type needs its [editor block](#editor-blocks) for the importer to see and edit it.
+- **What the importer sees.** The nodes are added at the end of the first page of the draft, file by file, and the draft's warnings name each plugin and file ("Charts added 2 blocks from flow.drawio at the end of the first page."). The importer reviews them with the rest, and can change or delete them before accepting.
+- **What is checked.** The nodes are copied when the call returns. When the draft is accepted they are saved by `page.create` or `page.save` like any content: the same checks, the same hooks. Nothing of them is sent to the model.
+- **Limits.** A call that throws, runs past 10 seconds, or answers what the core cannot use adds nothing for that file. It is written to the log and counted as a failure of the plugin ([five in ten minutes disable it](#what-the-core-disables-a-plugin-for)). Its token is cancelled at the limit. The import goes on.
+- **Sensitive content.** Contributors are not called for an item in which the core finds a secret (a password, a key, a token: the same finder that marks the draft), or whose upload named a sensitive space as its destination. The draft then says "Plugins were not given these files: they hold a secret, or go to a sensitive space." An importer who chooses a sensitive space only when accepting has already let the contributors read the files: choose it at upload.
+- **Audit.** Each contribution writes `import.contribute`, with the importer as the actor and the plugin's id, the file's path and SHA-256, and the number of nodes.
+- **Files.** A contributor adds nodes, not files. A plugin that wants a picture on the page sends `image.add` ([above](#adding-an-image-or-an-attachment)) from a before hook on the `page.create` or `page.save` that accepting sends (source `import`), where the actor is the importer, and puts the image's address in the content.
+- `IRecordImporter`, declared in the contract, is something else: records synced from another system. It is not called.
+
 ### What a plugin sees of an import
 
 The import actions (`import.*`) are core-only: a plugin cannot hook them, send them or read their data.
-**A plugin cannot read the uploaded file, the text the app read from it, or the AI's draft.** It sees only what the importer accepts, when the import sends the normal actions as the importer, and so runs the hooks on those:
+A plugin reads an import's files only through an [import contributor](#adding-to-the-draft-import-contributors). It cannot read the text the app read from a file or the AI's draft. Then it sees what the importer accepts, when the import sends the normal actions as the importer, and so runs the hooks on those:
 
 | The importer accepts | Actions sent, in this order |
 |---|---|
@@ -787,10 +933,12 @@ The import actions (`import.*`) are core-only: a plugin cannot hook them, send t
 | Either, with details | `page.details.save` (core-only) for each page. |
 | Either, with "attach the originals" | `attachment.add` on the first page, once for each original file. |
 
+Every one of these actions has `ctx.Actor.Source` `"import"` and `ctx.Actor.ImportItemId` the import item's id ([below](#where-the-call-comes-from)).
+
 - `ContentJson` is the draft as the importer accepted it ([page content](#page-content)); its pictures already point to the space's images (`/api/v1/images/<id>`). A before hook on `page.create` or `page.save` may change it, as for any caller.
-- The uploaded file reaches a plugin only when the importer chooses to attach the originals: a before hook on `attachment.add` then gets it in `ctx.Action.File` and can read it (`OpenReadAsync`). That happens after the pages are made.
+- The uploaded file reaches a plugin's hooks only when the importer chooses to attach the originals: a before hook on `attachment.add` then gets it in `ctx.Action.File` and can read it (`OpenReadAsync`). That happens after the pages are made.
 - Once an item is accepted or discarded, the app deletes its stored files and the text read from them.
-- A hook cannot tell an import's `page.create` or `page.save` from a person's: [below](#where-the-call-comes-from).
+- A hook tells an import's `page.create` or `page.save` from a person's by `ctx.Actor.Source`: [below](#where-the-call-comes-from).
 
 ## Who the caller is
 
@@ -798,27 +946,28 @@ Every action carries an actor (`ctx.Actor`). It is one of:
 
 - **A person** in the browser: signed in with a password, then a code when the app asks for one (below). `UserId` is set.
 - **A person through an API token**: `UserId` is the token's owner, `TokenId` is set. A token narrows what its owner may do: each scope is Read (Reader) or Write (Contributor) for one space or all, never more than its owner holds. A token is never an Admin, even an Admin's. A service token's owner is a service account that cannot sign in; its all-spaces scope does not reach a sensitive space. Tokens reach only the routes the [API reference](../api-reference.md) marks; plugin routes are closed to them.
-- **A plugin** (`ActorKind.Plugin`), in a job or an after handler. It reads every space that is not sensitive, Private ones too, and nothing of a sensitive space. An action that records who did it (`page.create`, `page.save` and the like) answers 401 for it.
+- **A plugin** (`ActorKind.Plugin`), in a job, an after handler, a health check or an import contributor. It reads every space that is not sensitive, Private ones too, and nothing of a sensitive space. An action that records who did it (`page.create`, `page.save` and the like) answers 401 for it.
 - **Nobody** (`ActorKind.Anonymous`): someone not signed in. They read only spaces open to Anyone that are not sensitive.
 
 `IAccess` answers for all of them; ask it rather than checking the kind yourself.
 
 ### Where the call comes from
 
-`ctx.Actor.Source` says how the action was started. The values:
+`ctx.Actor.Source` says how the action was started. The values, also constants of `ActorSources`:
 
 | `Source` | `Kind` | When |
 |---|---|---|
-| `web` | `User` or `Anonymous` | Every action started by a request: the browser, an API token, a plugin's route, and every action the core sends while it handles a request (an import's `page.create`, for example). |
+| `web` | `User` or `Anonymous` | Every action started by a request: the browser, an API token, a plugin's route, and every action the core sends while it handles a request, except those of an accepted import. |
 | `job` | `Plugin` | A plugin's job (`IKbJob`), and every action it sends. |
 | `queue` | `Plugin` | A plugin's after handler, and every action it sends. |
 | `health` | `Plugin` | A plugin's health check, and every action it sends. |
+| `import` | `User` | The actions sent when the importer accepts a draft ([which](#what-a-plugin-sees-of-an-import)), as the importer. |
+| `import` | `Plugin` | An [import contributor](#adding-to-the-draft-import-contributors), and every action it sends. |
 
-`ctx.Actor.PluginId` names the plugin for `job`, `queue` and `health`. `ctx.Name` is the action's own name (`page.create`), never the action that sent it.
+`ctx.Actor.PluginId` names the plugin for `job`, `queue`, `health` and a contributor's `import`. `ctx.Actor.ImportItemId` is the import item's id when `Source` is `import`, and null otherwise. `ctx.Name` is the action's own name (`page.create`), never the action that sent it.
 
-**A hook cannot tell a page an import makes from a page a person makes.** The import sends `page.create` and `page.save` as the importer, with source `web`, inside the importer's request, exactly as the editor does.
-Content does not tell them apart either: the app's editor stores nothing for a new page until its first save, which is a `page.create` with everything the person wrote.
-The only mark an import leaves on the action is the `Note` of an import into an existing page (`"Imported from ..."`), and a person can type the same note.
+Only the core sets `Source` and `ImportItemId`. `Actor` has no public constructor, and nothing a caller sends (a field in a request's body, a header) changes them, so a hook can rely on them: a page whose `page.create` has source `import` was made by accepting that import item.
+Before 0.4.0 an accepted import's actions had source `web`, and a hook could not tell them from a person's.
 
 ### Spaces open to more people
 
@@ -859,7 +1008,7 @@ Sign-in, setup and plugin administration are never locked.
 - A requirement that is missing, disabled or too old; a circular requirement.
 - A plugin built for a newer plugin API or a newer app.
 - A hook, a handler or a job on an action that is not open to plugins, or a second handler for an action.
-- Five failures in ten minutes: a hook, a filter, an after handler, a job, an audit sink or an email sender that threw, or whose own time limit ran out. A job that runs past its limit counts too.
+- Five failures in ten minutes: a hook, a filter, an after handler, a job, an import contributor, an audit sink or an email sender that threw, or whose own time limit ran out. A job or an import contributor that runs past its limit counts too, and so does a contributor's answer the core cannot use.
 
 The plugin stays disabled until an Admin selects Enable. Uploading a new version does not enable it. Plugins that require it are disabled with it; an enforcing one among them is locked.
 
@@ -869,7 +1018,9 @@ The plugin stays disabled until an Admin selects Enable. Uploading a new version
 - `abstractionsVersion`: the version of `Kb.Plugins.Abstractions` the plugin was built against. The app refuses a plugin built for a newer one.
 - `minKbVersion`: the lowest app version the plugin runs on.
 
-The contract and the app are at 0.3.0, and can still change before 1.0.0. 0.3.0 added `IOutboundRequestDecorator`, the inventory sync action and its records, and page details on `PageDto`; a plugin that uses them says `"abstractionsVersion": "0.3.0"`. See [packaging](packaging.md#versions).
+The contract and the app are at 0.4.0, and can still change before 1.0.0.
+0.4.0 added [import contributors](#adding-to-the-draft-import-contributors) (`IImportContributor`, `ImportedFile`, `ImportContribution`, `app.ImportContributor<T>()`), `DocPicture` for [exports](#editor-blocks), `UploadContent.FromBytes` and `FromStream` ([adding a file](#adding-an-image-or-an-attachment)), and `ActorSources` with `Actor.ImportItemId` ([where the call comes from](#where-the-call-comes-from)); a plugin that uses them says `"abstractionsVersion": "0.4.0"`. It changed one thing a 0.3.0 plugin can see: an accepted import's actions have source `import`, not `web`. Everything else of 0.3.0 is unchanged, and a plugin built for 0.3.0 or earlier loads as it did.
+0.3.0 added `IOutboundRequestDecorator`, the inventory sync action and its records, and page details on `PageDto`; a plugin that uses them says `"abstractionsVersion": "0.3.0"`. See [packaging](packaging.md#versions).
 
 Editor blocks (`EditorNode`, `NodeRenderer` and the `Doc*` blocks) and the browser script (`ui`, `uiApiVersion` 1.0.0) were added while the contract was still numbered 0.2.0, so 0.2.0 does not say whether an app has them. A plugin that uses them says `"abstractionsVersion": "0.3.0"`: every app at 0.3.0 has them.
 
@@ -883,7 +1034,8 @@ What a test can build and call directly:
 - After handlers: `AfterAsync(action, result, e, ct)` takes the action record, its result and an `ActionEvent`, which all have public constructors.
 - Jobs (`RunAsync(ct)`), with a stand-in `IActionBus` that answers the actions the job sends. `Outcome<T>` converts from a value or a `Problem`.
 - Renderers: call `Renderer.Plain`, `MarkdownLines` and `Blocks` with a node parsed by `JsonDocument.Parse(...).RootElement`.
-- `Configure`, with a stand-in `IPluginApp` whose `Add<T>(T registration) where T : class` keeps what it is given; check the `BeforeHook`, `AfterHandler`, `ActionHandler` and `NodeRenderer` records.
+- Import contributors: call `ContributeAsync(new ImportedFile(...), ct)`; `ImportedFile` has a public constructor. The repository's `tests/Kb.Tests.Unit/SampleImportTests.cs` tests the sample's.
+- `Configure`, with a stand-in `IPluginApp` whose `Add<T>(T registration) where T : class` keeps what it is given; check the `BeforeHook`, `AfterHandler`, `ActionHandler`, `NodeRenderer` and `ImportContributorReg` records.
 
 What a test cannot build: `ActionContext<T>` and `Actor` have no public constructor. Only the app makes them, so a plugin cannot act as someone else. A before hook, a result filter or an action handler therefore cannot be called from a plugin's test as it is.
 Keep such a class thin: put the decision in a method that takes the action (and what it needs) and returns the changed action or the `Problem`, test that method, and leave the hook to call it and set `ctx.Action`.

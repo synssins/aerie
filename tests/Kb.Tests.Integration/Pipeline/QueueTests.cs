@@ -70,9 +70,10 @@ public sealed class QueueTests : IAsyncLifetime
     public async Task After_Throws_IsReported_ActionStands()
     {
         await SetAsync("FailOn", "after");
-        for (var i = 0; i < PluginFailures.Limit; i++) Assert.Equal(HttpStatusCode.OK, (await EchoAsync($"t{i}", "hello")).StatusCode);
-
-        Assert.Equal(PluginFailures.Limit, (await CountersAsync()).GetProperty("written").EnumerateObject().Count()); // every action stands
+        for (var i = 0; i < PluginFailures.Limit - 1; i++) Assert.Equal(HttpStatusCode.OK, (await EchoAsync($"t{i}", "hello")).StatusCode);
+        // Read while the plugin is still up: the last failure disables it, and its own routes then answer 503.
+        Assert.Equal(PluginFailures.Limit - 1, (await CountersAsync()).GetProperty("written").EnumerateObject().Count()); // every action stands
+        Assert.Equal(HttpStatusCode.OK, (await EchoAsync($"t{PluginFailures.Limit - 1}", "hello")).StatusCode);
         var state = PluginState.Enabled;
         string? reason = null;
         // The after handler runs on the queue worker: under a full parallel test run it can take far longer than alone.

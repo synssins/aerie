@@ -13,6 +13,12 @@ public sealed record DocCode(string Language, string Text) : DocBlock;
 public sealed record DocTable(IReadOnlyList<IReadOnlyList<string>> Rows, bool HeaderRow) : DocBlock;
 public sealed record DocImage(Guid? ImageId, string Alt, int? Width) : DocBlock;
 public sealed record DocRule : DocBlock;
+/// <summary>
+/// A picture a renderer draws for its own block, for Word and PDF exports. Only <c>image/png</c> is drawn; another type, a file that is not
+/// a PNG, or one over 2 MB or 4000 pixels a side is shown as its <paramref name="Alt"/> text instead. Width is in CSS pixels (96 an inch),
+/// at most the page's width; null draws it at its own size.
+/// </summary>
+public sealed record DocPicture(string ContentType, byte[] Content, string Alt, int? Width = null) : DocBlock;
 
 /// <summary>
 /// How the server reads an editor node type a plugin adds. The node is the stored JSON of one node (<c>type</c>, <c>attrs</c>, <c>content</c>).

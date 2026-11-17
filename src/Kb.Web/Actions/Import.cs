@@ -301,7 +301,7 @@ internal sealed class ReadImportFileHandler(KbDbContext db, IFileStore store) : 
     }
 }
 
-internal sealed class AcceptImportHandler(KbDbContext db, ImportService imports, IActionBus bus) : IActionHandler<AcceptImport, IReadOnlyList<Guid>>
+internal sealed class AcceptImportHandler(KbDbContext db, ImportService imports, IActionBus bus, Kb.Web.Pipeline.ActorAccessor actors) : IActionHandler<AcceptImport, IReadOnlyList<Guid>>
 {
     private ImportItem? _item;
 
@@ -315,7 +315,11 @@ internal sealed class AcceptImportHandler(KbDbContext db, ImportService imports,
     public async Task<Outcome<IReadOnlyList<Guid>>> HandleAsync(ActionContext<AcceptImport> ctx)
     {
         if (_item!.Status != ImportStatus.Ready) return Problem.Conflict("Only a ready draft can be accepted.");
-        return await imports.AcceptAsync(bus, ctx.Actor, _item, ctx.Action.Request, ctx.Cancel);
+        // The actions accepting sends say they come from this import: a hook reads Actor.Source "import" and Actor.ImportItemId.
+        // Only the core sets them, here; a caller cannot.
+        actors.Use(ctx.Actor.ForImport(_item.Id));
+        try { return await imports.AcceptAsync(bus, ctx.Actor, _item, ctx.Action.Request, ctx.Cancel); }
+        finally { actors.Use(ctx.Actor); }
     }
 }
 

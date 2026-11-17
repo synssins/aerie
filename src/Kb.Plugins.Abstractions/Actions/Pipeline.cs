@@ -19,15 +19,37 @@ public sealed record Actor
     public Guid? UserId { get; }
     /// <summary>Background work of that plugin; "core" for the core's own.</summary>
     public string? PluginId { get; }
-    /// <summary>web, job or queue.</summary>
+    /// <summary>Where the action comes from, one of <see cref="ActorSources"/>. Set by the host: a caller cannot choose it.</summary>
     public string Source { get; }
+    /// <summary>The import item (the draft in the importer's inbox) the action comes from, when <see cref="Source"/> is "import"; null otherwise.</summary>
+    public Guid? ImportItemId { get; private init; }
     public string? RemoteIp { get; }
     /// <summary>Set when the request was made with an API token. Such an actor is never an Admin and is narrowed by the token's scopes.</summary>
     public Guid? TokenId { get; }
 
-    internal static Actor Anonymous(string? remoteIp = null) => new(ActorKind.Anonymous, null, null, "web", remoteIp, null);
-    internal static Actor User(Guid userId, string? remoteIp = null, Guid? tokenId = null) => new(ActorKind.User, userId, null, "web", remoteIp, tokenId);
+    internal static Actor Anonymous(string? remoteIp = null) => new(ActorKind.Anonymous, null, null, ActorSources.Web, remoteIp, null);
+    internal static Actor User(Guid userId, string? remoteIp = null, Guid? tokenId = null) => new(ActorKind.User, userId, null, ActorSources.Web, remoteIp, tokenId);
     internal static Actor Plugin(string pluginId, string source) => new(ActorKind.Plugin, null, pluginId, source, null, null);
+    /// <summary>The same actor, acting for an import item: what accepting a draft sends, and what an import contributor runs as.</summary>
+    internal Actor ForImport(Guid importItemId) => new(Kind, UserId, PluginId, ActorSources.Import, RemoteIp, TokenId) { ImportItemId = importItemId };
+}
+
+/// <summary>The values of <see cref="Actor.Source"/>.</summary>
+public static class ActorSources
+{
+    /// <summary>A request to the app: a person in the browser, an API token, or no one signed in.</summary>
+    public const string Web = "web";
+    /// <summary>A plugin's scheduled job, as the plugin.</summary>
+    public const string Job = "job";
+    /// <summary>A plugin's after handler, run later from the queue, as the plugin.</summary>
+    public const string Queue = "queue";
+    /// <summary>A plugin's health check, as the plugin.</summary>
+    public const string Health = "health";
+    /// <summary>
+    /// An AI import: the actions sent when the importer accepts a draft (as the importer), and an import contributor (as its plugin).
+    /// <see cref="Actor.ImportItemId"/> names the import item.
+    /// </summary>
+    public const string Import = "import";
 }
 
 public interface IActorAccessor
@@ -122,6 +144,32 @@ public abstract class UploadContent
     public abstract long? Length { get; }
     /// <summary>Every call starts at the first byte.</summary>
     public abstract Task<Stream> OpenReadAsync(CancellationToken ct);
+
+    /// <summary>A file a plugin made, from its bytes. The action that takes it applies its own size limit, type check and rights, as for an upload.</summary>
+    public static UploadContent FromBytes(string fileName, byte[] content)
+    {
+        ArgumentNullException.ThrowIfNull(fileName);
+        ArgumentNullException.ThrowIfNull(content);
+        return new Made(fileName, content.Length, _ => Task.FromResult<Stream>(new MemoryStream(content, false)));
+    }
+
+    /// <summary>
+    /// A file a plugin made, read from a stream. <paramref name="open"/> is called for each read and must start at the first byte.
+    /// <paramref name="length"/> is the size when known; the action counts the bytes it reads either way.
+    /// </summary>
+    public static UploadContent FromStream(string fileName, Func<CancellationToken, Task<Stream>> open, long? length = null)
+    {
+        ArgumentNullException.ThrowIfNull(fileName);
+        ArgumentNullException.ThrowIfNull(open);
+        return new Made(fileName, length, open);
+    }
+
+    private sealed class Made(string fileName, long? length, Func<CancellationToken, Task<Stream>> open) : UploadContent
+    {
+        public override string? FileName => fileName;
+        public override long? Length => length;
+        public override Task<Stream> OpenReadAsync(CancellationToken ct) => open(ct);
+    }
 }
 
 /// <summary>A file as an action's result.</summary>
