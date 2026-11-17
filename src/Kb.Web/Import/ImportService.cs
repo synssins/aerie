@@ -376,7 +376,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         var added = outWords.Where(w => !inWords.Contains(w) && w.Length > 3).Distinct().ToList();
         if (source.Length > 0 && outWords.Count > 0 && added.Count > Math.Max(8, outWords.Distinct().Count() / 10))
             warnings.Add($"The draft uses words that are not in the source ({string.Join(", ", added.Take(12))}). Confirm the document is correct before saving.");
-        await ContributeAsync(item, batch, files, findings.Count > 0, pages[0], warnings, ct);
+        await ContributeAsync(item, batch, files, findings.Count > 0, pages, warnings, ct);
 
         var tags = (output["tags"]?.AsArray() ?? []).Select(t => t!.GetValue<string>().Trim().ToLowerInvariant()).Where(t => t.Length is > 0 and <= 50 && !t.Contains(',')).ToList();
         var appliesTo = new JsonArray();
@@ -459,10 +459,11 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
     }
 
     /// <summary>
-    /// Plugins' import contributors add their nodes to the end of the first page, each named in the warnings so the importer sees
-    /// what a plugin added. They never read an item that holds a secret or that goes to a sensitive space.
+    /// Plugins' import contributors add their nodes to the end of the first page; then their draft contributors read the pages and add
+    /// where they say. Each is named in the warnings so the importer sees what a plugin added. They never read an item that holds a
+    /// secret or that goes to a sensitive space. The pages are drafted anew on every retry, so nothing is added twice.
     /// </summary>
-    private async Task ContributeAsync(ImportItem item, ImportBatch batch, IReadOnlyList<ImportFile> files, bool secret, JsonObject page, List<string> warnings, CancellationToken ct)
+    private async Task ContributeAsync(ImportItem item, ImportBatch batch, IReadOnlyList<ImportFile> files, bool secret, List<JsonObject> pages, List<string> warnings, CancellationToken ct)
     {
         if (!contributors.Any) return;
         if (secret || (batch.TargetSpaceId is { } ts && await db.Spaces.AnyAsync(s => s.Id == ts && s.IsSensitive, ct)))
@@ -471,11 +472,17 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             return;
         }
         var read = files.Where(f => !f.Embedded && f.Kind is not ("Blocked" or "Container" or "Skipped")).ToList();
-        var content = page["doc"]!["content"]!.AsArray();
+        var contents = pages.Select(p => p["doc"]!["content"]!.AsArray()).ToList();
         foreach (var c in await contributors.RunAsync(item, read, ReadAsync, ct))
         {
-            foreach (var n in c.Nodes) content.Add(n);
+            foreach (var n in c.Nodes) contents[0].Add(n);
             warnings.Add($"{c.PluginName} added {c.Nodes.Count} block{(c.Nodes.Count == 1 ? "" : "s")} from {c.FileName} at the end of the first page.");
+        }
+        foreach (var c in await contributors.RunDraftAsync(item, () => [.. pages.Select(p => new DraftPage(p["title"]!.GetValue<string>(), p["doc"]!.ToJsonString()))],
+            [.. read.Select(f => f.Path)], c => ImportContributors.Place(contents, c.Additions), ct))
+        {
+            var where = string.Join(", ", c.Additions.Select(a => a.Page).Distinct().Order().Select(i => $"\"{pages[i]["title"]!.GetValue<string>()}\""));
+            warnings.Add($"{c.PluginName} added {c.Count} block{(c.Count == 1 ? "" : "s")} to {where}.");
         }
     }
 

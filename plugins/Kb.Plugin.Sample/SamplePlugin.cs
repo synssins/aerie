@@ -28,6 +28,7 @@ public sealed class SamplePlugin : IKbPlugin
         .HealthCheck<TableCheck>("table")
         .EditorNode(Notice.Renderer)                               // how the server reads its editor block
         .ImportContributor<NoticeFromFile>()                       // add to the drafts of AI imports
+        .DraftContributor<NoticeFromDraft>()                       // ... from the text the AI drafted
         .Routes(SampleRoutes.Map);                                 // under /api/v1/plugins/kb.sample/
     // #endregion
 }

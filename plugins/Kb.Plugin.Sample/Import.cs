@@ -21,3 +21,30 @@ public sealed class NoticeFromFile : IImportContributor
     }
 }
 // #endregion
+
+// #region guide:draft
+/// <summary>
+/// Adds to an AI import's draft from its text: a paragraph that starts "Notice:" in a drafted page is repeated as a notice near the top
+/// of that page, after its introduction, so the importer reviews it with the rest. It reads the draft and answers where its nodes go.
+/// </summary>
+public sealed class NoticeFromDraft : IDraftContributor
+{
+    public Task<DraftContribution?> ContributeAsync(ImportDraft draft, CancellationToken ct)
+    {
+        var additions = new List<DraftAddition>();
+        for (var i = 0; i < draft.Pages.Count; i++)
+        {
+            using var doc = JsonDocument.Parse(draft.Pages[i].ContentJson);
+            var blocks = doc.RootElement.TryGetProperty("content", out var c) ? c.EnumerateArray().ToList() : [];
+            if (blocks.Any(b => b.GetProperty("type").GetString() == "sampleNotice")) continue; // a file already gave this page its notice
+            var notice = blocks.Where(b => b.GetProperty("type").GetString() == "paragraph" && b.TryGetProperty("content", out _))
+                .Select(b => string.Concat(b.GetProperty("content").EnumerateArray().Select(t => t.TryGetProperty("text", out var x) ? x.GetString() : "")))
+                .FirstOrDefault(t => t.StartsWith("Notice:", StringComparison.Ordinal))?[7..].Trim();
+            if (string.IsNullOrEmpty(notice)) continue;
+            var node = JsonSerializer.SerializeToElement(new { type = "sampleNotice", content = new[] { new { type = "text", text = notice } } });
+            additions.Add(new DraftAddition(i, DraftPlace.AfterIntroduction, [node]));
+        }
+        return Task.FromResult(additions.Count == 0 ? null : new DraftContribution(additions));
+    }
+}
+// #endregion
