@@ -111,11 +111,6 @@ namespace Kb.Data.Sqlite.Migrations
                     table.PrimaryKey("PK_PageAppLinks", x => new { x.PageId, x.ApplicationId });
                 });
 
-            migrationBuilder.InsertData(
-                table: "InvAccessRules",
-                columns: new[] { "Id", "Edit", "Kind", "TargetId" },
-                values: new object[] { new Guid("00000000-0000-0000-0000-0000000000a1"), false, 0, null });
-
             migrationBuilder.CreateIndex(
                 name: "IX_InvApplications_NameKey",
                 table: "InvApplications",

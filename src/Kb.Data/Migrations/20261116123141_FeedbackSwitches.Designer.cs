@@ -1397,14 +1397,6 @@ namespace Kb.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("InvAccessRules");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-0000000000a1"),
-                            Edit = false,
-                            Kind = 0
-                        });
                 });
 
             modelBuilder.Entity("Kb.Core.Inventory.InvApplication", b =>

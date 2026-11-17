@@ -129,6 +129,8 @@ public sealed class ImportFlowTests : IAsyncLifetime
         _space = (await (await _admin.PostAsJsonAsync("/api/v1/spaces", new { key = "iam", name = "IAM" }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("id").GetGuid();
         var app = (await (await _admin.PostAsJsonAsync("/api/v1/inventory/apps", new { name = "Acme ERP" }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("id").GetGuid();
         await _admin.PutAsJsonAsync($"/api/v1/inventory/apps/{app}/installs", new { server = "ERP01", version = "4.2" }, Ct);
+        // The draft names inventory applications only for an importer who views the inventory: a new install lets only Admins.
+        (await _admin.PutAsJsonAsync("/api/v1/admin/inventory/access", new { view = new[] { new { kind = "Everyone" } }, edit = Array.Empty<object>() }, Ct)).EnsureSuccessStatusCode();
         await _admin.PostAsJsonAsync("/api/v1/admin/groups", new { name = "ERP Support Team" }, Ct);
     }
 

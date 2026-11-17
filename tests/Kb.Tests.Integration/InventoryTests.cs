@@ -178,6 +178,20 @@ public sealed class InventoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ANewDatabase_HasNoAccessRule_SoOnlyAdminsViewTheInventory()
+    {
+        await _f.WithDbAsync(async db => Assert.False(await db.InvAccessRules.AnyAsync(Ct)));
+        var (ben, _) = await UserAsync("ben");
+        var me = await ben.GetFromJsonAsync<JsonElement>("/api/v1/inventory/me", Ct);
+        Assert.Equal((false, false), (me.GetProperty("canView").GetBoolean(), me.GetProperty("canEdit").GetBoolean()));
+        Assert.Equal(HttpStatusCode.Forbidden, (await ben.GetAsync("/api/v1/inventory/apps", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await ben.GetAsync("/api/v1/inventory/servers", Ct)).StatusCode);
+        var admin = await _admin.GetFromJsonAsync<JsonElement>("/api/v1/inventory/me", Ct);
+        Assert.True(admin.GetProperty("canView").GetBoolean());
+        Assert.Equal(HttpStatusCode.OK, (await _admin.GetAsync("/api/v1/inventory/apps", Ct)).StatusCode);
+    }
+
+    [Fact]
     public async Task Access_IsWhatTheAdminSets_BySpaceRolePersonOrGroup()
     {
         var space = (await (await _admin.PostAsJsonAsync("/api/v1/spaces", new { key = "erp", name = "erp" }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("id").GetGuid();
@@ -185,8 +199,8 @@ public sealed class InventoryTests : IAsyncLifetime
         var (ben, _) = await UserAsync("ben");
         var app = await AppAsync("Acme ERP");
 
-        // By default everyone signed in views, only Admins edit.
-        Assert.Equal(HttpStatusCode.OK, (await ben.GetAsync($"/api/v1/inventory/apps/{app}", Ct)).StatusCode);
+        // By default only Admins view and edit.
+        Assert.Equal(HttpStatusCode.Forbidden, (await ben.GetAsync($"/api/v1/inventory/apps/{app}", Ct)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await SetInstallAsync(ben, app, "S1", "1")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await _f.NewClient().GetAsync("/api/v1/inventory/apps", Ct)).StatusCode);
 
@@ -236,7 +250,8 @@ public sealed class InventoryTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
         Assert.Equal("Used on 1 page.", (await refused.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("detail").GetString());
 
-        // Someone who cannot see the page does not see it listed under the application.
+        // Someone who views the inventory but cannot see the page does not see it listed under the application.
+        (await _admin.PutAsJsonAsync("/api/v1/admin/inventory/access", new { view = new[] { new { kind = "Everyone" } }, edit = Array.Empty<object>() }, Ct)).EnsureSuccessStatusCode();
         var (_, _) = await UserAsync("vic");
         var vic = _f.NewClient();
         (await vic.PostAsJsonAsync("/api/v1/auth/local/signin", new { userName = "vic", password = Password }, Ct)).EnsureSuccessStatusCode();

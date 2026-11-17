@@ -110,7 +110,7 @@ In Safe Mode no uploaded plugin is loaded, no state is changed and locks are ign
 - **Headers on the AI's calls.** A plugin for an access gateway in front of the model server adds headers to the AI service's calls (Administration > AI). Set its host and secrets on the Plugins screen, then select Test connection on Administration > AI. If the plugin fails, the AI's calls are refused, not sent without the headers: the test says "A plugin that adds to the AI's requests failed".
 - **A virus scanner for imports.** Every file of an AI import is given to each scanner plugin first. A file it flags is quarantined (the draft says Blocked; the audit log has `import.quarantine`). A scanner that fails blocks that file. Attachments and images added to pages directly are not scanned.
 - **File kinds for imports.** A plugin may read file kinds the app does not read. Select it to see them under "Reads for import". A file of such a kind in an import is drafted by the plugin, not by the AI; the audit log has `import.claim`. While the plugin is disabled, the file fails as before: "This kind of file is not read; it is kept as an attachment."
-- **The inventory.** A plugin's job may feed the inventory; a plugin may always edit it. A script feeding it with an API token needs a rule on Administration > Security > Inventory access.
+- **The inventory.** A plugin's job may feed the inventory; a plugin may always edit it. A script feeding it with an API token needs a rule on Administration > Security > Inventory access. A new install has no rule there, so only Admins view the inventory until you add one.
 
 ## The upload size limit
 
