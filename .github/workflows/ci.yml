@@ -1,6 +1,6 @@
 name: CI
 
-# Runs every test on each pull request and on main. Branch protection on main should require both jobs.
+# Runs every test on each pull request and on main. Branch protection on main should require the jobs "server" and "client".
 on:
   pull_request:
   push:
@@ -11,19 +11,42 @@ permissions:
   contents: read
 
 jobs:
-  server:
+  server-tests:
     # Windows: two storage tests (network-share credentials) only pass on Windows, where IIS installs run.
+    # The integration tests are split into shards that run at once (tools/test-shard.ps1); shard 0 also runs the unit tests.
+    name: server (shard ${{ matrix.shard }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       DOTNET_NOLOGO: "1"
+      SHARDS: "8"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-      - name: Test
-        run: dotnet test --solution Kb.sln
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+      - name: Build
+        run: dotnet build Kb.sln
+      - name: Unit tests
+        if: matrix.shard == 0
+        run: dotnet test --project tests/Kb.Tests.Unit --no-build
+      - name: Integration tests
+        shell: pwsh
+        run: tools/test-shard.ps1 -Shard ${{ matrix.shard }} -Of $env:SHARDS
+
+  # One check that stands for every shard, so branch protection names one job and the shard count can change.
+  server:
+    if: always()
+    needs: server-tests
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.server-tests.result }}" = "success"
 
   client:
     runs-on: ubuntu-latest
