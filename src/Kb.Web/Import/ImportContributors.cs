@@ -88,6 +88,17 @@ public sealed class ImportContributors(IServiceScopeFactory scopes, IRegistratio
         return found;
     }
 
+    /// <summary>
+    /// The loaded plugins that claim this file's kind (<see cref="ImportFileKindReg"/>), with their names; none for a kind the app reads
+    /// itself. A disabled plugin is not loaded, so its claim does not count.
+    /// </summary>
+    public IReadOnlyList<(string Id, string Name)> ClaimersOf(string fileName)
+    {
+        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        var claims = registrations.All<ImportFileKindReg>().Where(r => r.Value.Extensions.Contains(ext)).Select(r => r.PluginId).Distinct().ToList();
+        return claims.Count == 0 || Extractors.Reads(fileName) ? [] : [.. claims.Select(id => (id, NameOf(id)))];
+    }
+
     private string NameOf(string pluginId) => registry.Find(pluginId) is { } p ? PluginManifests.NameOf(p.Manifest) : pluginId;
 
     /// <summary>

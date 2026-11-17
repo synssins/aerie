@@ -9,7 +9,7 @@ const setting = (s: Partial<PluginSetting> & { key: string; label: string }): Pl
 const plugin = (p: Partial<PluginInfo>): PluginInfo => ({
   id: "kb.email.smtp", name: "Email (SMTP)", version: "1.0.0", publisher: "Kb first-party", description: null, origin: "BuiltIn", state: "Enabled", reason: null,
   locked: false, loaded: true, source: "built-in", requires: [], requiredBy: [], extensionPoints: ["email-sender"], outboundHosts: [], permissions: [], enforcing: false,
-  settings: [], replaces: [], removed: false, ...p,
+  settings: [], replaces: [], removed: false, importFileKinds: [], ...p,
 });
 const probe = plugin({
   id: "kb.test.probe", name: "Test probe", origin: "Uploaded", source: "upload", publisher: "Kb tests", requires: ["kb.test.lib"], outboundHosts: ["api.example.com"],

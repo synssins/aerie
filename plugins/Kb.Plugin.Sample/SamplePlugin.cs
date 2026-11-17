@@ -29,6 +29,7 @@ public sealed class SamplePlugin : IKbPlugin
         .EditorNode(Notice.Renderer)                               // how the server reads its editor block
         .ImportContributor<NoticeFromFile>()                       // add to the drafts of AI imports
         .DraftContributor<NoticeFromDraft>()                       // ... from the text the AI drafted
+        .ImportFileKinds(".notice")                                // a kind the app does not read: drafted by this plugin
         .Routes(SampleRoutes.Map);                                 // under /api/v1/plugins/kb.sample/
     // #endregion
 }

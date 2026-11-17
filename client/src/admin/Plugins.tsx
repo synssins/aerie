@@ -134,6 +134,7 @@ export function Plugins({ area, onHome }: { area: string; onHome: () => void }) 
             <h3>Publisher</h3><div>{selected.publisher}</div>
             <h3>Source</h3><div>{selected.source}</div>
             <h3>Provides</h3>{list(selected.extensionPoints)}
+            <h3>Reads for import</h3>{list(selected.importFileKinds)}
             <h3>Requires</h3>{list(selected.requires)}
             <h3>Required by</h3>{list(selected.requiredBy)}
             <h3>Outbound hosts</h3>{list(selected.outboundHosts)}

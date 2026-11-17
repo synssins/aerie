@@ -39,7 +39,7 @@ public sealed class ImportFile
     public required string Name { get; set; }
     public long Size { get; set; }
     public required string Sha256 { get; set; }
-    /// <summary>Text, Image, Container, Blocked or Unsupported.</summary>
+    /// <summary>Text, Image, Container, Blocked, Unsupported, or Claimed (a kind the app does not read, that a plugin reads).</summary>
     public required string Kind { get; set; }
     public string? Mime { get; set; }
     public string? Note { get; set; }
