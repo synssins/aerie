@@ -141,6 +141,34 @@ Write. `SaveCompatAuthSettings`, answers `CompatAuthSettingsDto` ([CompatAuthSet
 
 Write. `DisableLocalSignIn`, answers `Unit`.
 
+## auth.method.finish
+
+Write. `FinishSignIn`, answers `SignInRedirect` ([SignInRedirect](#signinredirect)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Plugin | `string` | required |
+| Method | `string` | required |
+| Query | `IReadOnlyDictionary<string, string>` | required, never logged |
+
+## auth.method.start
+
+Write. `StartSignIn`, answers `SignInRedirect` ([SignInRedirect](#signinredirect)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Plugin | `string` | required |
+| Method | `string` | required |
+| ReturnTo | `string?` |  |
+
+## auth.methods.list
+
+Read. `ListSignInMethods`, answers `IReadOnlyList<SignInMethodDto>` ([SignInMethodDto](#signinmethoddto)). Core only.
+
+## auth.methods.outcome
+
+Write. `ReadSignInOutcome`, answers `SignInOutcome` ([SignInOutcome](#signinoutcome)). Core only.
+
 ## auth.password.set
 
 Write. `SetPassword`, answers `Unit`. Core only.
@@ -5145,6 +5173,7 @@ Enum: `Folder`, `Page`.
 | replaces | `IReadOnlyList<string>` |
 | removed | `bool` |
 | importFileKinds | `IReadOnlyList<string>` |
+| signInMethods | `IReadOnlyList<PluginSignInMethodDto>` ([PluginSignInMethodDto](#pluginsigninmethoddto)) |
 
 ```json
 {
@@ -5207,6 +5236,13 @@ Enum: `Folder`, `Page`.
   "removed": false,
   "importFileKinds": [
     "text"
+  ],
+  "signInMethods": [
+    {
+      "id": "text",
+      "name": "text",
+      "redirectAddress": "text"
+    }
   ]
 }
 ```
@@ -5278,6 +5314,9 @@ Enum: `Folder`, `Page`.
       "removed": false,
       "importFileKinds": [
         "text"
+      ],
+      "signInMethods": [
+        null
       ]
     }
   ],
@@ -5442,6 +5481,22 @@ Enum: `BuiltIn`, `Uploaded`.
 ```json
 {
   "restart": false
+}
+```
+
+### PluginSignInMethodDto
+
+| Field | Type |
+|---|---|
+| id | `string` |
+| name | `string` |
+| redirectAddress | `string` |
+
+```json
+{
+  "id": "text",
+  "name": "text",
+  "redirectAddress": "text"
 }
 ```
 
@@ -5997,6 +6052,46 @@ Enum: `User`, `Group`.
 {
   "required": false,
   "codeRequired": false
+}
+```
+
+### SignInMethodDto
+
+| Field | Type |
+|---|---|
+| id | `string` |
+| name | `string` |
+
+```json
+{
+  "id": "text",
+  "name": "text"
+}
+```
+
+### SignInOutcome
+
+| Field | Type |
+|---|---|
+| message | `string?` |
+| step | `string?` |
+
+```json
+{
+  "message": "text",
+  "step": "text"
+}
+```
+
+### SignInRedirect
+
+| Field | Type |
+|---|---|
+| location | `string` |
+
+```json
+{
+  "location": "text"
 }
 ```
 

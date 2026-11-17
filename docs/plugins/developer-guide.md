@@ -70,6 +70,7 @@ public void Configure(IPluginApp app, IPluginContext context) => app
     .ImportContributor<NoticeFromFile>()                       // add to the drafts of AI imports
     .DraftContributor<NoticeFromDraft>()                       // ... from the text the AI drafted
     .ImportFileKinds(".notice")                                // a kind the app does not read: drafted by this plugin
+    .SignInMethod<SampleSignIn>("example", "Sign in with Example ID") // a button on the sign-in screen
     .Routes(SampleRoutes.Map);                                 // under /api/v1/plugins/kb.sample/
 ```
 
@@ -94,6 +95,7 @@ public sealed class SampleSettings(IPluginContext context)
     // The manifest gives KeepDays a default (365) and bounds (0 to 3650): the app returns the default while none is saved and refuses a
     // value out of bounds, so the value is always a number here.
     public int KeepDays => int.Parse(context.GetSetting("KeepDays")!, System.Globalization.CultureInfo.InvariantCulture);
+    public string? SignInDomain => context.GetSetting("SignInDomain")?.Trim() is { Length: > 0 } d ? d : null;
 }
 ```
 
@@ -1108,7 +1110,7 @@ Every one of these actions has `ctx.Actor.Source` `"import"` and `ctx.Actor.Impo
 
 Every action carries an actor (`ctx.Actor`). It is one of:
 
-- **A person** in the browser: signed in with a password, then a code when the app asks for one (below). `UserId` is set.
+- **A person** in the browser: signed in with a password or a [sign-in method](#sign-in-methods), then a code when the app asks for one (below). `UserId` is set.
 - **A person through an API token**: `UserId` is the token's owner, `TokenId` is set. A token narrows what its owner may do: each scope is Read (Reader) or Write (Contributor) for one space or all, never more than its owner holds. A token is never an Admin, even an Admin's. A service token's owner is a service account that cannot sign in; its all-spaces scope does not reach a sensitive space. Tokens reach only the routes the [API reference](../api-reference.md) marks; plugin routes are closed to them.
 - **A plugin** (`ActorKind.Plugin`), in a job, an after handler, a health check or an import contributor. It reads every space that is not sensitive, Private ones too, and nothing of a sensitive space. An action that records who did it (`page.create`, `page.save` and the like) answers 401 for it.
 - **Nobody** (`ActorKind.Anonymous`): someone not signed in. They read only spaces open to Anyone that are not sensitive.
@@ -1127,8 +1129,9 @@ Every action carries an actor (`ctx.Actor`). It is one of:
 | `health` | `Plugin` | A plugin's health check, and every action it sends. |
 | `import` | `User` | The actions sent when the importer accepts a draft ([which](#what-a-plugin-sees-of-an-import)), as the importer. |
 | `import` | `Plugin` | An [import contributor](#adding-to-the-draft-import-contributors) or a [draft contributor](#adding-to-the-draft-from-its-text-draft-contributors), and every action it sends. |
+| `signin` | `Plugin` | A [sign-in method](#sign-in-methods)'s provider description and check, and every action it sends. |
 
-`ctx.Actor.PluginId` names the plugin for `job`, `queue`, `health` and a contributor's `import`. `ctx.Actor.ImportItemId` is the import item's id when `Source` is `import`, and null otherwise. `ctx.Name` is the action's own name (`page.create`), never the action that sent it.
+`ctx.Actor.PluginId` names the plugin for `job`, `queue`, `health`, `signin` and a contributor's `import`. `ctx.Actor.ImportItemId` is the import item's id when `Source` is `import`, and null otherwise. `ctx.Name` is the action's own name (`page.create`), never the action that sent it.
 
 Only the core sets `Source` and `ImportItemId`. `Actor` has no public constructor, and nothing a caller sends (a field in a request's body, a header) changes them, so a hook can rely on them: a page whose `page.create` has source `import` was made by accepting that import item.
 Before 0.4.0 an accepted import's actions had source `web`, and a hook could not tell them from a person's.
@@ -1147,6 +1150,64 @@ What a plugin writes through `ctx.Audit(...)` gets the same.
 
 An Admin can make people use a code from an authenticator app at sign-in (Administration > Security > Sign-in). The password is checked first, then the code (`auth.signin`, then `auth.signin.code`).
 A before hook on `auth.signin` runs before the code is asked. The code, the key behind it and the recovery codes are never in an action's JSON or text. Code actions are core-only.
+
+## Sign-in methods
+
+A plugin can add a button to the sign-in screen that signs a person in through an OpenID Connect provider. The app runs the whole sign-in; the plugin says where the provider is, and may refuse a person on what the provider says about them. The app is only ever the relying party: it never issues identities to anyone.
+
+<!-- sample:signin -->
+```csharp
+/// <summary>
+/// A sign-in method: "Sign in with Example ID" on the sign-in screen. The app runs the whole OpenID Connect sign-in; this class says
+/// where the provider is, and refuses people outside the domain an Admin set. Its hosts are in the manifest's outboundHosts.
+/// </summary>
+public sealed class SampleSignIn(SampleSettings settings) : ISignInMethod
+{
+    public OidcProvider Provider { get; } = new() { Issuer = "https://id.example.com" };
+
+    public Task<string?> CheckAsync(SignInClaims claims, CancellationToken ct) =>
+        Task.FromResult(settings.SignInDomain is { } domain && !(claims.EmailVerified && claims.Email!.EndsWith("@" + domain, StringComparison.OrdinalIgnoreCase))
+            ? $"Sign in with your account at {domain}."
+            : null);
+}
+```
+
+Register it in `Configure`: `app.SignInMethod<SampleSignIn>("example", "Sign in with Example ID")`. The id is 1 to 32 lowercase letters, digits and hyphens, unique within the plugin; the name is the button's text, 1 to 60 characters. Anything else throws, and the plugin does not load. The method is made for each sign-in, with the plugin's services, and runs as the plugin (`ActorKind.Plugin`, source `signin`).
+
+What the app does, for every method alike (OpenID Connect Core 1.0, authorization code flow):
+
+- The button goes to `/api/v1/auth/methods/{plugin}/{id}/start`. The app reads the provider's discovery document, then sends the browser to the provider with `state`, `nonce` and a PKCE challenge (S256). These, the code verifier, the return path and the redirect address are kept in one encrypted cookie that lasts ten minutes and is read once.
+- The provider sends the browser back to `/api/v1/auth/methods/{plugin}/{id}/callback`, the redirect address. The app checks the state, trades the code for the ID token at the token endpoint (with the client secret in HTTP Basic, or as a public client without one), and checks the ID token: its signature against the provider's published keys (RSA or EC only; an unsigned token or a shared-secret one is refused), its issuer, its audience (and its authorized party when it has several), its expiry, its issue time and its nonce.
+- After the sign-in, the browser goes to the path it came from. Only a path on this site is kept; an address elsewhere (`//host`, `https://...`) becomes `/`.
+- Discovery, keys and the token request use the plugin's HTTP client, so every host they reach (the issuer's, the token endpoint's, the keys') must be in the manifest's `outboundHosts`. The sample's provider is at `id.example.com`.
+
+What the plugin gives, in `Provider` (`OidcProvider`), asked at each sign-in so it may depend on the plugin's settings:
+
+| Property | Default | |
+|---|---|---|
+| `Issuer` | (required) | Exactly as the provider's ID tokens give it: an https address with no query, at most 400 characters. |
+| `DiscoveryAddress` | the issuer + `/.well-known/openid-configuration` | An https address. Its `issuer` must equal `Issuer`. |
+| `Scopes` | `openid`, `email`, `profile` | Must hold `openid`. |
+| `SubjectClaim` | `sub` | The claim that names the person for good. The account is linked by issuer plus this value. |
+| `EmailClaim`, `EmailVerifiedClaim`, `NameClaim` | `email`, `email_verified`, `name` | Read from the ID token only; the userinfo endpoint is not called. |
+
+A provider description the app cannot use (an issuer that is not https, scopes without `openid`) refuses the sign-in and counts as a failure of the plugin.
+
+`CheckAsync` runs on the validated claims (`SignInClaims`: issuer, subject, email, whether the provider verified it, name, and every claim of the token) before the app looks for an account. Return null to let the person on, or a sentence that refuses them; the sign-in screen shows it once (at most 200 characters). A check that throws or runs past 10 seconds refuses too, with a general message. A domain allow-list, a tenant or a group claim belong here.
+
+What the plugin cannot do: it never sees the authorization code, the ID token or any other token, it never opens a session, and it cannot act as the person. It cannot read the method's client id or client secret either: `GetSetting` and `GetSecretAsync` answer null for every key starting with `signIn.`, and a manifest that declares such a key is refused at install.
+
+The app adds three settings to the plugin's page for each method: **Client ID**, **Client secret** (stored encrypted, never sent back) and **New accounts** (off unless an Admin turns it on). The page shows the redirect address to register with the provider. The button shows on the sign-in screen once the client id is set; the anonymous list behind it (`GET /api/v1/auth/methods`) holds each method's id and name, nothing else. No plugin script runs on the sign-in screen.
+
+Who gets in:
+
+1. An account already linked to this issuer and subject. A turned-off account is refused.
+2. Otherwise, when the provider verified the email address, the one account with that address (never the break-glass account or a service account) is linked, and from then on found by the link alone. Two accounts with the address, or an account already linked to another sign-in, are refused. An unverified address is refused.
+3. Otherwise, when **New accounts** is on, a new account: never an Administrator, in no group and no space. Its user name is the email address (or `user-` and 8 hex digits when that is taken), and it has no password.
+
+An Administrator who signs in with a method still gives their one-time code, as after a password. Password sign-in and the break-glass account are unchanged: a method cannot turn them off, and Safe Mode loads no plugin, so the break-glass account always gets in.
+
+The audit log has `auth.method.start`, then `auth.signin` or `auth.signin.failed` (with the method and the reason, never a code or a token), and `user.signin.link` or `user.signin.create` when an account is linked or made.
 
 ## Library plugins
 
@@ -1182,7 +1243,8 @@ The plugin stays disabled until an Admin selects Enable. Uploading a new version
 - `abstractionsVersion`: the version of `Kb.Plugins.Abstractions` the plugin was built against. The app refuses a plugin built for a newer one.
 - `minKbVersion`: the lowest app version the plugin runs on.
 
-The contract and the app are at 0.7.0, and can still change before 1.0.0.
+The contract and the app are at 0.8.0, and can still change before 1.0.0.
+0.8.0 added [sign-in methods](#sign-in-methods) (`ISignInMethod`, `OidcProvider`, `SignInClaims`, `SignInMethodReg`, `app.SignInMethod<T>(id, name)`) and the actor source `signin`; a plugin that uses them says `"abstractionsVersion": "0.8.0"`. One thing changed that an earlier plugin can see: a setting key starting with `signIn.` is the app's, so a manifest that declares one is refused at install. Nothing else of 0.7.0 changed, and a plugin built for 0.7.0 or earlier loads as it did.
 0.7.0 added a setting's `help`, `default`, `unit`, `min`, `max` and `optionLabels` ([settings](#settings-and-secrets)), and `GetSetting` returns the default while nothing is saved; a plugin that uses them says `"abstractionsVersion": "0.7.0"`. Its browser script API is 1.1.0: the slot `plugin.settings` ([panels](#panels-on-the-plugins-own-page)) and `kb.api.upload` ([uploading](#uploading-a-file-from-a-panel)); a script that uses them says `"uiApiVersion": "1.1.0"`. Nothing of 0.6.0 changed: a plugin built for 0.6.0 or earlier loads as it did, and its settings read and save as they did.
 0.6.0 added [file kinds a plugin claims](#file-kinds-the-app-does-not-read) (`app.ImportFileKinds(...)`, `ImportFileKindReg`); a plugin that uses them says `"abstractionsVersion": "0.6.0"`. Nothing of 0.5.0 changed, and a plugin built for 0.5.0 or earlier loads as it did.
 0.5.0 added [draft contributors](#adding-to-the-draft-from-its-text-draft-contributors) (`IDraftContributor`, `ImportDraft`, `DraftPage`, `DraftContribution`, `DraftAddition`, `DraftPlace`, `app.DraftContributor<T>()`); a plugin that uses them says `"abstractionsVersion": "0.5.0"`. It changed one thing a 0.4.0 contributor can see: the 512 KB limit is now counted in UTF-8 bytes, where 0.4.0 counted characters, so an answer of mostly non-ASCII text holds less. Everything else of 0.4.0 is unchanged, and a plugin built for 0.4.0 or earlier loads as it did.
@@ -1202,7 +1264,8 @@ What a test can build and call directly:
 - Jobs (`RunAsync(ct)`), with a stand-in `IActionBus` that answers the actions the job sends. `Outcome<T>` converts from a value or a `Problem`.
 - Renderers: call `Renderer.Plain`, `MarkdownLines` and `Blocks` with a node parsed by `JsonDocument.Parse(...).RootElement`.
 - Import contributors: call `ContributeAsync(new ImportedFile(...), ct)`; `ImportedFile` has a public constructor. The repository's `tests/Kb.Tests.Unit/SampleImportTests.cs` tests the sample's.
-- `Configure`, with a stand-in `IPluginApp` whose `Add<T>(T registration) where T : class` keeps what it is given; check the `BeforeHook`, `AfterHandler`, `ActionHandler`, `NodeRenderer` and `ImportContributorReg` records.
+- `Configure`, with a stand-in `IPluginApp` whose `Add<T>(T registration) where T : class` keeps what it is given; check the `BeforeHook`, `AfterHandler`, `ActionHandler`, `NodeRenderer`, `ImportContributorReg` and `SignInMethodReg` records.
+- A sign-in method's `CheckAsync`: `SignInClaims` has a public constructor. The whole sign-in runs in the app; the repository's `tests/Kb.Tests.Integration/Plugins/SignInMethodTests.cs` runs the sample's against a stand-in provider.
 
 What a test cannot build: `ActionContext<T>` and `Actor` have no public constructor. Only the app makes them, so a plugin cannot act as someone else. A before hook, a result filter or an action handler therefore cannot be called from a plugin's test as it is.
 Keep such a class thin: put the decision in a method that takes the action (and what it needs) and returns the changed action or the `Problem`, test that method, and leave the hook to call it and set `ctx.Action`.
@@ -1213,8 +1276,9 @@ The whole plugin, hooks included, is tested in the app: install the package on a
 
 - More slots in the app's screens (today: `page.tools`, `page.panel`, `editor.toolbar`, `header.gear`), the screen kit (tables, forms), wrapping or replacing parts of the app's screens.
 - A build preset for scripts written in TypeScript or JSX; scripts on the sign-in screen; calling other hosts from the browser.
+- For sign-in methods: the userinfo endpoint, an issuer that differs per tenant (multi-tenant issuers), signing out at the provider, an Admin unlinking an account, and outbound hosts set by an Admin rather than the manifest.
 - Data attached to core rows (a count that comes with the page).
-- Sign-in schemes, page kinds of a plugin's own, export formats.
+- Page kinds of a plugin's own, export formats.
 - The extension points the contract declares and the core does not call yet: maps, an AI provider, record importers, page actions, export formats, DNS, a search engine.
 - Scanning attachments and images added to pages directly.
 - After handlers that survive a crash (a queue in the database).

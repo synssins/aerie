@@ -130,7 +130,13 @@ export type PluginInfo = {
   reason: string | null; locked: boolean; loaded: boolean; source: string; requires: string[]; requiredBy: string[]; extensionPoints: string[]; outboundHosts: string[];
   permissions: { key: string; label: string; scope: string; defaultRole: string }[]; enforcing: boolean; settings: PluginSetting[]; replaces: string[]; removed: boolean;
   importFileKinds: string[];
+  /** The sign-in methods it adds (contract 0.8.0): id "{plugin}/{id}", button text, and the redirect address to register with the provider. */
+  signInMethods?: { id: string; name: string; redirectAddress: string }[];
 };
+/** A button on the sign-in screen. */
+export type SignInMethod = { id: string; name: string };
+/** After a sign-in method sent the browser back: a refusal to show once, or the one-time code step to finish with. */
+export type SignInOutcome = { message: string | null; step: "code" | "enroll" | null };
 export type LogField = { key: string; label: string; type: "text" | "secret" | "select"; options: string[] | null };
 export type LogKind = { kind: string; label: string; fields: LogField[] };
 export type LogTarget = {

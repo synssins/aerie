@@ -2,15 +2,25 @@ using Microsoft.AspNetCore.Identity;
 
 namespace Kb.Core.Identity;
 
-/// <summary>Service: an account that only API tokens act as. It has no password and cannot sign in.</summary>
-public enum UserSource { Local, Entra, Ldap, Service }
+/// <summary>
+/// Service: an account that only API tokens act as. It has no password and cannot sign in.
+/// SignInMethod: an account a sign-in method made (a plugin's OpenID Connect provider). It has no password; it signs in through that
+/// provider only, linked by <see cref="KbUser.ExternalIssuer"/> and <see cref="KbUser.ExternalId"/>.
+/// </summary>
+public enum UserSource { Local, Entra, Ldap, Service, SignInMethod }
 
 public sealed class KbUser : IdentityUser<Guid>
 {
     public string DisplayName { get; set; } = "";
     public UserSource Source { get; set; }
-    /// <summary>Directory object id (Entra oid / LDAP objectGUID). Null for local accounts.</summary>
+    /// <summary>
+    /// With <see cref="ExternalIssuer"/>: the person at an OpenID Connect provider (the ID token's subject), linked when they first signed
+    /// in with a sign-in method. Any account but the break-glass and service ones can be linked; one link per account, one account per
+    /// link. Null when the account is linked to none.
+    /// </summary>
     public string? ExternalId { get; set; }
+    /// <summary>The issuer of <see cref="ExternalId"/>, exactly as its ID tokens give it.</summary>
+    public string? ExternalIssuer { get; set; }
     public bool IsBreakGlass { get; set; }
     public bool IsAdmin { get; set; }
     /// <summary>May post and remove home-page announcements. Independent of Admin and space roles.</summary>

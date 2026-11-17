@@ -7,9 +7,9 @@ namespace Kb.Core.Plugins;
 /// <summary>The versions this host offers to plugins.</summary>
 public static class KbHost
 {
-    public const string Version = "0.7.0";
+    public const string Version = "0.8.0";
     /// <summary>Raised one minor step per phase of the plugin model; 1.0.0 when the contracts are frozen.</summary>
-    public const string AbstractionsVersion = "0.7.0";
+    public const string AbstractionsVersion = "0.8.0";
     public const string UiApiVersion = "1.1.0";
 }
 
@@ -28,6 +28,35 @@ public static partial class PluginId
     public static string TablePrefix(string id)
     {
         return PluginTables.Prefix(id);
+    }
+}
+
+/// <summary>
+/// The settings the app adds to a plugin for each sign-in method it registers: the client id, the client secret and whether unknown
+/// people get an account. They are saved and shown with the plugin's own settings, under keys the plugin cannot read or declare.
+/// </summary>
+public static class SignInSettings
+{
+    public const string Prefix = "signIn.";
+
+    public static bool IsReserved(string? key) => key is not null && key.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase);
+
+    public static string ClientId(string method) => $"{Prefix}{method}.clientId";
+    public static string ClientSecret(string method) => $"{Prefix}{method}.clientSecret";
+    public static string NewAccounts(string method) => $"{Prefix}{method}.newAccounts";
+
+    /// <summary>The settings of these methods (id, button text). Labels name the method only when the plugin has more than one.</summary>
+    public static IEnumerable<PluginSetting> For(IReadOnlyList<(string Id, string Name)> methods)
+    {
+        ArgumentNullException.ThrowIfNull(methods);
+        foreach (var (id, name) in methods)
+        {
+            var of = methods.Count > 1 ? $" ({name})" : "";
+            yield return new PluginSetting(ClientId(id), "Client ID" + of, Help: "From the provider, where this app is registered with the redirect address shown on this page. The sign-in button shows once it is set.");
+            yield return new PluginSetting(ClientSecret(id), "Client secret" + of, Secret: true, Help: "From the provider. Stored encrypted; it is never shown again.");
+            yield return new PluginSetting(NewAccounts(id), "New accounts" + of, Type: "toggle", Default: "false",
+                Help: "On: a person the provider vouches for who has no account here gets one, never an Administrator and in no space. Off: only people who have an account sign in.");
+        }
     }
 }
 
@@ -98,6 +127,7 @@ public static class PluginVersions
     {
         foreach (var s in m.Settings)
         {
+            if (SignInSettings.IsReserved(s.Key)) return $"Setting {s.Key}: keys starting with \"{SignInSettings.Prefix}\" are the app's.";
             var secret = s.Secret || s.Type == "secret";
             if (s.Min is { } min && s.Max is { } max && min > max) return $"Setting {s.Key}: min is more than max.";
             if ((s.Min is not null || s.Max is not null) && s.Type != "number") return $"Setting {s.Key}: min and max are for a number.";

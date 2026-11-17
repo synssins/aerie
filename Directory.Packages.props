@@ -18,6 +18,8 @@
     <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.14" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.11.0" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
+    <!-- The version Microsoft.Data.SqlClient already brings: sign-in methods validate ID tokens with it (one version in the app). -->
+    <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="7.7.1" />
     <PackageVersion Include="xunit.v3" Version="4.0.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />

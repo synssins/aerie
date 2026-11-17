@@ -1,14 +1,14 @@
 {
   "id": "kb.sample",
   "name": "Sample: acknowledgements",
-  "version": "2.3.1",
+  "version": "2.4.0",
   "publisher": "Kb first-party",
   "description": "Readers acknowledge a page. The reference plugin of the developer guide.",
   "assembly": "Kb.Plugin.Sample.dll",
-  "minKbVersion": "0.7.0",
-  "abstractionsVersion": "0.7.0",
+  "minKbVersion": "0.8.0",
+  "abstractionsVersion": "0.8.0",
   "extensionPoints": [],
-  "outboundHosts": [],
+  "outboundHosts": ["id.example.com"],
   "settings": [
     {
       "key": "RequireNoteOnMajor",
@@ -29,6 +29,11 @@
       "min": 0,
       "max": 3650,
       "help": "Older ones are deleted once a day. 0 deletes them all at the next run."
+    },
+    {
+      "key": "SignInDomain",
+      "label": "Sign-in domain",
+      "help": "Only people whose email address is at this domain sign in with Example ID. Empty: anyone the provider vouches for."
     }
   ],
   "schedules": [

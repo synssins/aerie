@@ -50,6 +50,8 @@ public static class ActorSources
     /// <see cref="Actor.ImportItemId"/> names the import item.
     /// </summary>
     public const string Import = "import";
+    /// <summary>A sign-in method's code (its provider description and its check on the claims), as its plugin, during a sign-in.</summary>
+    public const string SignIn = "signin";
 }
 
 public interface IActorAccessor

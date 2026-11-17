@@ -53,7 +53,8 @@ describe("one-time codes", () => {
     await userEvent.type(screen.getByLabelText("Code or recovery code"), "123456");
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
     await waitFor(() => expect(signedIn).toHaveBeenCalledWith(me));
-    expect(calls.map((c) => c.key)).toEqual(["POST /auth/local/signin", "POST /auth/local/code", "POST /auth/local/code"]);
+    // The sign-in screen also reads its sign-in methods (GET); the password and the codes are these posts.
+    expect(calls.map((c) => c.key).filter((k) => k.startsWith("POST"))).toEqual(["POST /auth/local/signin", "POST /auth/local/code", "POST /auth/local/code"]);
   });
 
   it("sets up codes after the password: QR and key, one code, then the recovery codes once", async () => {

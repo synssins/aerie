@@ -16,7 +16,9 @@ namespace Kb.Web.Actions;
 public sealed record PluginInfoDto(string Id, string Name, string Version, string Publisher, string? Description, PluginOrigin Origin, PluginState State, string? Reason,
     bool Locked, bool Loaded, string Source, IReadOnlyList<string> Requires, IReadOnlyList<string> RequiredBy, IReadOnlyList<string> ExtensionPoints, IReadOnlyList<string> OutboundHosts,
     IReadOnlyList<PluginPermission> Permissions, bool Enforcing, IReadOnlyList<PluginSetting> Settings, IReadOnlyList<string> Replaces, bool Removed,
-    IReadOnlyList<string> ImportFileKinds);
+    IReadOnlyList<string> ImportFileKinds, IReadOnlyList<PluginSignInMethodDto> SignInMethods);
+/// <summary>A sign-in method a plugin adds: its id ("{plugin}/{id}"), its button text, and the redirect address to register with the provider.</summary>
+public sealed record PluginSignInMethodDto(string Id, string Name, string RedirectAddress);
 public sealed record PluginListDto(IReadOnlyList<PluginInfoDto> Plugins, bool SafeMode);
 /// <summary>Restart: a setting marked "restart" changed, so the app restarts.</summary>
 public sealed record PluginSettingsSaved(bool Restart);
@@ -70,7 +72,8 @@ public sealed record SavePluginSettings : IAction<PluginSettingsSaved>
     [JsonIgnore] public required IReadOnlyDictionary<string, string?> Values { get; init; }
 }
 
-internal sealed class ListPluginsHandler(PluginInstaller installer, PluginRegistry registry, IRegistrations registrations, IAccess access) : IActionHandler<ListPlugins, PluginListDto>
+internal sealed class ListPluginsHandler(PluginInstaller installer, PluginRegistry registry, IRegistrations registrations, IAccess access, PluginSettingsStore settings,
+    SignInMethods signInMethods, IHttpContextAccessor http) : IActionHandler<ListPlugins, PluginListDto>
 {
     public async Task<Problem?> AuthorizeAsync(ActionContext<ListPlugins> ctx) => await access.IsAdminAsync(ctx.Actor, ctx.Cancel) ? null : Problem.Forbidden;
 
@@ -83,12 +86,15 @@ internal sealed class ListPluginsHandler(PluginInstaller installer, PluginRegist
             k.Manifest.Id, PluginManifests.NameOf(k.Manifest), k.Manifest.Version, k.Manifest.Publisher, k.Manifest.Description, k.Origin, k.Status.State, k.Status.Reason,
             k.Status.LockedAt is not null, registry.Find(k.Manifest.Id) is { Loaded: true } loaded && loaded.Manifest.Version == k.Manifest.Version, k.Source,
             [.. k.Manifest.Requires.Select(r => r.Id)], PluginGraph.Dependents(k.Manifest.Id, manifests), k.Manifest.ExtensionPoints, k.Manifest.OutboundHosts,
-            k.Manifest.Permissions, k.Manifest.Enforcing, k.Manifest.Settings, k.Manifest.Ui?.Replaces ?? [], Removed: false,
+            // Its settings: the manifest's, and the app's for each sign-in method it adds.
+            k.Manifest.Permissions, k.Manifest.Enforcing, settings.Definitions(k.Manifest), k.Manifest.Ui?.Replaces ?? [], Removed: false,
             // The file kinds it reads for import: what this server loaded, so none for a plugin that is not loaded.
-            [.. registrations.All<ImportFileKindReg>().Where(r => r.PluginId == k.Manifest.Id).SelectMany(r => r.Value.Extensions).Distinct().Order(StringComparer.Ordinal)])),
+            [.. registrations.All<ImportFileKindReg>().Where(r => r.PluginId == k.Manifest.Id).SelectMany(r => r.Value.Extensions).Distinct().Order(StringComparer.Ordinal)],
+            // Its sign-in methods: likewise what this server loaded. The redirect address is this site as the Admin reached it.
+            [.. signInMethods.All.Where(m => m.PluginId == k.Manifest.Id).Select(m => new PluginSignInMethodDto(m.Key, m.Name, SignInMethods.RedirectAddress(http.HttpContext!.Request, m)))])),
             // Removed plugins whose tables were kept: listed so their data can still be deleted.
             .. (await installer.RemovedAsync(ctx.Cancel)).Select(s => new PluginInfoDto(s.PluginId, s.PluginId, s.ActiveVersion ?? "", "", null, PluginOrigin.Uploaded, PluginState.Disabled, null,
-                Locked: false, Loaded: false, "upload", [], [], [], [], [], Enforcing: false, [], [], Removed: true, []))], registry.SafeMode);
+                Locked: false, Loaded: false, "upload", [], [], [], [], [], Enforcing: false, [], [], Removed: true, [], []))], registry.SafeMode);
     }
 }
 
@@ -143,7 +149,7 @@ internal sealed class ReleasePluginLockHandler(PluginInstaller installer, IAcces
 }
 
 /// <summary>A secret's value is never returned: only which secrets are set.</summary>
-internal sealed class ReadPluginSettingsHandler(PluginRegistry registry, KbDbContext db, IAccess access) : IActionHandler<ReadPluginSettings, PluginSettingsDto>
+internal sealed class ReadPluginSettingsHandler(PluginRegistry registry, KbDbContext db, IAccess access, PluginSettingsStore store) : IActionHandler<ReadPluginSettings, PluginSettingsDto>
 {
     private PluginInfo? _plugin;
 
@@ -158,7 +164,8 @@ internal sealed class ReadPluginSettingsHandler(PluginRegistry registry, KbDbCon
         var (id, plugin) = (ctx.Action.Id, _plugin!);
         var rows = await db.PluginSettingValues.AsNoTracking().Where(v => v.PluginId == id).ToListAsync(ctx.Cancel);
         // What the manifest calls a secret is one, also when its row was stored in clear by an older version of the plugin.
-        bool Secret(PluginSettingValue row) => row.Secret || plugin.Manifest.Settings.Any(d => d.Key == row.Key && PluginSettingsStore.IsSecret(d));
+        var definitions = store.Definitions(plugin.Manifest);
+        bool Secret(PluginSettingValue row) => row.Secret || definitions.Any(d => d.Key == row.Key && PluginSettingsStore.IsSecret(d));
         return new PluginSettingsDto(rows.Where(r => !Secret(r)).ToDictionary(r => r.Key, r => r.Value), [.. rows.Where(Secret).Select(r => r.Key)]);
     }
 }

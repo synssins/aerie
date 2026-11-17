@@ -2970,6 +2970,123 @@ paths:
                 "$ref": "#/components/schemas/Problem"
       security: []
       "x-kb-api-token": "closed"
+  "/api/v1/auth/methods":
+    get:
+      tags:
+        - "auth"
+      operationId: "auth.methods.list"
+      "x-kb-action": "auth.methods.list"
+      "x-kb-changes-data": false
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                type: "array"
+                items:
+                  "$ref": "#/components/schemas/SignInMethodDto"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security: []
+      "x-kb-api-token": "closed"
+  "/api/v1/auth/methods/outcome":
+    get:
+      tags:
+        - "auth"
+      operationId: "auth.methods.outcome"
+      "x-kb-action": "auth.methods.outcome"
+      "x-kb-changes-data": true
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/SignInOutcome"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security: []
+      "x-kb-api-token": "closed"
+  "/api/v1/auth/methods/{plugin}/{method}/callback":
+    get:
+      tags:
+        - "auth"
+      operationId: "auth.method.finish"
+      "x-kb-action": "auth.method.finish"
+      "x-kb-changes-data": true
+      parameters:
+        - name: "plugin"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+        - name: "method"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/SignInRedirect"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security: []
+      "x-kb-api-token": "closed"
+  "/api/v1/auth/methods/{plugin}/{method}/start":
+    get:
+      tags:
+        - "auth"
+      operationId: "auth.method.start"
+      "x-kb-action": "auth.method.start"
+      "x-kb-changes-data": true
+      parameters:
+        - name: "plugin"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+        - name: "method"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+        - name: "returnTo"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/SignInRedirect"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security: []
+      "x-kb-api-token": "closed"
   "/api/v1/auth/signout":
     post:
       tags:
@@ -8361,6 +8478,10 @@ components:
           type: "array"
           items:
             type: "string"
+        signInMethods:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/PluginSignInMethodDto"
     PluginJobDto:
       type: "object"
       properties:
@@ -8498,6 +8619,15 @@ components:
       properties:
         restart:
           type: "boolean"
+    PluginSignInMethodDto:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+        name:
+          type: "string"
+        redirectAddress:
+          type: "string"
     PluginState:
       type: "string"
       enum:
@@ -8894,6 +9024,27 @@ components:
           type: "boolean"
         codeRequired:
           type: "boolean"
+    SignInMethodDto:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+        name:
+          type: "string"
+    SignInOutcome:
+      type: "object"
+      properties:
+        message:
+          type: "string"
+          nullable: true
+        step:
+          type: "string"
+          nullable: true
+    SignInRedirect:
+      type: "object"
+      properties:
+        location:
+          type: "string"
     SignInRequest:
       type: "object"
       properties:

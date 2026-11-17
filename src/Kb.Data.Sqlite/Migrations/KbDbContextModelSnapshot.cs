@@ -900,6 +900,10 @@ namespace Kb.Data.Sqlite.Migrations
                     b.Property<string>("ExternalId")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ExternalIssuer")
+                        .HasMaxLength(400)
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("IsAdmin")
                         .HasColumnType("INTEGER");
 
@@ -948,14 +952,15 @@ namespace Kb.Data.Sqlite.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ExternalId");
-
                     b.HasIndex("NormalizedEmail")
                         .HasDatabaseName("EmailIndex");
 
                     b.HasIndex("NormalizedUserName")
                         .IsUnique()
                         .HasDatabaseName("UserNameIndex");
+
+                    b.HasIndex("ExternalIssuer", "ExternalId")
+                        .IsUnique();
 
                     b.ToTable("AspNetUsers", (string)null);
                 });

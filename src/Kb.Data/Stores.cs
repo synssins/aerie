@@ -94,10 +94,13 @@ public sealed class SpaceAccessData(KbDbContext db, Microsoft.Extensions.Options
         return new PrincipalInfo(u.Id, u.IsAdmin, await HasFullAccessAsync(u, groups, ct), groups);
     }
 
-    /// <summary>Local and break-glass accounts have full access; directory users need membership in an allowed group.</summary>
+    /// <summary>
+    /// Local, sign-in method and break-glass accounts have full access (what their roles give); directory users need membership in an
+    /// allowed group. A sign-in method's new account holds no role, so it starts with what anyone signed in may read.
+    /// </summary>
     private Task<bool> HasFullAccessAsync(KbUser u, List<string> groupKeys, CancellationToken _)
     {
-        if (u.Source == UserSource.Local || u.IsBreakGlass) return Task.FromResult(true);
+        if (u.Source is UserSource.Local or UserSource.SignInMethod || u.IsBreakGlass) return Task.FromResult(true);
         var allowed = options.Value.Auth.AllowedGroupIds;
         return Task.FromResult(groupKeys.Intersect(allowed, StringComparer.OrdinalIgnoreCase).Any());
     }

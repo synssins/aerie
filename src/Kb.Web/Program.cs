@@ -114,6 +114,9 @@ services.AddRateLimiter(o =>
     o.GlobalLimiter = System.Threading.RateLimiting.PartitionedRateLimiter.Create<HttpContext, string>(http =>
         HttpMethods.IsPost(http.Request.Method) && (http.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText is "/api/v1/auth/local/signin" or "/api/v1/auth/local/password"
             or "/api/v1/auth/local/code" or "/api/v1/auth/codes" or "/api/v1/auth/codes/key"
+        // A sign-in with a sign-in method, its start and its callback, is counted like a sign-in with a password.
+        || HttpMethods.IsGet(http.Request.Method) && (http.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText is "/api/v1/auth/methods/{plugin}/{method}/start"
+            or "/api/v1/auth/methods/{plugin}/{method}/callback"
             ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("signin:" + http.Connection.RemoteIpAddress, _ => new() { PermitLimit = kb.Auth.SignInsPerMinutePerAddress, Window = TimeSpan.FromMinutes(1) })
         // OAuth 2.0 authorize requests are counted per address, like sign-ins (identity-plan.md, slice 5).
         : http.GetEndpoint()?.Metadata.GetMetadata<Kb.Web.DataCenter.DcOAuthRoute>() is not null && HttpMethods.IsGet(http.Request.Method)
@@ -199,6 +202,9 @@ services.AddScoped<AccessService>();
 services.AddScoped<BreakGlassService>();
 services.AddScoped<SetupService>();
 services.AddScoped<Kb.Web.Actions.CodeSignIn>();
+services.AddSingleton<SignInMethods>();
+services.AddSingleton<OidcCache>();
+services.AddScoped<SignInFlow>();
 services.AddScoped<InventoryService>();
 services.AddScoped<AiService>();
 services.AddSingleton<AiRateLimiter>();
