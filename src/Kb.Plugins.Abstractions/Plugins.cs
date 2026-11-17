@@ -24,7 +24,10 @@ public interface IPluginContext
 {
     PluginManifest Manifest { get; }
 
-    /// <summary>The current value of a plugin setting. A change made in the app applies without a restart.</summary>
+    /// <summary>
+    /// The current value of a plugin setting, or its <see cref="PluginSetting.Default"/> while none is saved. A change made in the app
+    /// applies without a restart.
+    /// </summary>
     string? GetSetting(string key);
 
     /// <summary>A plugin secret. Only after startup, never inside <c>ConfigureServices</c> or <c>Configure</c>.</summary>
@@ -101,8 +104,16 @@ public sealed record PluginManifest
 public sealed record PluginRequirement(string Id, string MinVersion);
 
 /// <summary>Type: text, secret, number, toggle, select (with Options) or multiline. Restart: a change restarts the app.</summary>
+/// <summary>
+/// A setting an Admin sets on the plugin's page. <paramref name="Help"/>: a sentence shown under the field. <paramref name="Default"/>: the
+/// value the plugin gets from <see cref="IPluginContext.GetSetting"/> while none is saved, shown in the empty field (not for a secret).
+/// <paramref name="Unit"/>: shown after the field ("MB"). <paramref name="Min"/> and <paramref name="Max"/>: the bounds of a number, checked
+/// when it is saved. <paramref name="OptionLabels"/>: what a select shows for each of its <paramref name="Options"/>, by stored value.
+/// </summary>
 public sealed record PluginSetting(string Key, string Label, bool Secret = false, bool Required = false,
-    string Type = "text", IReadOnlyList<string>? Options = null, bool Restart = false);
+    string Type = "text", IReadOnlyList<string>? Options = null, bool Restart = false,
+    string? Help = null, string? Default = null, string? Unit = null, decimal? Min = null, decimal? Max = null,
+    IReadOnlyDictionary<string, string>? OptionLabels = null);
 
 /// <summary>Scope: space or global.</summary>
 public sealed record PluginPermission(string Key, string Label, string Scope, string DefaultRole = "Owner");

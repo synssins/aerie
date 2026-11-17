@@ -22,6 +22,7 @@ public sealed class SamplePlugin : IKbPlugin
         .Handle<Acknowledge, AckCount, AcknowledgeHandler>()       // its own actions
         .Handle<CountAcks, AckCount, CountAcksHandler>()
         .Handle<ReadAcks, AckList, ReadAcksHandler>()
+        .Handle<ReadAckTotals, AckTotals, ReadAckTotalsHandler>()
         .Before<SavePage, MajorNeedsNote>()                        // refuse a core action
         .After<SavePage, PageDto, ClearOnMajor>()                  // react once a core action has succeeded
         .Job<PurgeJob>("purge")                                    // the schedule "purge" of the manifest
@@ -40,6 +41,8 @@ public sealed class SampleSettings(IPluginContext context)
 {
     public bool RequireNoteOnMajor => context.GetSetting("RequireNoteOnMajor") == "true";
     public bool ResetOnMajor => context.GetSetting("ResetOnMajor") == "true";
-    public int KeepDays => int.TryParse(context.GetSetting("KeepDays"), out var days) && days >= 0 ? days : 365;
+    // The manifest gives KeepDays a default (365) and bounds (0 to 3650): the app returns the default while none is saved and refuses a
+    // value out of bounds, so the value is always a number here.
+    public int KeepDays => int.Parse(context.GetSetting("KeepDays")!, System.Globalization.CultureInfo.InvariantCulture);
 }
 // #endregion

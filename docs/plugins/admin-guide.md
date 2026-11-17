@@ -49,9 +49,15 @@ History and exports show `[type]` and the text inside the block. Search keeps th
 Enable or install the plugin again and the blocks are back.
 After installing or updating a plugin that adds blocks, select Rebuild index (Administration > Search) so search reads older pages the plugin's way.
 
+## A plugin's page
+
+Select the gear left of a plugin's name (or its row) to open its page. It holds everything about that plugin: its description and state, Disable or Enable and Remove, its settings, the minimum roles of its permissions, and on the right what it provides, needs and reads, its health checks and jobs.
+A plugin may add panels of its own below its settings, for what it keeps (a list of files it was given, for example). Only Admins see the page; a panel that fails says so and the rest of the page works.
+
 ## Settings and secrets
 
-Select a plugin to see its settings. A secret that is set shows as dots. Its value is never loaded into the browser; type a new value to replace it.
+A plugin's settings are on its page. A secret that is set shows as dots. Its value is never loaded into the browser; type a new value to replace it.
+A setting may have a line of help under it, a unit after it, and a default: an empty field shows the default, and the plugin uses it until a value is saved. A number may have bounds; a value outside them is refused with the bound ("At most 500 MB.").
 A change applies at once, unless the setting needs a restart.
 The audit log records which keys changed, never a value.
 

@@ -8454,6 +8454,26 @@ components:
           nullable: true
         restart:
           type: "boolean"
+        help:
+          type: "string"
+          nullable: true
+        default:
+          type: "string"
+          nullable: true
+        unit:
+          type: "string"
+          nullable: true
+        min:
+          type: "number"
+          nullable: true
+        max:
+          type: "number"
+          nullable: true
+        optionLabels:
+          type: "object"
+          additionalProperties:
+            type: "string"
+          nullable: true
     PluginSettingsDto:
       type: "object"
       properties:

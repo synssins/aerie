@@ -25,7 +25,7 @@ describe("the sample plugin's script", () => {
   it("adds its page parts, its editor block, its toolbar entry and its stylesheet", async () => {
     await start();
 
-    expect(slots.names()).toEqual(["editor.toolbar", "page.panel", "page.tools"]);
+    expect(slots.names()).toEqual(["editor.toolbar", "page.panel", "page.tools", "plugin.settings"]);
     expect(makeExtensions("plaintext").map((e) => e.name)).toContain("sampleNotice");
     expect(document.head.querySelector("link[rel=stylesheet]")?.getAttribute("href")).toMatch(/\/ui\/notice\.css$/);
   });

@@ -73,8 +73,9 @@ public sealed class PluginSettingsStore
             var given = values.GetValueOrDefault(d.Key);
             // A multiline value reaches the plugin with LF line ends, whoever sent it.
             if (d.Type == "multiline" && given is not null) given = given.ReplaceLineEndings("\n");
-            if (given is { Length: > 0 } && !IsSecret(d) && Refusal(d, given) is { } refusal) return Problem.Invalid(d.Key, refusal);
-            if (d.Required && string.IsNullOrEmpty(given ?? row?.Value)) return Problem.Invalid(d.Key, "Required.");
+            if (given is { Length: > 0 } && !IsSecret(d) && SettingValue.Refusal(d, given) is { } refusal) return Problem.Invalid(d.Key, refusal);
+            // A default counts as set: the plugin gets it while nothing is saved.
+            if (d.Required && string.IsNullOrEmpty(given ?? row?.Value) && d.Default is null) return Problem.Invalid(d.Key, "Required.");
             if (given is null) continue;
 
             var before = row?.Value is null ? null : row.Secret ? Protector(pluginId).Unprotect(row.Value) : row.Value;
@@ -138,13 +139,6 @@ public sealed class PluginSettingsStore
         await ReloadAsync(db, ct);
     }
 
-    private static string? Refusal(PluginSetting d, string value) => d.Type switch
-    {
-        "number" when !decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out _) => "A number.",
-        "toggle" when value is not ("true" or "false") => "true or false.",
-        "select" when d.Options is { } options && !options.Contains(value) => "Not one of the choices.",
-        _ => null,
-    };
 }
 
 public sealed record PluginSettingsDto(IReadOnlyDictionary<string, string?> Values, IReadOnlyList<string> SecretsSet);

@@ -27,7 +27,12 @@ public sealed record ReadAcks : IAction<AckList>
     public required Guid PageId { get; init; }
 }
 
+/// <summary>How many acknowledgements are kept, on how many pages. For Admins: the plugin's panel on its page in Administration > Plugins.</summary>
+[Action("sample.acks.totals", Read = true)]
+public sealed record ReadAckTotals : IAction<AckTotals>;
+
 public sealed record AckCount(int Count, bool Mine);
+public sealed record AckTotals(int Acknowledgements, int Pages);
 public sealed record AckEntry(string Name, string Version, DateTime AtUtc);
 public sealed record AckList(IReadOnlyList<AckEntry> People);
 // #endregion
@@ -76,6 +81,16 @@ public sealed class CountAcksHandler(SampleData db, IActionBus bus) : IActionHan
     }
 }
 
+/// <summary>The plugin's page is shown to Admins only, but its route is open to any caller: the handler checks for itself.</summary>
+public sealed class ReadAckTotalsHandler(SampleData db, IActionBus bus) : IActionHandler<ReadAckTotals, AckTotals>
+{
+    public async Task<Problem?> AuthorizeAsync(ActionContext<ReadAckTotals> ctx) =>
+        ctx.Actor.UserId is null ? Problem.Unauthorized : (await bus.SendAsync(new ReadMe(), ctx.Cancel)).Value?.IsAdmin == true ? null : Problem.Forbidden;
+
+    public async Task<Outcome<AckTotals>> HandleAsync(ActionContext<ReadAckTotals> ctx) =>
+        new AckTotals(await db.Acks.CountAsync(ctx.Cancel), await db.Acks.Select(a => a.PageId).Distinct().CountAsync(ctx.Cancel));
+}
+
 // #region guide:permission
 public sealed class ReadAcksHandler(SampleData db, IActionBus bus, IAccess access) : IActionHandler<ReadAcks, AckList>
 {
@@ -108,6 +123,8 @@ public static class SampleRoutes
             bus.SendAsync(new CountAcks { PageId = id }, ct).ToHttp()).WithAction<CountAcks>();
         group.MapGet("/pages/{id:guid}/acks", (Guid id, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new ReadAcks { PageId = id }, ct).ToHttp()).WithAction<ReadAcks>();
+        group.MapGet("/totals", (IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new ReadAckTotals(), ct).ToHttp()).WithAction<ReadAckTotals>();
     }
 }
 // #endregion

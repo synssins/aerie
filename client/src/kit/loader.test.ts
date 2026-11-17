@@ -30,7 +30,7 @@ describe("loadPlugins", () => {
 
     expect(imported).toEqual(["/plugins/kb.a/1.0.0/ui/index.js?v=1", "/plugins/kb.b/2.1.0/ui/index.js?v=2"]);
     expect(hosts["kb.b"].plugin).toEqual({ id: "kb.b", version: "2.1.0" });
-    expect(hosts["kb.a"].uiApiVersion).toBe("1.0.0");
+    expect(hosts["kb.a"].uiApiVersion).toBe("1.1.0");
     expect(hosts["kb.a"].me()).toEqual(me);
     // What a plugin adds is known as that plugin's: the same id from two plugins is two items.
     expect(slots.entries("page.tools", {}).map((e) => [e.source, e.item.id])).toEqual([["kb.a", "x"], ["kb.b", "x"]]);

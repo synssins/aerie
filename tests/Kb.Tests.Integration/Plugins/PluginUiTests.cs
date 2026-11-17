@@ -55,7 +55,7 @@ public sealed class PluginUiTests : IAsyncLifetime
         var gail = await UserAsync("gail");
         var list = await gail.GetFromJsonAsync<JsonElement>("/api/v1/ui/plugins", Ct);
 
-        Assert.Equal("1.0.0", list.GetProperty("uiApiVersion").GetString());
+        Assert.Equal(KbHost.UiApiVersion, list.GetProperty("uiApiVersion").GetString());
         var probe = Assert.Single(list.GetProperty("plugins").EnumerateArray()); // the library has no script
         Assert.Equal(("kb.test.probe", "1.0.0"), (probe.GetProperty("id").GetString(), probe.GetProperty("version").GetString()));
         Assert.StartsWith("/plugins/kb.test.probe/1.0.0/ui/index.js?v=", probe.GetProperty("script").GetString());

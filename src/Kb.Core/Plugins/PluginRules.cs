@@ -7,10 +7,10 @@ namespace Kb.Core.Plugins;
 /// <summary>The versions this host offers to plugins.</summary>
 public static class KbHost
 {
-    public const string Version = "0.6.0";
+    public const string Version = "0.7.0";
     /// <summary>Raised one minor step per phase of the plugin model; 1.0.0 when the contracts are frozen.</summary>
-    public const string AbstractionsVersion = "0.6.0";
-    public const string UiApiVersion = "1.0.0";
+    public const string AbstractionsVersion = "0.7.0";
+    public const string UiApiVersion = "1.1.0";
 }
 
 public static partial class PluginId
@@ -28,6 +28,29 @@ public static partial class PluginId
     public static string TablePrefix(string id)
     {
         return PluginTables.Prefix(id);
+    }
+}
+
+/// <summary>Whether a value fits a setting. Used when an Admin saves it and for the manifest's default.</summary>
+public static class SettingValue
+{
+    /// <summary>Null when the value fits; otherwise what is wrong, said to the Admin.</summary>
+    public static string? Refusal(PluginSetting d, string value)
+    {
+        ArgumentNullException.ThrowIfNull(d);
+        ArgumentNullException.ThrowIfNull(value);
+        switch (d.Type)
+        {
+            case "number":
+                if (!decimal.TryParse(value, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var n)) return "A number.";
+                var unit = d.Unit is { Length: > 0 } u ? " " + u : "";
+                if (d.Min is { } min && n < min) return $"At least {min.ToString(System.Globalization.CultureInfo.InvariantCulture)}{unit}.";
+                if (d.Max is { } max && n > max) return $"At most {max.ToString(System.Globalization.CultureInfo.InvariantCulture)}{unit}.";
+                return null;
+            case "toggle": return value is "true" or "false" ? null : "true or false.";
+            case "select": return d.Options is { } options && !options.Contains(value) ? "Not one of the choices." : null;
+            default: return null;
+        }
     }
 }
 
@@ -67,7 +90,26 @@ public static class PluginVersions
         if (!Version.TryParse(m.MinKbVersion, out var min) || min > Version.Parse(KbHost.Version)) return $"Needs version {m.MinKbVersion} or later.";
         if (m.UiApiVersion is not null && !Fits(m.UiApiVersion, KbHost.UiApiVersion)) return $"Built for a newer plugin UI ({m.UiApiVersion}).";
         if (m.Ui?.Script is not null && m.UiApiVersion is null) return "A plugin with a script needs uiApiVersion.";
-        return PermissionProblem(m);
+        return PermissionProblem(m) ?? SettingProblem(m);
+    }
+
+    /// <summary>A setting whose bounds, default or option labels could never be right is refused before the plugin is installed.</summary>
+    private static string? SettingProblem(PluginManifest m)
+    {
+        foreach (var s in m.Settings)
+        {
+            var secret = s.Secret || s.Type == "secret";
+            if (s.Min is { } min && s.Max is { } max && min > max) return $"Setting {s.Key}: min is more than max.";
+            if ((s.Min is not null || s.Max is not null) && s.Type != "number") return $"Setting {s.Key}: min and max are for a number.";
+            if (s.Default is { } d)
+            {
+                if (secret) return $"Setting {s.Key}: a secret has no default.";
+                if (SettingValue.Refusal(s, d) is { } why) return $"Setting {s.Key}: the default is refused: {why}";
+            }
+            if (s.OptionLabels is { } labels && labels.Keys.FirstOrDefault(k => s.Options?.Contains(k) != true) is { } stray)
+                return $"Setting {s.Key}: optionLabels names \"{stray}\", which is not one of the options.";
+        }
+        return null;
     }
 
     /// <summary>A permission that could never be held, or that would not fit its column, is refused before the plugin is installed.</summary>

@@ -189,7 +189,8 @@ public static class PluginRuntime
 internal sealed class PluginContext(PluginManifest manifest, PluginSettingsSnapshot settings) : IPluginContext
 {
     public PluginManifest Manifest { get; } = manifest;
-    public string? GetSetting(string key) => settings.Get(Manifest.Id, key);
+    public string? GetSetting(string key) =>
+        settings.Get(Manifest.Id, key) ?? Manifest.Settings.FirstOrDefault(d => d.Key == key && !d.Secret && d.Type != "secret")?.Default;
 
     public Task<string?> GetSecretAsync(string key, CancellationToken ct = default) =>
         settings.SecretReader is { } read ? read(Manifest.Id, key, ct) : throw new InvalidOperationException("Secrets are read after startup, not while a plugin is configured.");

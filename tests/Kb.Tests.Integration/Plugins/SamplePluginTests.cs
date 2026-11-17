@@ -276,4 +276,30 @@ public sealed class SamplePluginTests : IAsyncLifetime
         Assert.Equal("Failed", detail.GetProperty("status").GetString());
         Assert.NotEqual(Extractors.NotRead, detail.GetProperty("error").GetString());
     }
+    [Fact]
+    public async Task ASetting_ItsBounds_AreCheckedInPlainWords_AndItsHelpDefaultAndUnitAreListed()
+    {
+        var listed = (await _admin.GetFromJsonAsync<JsonElement>(Admin, Ct)).GetProperty("plugins").EnumerateArray().Single(p => p.GetProperty("id").GetString() == "kb.sample");
+        var keep = listed.GetProperty("settings").EnumerateArray().Single(s => s.GetProperty("key").GetString() == "KeepDays");
+        Assert.Equal(("days", "365", 0m, 3650m), (keep.GetProperty("unit").GetString(), keep.GetProperty("default").GetString(), keep.GetProperty("min").GetDecimal(), keep.GetProperty("max").GetDecimal()));
+        Assert.False(string.IsNullOrEmpty(keep.GetProperty("help").GetString()));
+
+        var r = await _admin.PutAsJsonAsync($"{Admin}/kb.sample/settings", new { values = new Dictionary<string, string> { ["KeepDays"] = "5000" } }, Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode);
+        Assert.Equal("At most 3650 days.", (await JsonAsync(r)).GetProperty("errors").GetProperty("KeepDays")[0].GetString());
+        await SetAsync("KeepDays", "30");
+    }
+
+    [Fact]
+    public async Task ThePluginsPanel_ReadsItsOwnRoute_ForAnAdmin_AndNeitherThePageNorTheRouteIsOpenToOthers()
+    {
+        Assert.Equal(HttpStatusCode.OK, (await AckAsync(_admin)).StatusCode);
+        var totals = await _admin.GetFromJsonAsync<JsonElement>($"{Sample}/totals", Ct);
+        Assert.Equal((1, 1), (totals.GetProperty("acknowledgements").GetInt32(), totals.GetProperty("pages").GetInt32()));
+
+        var reader = await UserAsync("rita", "Reader");
+        Assert.Equal(HttpStatusCode.Forbidden, (await reader.GetAsync(Admin, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await reader.GetAsync($"{Admin}/kb.sample/settings", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await reader.GetAsync($"{Sample}/totals", Ct)).StatusCode);
+    }
 }
