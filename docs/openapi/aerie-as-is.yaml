@@ -8357,6 +8357,10 @@ components:
             type: "string"
         removed:
           type: "boolean"
+        importFileKinds:
+          type: "array"
+          items:
+            type: "string"
     PluginJobDto:
       type: "object"
       properties:

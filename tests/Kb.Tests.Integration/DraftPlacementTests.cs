@@ -67,4 +67,13 @@ public sealed class DraftPlacementTests
         Assert.Single(ImportContributors.Check(new ImportContribution([node])));
         Assert.Throws<InvalidDataException>(() => ImportContributors.Check(new ImportContribution([node, node])));
     }
+
+    [Fact]
+    public void TheAppReads_TheKindsItHasAReaderFor_AndBlocksPrograms_AndNoOtherKind()
+    {
+        foreach (var name in new[] { "a.txt", "a.DOCX", "a.pdf", "a.zip", "a.csv", "a.eml", "a.exe", "a.onepkg", "noextension" })
+            Assert.True(Extractors.Reads(name), name);
+        foreach (var name in new[] { "a.abc", "a.notice", "a.qqq" })
+            Assert.False(Extractors.Reads(name), name);
+    }
 }

@@ -68,6 +68,7 @@ public void Configure(IPluginApp app, IPluginContext context) => app
     .EditorNode(Notice.Renderer)                               // how the server reads its editor block
     .ImportContributor<NoticeFromFile>()                       // add to the drafts of AI imports
     .DraftContributor<NoticeFromDraft>()                       // ... from the text the AI drafted
+    .ImportFileKinds(".notice")                                // a kind the app does not read: drafted by this plugin
     .Routes(SampleRoutes.Map);                                 // under /api/v1/plugins/kb.sample/
 ```
 
@@ -888,19 +889,21 @@ public sealed class MyScanner : IMalwareScanner
 
 ### Adding to the draft: import contributors
 
-A plugin can read each file of an import and add content of its own to the draft, before the importer reviews it. It registers an `IImportContributor` in `Configure` with `app.ImportContributor<T>()`. The sample turns a file named `*.notice.txt` into its notice block:
+A plugin can read each file of an import and add content of its own to the draft, before the importer reviews it. It registers an `IImportContributor` in `Configure` with `app.ImportContributor<T>()`. The sample turns a file named `*.notice.txt`, or `*.notice` ([a kind it claims](#file-kinds-the-app-does-not-read)), into its notice block:
 
 <!-- sample:import -->
 ```csharp
 /// <summary>
-/// Adds to an AI import's draft: a file named "*.notice.txt" becomes a notice at the end of the page drafted from it.
+/// Adds to an AI import's draft: a file named "*.notice.txt" becomes a notice at the end of the page drafted from it. A "*.notice"
+/// file is a kind the app does not read; the plugin claims it (<c>ImportFileKinds(".notice")</c>), so its page is drafted by this alone.
 /// It gets the file only after every virus scanner passed it, as a read-only stream, and answers editor nodes as a page stores them.
 /// </summary>
 public sealed class NoticeFromFile : IImportContributor
 {
     public async Task<ImportContribution?> ContributeAsync(ImportedFile file, CancellationToken ct)
     {
-        if (!file.FileName.EndsWith(".notice.txt", StringComparison.OrdinalIgnoreCase) || file.Length > 10_000) return null;
+        if (!(file.FileName.EndsWith(".notice.txt", StringComparison.OrdinalIgnoreCase) || file.FileName.EndsWith(".notice", StringComparison.OrdinalIgnoreCase))
+            || file.Length > 10_000) return null;
         await using var stream = await file.OpenReadAsync(ct);
         var line = (await new StreamReader(stream).ReadLineAsync(ct))?.Trim();
         if (string.IsNullOrEmpty(line)) return null;
@@ -910,7 +913,7 @@ public sealed class NoticeFromFile : IImportContributor
 }
 ```
 
-- **When.** Once for each file of an item, after every scanner has passed the file and the AI has drafted the item, before the importer sees the draft. Not for a blocked file, a zip itself (its entries are files of their own), a system file, or a picture inside a document; not for an item the AI could not draft.
+- **When.** Once for each file of an item, after every scanner has passed the file and the AI has drafted the item, before the importer sees the draft. Not for a blocked file, a zip itself (its entries are files of their own), a system file, or a picture inside a document; not for an item the AI could not draft. For a file of a [kind a plugin claims](#file-kinds-the-app-does-not-read), the AI drafts nothing: the contributors get an empty page to fill.
 - **What it gets.** `ImportedFile(ImportItemId, Path, FileName, Length, OpenReadAsync)`. `Length` is the file's exact size in bytes. Each call of `OpenReadAsync` gives a new read-only stream of the file's bytes, so each contributor reads its own. The stream is a seekable stream over the whole file, which the core has read into memory: a zip (a `.docx`) can be opened on it directly, without a copy. There is no content type: read the name and the bytes.
 - **How it runs.** Made new for each call, with the plugin's services, in a scope of its own, as its plugin: an actor of kind Plugin with source `import` and `ImportItemId` set. It reads what a plugin may read (no sensitive space), and an action that records a person (`page.create`, `attachment.add`) answers 401.
 - **What it answers.** Null, or `ImportContribution(Nodes)`: block nodes as a page stores them ([page content](#page-content)), at most 50 of them and 512 KB of JSON ([how they are counted](#how-the-limits-are-counted)). Each must be an object whose `type` is a string other than `doc` and `text`. A node of the plugin's own type needs its [editor block](#editor-blocks) for the importer to see and edit it.
@@ -921,6 +924,27 @@ public sealed class NoticeFromFile : IImportContributor
 - **Audit.** Each contribution writes `import.contribute`, with the importer as the actor and the plugin's id, the file's path and SHA-256, and the number of nodes.
 - **Files.** A contributor adds nodes, not files. A plugin that wants a picture on the page sends `image.add` ([above](#adding-an-image-or-an-attachment)) from a before hook on the `page.create` or `page.save` that accepting sends (source `import`), where the actor is the importer, and puts the image's address in the content.
 - `IRecordImporter`, declared in the contract, is something else: records synced from another system. It is not called.
+
+### File kinds the app does not read
+
+An import contributor gets the files the app reads. A file of a kind the app has no reader for (a drawing in a format of its own) fails with "This kind of file is not read; it is kept as an attachment.", and no contributor sees it. A plugin that reads such a kind claims it, by extension, in `Configure`:
+
+```csharp
+app.ImportFileKinds(".notice")                                // a kind the app does not read: drafted by this plugin
+```
+
+The sample claims `.notice` and reads it with its import contributor ([above](#adding-to-the-draft-import-contributors)). An extension is a dot and 1 to 16 letters or digits, in any case; `ImportFileKinds` throws on anything else.
+
+- **Which files.** A file whose extension the app has no reader for, claimed by a plugin this server loaded. The app decides by the extension: a claim on a kind it reads (`.txt`, `.docx`, `.pdf`, `.zip` and the others the Import inbox lists) changes nothing. A program or script (`.exe`, `.ps1` and the like) stays blocked, and a file whose bytes are a picture is read as a picture, whatever a plugin claims.
+- **What happens to it.** The virus scanners read it first, as every file; a file a scanner flags stays blocked. Then it is kept whole: not unpacked (a format that is a zip inside stays one file), and not grouped with other documents (it is an item of its own; a mail's attachment stays with its mail). Its item gets a draft with one empty page, titled from the file name (`Network_Map.abc` gives "Network Map"). The AI is not called for it: there is no text to send. Then the import contributors run for the file and the draft contributors for the draft, exactly as for any item, with every rule above: the time limit, the node and size limits, sensitive spaces, the audit entries, and a failure that never breaks the import of the other files.
+- **What the importer sees.** The page as the contributors filled it, with their warnings. "Drafted by" says "Plugin:" and the names of the plugins that claim the kind.
+- **When nothing is added.** If the page is still empty after the contributors (none added anything, or all failed), the item fails: "Only <plugin> reads this kind of file, and it added nothing to the draft. The file is kept as an attachment." Bound for a sensitive space, the file is not given to any plugin, and the item fails: "Only a plugin reads this kind of file, and plugins are not given files that go to a sensitive space."
+- **Two plugins.** Both may claim a kind. Every import contributor is called for every file, so each reads it; the page holds what each added.
+- **A wrong extension.** The core does not check the file's first bytes. The contributor reads them, and answers null for a file that is not its kind; the item then fails as above.
+- **A disabled plugin.** It is not loaded, so its claim does not count: the file is read as before (as text when its bytes are text, which goes to the AI; otherwise it fails as a kind the app does not read). A file read while a plugin claimed it, and drafted after the plugin was disabled, fails the same way.
+- **Upload.** The Import inbox takes a file of any kind, within the attachment size limit; a claim changes neither.
+- **Audit.** Each claimed file writes `import.claim`, with the importer as the actor and the file's name, its SHA-256 and the ids of the plugins that claim it (`plugins`). Each contribution then writes `import.contribute`, as for any file.
+- **Plugins screen.** An Admin sees the kinds under "Reads for import" when selecting the plugin.
 
 ### Adding to the draft from its text: draft contributors
 
@@ -983,7 +1007,7 @@ For both kinds of contributor:
 ### What a plugin sees of an import
 
 The import actions (`import.*`) are core-only: a plugin cannot hook them, send them or read their data.
-A plugin reads an import's files only through an [import contributor](#adding-to-the-draft-import-contributors), and its draft only through a [draft contributor](#adding-to-the-draft-from-its-text-draft-contributors). It cannot read the text the app read from a file. Then it sees what the importer accepts, when the import sends the normal actions as the importer, and so runs the hooks on those:
+A plugin reads an import's files only through an [import contributor](#adding-to-the-draft-import-contributors) (including the [kinds it claims](#file-kinds-the-app-does-not-read)), and its draft only through a [draft contributor](#adding-to-the-draft-from-its-text-draft-contributors). It cannot read the text the app read from a file. Then it sees what the importer accepts, when the import sends the normal actions as the importer, and so runs the hooks on those:
 
 | The importer accepts | Actions sent, in this order |
 |---|---|
@@ -1077,7 +1101,8 @@ The plugin stays disabled until an Admin selects Enable. Uploading a new version
 - `abstractionsVersion`: the version of `Kb.Plugins.Abstractions` the plugin was built against. The app refuses a plugin built for a newer one.
 - `minKbVersion`: the lowest app version the plugin runs on.
 
-The contract and the app are at 0.5.0, and can still change before 1.0.0.
+The contract and the app are at 0.6.0, and can still change before 1.0.0.
+0.6.0 added [file kinds a plugin claims](#file-kinds-the-app-does-not-read) (`app.ImportFileKinds(...)`, `ImportFileKindReg`); a plugin that uses them says `"abstractionsVersion": "0.6.0"`. Nothing of 0.5.0 changed, and a plugin built for 0.5.0 or earlier loads as it did.
 0.5.0 added [draft contributors](#adding-to-the-draft-from-its-text-draft-contributors) (`IDraftContributor`, `ImportDraft`, `DraftPage`, `DraftContribution`, `DraftAddition`, `DraftPlace`, `app.DraftContributor<T>()`); a plugin that uses them says `"abstractionsVersion": "0.5.0"`. It changed one thing a 0.4.0 contributor can see: the 512 KB limit is now counted in UTF-8 bytes, where 0.4.0 counted characters, so an answer of mostly non-ASCII text holds less. Everything else of 0.4.0 is unchanged, and a plugin built for 0.4.0 or earlier loads as it did.
 0.4.0 added [import contributors](#adding-to-the-draft-import-contributors) (`IImportContributor`, `ImportedFile`, `ImportContribution`, `app.ImportContributor<T>()`), `DocPicture` for [exports](#editor-blocks), `UploadContent.FromBytes` and `FromStream` ([adding a file](#adding-an-image-or-an-attachment)), and `ActorSources` with `Actor.ImportItemId` ([where the call comes from](#where-the-call-comes-from)); a plugin that uses them says `"abstractionsVersion": "0.4.0"`. It changed one thing a 0.3.0 plugin can see: an accepted import's actions have source `import`, not `web`. Everything else of 0.3.0 is unchanged, and a plugin built for 0.3.0 or earlier loads as it did.
 0.3.0 added `IOutboundRequestDecorator`, the inventory sync action and its records, and page details on `PageDto`; a plugin that uses them says `"abstractionsVersion": "0.3.0"`. See [packaging](packaging.md#versions).

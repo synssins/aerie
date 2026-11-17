@@ -24,6 +24,26 @@ public sealed class SampleImportTests
         Assert.Equal("Wear gloves.", node.GetProperty("content")[0].GetProperty("text").GetString());
         Assert.Null(await new NoticeFromFile().ContributeAsync(File("lab.txt", "Wear gloves."), ct));
         Assert.Null(await new NoticeFromFile().ContributeAsync(File("empty.notice.txt", ""), ct));
+        // A ".notice" file, the kind the sample claims, is read the same way.
+        Assert.Equal("Wear gloves.", Assert.Single((await new NoticeFromFile().ContributeAsync(File("lab.notice", "Wear gloves."), ct))!.Nodes)
+            .GetProperty("content")[0].GetProperty("text").GetString());
+    }
+
+    private sealed class Collect : IPluginApp
+    {
+        public readonly List<object> All = [];
+        public IPluginApp Add<T>(T registration) where T : class { All.Add(registration); return this; }
+    }
+
+    [Fact]
+    public void FileKinds_AreExtensions_InLowerCase_AndAnythingElseIsRefused()
+    {
+        var app = new Collect();
+        app.ImportFileKinds(".ABC", ".abc", ".v2");
+        Assert.Equal([".abc", ".v2"], Assert.IsType<ImportFileKindReg>(Assert.Single(app.All)).Extensions);
+        foreach (var bad in new[] { "abc", ".", ".a.b", ".a b", ".abcdefghijklmnopq", "", ".é" })
+            Assert.Throws<ArgumentException>(() => app.ImportFileKinds(bad));
+        Assert.Throws<ArgumentException>(() => app.ImportFileKinds());
     }
 
     private static DraftPage Page(params object[] blocks) => new("Lab", JsonSerializer.Serialize(new { type = "doc", content = blocks }));

@@ -5144,6 +5144,7 @@ Enum: `Folder`, `Page`.
 | settings | `IReadOnlyList<PluginSetting>` ([PluginSetting](#pluginsetting)) |
 | replaces | `IReadOnlyList<string>` |
 | removed | `bool` |
+| importFileKinds | `IReadOnlyList<string>` |
 
 ```json
 {
@@ -5195,7 +5196,10 @@ Enum: `Folder`, `Page`.
   "replaces": [
     "text"
   ],
-  "removed": false
+  "removed": false,
+  "importFileKinds": [
+    "text"
+  ]
 }
 ```
 
@@ -5263,7 +5267,10 @@ Enum: `Folder`, `Page`.
       "replaces": [
         "text"
       ],
-      "removed": false
+      "removed": false,
+      "importFileKinds": [
+        "text"
+      ]
     }
   ],
   "safeMode": false

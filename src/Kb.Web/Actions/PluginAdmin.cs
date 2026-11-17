@@ -15,7 +15,8 @@ namespace Kb.Web.Actions;
 
 public sealed record PluginInfoDto(string Id, string Name, string Version, string Publisher, string? Description, PluginOrigin Origin, PluginState State, string? Reason,
     bool Locked, bool Loaded, string Source, IReadOnlyList<string> Requires, IReadOnlyList<string> RequiredBy, IReadOnlyList<string> ExtensionPoints, IReadOnlyList<string> OutboundHosts,
-    IReadOnlyList<PluginPermission> Permissions, bool Enforcing, IReadOnlyList<PluginSetting> Settings, IReadOnlyList<string> Replaces, bool Removed);
+    IReadOnlyList<PluginPermission> Permissions, bool Enforcing, IReadOnlyList<PluginSetting> Settings, IReadOnlyList<string> Replaces, bool Removed,
+    IReadOnlyList<string> ImportFileKinds);
 public sealed record PluginListDto(IReadOnlyList<PluginInfoDto> Plugins, bool SafeMode);
 /// <summary>Restart: a setting marked "restart" changed, so the app restarts.</summary>
 public sealed record PluginSettingsSaved(bool Restart);
@@ -69,7 +70,7 @@ public sealed record SavePluginSettings : IAction<PluginSettingsSaved>
     [JsonIgnore] public required IReadOnlyDictionary<string, string?> Values { get; init; }
 }
 
-internal sealed class ListPluginsHandler(PluginInstaller installer, PluginRegistry registry, IAccess access) : IActionHandler<ListPlugins, PluginListDto>
+internal sealed class ListPluginsHandler(PluginInstaller installer, PluginRegistry registry, IRegistrations registrations, IAccess access) : IActionHandler<ListPlugins, PluginListDto>
 {
     public async Task<Problem?> AuthorizeAsync(ActionContext<ListPlugins> ctx) => await access.IsAdminAsync(ctx.Actor, ctx.Cancel) ? null : Problem.Forbidden;
 
@@ -82,10 +83,12 @@ internal sealed class ListPluginsHandler(PluginInstaller installer, PluginRegist
             k.Manifest.Id, PluginManifests.NameOf(k.Manifest), k.Manifest.Version, k.Manifest.Publisher, k.Manifest.Description, k.Origin, k.Status.State, k.Status.Reason,
             k.Status.LockedAt is not null, registry.Find(k.Manifest.Id) is { Loaded: true } loaded && loaded.Manifest.Version == k.Manifest.Version, k.Source,
             [.. k.Manifest.Requires.Select(r => r.Id)], PluginGraph.Dependents(k.Manifest.Id, manifests), k.Manifest.ExtensionPoints, k.Manifest.OutboundHosts,
-            k.Manifest.Permissions, k.Manifest.Enforcing, k.Manifest.Settings, k.Manifest.Ui?.Replaces ?? [], Removed: false)),
+            k.Manifest.Permissions, k.Manifest.Enforcing, k.Manifest.Settings, k.Manifest.Ui?.Replaces ?? [], Removed: false,
+            // The file kinds it reads for import: what this server loaded, so none for a plugin that is not loaded.
+            [.. registrations.All<ImportFileKindReg>().Where(r => r.PluginId == k.Manifest.Id).SelectMany(r => r.Value.Extensions).Distinct().Order(StringComparer.Ordinal)])),
             // Removed plugins whose tables were kept: listed so their data can still be deleted.
             .. (await installer.RemovedAsync(ctx.Cancel)).Select(s => new PluginInfoDto(s.PluginId, s.PluginId, s.ActiveVersion ?? "", "", null, PluginOrigin.Uploaded, PluginState.Disabled, null,
-                Locked: false, Loaded: false, "upload", [], [], [], [], [], Enforcing: false, [], [], Removed: true))], registry.SafeMode);
+                Locked: false, Loaded: false, "upload", [], [], [], [], [], Enforcing: false, [], [], Removed: true, []))], registry.SafeMode);
     }
 }
 

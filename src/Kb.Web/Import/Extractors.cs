@@ -34,6 +34,18 @@ public static partial class Extractors
     public const int MaxZipEntries = 2000;
     public const long MaxZipBytes = 512L * 1024 * 1024;
     public const int MaxDepth = 5;
+    public const string NotRead = "This kind of file is not read; it is kept as an attachment.";
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> Known = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Whether the app has a reader of its own for a file of this name's extension (or blocks it as a program). It asks the readers
+    /// themselves, with a few bytes that are neither text nor any format: only an extension none of them takes answers "not read".
+    /// </summary>
+    public static bool Reads(string name)
+    {
+        var ext = Path.GetExtension(name).ToLowerInvariant();
+        return Known.GetOrAdd(ext, e => Read("x" + e, [0, 0xFF, 0, 0xFE, 1, 2, 3, 0]).Note != NotRead);
+    }
     private const int MaxRows = 2000;
 
     private static readonly HashSet<string> BlockedExt = new(StringComparer.OrdinalIgnoreCase)
@@ -140,7 +152,7 @@ public static partial class Extractors
                 ".one" => Extraction.Of(BinaryStrings(data), note: "OneNote section: text read on a best effort basis; drawings and layout are not."),
                 ".onepkg" => Extraction.Unsupported("OneNote package: export the sections as .one or PDF and import those."),
                 ".zip" => Zip(data),
-                _ => LooksLikeText(data) ? Extraction.Of(Decode(data)) : Extraction.Unsupported("This kind of file is not read; it is kept as an attachment."),
+                _ => LooksLikeText(data) ? Extraction.Of(Decode(data)) : Extraction.Unsupported(NotRead),
             };
         }
         catch (Exception e) when (e is not OutOfMemoryException)

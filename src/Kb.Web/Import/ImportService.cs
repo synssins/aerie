@@ -128,6 +128,17 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             }
         }
         var x = Extractors.Extract(f.Name, data);
+        // A kind the app has no reader for, that a loaded plugin reads: kept whole for the plugin's import contributors. It is not
+        // unpacked (it may be a zip inside) and its bytes are not given to the AI.
+        if (data.Length > 0 && x.Kind is not (ExtractKind.Blocked or ExtractKind.Skipped or ExtractKind.Image) && contributors.ClaimersOf(f.Name) is { Count: > 0 } by)
+        {
+            (f.Kind, f.Note, f.Text) = ("Claimed", null, null);
+            await audit.AppendAsync(new AuditEvent(AuditActions.ImportClaim, f.UserId, "importFile", f.Id.ToString(), Data: new Dictionary<string, string>
+            {
+                ["name"] = f.Name, ["sha256"] = f.Sha256, ["plugins"] = string.Join(",", by.Select(b => b.Id)),
+            }), ct);
+            return;
+        }
         (f.Kind, f.Note, f.Text) = (x.Kind.ToString(), x.Note, x.Text.Length > 0 ? x.Text : null);
         if (x.Kind == ExtractKind.Blocked)
             await audit.AppendAsync(new AuditEvent(AuditActions.ImportQuarantine, f.UserId, "importFile", f.Id.ToString(), Data: new Dictionary<string, string> { ["name"] = f.Name, ["sha256"] = f.Sha256, ["reason"] = x.Note ?? "" }), ct);
@@ -317,9 +328,13 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         var actor = Actor.User(item.UserId);
         var docs = files.Where(f => f.Kind == "Text" && f.Text is not null).ToList();
         var images = files.Where(f => f.Kind == "Image").ToList();
-        if (docs.Count == 0 && images.Count == 0)
+        // Files only a plugin reads (and still does: a plugin disabled since is not loaded) are drafted by the plugins, without the AI.
+        var claimed = files.Where(f => f.Kind == "Claimed").Select(f => (File: f, By: contributors.ClaimersOf(f.Name))).Where(c => c.By.Count > 0).ToList();
+        var byPlugins = docs.Count == 0 && images.Count == 0;
+        if (byPlugins && claimed.Count == 0)
         {
-            (item.Status, item.Error) = (ImportStatus.Failed, files.Select(f => f.Note).FirstOrDefault(n => n is not null) ?? "Nothing in it could be read.");
+            (item.Status, item.Error) = (ImportStatus.Failed, files.Any(f => f.Kind == "Claimed") ? Extractors.NotRead
+                : files.Select(f => f.Note).FirstOrDefault(n => n is not null) ?? "Nothing in it could be read.");
             return;
         }
 
@@ -347,13 +362,30 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             ["inventory"] = string.Join("\n", apps.Select(a => a.Name)),
             ["destinations"] = string.Join("\n", destinations.Select(d => $"{d.Item1} = {d.Item2}")),
         };
-        var r = await ai.RunAsync(actor, AiFeatures.Import, ProposalTask, data, ProposalSchema(), ct, picData);
-        if (r.Problem is { } p0)
+        JsonNode output;
+        string drafter;
+        long? ms = null;
+        var claimers = claimed.SelectMany(c => c.By).Distinct().Select(c => c.Name).ToList();
+        if (byPlugins)
         {
-            (item.Status, item.Error) = p0.Status == 422 ? (ImportStatus.Blocked, "It holds text addressed to the AI, so it was not sent.") : (ImportStatus.Failed, p0.Message ?? "The AI could not draft it.");
-            return;
+            // One empty page, titled from the file name; the plugins' contributors fill it.
+            output = new JsonObject
+            {
+                ["pages"] = new JsonArray(new JsonObject { ["title"] = CleanTitle(claimed[0].File.Name), ["blocks"] = new JsonArray() }),
+                ["tags"] = new JsonArray(), ["apps"] = new JsonArray(), ["owner"] = "", ["reviewMonths"] = 0, ["destination"] = "inbox",
+            };
+            drafter = $"Plugin: {string.Join(", ", claimers)}";
         }
-        var output = r.Value!.Output;
+        else
+        {
+            var r = await ai.RunAsync(actor, AiFeatures.Import, ProposalTask, data, ProposalSchema(), ct, picData);
+            if (r.Problem is { } p0)
+            {
+                (item.Status, item.Error) = p0.Status == 422 ? (ImportStatus.Blocked, "It holds text addressed to the AI, so it was not sent.") : (ImportStatus.Failed, p0.Message ?? "The AI could not draft it.");
+                return;
+            }
+            (output, drafter, ms) = (r.Value!.Output, r.Value.Model, r.Value.Milliseconds);
+        }
 
         // Pages from the blocks; pictures by name, any the AI did not place go at the end of the first page.
         var byName = images.GroupBy(i => i.Name, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
@@ -376,7 +408,14 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         var added = outWords.Where(w => !inWords.Contains(w) && w.Length > 3).Distinct().ToList();
         if (source.Length > 0 && outWords.Count > 0 && added.Count > Math.Max(8, outWords.Distinct().Count() / 10))
             warnings.Add($"The draft uses words that are not in the source ({string.Join(", ", added.Take(12))}). Confirm the document is correct before saving.");
-        await ContributeAsync(item, batch, files, findings.Count > 0, pages, warnings, ct);
+        var given = await ContributeAsync(item, batch, files, findings.Count > 0, pages, warnings, ct);
+        if (byPlugins && pages[0]["doc"]!["content"]!.AsArray().Count == 0)
+        {
+            (item.Status, item.Error) = (ImportStatus.Failed, given
+                ? $"Only {string.Join(" and ", claimers)} reads this kind of file, and it added nothing to the draft. The file is kept as an attachment."
+                : "Only a plugin reads this kind of file, and plugins are not given files that go to a sensitive space. The file is kept as an attachment.");
+            return;
+        }
 
         var tags = (output["tags"]?.AsArray() ?? []).Select(t => t!.GetValue<string>().Trim().ToLowerInvariant()).Where(t => t.Length is > 0 and <= 50 && !t.Contains(',')).ToList();
         var appliesTo = new JsonArray();
@@ -449,9 +488,9 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             ["sensitive"] = new JsonArray([.. findings.Select(f => (JsonNode)new JsonObject { ["kind"] = f.Kind, ["sample"] = f.Sample })]),
             ["duplicates"] = duplicates,
             ["warnings"] = new JsonArray([.. warnings.Select(w => (JsonNode)w)]),
-            ["model"] = r.Value.Model,
+            ["model"] = drafter,
         };
-        proposal["ms"] = r.Value.Milliseconds;
+        proposal["ms"] = ms;
         proposal["found"] = Found(output["found"] as JsonObject, source);
         item.Title = CleanTitle(title, fileName: false);
         item.ProposalJson = proposal.ToJsonString();
@@ -463,13 +502,14 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
     /// where they say. Each is named in the warnings so the importer sees what a plugin added. They never read an item that holds a
     /// secret or that goes to a sensitive space. The pages are drafted anew on every retry, so nothing is added twice.
     /// </summary>
-    private async Task ContributeAsync(ImportItem item, ImportBatch batch, IReadOnlyList<ImportFile> files, bool secret, List<JsonObject> pages, List<string> warnings, CancellationToken ct)
+    /// <returns>False when the plugins were not given the files: they hold a secret, or go to a sensitive space.</returns>
+    private async Task<bool> ContributeAsync(ImportItem item, ImportBatch batch, IReadOnlyList<ImportFile> files, bool secret, List<JsonObject> pages, List<string> warnings, CancellationToken ct)
     {
-        if (!contributors.Any) return;
+        if (!contributors.Any) return true;
         if (secret || (batch.TargetSpaceId is { } ts && await db.Spaces.AnyAsync(s => s.Id == ts && s.IsSensitive, ct)))
         {
             warnings.Add("Plugins were not given these files: they hold a secret, or go to a sensitive space.");
-            return;
+            return false;
         }
         var read = files.Where(f => !f.Embedded && f.Kind is not ("Blocked" or "Container" or "Skipped")).ToList();
         var contents = pages.Select(p => p["doc"]!["content"]!.AsArray()).ToList();
@@ -484,6 +524,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             var where = string.Join(", ", c.Additions.Select(a => a.Page).Distinct().Order().Select(i => $"\"{pages[i]["title"]!.GetValue<string>()}\""));
             warnings.Add($"{c.PluginName} added {c.Count} block{(c.Count == 1 ? "" : "s")} to {where}.");
         }
+        return true;
     }
 
     // ---------- accepting

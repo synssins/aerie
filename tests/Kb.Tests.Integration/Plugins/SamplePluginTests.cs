@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Kb.Core.Identity;
 using Kb.Web;
+using Kb.Web.Import;
 using Kb.Web.Pipeline;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -226,5 +227,53 @@ public sealed class SamplePluginTests : IAsyncLifetime
         Assert.Empty(await TablesAsync());
         Assert.Equal(HttpStatusCode.NotFound, (await _admin.GetAsync($"{Sample}/pages/{_page}/ack", Ct)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await _admin.GetAsync($"/api/v1/pages/{_page}", Ct)).StatusCode); // the core is as it was
+    }
+    /// <summary>Uploads one file to the Import inbox as the Admin, runs the worker, and answers the item's detail.</summary>
+    private async Task<JsonElement> ImportAsync(string name, string text)
+    {
+        var id = (await JsonAsync(await _admin.PostAsJsonAsync("/api/v1/imports", new { }, Ct))).GetProperty("id").GetGuid();
+        var body = new ByteArrayContent(System.Text.Encoding.UTF8.GetBytes(text));
+        body.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        body.Headers.Add("X-File-Name", name);
+        Assert.Equal(HttpStatusCode.OK, (await _admin.PostAsync($"/api/v1/imports/{id}/files", body, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await _admin.PostAsync($"/api/v1/imports/{id}/start", null, Ct)).StatusCode);
+        var worker = _f.Services.GetRequiredService<ImportWorker>();
+        for (var i = 0; i < 20 && await worker.RunOnceAsync(Ct); i++) { }
+        var item = (await _admin.GetFromJsonAsync<JsonElement>("/api/v1/imports", Ct)).GetProperty("items").EnumerateArray().Single(i => i.GetProperty("batchId").GetGuid() == id);
+        return await _admin.GetFromJsonAsync<JsonElement>($"/api/v1/imports/items/{item.GetProperty("id").GetGuid()}", Ct);
+    }
+
+    [Fact]
+    public async Task ANoticeFile_IsDraftedByTheSample_WithoutTheAI_AndNotOnceTheSampleIsDisabled()
+    {
+        // The AI is on (imports need it), but no model answers here: a call to it would fail the item.
+        (await _admin.PutAsJsonAsync("/api/v1/admin/ai", new
+        {
+            settings = new
+            {
+                enabled = true, baseUrl = "http://model.invalid", model = "stub", timeoutSeconds = 5, maxTokens = 4096, temperature = 0, reasoning = false, ruleset = Kb.Core.Ai.AiGuard.DefaultRuleset,
+                maxInputChars = 200000, userPerMinute = 100, tokenPerMinute = 100, features = new { import = "Everyone", format = "Off", search = "Off" },
+            },
+        }, Ct)).EnsureSuccessStatusCode();
+        var listed = (await _admin.GetFromJsonAsync<JsonElement>(Admin, Ct)).GetProperty("plugins").EnumerateArray().Single(p => p.GetProperty("id").GetString() == "kb.sample");
+        Assert.Equal([".notice"], listed.GetProperty("importFileKinds").EnumerateArray().Select(k => k.GetString()));
+
+        var detail = await ImportAsync("Fire_drill.notice", "Leave by the stairs.");
+        Assert.Equal("Ready", detail.GetProperty("status").GetString());
+        var page = detail.GetProperty("proposal").GetProperty("pages")[0];
+        Assert.Equal("Fire drill", page.GetProperty("title").GetString());
+        var node = Assert.Single(JsonDocument.Parse(page.GetProperty("contentJson").GetString()!).RootElement.GetProperty("content").EnumerateArray());
+        Assert.Equal(("sampleNotice", "Leave by the stairs."), (node.GetProperty("type").GetString(), node.GetProperty("content")[0].GetProperty("text").GetString()));
+
+        Assert.Equal("Claimed", Assert.Single(detail.GetProperty("files").EnumerateArray()).GetProperty("kind").GetString());
+
+        // Disabled, it is not loaded after the restart: its claim no longer counts. The file is read as before 0.6.0: as text, which
+        // goes to the AI (here no model answers, so the item fails).
+        (await _admin.PutAsJsonAsync($"{Admin}/kb.sample/state", new { enabled = false }, Ct)).EnsureSuccessStatusCode();
+        await RestartAsync();
+        detail = await ImportAsync("Fire_drill.notice", "Leave by the stairs.");
+        Assert.Equal("Text", Assert.Single(detail.GetProperty("files").EnumerateArray()).GetProperty("kind").GetString());
+        Assert.Equal("Failed", detail.GetProperty("status").GetString());
+        Assert.NotEqual(Extractors.NotRead, detail.GetProperty("error").GetString());
     }
 }

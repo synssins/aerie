@@ -125,6 +125,7 @@ export type PluginInfo = {
   id: string; name: string; version: string; publisher: string; description: string | null; origin: "BuiltIn" | "Uploaded"; state: "Enabled" | "Disabled" | "DisabledByCore";
   reason: string | null; locked: boolean; loaded: boolean; source: string; requires: string[]; requiredBy: string[]; extensionPoints: string[]; outboundHosts: string[];
   permissions: { key: string; label: string; scope: string; defaultRole: string }[]; enforcing: boolean; settings: PluginSetting[]; replaces: string[]; removed: boolean;
+  importFileKinds: string[];
 };
 export type LogField = { key: string; label: string; type: "text" | "secret" | "select"; options: string[] | null };
 export type LogKind = { kind: string; label: string; fields: LogField[] };
@@ -169,7 +170,7 @@ export type ImportProposal = {
   sensitive: { kind: string; sample: string }[]; duplicates: { pageId: string; title: string; score: number; spaceId: string }[]; warnings: string[]; model: string;
   ms?: number; found?: { people: string[]; servers: string[]; applications: string[]; tickets: string[]; versions: string[]; conflicts: string[] };
 };
-export type ImportFile = { id: string; name: string; path: string; size: number; kind: "Text" | "Image" | "Container" | "Blocked" | "Unsupported" | "Pending"; note: string | null; embedded: boolean; sha256: string };
+export type ImportFile = { id: string; name: string; path: string; size: number; kind: "Text" | "Image" | "Container" | "Blocked" | "Unsupported" | "Claimed" | "Pending"; note: string | null; embedded: boolean; sha256: string };
 export type ImportStatus = "Queued" | "Working" | "Ready" | "Failed" | "Blocked" | "Accepted" | "Discarded" | "Rejected";
 /** source: the first file's name; updatedAt: when a Working item started; draftMs: how long the model took. */
 export type ImportItemRow = { id: string; batchId: string; title: string; status: ImportStatus; error: string | null; files: number; createdAt: string; pageId: string | null;

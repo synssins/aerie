@@ -45,7 +45,27 @@ public static class ImportExtensions
         ArgumentNullException.ThrowIfNull(app);
         return app.Add(new DraftContributorReg(typeof(TContributor)));
     }
+
+    /// <summary>
+    /// Claims file kinds the app does not read, by extension (<c>".abc"</c>: a dot, then 1 to 16 letters or digits; any case). A file of
+    /// such a kind in an import is not failed: it gets a draft with one empty page, the AI is not called for it, and the plugin's import
+    /// contributors read it and fill the page. A kind the app reads itself is unchanged, whatever a plugin claims. Throws on an extension
+    /// that is not of that form.
+    /// </summary>
+    public static IPluginApp ImportFileKinds(this IPluginApp app, params string[] extensions)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        ArgumentNullException.ThrowIfNull(extensions);
+        if (extensions.Length == 0) throw new ArgumentException("Name at least one extension.", nameof(extensions));
+        foreach (var e in extensions)
+            if (e is null || e.Length is < 2 or > 17 || e[0] != '.' || !e.Skip(1).All(char.IsAsciiLetterOrDigit))
+                throw new ArgumentException($"\"{e}\" is not an extension: a dot, then 1 to 16 letters or digits.", nameof(extensions));
+        return app.Add(new ImportFileKindReg([.. extensions.Select(e => e.ToLowerInvariant()).Distinct()]));
+    }
 }
+
+/// <summary>File kinds a plugin reads for import, by extension, in lower case with the dot.</summary>
+public sealed record ImportFileKindReg(IReadOnlyList<string> Extensions);
 
 /// <summary>One page of an import's draft, read-only: its title, and its content as a page stores it (a <c>doc</c> node, as JSON).</summary>
 public sealed record DraftPage(string Title, string ContentJson);
