@@ -16,9 +16,12 @@ namespace Kb.Web.Actions;
 public sealed record PluginInfoDto(string Id, string Name, string Version, string Publisher, string? Description, PluginOrigin Origin, PluginState State, string? Reason,
     bool Locked, bool Loaded, string Source, IReadOnlyList<string> Requires, IReadOnlyList<string> RequiredBy, IReadOnlyList<string> ExtensionPoints, IReadOnlyList<string> OutboundHosts,
     IReadOnlyList<PluginPermission> Permissions, bool Enforcing, IReadOnlyList<PluginSetting> Settings, IReadOnlyList<string> Replaces, bool Removed,
-    IReadOnlyList<string> ImportFileKinds, IReadOnlyList<PluginSignInMethodDto> SignInMethods);
-/// <summary>A sign-in method a plugin adds: its id ("{plugin}/{id}"), its button text, and the redirect address to register with the provider.</summary>
-public sealed record PluginSignInMethodDto(string Id, string Name, string RedirectAddress);
+    IReadOnlyList<string> ImportFileKinds, IReadOnlyList<PluginSignInMethodDto> SignInMethods, bool SignInProviders = false);
+/// <summary>
+/// A sign-in method a plugin adds: its id ("{plugin}/{id}"), its button text, and the redirect address to register with the provider.
+/// ByAdmin: a provider an Admin added (0.9.0); Linked counts the accounts linked to its issuer, which removing it leaves without a way in.
+/// </summary>
+public sealed record PluginSignInMethodDto(string Id, string Name, string RedirectAddress, bool ByAdmin = false, int Linked = 0);
 public sealed record PluginListDto(IReadOnlyList<PluginInfoDto> Plugins, bool SafeMode);
 /// <summary>Restart: a setting marked "restart" changed, so the app restarts.</summary>
 public sealed record PluginSettingsSaved(bool Restart);
@@ -73,7 +76,7 @@ public sealed record SavePluginSettings : IAction<PluginSettingsSaved>
 }
 
 internal sealed class ListPluginsHandler(PluginInstaller installer, PluginRegistry registry, IRegistrations registrations, IAccess access, PluginSettingsStore settings,
-    SignInMethods signInMethods, IHttpContextAccessor http) : IActionHandler<ListPlugins, PluginListDto>
+    SignInMethods signInMethods, IHttpContextAccessor http, KbDbContext db) : IActionHandler<ListPlugins, PluginListDto>
 {
     public async Task<Problem?> AuthorizeAsync(ActionContext<ListPlugins> ctx) => await access.IsAdminAsync(ctx.Actor, ctx.Cancel) ? null : Problem.Forbidden;
 
@@ -82,6 +85,10 @@ internal sealed class ListPluginsHandler(PluginInstaller installer, PluginRegist
     {
         var known = await installer.KnownAsync(ctx.Cancel);
         var manifests = known.Select(k => k.Manifest).ToList();
+        var methods = new List<(string PluginId, PluginSignInMethodDto Dto)>();
+        foreach (var m in signInMethods.All)
+            methods.Add((m.PluginId, new PluginSignInMethodDto(m.Key, m.Name, SignInMethods.RedirectAddress(http.HttpContext!.Request, m), m.ByAdmin,
+                m.ByAdmin ? await SignInProviderLinks.CountAsync(db, settings.Get(m.PluginId, SignInSettings.Issuer(m.Id)), ctx.Cancel) : 0)));
         return new PluginListDto([.. known.Select(k => new PluginInfoDto(
             k.Manifest.Id, PluginManifests.NameOf(k.Manifest), k.Manifest.Version, k.Manifest.Publisher, k.Manifest.Description, k.Origin, k.Status.State, k.Status.Reason,
             k.Status.LockedAt is not null, registry.Find(k.Manifest.Id) is { Loaded: true } loaded && loaded.Manifest.Version == k.Manifest.Version, k.Source,
@@ -91,7 +98,7 @@ internal sealed class ListPluginsHandler(PluginInstaller installer, PluginRegist
             // The file kinds it reads for import: what this server loaded, so none for a plugin that is not loaded.
             [.. registrations.All<ImportFileKindReg>().Where(r => r.PluginId == k.Manifest.Id).SelectMany(r => r.Value.Extensions).Distinct().Order(StringComparer.Ordinal)],
             // Its sign-in methods: likewise what this server loaded. The redirect address is this site as the Admin reached it.
-            [.. signInMethods.All.Where(m => m.PluginId == k.Manifest.Id).Select(m => new PluginSignInMethodDto(m.Key, m.Name, SignInMethods.RedirectAddress(http.HttpContext!.Request, m)))])),
+            [.. methods.Where(m => m.PluginId == k.Manifest.Id).Select(m => m.Dto)], settings.OffersProviders(k.Manifest.Id))),
             // Removed plugins whose tables were kept: listed so their data can still be deleted.
             .. (await installer.RemovedAsync(ctx.Cancel)).Select(s => new PluginInfoDto(s.PluginId, s.PluginId, s.ActiveVersion ?? "", "", null, PluginOrigin.Uploaded, PluginState.Disabled, null,
                 Locked: false, Loaded: false, "upload", [], [], [], [], [], Enforcing: false, [], [], Removed: true, [], []))], registry.SafeMode);

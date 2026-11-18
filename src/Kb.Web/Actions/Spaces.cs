@@ -114,7 +114,8 @@ internal sealed class UpdateSpaceAdminHandler(KbDbContext db, IAccess access) : 
         var update = new UpdateSpace { SpaceId = req.SpaceId, Name = req.Name, Description = req.Description, IsSensitive = req.IsSensitive, Visibility = req.Visibility,
             CommentsEnabled = req.CommentsEnabled, RatingsEnabled = req.RatingsEnabled, AgingDays = req.AgingDays, AgingAudience = req.AgingAudience, RecycleDays = req.RecycleDays, ReviewMonths = req.ReviewMonths };
         if (await UpdateSpaceAsync(s, update, db, ctx) is { } problem) return problem;
-        return ToDto(s, null);
+        // What the Owners wrote about a sensitive space is not handed back to an Admin without access to it (as in the list of all spaces).
+        return s.IsSensitive && await access.RoleAsync(ctx.Actor, s.Id, ctx.Cancel) is null ? ToDto(s, null) with { Description = null } : ToDto(s, null);
     }
 }
 
@@ -226,7 +227,8 @@ internal sealed class GrantSpaceRoleHandler(KbDbContext db, IAccess access) : IA
     {
         var req = ctx.Action;
         if (await ManagesAsync(access, ctx.Actor, req.SpaceId, ctx.Cancel) is { } denied) return denied;
-        _existing = await db.SpaceRoleAssignments.FirstOrDefaultAsync(a => a.SpaceId == req.SpaceId && a.PrincipalType == req.PrincipalType && a.PrincipalId == req.PrincipalId, ctx.Cancel);
+        var principal = Canonical(req.PrincipalType, req.PrincipalId);
+        _existing = await db.SpaceRoleAssignments.FirstOrDefaultAsync(a => a.SpaceId == req.SpaceId && a.PrincipalType == req.PrincipalType && a.PrincipalId == principal, ctx.Cancel);
         var roleId = req.RoleId ?? (req.Role is { } level && Enum.IsDefined(level) ? SpacePerms.IdOf(level) : Guid.Empty);
         _role = await db.SpaceRoleDefs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == roleId, ctx.Cancel);
         var before = _existing is null ? null : await db.SpaceRoleDefs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == _existing.RoleId, ctx.Cancel);
@@ -239,6 +241,9 @@ internal sealed class GrantSpaceRoleHandler(KbDbContext db, IAccess access) : IA
         return ctx.Actor.UserId is null ? Problem.Unauthorized : null; // the audit entry names who granted the role
     }
 
+    /// <summary>A user's id in the one form it is stored in, however it was typed: a second spelling would be a second row for the same person.</summary>
+    private static string Canonical(PrincipalType type, string? id) => type == PrincipalType.User && Guid.TryParse(id, out var g) ? g.ToString("D") : id ?? "";
+
     public async Task<Outcome<Unit>> HandleAsync(ActionContext<GrantSpaceRole> ctx)
     {
         var req = ctx.Action;
@@ -248,8 +253,11 @@ internal sealed class GrantSpaceRoleHandler(KbDbContext db, IAccess access) : IA
             return Problem.Invalid("principal", "Invalid.");
         if (req.PrincipalType == PrincipalType.Group && !await db.KbGroups.AnyAsync(g => g.Key == req.PrincipalId, ctx.Cancel))
             return Problem.Invalid("principal", "No such group.");
+        // A role is held by an account that exists and is in use; an id that names nobody would be a row the Owners' list shows without a name.
+        if (req.PrincipalType == PrincipalType.User && Guid.Parse(req.PrincipalId) is var uid && !await db.Users.AnyAsync(u => u.Id == uid && u.DeletedAt == null && u.DeactivatedAt == null, ctx.Cancel))
+            return Problem.Invalid("principal", "No such user.");
         // A grant sets the role, so lowering one is a grant too. One row per person or group in a space.
-        if (_existing is null) db.SpaceRoleAssignments.Add(new SpaceRoleAssignment { SpaceId = req.SpaceId, PrincipalType = req.PrincipalType, PrincipalId = req.PrincipalId, RoleId = _role.Id });
+        if (_existing is null) db.SpaceRoleAssignments.Add(new SpaceRoleAssignment { SpaceId = req.SpaceId, PrincipalType = req.PrincipalType, PrincipalId = Canonical(req.PrincipalType, req.PrincipalId), RoleId = _role.Id });
         else _existing.RoleId = _role.Id;
         await db.SaveChangesAsync();
         ctx.Audit(AuditActions.SpaceRoleGrant, req.PrincipalType.ToString(), req.PrincipalId, req.SpaceId, new Dictionary<string, string> { ["role"] = _role.Name, ["roleId"] = _role.Id.ToString() });
@@ -289,5 +297,7 @@ internal sealed class ListAllSpacesHandler(KbDbContext db, IAccess access) : IAc
         await access.IsAdminAsync(ctx.Actor, ctx.Cancel) ? null : Problem.Forbidden;
 
     public async Task<Outcome<IReadOnlyList<SpaceDto>>> HandleAsync(ActionContext<ListAllSpaces> ctx) =>
-        Outcome.List<SpaceDto>([.. (await db.Spaces.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ctx.Cancel)).Select(x => ToDto(x, null))]);
+        Outcome.List<SpaceDto>([.. await Task.WhenAll((await db.Spaces.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ctx.Cancel)).Select(async x =>
+            // A sensitive space is listed, so an Admin knows it exists and can ask for emergency access; what its Owners wrote about it is not.
+            x.IsSensitive && await access.RoleAsync(ctx.Actor, x.Id, ctx.Cancel) is null ? ToDto(x, null) with { Description = null } : ToDto(x, null)))]);
 }

@@ -437,7 +437,8 @@ internal sealed class FormatPageHandler(KbDbContext db, IAccess access, ImportSe
         if ((_page = await db.FindVisibleAsync(access, ctx.Actor, ctx.Action.PageId, track: false, ctx.Cancel)) is not { Kind: PageKind.Page }) return Problem.NotFound;
         if (!await access.CanAsync(ctx.Actor, _page.SpaceId, SpaceAction.CreateEdit, ctx.Cancel)) return Problem.Forbidden;
         if (ctx.Actor.UserId is null) return Problem.Unauthorized;
-        return await imports.MayAsync(ctx.Actor, AiFeatures.Format, ctx.Cancel) ? null : new Problem(403, "Formatting is not open to you.");
+        if (!await imports.MayAsync(ctx.Actor, AiFeatures.Format, ctx.Cancel)) return new Problem(403, "Formatting is not open to you.");
+        return await db.Spaces.AnyAsync(s => s.Id == _page.SpaceId && s.IsSensitive, ctx.Cancel) ? Problem.Refused("Sensitive spaces are never sent to the AI.") : null;
     }
 
     public async Task<Outcome<FormatDto>> HandleAsync(ActionContext<FormatPage> ctx)

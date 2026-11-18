@@ -67,6 +67,18 @@ To set one up:
 
 A linked account is entered through its sign-in method only. Linking removes the account's password and makes every password link made for it before stop working; after that, password sign-in (and Basic with a password) is refused for it with the same answer as a wrong password, and Users offers no Password link for it. One-time codes still apply where they are required. To get a person a password again, delete the account and make a new one.
 
+### Providers you add
+
+A plugin may instead let you add the providers yourself: its page then has a **Sign-in providers** list. Click **Add new** and give the provider a title, the text of its button. Add a second or a third the same way. Each provider has its own gear: it shows the provider's redirect address and its settings.
+
+1. Register this app at the provider with the redirect address shown under the provider's gear. Renaming the provider keeps that address.
+2. Set **Issuer** (exactly as the provider names itself), **Client ID** and **Client secret**. Set **Discovery address** only when the provider's document is not at the usual place. The button shows once the issuer and the client ID are set.
+3. Leave **Scopes** and the claim names as they are unless the provider says otherwise. **Read userinfo** is on: the app also asks the provider's userinfo endpoint, and refuses the sign-in if it names another person.
+4. To let in only part of a provider's people, set **Required claim** and **Allowed values**, one per line: for example `hd` and your domain, or `tid` and your tenant id.
+5. **Provider on a private network** stays off unless the provider is on your own network (a test provider in a lab). Off, the app reaches the provider only at public internet addresses. Either way it uses https and checks the provider's certificate, so a lab provider's certificate authority must be trusted by the server.
+
+Removing a provider deletes its settings and its button. Accounts linked through it keep the link and have no password, so they cannot sign in until a provider with the same issuer is set up again; the confirmation says how many there are. Adding, renaming and removing a provider apply at once, and the audit log records each (`plugin.signin.provider.add`, `.rename`, `.remove`).
+
 An account that is turned off is refused. An Administrator still gives their one-time code. Password sign-in and the break-glass account keep working whatever a plugin does; in [Safe Mode](#safe-mode) no plugin is loaded, so only they are. Deleting an account removes its link: the person is unknown here again. An Administrator can delete any account in Users, whatever its source, except the break-glass account, their own, and the last Administrator.
 The audit log records each start (`auth.method.start`), success (`auth.signin` with the method), refusal (`auth.signin.failed` with the reason), and each account linked (`user.signin.link`) or made (`user.signin.create`).
 

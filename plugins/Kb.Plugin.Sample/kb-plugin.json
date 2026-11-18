@@ -1,12 +1,12 @@
 {
   "id": "kb.sample",
   "name": "Sample: acknowledgements",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "publisher": "Kb first-party",
   "description": "Readers acknowledge a page. The reference plugin of the developer guide.",
   "assembly": "Kb.Plugin.Sample.dll",
-  "minKbVersion": "0.8.0",
-  "abstractionsVersion": "0.8.0",
+  "minKbVersion": "0.9.0",
+  "abstractionsVersion": "0.9.0",
   "extensionPoints": [],
   "outboundHosts": ["id.example.com"],
   "settings": [

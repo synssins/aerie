@@ -60,10 +60,24 @@ public class SignInMethodRulesTests
     }
 
     [Fact]
-    public void ThisHost_Is0_8_0_AndStillLoadsPluginsBuiltFor0_7_0()
+    public void ThisHost_Is0_9_0_AndStillLoadsPluginsBuiltFor0_7_0()
     {
-        Assert.Equal(("0.8.0", "0.8.0"), (KbHost.Version, KbHost.AbstractionsVersion));
+        Assert.Equal(("0.9.0", "0.9.0"), (KbHost.Version, KbHost.AbstractionsVersion));
         var old = new PluginManifest { Id = "kb.x", Version = "1.0.0", Publisher = "test", MinKbVersion = "0.7.0", AbstractionsVersion = "0.7.0" };
         Assert.Null(PluginVersions.Refusal(old));
+    }
+    /// <summary>The providers an Admin added (0.9.0): a stored list that is not one, or an entry with a bad id or title, gives nothing.</summary>
+    [Fact]
+    public void TheProviderList_KeepsOnlyWellFormedEntries_AndEachProviderHasItsOwnKeys()
+    {
+        Assert.Empty(SignInSettings.Providers(null));
+        Assert.Empty(SignInSettings.Providers("not json"));
+        var list = SignInSettings.Providers("""[{"id":"pab12","title":"Lab"},{"id":"Bad Id","title":"x"},{"id":"pcd34","title":""},{"id":"pab12","title":"Again"}]""");
+        Assert.Equal([new SignInSettings.Provider("pab12", "Lab")], list);
+        Assert.Equal(list, SignInSettings.Providers(SignInSettings.Write(list)));
+        var keys = SignInSettings.ForProvider("pab12").Select(d => d.Key).ToList();
+        Assert.All(keys, k => Assert.StartsWith("signIn.pab12.", k, StringComparison.Ordinal));
+        Assert.All(keys, k => Assert.True(SignInSettings.IsReserved(k)));
+        Assert.Contains(SignInSettings.ForProvider("pab12"), d => d.Key == "signIn.pab12.clientSecret" && d.Secret);
     }
 }
