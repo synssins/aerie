@@ -22,7 +22,8 @@ services:
       # Kb--SetupAdminPassword: change-me-to-15-or-more-characters
       # To use SQL Server instead of SQLite:
       # Kb__Database__Provider: SqlServer
-      # Kb__Database__ConnectionString: "Server=sql;Database=Kb;User Id=aerie;Password=...;TrustServerCertificate=True"
+      # Kb__Database__ConnectionString: "Server=sql;Database=Kb;User Id=aerie;Password=...;Encrypt=True"
+      # (the server's certificate is checked; add TrustServerCertificate=True only for a server whose certificate cannot be)
       TZ: UTC
 
 volumes:
