@@ -15,7 +15,7 @@ Access is per space. Someone is a Reader, Contributor, Supervisor or Owner in a 
 
 Deleted pages and spaces go to a recycle bin. Sign-ins, permission changes, deletions and other security events go into an audit log whose entries are hash-chained, and the log can be sent to a syslog or SIEM. API tokens are scoped and always expire.
 
-Most extra features are meant to be plugins. A plugin brings its own code, tables and screens, and an Admin installs one by uploading it.
+Set `AllowedHosts` in the server's configuration to the site's own host names once they are known; it ships as `*`, which accepts any. Most extra features are meant to be plugins. A plugin brings its own code, tables and screens, and an Admin installs one by uploading it.
 
 Not built yet: sign-in through Entra ID, AD/LDAP or passkeys, AD and Entra groups, comments and ratings, and Azure Blob storage. What is planned is in [ROADMAP.md](ROADMAP.md).
 

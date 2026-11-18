@@ -33,7 +33,8 @@ public static partial class PluginId
 
 /// <summary>
 /// The settings the app adds to a plugin for each sign-in method it registers: the client id, the client secret and whether unknown
-/// people get an account. They are saved and shown with the plugin's own settings, under keys the plugin cannot read or declare.
+/// people get an account. They are saved and shown with the plugin's own settings, under keys the plugin cannot declare and its settings
+/// do not hand to it. That is a rule of the settings, not a wall: a plugin's code runs in the server process and can reach the store.
 /// </summary>
 public static class SignInSettings
 {

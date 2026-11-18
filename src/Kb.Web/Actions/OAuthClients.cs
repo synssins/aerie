@@ -167,6 +167,9 @@ internal sealed class UpdateOAuthClientHandler(KbDbContext db, IAccess access, T
             var now = time.GetUtcNow();
             foreach (var family in families.Where(x => removed.Any(s => x.Scopes.Split(' ').Contains(s))))
                 (family.RevokedAt, family.RevokeReason) = (now, "client scope removed");
+            // A code not yet exchanged and a consent not yet answered would still turn into tokens with the removed scope.
+            db.OAuthCodes.RemoveRange((await db.OAuthCodes.Where(c => grants.Contains(c.GrantId) && c.UsedAt == null).ToListAsync(ctx.Cancel)).Where(c => removed.Any(s => c.Scopes.Split(' ').Contains(s))));
+            db.OAuthAuthorizeRequests.RemoveRange((await db.OAuthAuthorizeRequests.Where(r => r.ClientId == client.Id).ToListAsync(ctx.Cancel)).Where(r => removed.Any(s => r.Scopes.Split(' ').Contains(s))));
             await db.SaveChangesAsync(ctx.Cancel);
         }
         ctx.Audit(AuditActions.OAuthClientUpdate, "oauth.client", client.Id.ToString(), data: new Dictionary<string, string>
