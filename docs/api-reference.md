@@ -72,6 +72,9 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | POST | `/api/v1/admin/plugins/{id}/release-lock` | `plugin.lock.release` |  | `Unit` | Yes | Needed | No |
 | GET | `/api/v1/admin/plugins/{id}/settings` | `plugin.settings.read` |  | `PluginSettingsDto` ([PluginSettingsDto](plugins/action-reference.md#pluginsettingsdto)) | No | Needed | No |
 | PUT | `/api/v1/admin/plugins/{id}/settings` | `plugin.settings.save` | `PluginSettingsRequest` ([PluginSettingsRequest](plugins/action-reference.md#pluginsettingsrequest)) | `PluginSettingsSaved` ([PluginSettingsSaved](plugins/action-reference.md#pluginsettingssaved)) | Yes | Needed | No |
+| POST | `/api/v1/admin/plugins/{id}/signin-providers` | `plugin.signin.provider.add` | `SignInProviderRequest` ([SignInProviderRequest](plugins/action-reference.md#signinproviderrequest)) | `SignInProviderDto` ([SignInProviderDto](plugins/action-reference.md#signinproviderdto)) | Yes | Needed | No |
+| DELETE | `/api/v1/admin/plugins/{id}/signin-providers/{provider}` | `plugin.signin.provider.remove` |  | `Unit` | Yes | Needed | No |
+| PUT | `/api/v1/admin/plugins/{id}/signin-providers/{provider}` | `plugin.signin.provider.rename` | `SignInProviderRequest` ([SignInProviderRequest](plugins/action-reference.md#signinproviderrequest)) | `SignInProviderDto` ([SignInProviderDto](plugins/action-reference.md#signinproviderdto)) | Yes | Needed | No |
 | PUT | `/api/v1/admin/plugins/{id}/state` | `plugin.state.set` | `PluginStateRequest` ([PluginStateRequest](plugins/action-reference.md#pluginstaterequest)) | `Unit` | Yes | Needed | No |
 | POST | `/api/v1/admin/roles` | `role.create` | `RoleRequest` ([RoleRequest](plugins/action-reference.md#rolerequest)) | `RoleDto` ([RoleDto](plugins/action-reference.md#roledto)) | Yes | Needed | No |
 | DELETE | `/api/v1/admin/roles/{id:guid}` | `role.delete` |  | `Unit` | Yes | Needed | No |

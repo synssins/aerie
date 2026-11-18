@@ -1543,6 +1543,34 @@ Write. `SavePluginSettings`, answers `PluginSettingsSaved` ([PluginSettingsSaved
 | Id | `string` | required |
 | Values | `IReadOnlyDictionary<string, string>` | required, never logged |
 
+## plugin.signin.provider.add
+
+Write. `AddSignInProvider`, answers `SignInProviderDto` ([SignInProviderDto](#signinproviderdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| PluginId | `string` | required |
+| Title | `string` | required |
+
+## plugin.signin.provider.remove
+
+Write. `RemoveSignInProvider`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| PluginId | `string` | required |
+| ProviderId | `string` | required |
+
+## plugin.signin.provider.rename
+
+Write. `RenameSignInProvider`, answers `SignInProviderDto` ([SignInProviderDto](#signinproviderdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| PluginId | `string` | required |
+| ProviderId | `string` | required |
+| Title | `string` | required |
+
 ## plugin.state.set
 
 Write. `SetPluginState`, answers `Unit`. Core only.
@@ -5178,6 +5206,7 @@ Enum: `Folder`, `Page`.
 | removed | `bool` |
 | importFileKinds | `IReadOnlyList<string>` |
 | signInMethods | `IReadOnlyList<PluginSignInMethodDto>` ([PluginSignInMethodDto](#pluginsigninmethoddto)) |
+| signInProviders | `bool` |
 
 ```json
 {
@@ -5245,9 +5274,12 @@ Enum: `Folder`, `Page`.
     {
       "id": "text",
       "name": "text",
-      "redirectAddress": "text"
+      "redirectAddress": "text",
+      "byAdmin": false,
+      "linked": 0
     }
-  ]
+  ],
+  "signInProviders": false
 }
 ```
 
@@ -5321,7 +5353,8 @@ Enum: `Folder`, `Page`.
       ],
       "signInMethods": [
         null
-      ]
+      ],
+      "signInProviders": false
     }
   ],
   "safeMode": false
@@ -5495,12 +5528,16 @@ Enum: `BuiltIn`, `Uploaded`.
 | id | `string` |
 | name | `string` |
 | redirectAddress | `string` |
+| byAdmin | `bool` |
+| linked | `int` |
 
 ```json
 {
   "id": "text",
   "name": "text",
-  "redirectAddress": "text"
+  "redirectAddress": "text",
+  "byAdmin": false,
+  "linked": 0
 }
 ```
 
@@ -6084,6 +6121,34 @@ Enum: `User`, `Group`.
 {
   "message": "text",
   "step": "text"
+}
+```
+
+### SignInProviderDto
+
+| Field | Type |
+|---|---|
+| id | `string` |
+| title | `string` |
+| redirectAddress | `string` |
+
+```json
+{
+  "id": "text",
+  "title": "text",
+  "redirectAddress": "text"
+}
+```
+
+### SignInProviderRequest
+
+| Field | Type |
+|---|---|
+| title | `string?` |
+
+```json
+{
+  "title": "text"
 }
 ```
 

@@ -152,6 +152,9 @@ public static class AuditActions
     public const string PluginDisabledByCore = "plugin.disable.core";
     public const string PluginLockRelease = "plugin.lock.release";
     public const string PluginSettingsChange = "plugin.settings.change";
+    public const string SignInProviderAdd = "plugin.signin.provider.add";
+    public const string SignInProviderRename = "plugin.signin.provider.rename";
+    public const string SignInProviderRemove = "plugin.signin.provider.remove";
     public const string PluginPermissionsChange = "plugin.permissions.change";
     public const string UserPermissionsSet = "user.permissions.set";
     public const string GroupCreate = "group.create";
