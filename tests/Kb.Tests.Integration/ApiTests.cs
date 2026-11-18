@@ -58,6 +58,19 @@ public sealed class KbAppFactory(string dbPath, bool breakGlass = true, bool loo
         };
     }
 
+    /// <summary>
+    /// The pooled connections to this instance's database are closed with it. Left open, every test database's connections are closed
+    /// together by the SQLite library when the process exits, and with a few hundred test databases that took longer than the test
+    /// runner waits for a process to end: a run in which every test had passed then failed with "Foreground threads were left running".
+    /// </summary>
+    public override async ValueTask DisposeAsync()
+    {
+        await base.DisposeAsync();
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={DbPath}");
+        Microsoft.Data.Sqlite.SqliteConnection.ClearPool(connection);
+        GC.SuppressFinalize(this);
+    }
+
     /// <summary>Stops this instance and starts a new one on the same database and work folder: what a restart of the app does.</summary>
     public async Task<KbAppFactory> RestartAsync()
     {
