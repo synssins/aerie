@@ -148,6 +148,9 @@ services.AddRateLimiter(o =>
 // Shared keys so any instance can read any instance's cookie (A/B patching, load balancing).
 var dp = services.AddDataProtection().SetApplicationName("kb").PersistKeysToDbContext<KbDbContext>();
 _ = dp;
+// With the secret set, the keys are stored encrypted with it (KeyProtection). Without it they are stored as before.
+if (config[KeyProtection.SecretName] is { Length: > 0 } keySecret)
+    services.Configure<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>(o => o.XmlEncryptor = new KeyProtection.Encryptor(keySecret));
 
 // A browser that reached the site over https keeps to https for a year, its subdomains included (the framework's default is 30 days).
 services.AddHsts(o => { o.MaxAge = TimeSpan.FromDays(365); o.IncludeSubDomains = true; });
@@ -291,11 +294,13 @@ await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<KbDbContext>();
     var audit = scope.ServiceProvider.GetRequiredService<IAuditLog>();
+    await KeyProtection.OnStartupAsync(db, config[KeyProtection.SecretName], app.Logger); // before the first key is read
     foreach (var e in boot.Events) await audit.AppendAsync(e);
     await app.Services.GetRequiredService<PluginSettingsStore>().ProtectStraysAsync(CancellationToken.None); // from here a plugin can read its secrets
 
     await scope.ServiceProvider.GetRequiredService<BreakGlassService>().EnsureAccountAsync();
     await scope.ServiceProvider.GetRequiredService<SetupService>().OnStartupAsync();
+    await ServiceTokenRules.RevokeStraysAsync(db, scope.ServiceProvider.GetRequiredService<ISpacePermissionService>(), audit, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow());
     await SearchIndex.BackfillAsync(db, app.Services.GetRequiredService<DocRenderers>()); // pages saved before the search index existed
     // Image grants no page needs any more (a page moved in and out again, or a grant written before moves checked what they pass on).
     // A failed clean-up must not stop the start: the grants stay one more run.
