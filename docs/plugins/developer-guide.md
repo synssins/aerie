@@ -944,7 +944,7 @@ public sealed class SyncJob(IActionBus bus, MySource source) : IKbJob
 The answer, `SyncResultDto`, counts what was added, changed, unchanged and removed, with each change. The [action reference](action-reference.md#inventoryinstallssync) has the types and an example of their JSON.
 
 - A job runs as the plugin, and a plugin may always edit the inventory.
-- A script outside the app sends the same rows to `POST /api/v1/inventory/sync` with an API token: the token needs the Write scope, and its owner (or the token itself) must be allowed to edit the inventory. Administration > Security > Inventory access lists who may: everyone, a person, a group, the people with any role in a space, the people with a given role, or one named API token. A token is never an Admin, so an Admin's token needs a rule too. See `tools/Seed-Inventory.ps1`.
+- A script outside the app sends the same rows to `POST /api/v1/inventory/sync` with an API token: the token needs the Write scope, and its owner (or the token itself) must be allowed to edit the inventory. Administration > Security > Inventory access lists who may: everyone, a person, a group, the people with any role in a space, the people with a given role, or one named API token. A new install has no rule there: only Admins view and edit the inventory until an Admin adds one. A token is never an Admin, so an Admin's token needs a rule too. See `tools/Seed-Inventory.ps1`.
 - A plugin can hook the action like any other: a before hook to refuse rows, an after handler to react to a sync.
 
 ## Page details

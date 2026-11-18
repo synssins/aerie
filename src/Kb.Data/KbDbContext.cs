@@ -182,11 +182,8 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
             e.Property(h => h.By).HasMaxLength(300);
             e.HasIndex(h => new { h.ApplicationId, h.ServerKey });
         });
-        builder.Entity<Kb.Core.Inventory.InvAccessRule>(e =>
-        {
-            e.Property(r => r.TargetId).HasMaxLength(200);
-            e.HasData(new Kb.Core.Inventory.InvAccessRule { Id = Kb.Core.Inventory.InvAccessRule.DefaultViewId, Edit = false, Kind = Kb.Core.Inventory.InvRuleKind.Everyone });
-        });
+        // No rule is seeded: a new install shows the inventory to Admins only, until an Admin adds rules.
+        builder.Entity<Kb.Core.Inventory.InvAccessRule>(e => e.Property(r => r.TargetId).HasMaxLength(200));
         builder.Entity<Kb.Core.Inventory.PageAppLink>(e =>
         {
             e.HasKey(l => new { l.PageId, l.ApplicationId });

@@ -61,9 +61,6 @@ public sealed class InvAccessRule
     public bool Edit { get; set; }
     public InvRuleKind Kind { get; set; }
     public string? TargetId { get; set; }
-
-    /// <summary>The rule a new install starts with: everyone signed in views.</summary>
-    public static readonly Guid DefaultViewId = new("00000000-0000-0000-0000-0000000000a1");
 }
 
 /// <summary>A page applies to an application, on some of its servers or (none named) all of them.</summary>

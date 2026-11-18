@@ -4,28 +4,29 @@
     "method": "GET",
     "path": "/api/v1/inventory/me",
     "expect": {"anonymous": 401, "outsider": 200, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
-    "scope": "server"
+    "scope": "server",
+    "note": "Everyone signed in may ask what they may do; out of the box only an Admin's answer says they view."
   },
   {
     "action": "inventory.app.list",
     "method": "GET",
     "path": "/api/v1/inventory/apps",
-    "expect": {"anonymous": 401, "outsider": 200, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
     "scope": "server",
-    "note": "Out of the box everyone signed in views the inventory; the Admin sets who views and who edits."
+    "note": "Out of the box no access rule exists, so only Admins view the inventory; the Admin sets who views and who edits."
   },
   {
     "action": "inventory.server.list",
     "method": "GET",
     "path": "/api/v1/inventory/servers",
-    "expect": {"anonymous": 401, "outsider": 200, "reader": 200, "contributor": 200, "supervisor": 200, "owner": 200, "admin": 200},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
     "scope": "server"
   },
   {
     "action": "inventory.app.read",
     "method": "GET",
     "path": "/api/v1/inventory/apps/{newGuid}",
-    "expect": {"anonymous": 401, "outsider": 404, "reader": 404, "contributor": 404, "supervisor": 404, "owner": 404, "admin": 404},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 404},
     "scope": "server"
   },
   {
