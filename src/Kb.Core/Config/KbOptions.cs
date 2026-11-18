@@ -144,6 +144,8 @@ public sealed class DataCenterOptions
     public string BaseUrl { get; set; } = "";
     /// <summary>The most items one page of a list returns, whatever limit the caller asks for.</summary>
     public int MaxLimit { get; set; } = 200;
+    /// <summary>The most pages one CQL search examines. A search runs in memory over every page its caller can see; past this it answers 400.</summary>
+    public int MaxSearchPages { get; set; } = 50_000;
     /// <summary>The Data Center version aerie presents itself as.</summary>
     public string Version { get; set; } = "9.2.4";
     /// <summary>Build numbers reported with the version; 0 derives them from it. See contracts/behaviour/common.md (Server information).</summary>
