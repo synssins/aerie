@@ -147,6 +147,7 @@ public sealed class VisibilityTests : IAsyncLifetime
         var seen = await outsider.GetFromJsonAsync<JsonElement>($"/api/v1/pages/{page}", Ct);
         Assert.Equal("Zebra router", seen.GetProperty("title").GetString());
         Assert.Empty(seen.GetProperty("history").EnumerateArray());
+        Assert.Equal("", seen.GetProperty("updatedBy").GetString());
         Assert.False(seen.GetProperty("canSeeHistory").GetBoolean());
         foreach (var path in new[] { $"/api/v1/pages/{page}/versions", $"/api/v1/pages/{page}/versions/1.0", $"/api/v1/pages/{page}/diff?from=1.0&to=1.1" })
             Assert.Equal(HttpStatusCode.Forbidden, (await outsider.GetAsync(path, Ct)).StatusCode);
@@ -157,6 +158,7 @@ public sealed class VisibilityTests : IAsyncLifetime
             var full = await member.GetFromJsonAsync<JsonElement>($"/api/v1/pages/{page}", Ct);
             Assert.Equal(2, full.GetProperty("history").GetArrayLength());
             Assert.True(full.GetProperty("canSeeHistory").GetBoolean());
+            Assert.NotEqual("", full.GetProperty("updatedBy").GetString());
             foreach (var path in new[] { $"/api/v1/pages/{page}/versions", $"/api/v1/pages/{page}/versions/1.0", $"/api/v1/pages/{page}/diff?from=1.0&to=1.1" })
                 Assert.Equal(HttpStatusCode.OK, (await member.GetAsync(path, Ct)).StatusCode);
         }
@@ -165,6 +167,7 @@ public sealed class VisibilityTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, (await SetAsync(team, "Anyone")).StatusCode);
         var nobody = await _f.NewClient().GetFromJsonAsync<JsonElement>($"/api/v1/pages/{page}", Ct);
         Assert.Empty(nobody.GetProperty("history").EnumerateArray());
+        Assert.Equal("", nobody.GetProperty("updatedBy").GetString());
         Assert.False(nobody.GetProperty("canSeeHistory").GetBoolean());
     }
 

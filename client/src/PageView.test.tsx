@@ -150,14 +150,22 @@ describe("PageView and the page's history", () => {
 
     expect(screen.getByRole("button", { name: "History" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "History" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Version" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Last updated" })).toBeTruthy();
+    expect(screen.getAllByText("Pat").length).toBe(2); // the History table and Last updated
   });
 
   it("shows neither to someone who reads the space only because of its visibility", async () => {
     server();
-    show(page({ history: [], canSeeHistory: false }));
+    show(page({ history: [], updatedBy: "", canSeeHistory: false }));
     await screen.findByText("Before");
 
     expect(screen.queryByRole("button", { name: "History" })).toBeNull();
     expect(screen.queryByRole("region", { name: "History" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Version" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Last updated" })).toBeNull();
+    // The rest of the side panel stays.
+    expect(screen.getByRole("heading", { name: "Location" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Your access" })).toBeTruthy();
   });
 });

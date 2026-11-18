@@ -474,7 +474,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
           )}
         </>
       )}
-      {!isNew && (
+      {!isNew && page.canSeeHistory !== false && (
         <>
           <h3>Version</h3>
           <div>{page.version}</div>
