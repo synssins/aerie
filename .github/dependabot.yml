@@ -10,3 +10,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # A new major version of a base image is a platform upgrade (.NET 10 to 11, Node 22 to 26), decided by people and done
+    # with the code. Only the digest of the version in use is kept current: its rebuilds carry the security fixes.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
