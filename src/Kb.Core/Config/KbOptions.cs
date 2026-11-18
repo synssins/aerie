@@ -125,6 +125,8 @@ public sealed class StorageOptions
 {
     /// <summary>Folder for uploaded files (images); relative paths are under the content root.</summary>
     public string Folder { get; set; } = "App_Data/files";
+    /// <summary>The most megabytes the attachments of one space may add up to; 0 for no limit. Removed attachments still count until they are purged.</summary>
+    public int SpaceQuotaMb { get; set; }
 }
 
 public sealed class LogOptions

@@ -373,9 +373,16 @@ internal sealed class DcContentService(KbDbContext db, IAccess access, IHttpCont
         if (p.Kind != PageKind.Folder) return [];
         var all = await db.Pages.AsNoTracking().Where(x => x.SpaceId == p.SpaceId).ToListAsync(ct); // system: the tree of a space the caller sees
         var kids = all.Where(x => x.ParentId is not null).ToLookup(x => x.ParentId!.Value);
+        // With a stack of its own, not by calling itself: nothing limits how deep pages nest, and a stack overflow ends the process.
         var list = new List<Page>();
-        void Walk(Guid id) { foreach (var k in kids[id].OrderBy(x => x.Sort).ThenBy(x => x.Title)) { list.Add(k); Walk(k.Id); } }
-        Walk(p.Id);
+        var seen = new HashSet<Guid> { p.Id };
+        var next = new Stack<Page>(kids[p.Id].OrderByDescending(x => x.Sort).ThenByDescending(x => x.Title));
+        while (next.TryPop(out var k))
+        {
+            if (!seen.Add(k.Id)) continue;
+            list.Add(k);
+            foreach (var c in kids[k.Id].OrderByDescending(x => x.Sort).ThenByDescending(x => x.Title)) next.Push(c);
+        }
         return list;
     }
 
