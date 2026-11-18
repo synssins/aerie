@@ -141,15 +141,30 @@ public sealed class LogShipperService(IServiceScopeFactory scopes, IEnumerable<I
         return shipped;
     }
 
+    /// <summary>
+    /// What an entry of a sensitive space carries out of the database: where the request came from and which token or application made
+    /// it. Everything else in an entry's data may hold the space's own words (a page title, a file name, an excerpt), and an Admin who
+    /// has no access to the space chooses where the log goes.
+    /// </summary>
+    private static readonly HashSet<string> SensitiveSpaceData = new(StringComparer.Ordinal) { "ip", AuditData.TokenKey, AuditData.TokenIdKey, "prefix", "clientId" };
+
     private static async Task<List<LogEvent>> EventsAsync(KbDbContext db, List<AuditEntry> batch, CancellationToken ct)
     {
         var ids = batch.Select(a => a.ActorId).OfType<Guid>().Distinct().ToList();
         var names = await db.Users.AsNoTracking().Where(u => ids.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.UserName, ct);
+        var spaces = batch.Select(a => a.SpaceId).OfType<Guid>().Distinct().ToList();
+        // A space that is gone is treated as sensitive: nothing says it was not.
+        var open = (await db.Spaces.AsNoTracking().IgnoreQueryFilters().Where(s => spaces.Contains(s.Id) && !s.IsSensitive).Select(s => s.Id).ToListAsync(ct)).ToHashSet();
+        Dictionary<string, string> Data(AuditEntry a)
+        {
+            var data = JsonSerializer.Deserialize<Dictionary<string, string>>(a.DataJson) ?? [];
+            return a.SpaceId is { } space && !open.Contains(space) ? data.Where(d => SensitiveSpaceData.Contains(d.Key)).ToDictionary(d => d.Key, d => d.Value) : data;
+        }
         return [.. batch.Select(a => new LogEvent
         {
             Sequence = a.Sequence, At = a.At, Action = a.Action, ActorId = a.ActorId, Actor = a.ActorId is { } id ? names.GetValueOrDefault(id) : null,
             TargetType = a.TargetType, TargetId = a.TargetId, SpaceId = a.SpaceId, Hash = a.Hash, Server = Environment.MachineName,
-            Data = JsonSerializer.Deserialize<Dictionary<string, string>>(a.DataJson) ?? [],
+            Data = Data(a),
         })];
     }
 }
