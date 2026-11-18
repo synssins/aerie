@@ -132,7 +132,13 @@ internal sealed class SaveStoragePlaceHandler(KbDbContext db, ActiveFileStore st
     {
         var (req, place) = (ctx.Action, _place!);
         if (store.Kind(place.Kind) is not { } kind) return Problem.Invalid("kind", "Unknown kind.");
+        var where = place.SettingsJson;
         if (StorageSupport.Apply(store, kind, place, req.Name, req.Settings, req.Secrets) is { } invalid) return invalid;
+        // The place files are in, or are being copied to, keeps its location: changing it would point the app at a place without
+        // them, with no test and no copy. Its name and its secrets (a rotated password) can change. To move the files, add a place
+        // and start a move.
+        if (place.Role != StorageRole.Old && place.SettingsJson != where)
+            return Problem.Conflict("This place is in use, so where it is cannot be changed. Add a new place and move the files to it.");
         await db.SaveChangesAsync();
         store.Invalidate();
         StorageSupport.Audit(ctx, AuditActions.StoragePlaceChange, place);

@@ -216,8 +216,9 @@ public sealed class ImportContributorTests : IAsyncLifetime
         Assert.Equal("probeBox", nodes[^1]!["type"]!.GetValue<string>());
         Assert.Equal("from flow.drawio", nodes[^1]!["attrs"]!["label"]!.GetValue<string>());
         Assert.Contains(Warnings(detail), w => w.Contains("kb.test.good added 1 block from flow.drawio", StringComparison.Ordinal));
-        // The four that threw, ran too long, or answered what the core cannot use added nothing and were counted against their plugins.
-        Assert.Equal(["kb.test.notablock", "kb.test.slow", "kb.test.throws", "kb.test.toomany"],
+        // The four that threw, ran too long, or answered what the core cannot use added nothing. Three were counted against their plugins;
+        // the one that ran too long was not: a slow file is the file's doing as much as the plugin's, and must not turn a plugin off.
+        Assert.Equal(["kb.test.notablock", "kb.test.throws", "kb.test.toomany"],
             _seen.Failures.Where(f => f.Where == "import contributor").Select(f => f.Plugin).Order(StringComparer.Ordinal));
         await _f.WithDbAsync(async db =>
         {
