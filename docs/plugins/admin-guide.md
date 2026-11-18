@@ -77,6 +77,27 @@ A plugin may instead let you add the providers yourself: its page then has a **S
 4. To let in only part of a provider's people, set **Required claim** and **Allowed values**, one per line: for example `hd` and your domain, or `tid` and your tenant id.
 5. **Provider on a private network** stays off unless the provider is on your own network (a test provider in a lab). Off, the app reaches the provider only at public internet addresses. Either way it uses https and checks the provider's certificate, so a lab provider's certificate authority must be trusted by the server.
 
+To set a provider up from a script rather than on the page:
+
+| Key | Type | Default | |
+|---|---|---|---|
+| `signIn.<providerId>.issuer` | text | none | The issuer, an https address. With the client ID, it puts the button on the sign-in screen. |
+| `signIn.<providerId>.discovery` | text | the issuer + `/.well-known/openid-configuration` | An https address. |
+| `signIn.<providerId>.clientId` | text | none | |
+| `signIn.<providerId>.clientSecret` | secret | none | Write-only: reading the settings says only whether it is set. |
+| `signIn.<providerId>.scopes` | text | `openid email profile` | Separated by spaces; must hold `openid`. |
+| `signIn.<providerId>.subjectClaim` | text | `sub` | |
+| `signIn.<providerId>.emailClaim` | text | `email` | |
+| `signIn.<providerId>.emailVerifiedClaim` | text | `email_verified` | |
+| `signIn.<providerId>.nameClaim` | text | `name` | |
+| `signIn.<providerId>.userInfo` | toggle (`true`, `false`) | `true` | |
+| `signIn.<providerId>.requiredClaim` | text | none | Empty: no claim is required. |
+| `signIn.<providerId>.requiredValues` | multiline | none | One value per line (`\n` between them in JSON). |
+| `signIn.<providerId>.newAccounts` | toggle | `false` | |
+| `signIn.<providerId>.privateNetwork` | toggle | `false` | |
+
+`<providerId>` is the `id` that adding the provider answered (`POST /api/v1/admin/plugins/{id}/signin-providers` with `{ "title": "..." }`; `PUT .../signin-providers/{providerId}` renames it, `DELETE` removes it). The values are saved with the plugin's other settings, by an Admin: `PUT /api/v1/admin/plugins/{id}/settings` with `{ "values": { "signIn.<providerId>.issuer": "https://...", ... } }`. A key left out is kept; an empty value clears it. A save applies at once, without a restart.
+
 Removing a provider deletes its settings and its button. Accounts linked through it keep the link and have no password, so they cannot sign in until a provider with the same issuer is set up again; the confirmation says how many there are. Adding, renaming and removing a provider apply at once, and the audit log records each (`plugin.signin.provider.add`, `.rename`, `.remove`).
 
 An account that is turned off is refused. An Administrator still gives their one-time code. Password sign-in and the break-glass account keep working whatever a plugin does; in [Safe Mode](#safe-mode) no plugin is loaded, so only they are. Deleting an account removes its link: the person is unknown here again. An Administrator can delete any account in Users, whatever its source, except the break-glass account, their own, and the last Administrator.

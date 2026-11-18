@@ -222,6 +222,8 @@ internal sealed class SignInFlow(SignInMethods methods, OidcCache cache, IDataPr
         [SecurityAlgorithms.RsaSha256, SecurityAlgorithms.RsaSha384, SecurityAlgorithms.RsaSha512, SecurityAlgorithms.RsaSsaPssSha256, SecurityAlgorithms.RsaSsaPssSha384,
          SecurityAlgorithms.RsaSsaPssSha512, SecurityAlgorithms.EcdsaSha256, SecurityAlgorithms.EcdsaSha384, SecurityAlgorithms.EcdsaSha512];
     private const string Generic = "The sign-in did not work. Try again.";
+    /// <summary>How far the provider's clock may be from this one: for the expiry, the not-before time and the issue time alike.</summary>
+    public static readonly TimeSpan ClockSkew = TimeSpan.FromMinutes(2);
 
     private sealed record State(string Method, string Value, string Nonce, string Verifier, string ReturnTo, string Redirect);
 
@@ -415,7 +417,7 @@ internal sealed class SignInFlow(SignInMethods methods, OidcCache cache, IDataPr
             result = await handler.ValidateTokenAsync(idToken, new TokenValidationParameters
             {
                 ValidIssuer = p.Issuer, ValidAudience = clientId, IssuerSigningKeys = keys, ValidAlgorithms = Algorithms, RequireSignedTokens = true,
-                RequireExpirationTime = true, ValidateLifetime = true, ClockSkew = TimeSpan.FromMinutes(2), RequireAudience = true,
+                RequireExpirationTime = true, ValidateLifetime = true, ClockSkew = ClockSkew, RequireAudience = true,
             });
             if (result.IsValid || again || fresh || result.Exception is not (SecurityTokenSignatureKeyNotFoundException or SecurityTokenInvalidSignatureException)) break;
         }
@@ -423,6 +425,8 @@ internal sealed class SignInFlow(SignInMethods methods, OidcCache cache, IDataPr
             throw new OidcException(result.Exception switch
             {
                 SecurityTokenExpiredException => "the ID token has expired",
+                SecurityTokenNotYetValidException => "the ID token is not valid yet (nbf)",
+                SecurityTokenInvalidLifetimeException => "the ID token's not-before time is after its expiry (nbf)",
                 SecurityTokenNoExpirationException => "the ID token has no expiry",
                 SecurityTokenInvalidAudienceException => "the ID token is for another audience",
                 SecurityTokenInvalidIssuerException => "the ID token is from another issuer",
@@ -437,7 +441,10 @@ internal sealed class SignInFlow(SignInMethods methods, OidcCache cache, IDataPr
         string? Text(string claim) => all.TryGetValue(claim, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
 
         if (!FixedEquals(Text("nonce"), nonce)) throw new OidcException("the ID token's nonce is wrong");
-        if (!all.ContainsKey("iat")) throw new OidcException("the ID token has no issue time");
+        // Section 3.1.3.7, step 10. No issue time, or one past the clock skew in the future: refused. One far in the past is not bounded
+        // further: the expiry limits how long a token is good, and the nonce ties it to this one sign-in, so an old token cannot be replayed.
+        if (!all.TryGetValue("iat", out var iat) || iat.ValueKind != JsonValueKind.Number || !iat.TryGetDouble(out var issued)) throw new OidcException("the ID token has no issue time");
+        if (issued > time.GetUtcNow().Add(ClockSkew).ToUnixTimeSeconds()) throw new OidcException("the ID token's issue time is in the future (iat)");
         var audiences = all.TryGetValue("aud", out var aud) && aud.ValueKind == JsonValueKind.Array ? aud.GetArrayLength() : 1;
         if ((audiences > 1 || Text("azp") is not null) && Text("azp") != clientId) throw new OidcException("the ID token's authorized party is another client");
         if (Text(p.SubjectClaim) is not { Length: > 0 and <= 450 }) throw new OidcException("the ID token has no subject");

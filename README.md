@@ -62,6 +62,17 @@ This was run on both databases. On SQLite the tests run it on every build. On SQ
 
 Keep the value as safe as a backup. Without it the app refuses to start on that database and says so, and if it is lost for good the stored secrets have to be typed in again, everyone is signed out, and nobody's one-time codes work until an Admin resets them. The break-glass account uses no codes and is the way back in, so give it a password before turning this on. Backups of the database made before the secret was set still hold the keys unencrypted.
 
+## Dependency checks
+
+Every pull request and every push to `main` runs two checks, and a finding fails the build:
+
+- `dotnet list package --vulnerable --include-transitive` over the whole solution: no NuGet package, direct or pulled in by another, may have a known vulnerability. Packages are restored in locked mode, so the versions are the ones the lock files name.
+- `npm audit --omit=dev --audit-level=high` in `client/`: nothing that is shipped to browsers may have a known vulnerability of high or critical severity.
+
+The client's build and test tooling is not part of the second check. As of 2026-11-18 `npm audit` reports 6 high findings there, all one advisory (GHSA-fc5q-39xc-vjpf, a slow pattern match in `picomatch`) reached through `vite` and `vitest`. Every released version of `picomatch` is affected, so there is no version to update to; the only way to clear the report is to go back two major versions of the build tools. The affected code matches file names against patterns from the project's own configuration during a build or a test run. It is not in what the app serves.
+
+The workflows name each GitHub Action by commit and the Dockerfile names each base image by digest. Dependabot (`.github/dependabot.yml`) proposes the updates.
+
 ## Running it on IIS
 
 You need Windows with IIS, the [.NET 10 SDK](https://dotnet.microsoft.com/download) and Node.js. For the database, use SQL Server (Express works) or a single SQLite file. The SQLite file needs nothing else installed.

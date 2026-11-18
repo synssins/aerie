@@ -321,41 +321,99 @@ describe("Plugins", () => {
 });
 
 describe("Plugins: sign-in providers an Admin adds", () => {
+  const P = "signIn.pa1b2c3d4e5";
   const oidc = plugin({
     id: "kb.oidc", name: "OpenID Connect", origin: "Uploaded", source: "upload", signInProviders: true,
     signInMethods: [{ id: "kb.oidc/pa1b2c3d4e5", name: "Lab", redirectAddress: "https://kb.test/api/v1/auth/methods/kb.oidc/pa1b2c3d4e5/callback", byAdmin: true, linked: 2 }],
     settings: [
       setting({ key: "Own", label: "Own setting" }),
-      setting({ key: "signIn.pa1b2c3d4e5.issuer", label: "Issuer" }),
-      setting({ key: "signIn.pa1b2c3d4e5.clientSecret", label: "Client secret", secret: true }),
+      setting({ key: `${P}.issuer`, label: "Issuer" }),
+      setting({ key: `${P}.discovery`, label: "Discovery address" }),
+      setting({ key: `${P}.clientId`, label: "Client ID" }),
+      setting({ key: `${P}.clientSecret`, label: "Client secret", secret: true }),
+      setting({ key: `${P}.scopes`, label: "Scopes", default: "openid email profile" }),
+      setting({ key: `${P}.newAccounts`, label: "New accounts", type: "toggle", default: "false" }),
     ],
   });
+  const routes = (values: Record<string, string>) => ({
+    "GET /plugins": list([oidc]),
+    "GET /plugins/kb.oidc/settings": () => ({ body: { values, secretsSet: [] } }),
+    "PUT /plugins/kb.oidc/settings": () => ({ body: { restart: false } }),
+  });
+  const openDialog = async () => {
+    show();
+    await userEvent.click(await screen.findByText("OpenID Connect"));
+    await userEvent.click(within(await screen.findByRole("region", { name: "Sign-in providers" })).getByRole("button", { name: "Settings of Lab" }));
+    const dialog = screen.getByRole("dialog", { name: "Lab" });
+    await within(dialog).findByLabelText("Issuer (required)");
+    return dialog;
+  };
 
   it("lists each provider with its own gear; its settings are under the gear, not in the plugin's form", async () => {
-    const calls = server({
-      "GET /plugins": list([oidc]),
-      "GET /plugins/kb.oidc/settings": () => ({ body: { values: { Own: "x", "signIn.pa1b2c3d4e5.issuer": "https://id.example.com" }, secretsSet: [] } }),
-      "PUT /plugins/kb.oidc/settings": () => ({ body: { restart: false } }),
-    });
+    const calls = server(routes({ Own: "x", [`${P}.issuer`]: "https://id.example.com", [`${P}.clientId`]: "c1" }));
+    const dialog = await openDialog();
+    expect(screen.getByLabelText("Own setting")).toBeTruthy();
+    expect(within(dialog).getByLabelText("Issuer (required)")).toHaveProperty("value", "https://id.example.com");
+    expect(within(dialog).getByLabelText("Redirect address of Lab")).toHaveProperty("value", "https://kb.test/api/v1/auth/methods/kb.oidc/pa1b2c3d4e5/callback");
+    expect(within(dialog).queryByText(/Not shown on the sign-in screen/)).toBeNull(); // issuer and client ID set
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    const sent = calls.filter((c) => c.key === "PUT /plugins/kb.oidc/settings").at(-1)?.body as { values: Record<string, string | null> };
+    expect(Object.keys(sent.values).sort()).toEqual([`${P}.clientId`, `${P}.clientSecret`, `${P}.discovery`, `${P}.issuer`, `${P}.newAccounts`, `${P}.scopes`]);
+  });
+
+  it("marks Issuer and Client ID required, shows them first with the secret, and keeps the rest closed under Advanced", async () => {
+    server(routes({}));
+    const dialog = await openDialog();
+    expect(within(dialog).getByLabelText("Issuer (required)").getAttribute("aria-required")).toBe("true");
+    expect(within(dialog).getByLabelText("Client ID (required)").getAttribute("aria-required")).toBe("true");
+    const advanced = dialog.querySelector("details.advanced") as HTMLDetailsElement;
+    expect(advanced.open).toBe(false);
+    expect(advanced.contains(within(dialog).getByLabelText("Discovery address"))).toBe(true);
+    expect(advanced.contains(within(dialog).getByLabelText("Scopes"))).toBe(true);
+    expect(advanced.contains(within(dialog).getByText("New accounts"))).toBe(false);
+    const labels = [...dialog.querySelectorAll(".lbl")].map((l) => l.textContent);
+    expect(labels.slice(0, 4)).toEqual(["Issuer (required)", "Client ID (required)", "Client secret", "New accounts"]);
+  });
+
+  it("says why a provider has no button, in its row and in its dialog", async () => {
+    server(routes({ [`${P}.clientId`]: "c1" }));
     show();
     await userEvent.click(await screen.findByText("OpenID Connect"));
     const section = await screen.findByRole("region", { name: "Sign-in providers" });
-    expect(within(section).getByText("https://kb.test/api/v1/auth/methods/kb.oidc/pa1b2c3d4e5/callback")).toBeTruthy();
-    expect(await screen.findByLabelText("Own setting")).toBeTruthy();
-    expect(screen.queryByLabelText("Issuer")).toBeNull();
-
+    expect(await within(section).findByText("Not shown on the sign-in screen: issuer missing.")).toBeTruthy();
     await userEvent.click(within(section).getByRole("button", { name: "Settings of Lab" }));
     const dialog = screen.getByRole("dialog", { name: "Lab" });
-    expect(await within(dialog).findByLabelText("Issuer")).toHaveProperty("value", "https://id.example.com");
+    expect(await within(dialog).findByText("Not shown on the sign-in screen: issuer missing.")).toBeTruthy();
+  });
+
+  it("refuses a discovery address with no issuer, saying to put it in Issuer, and opens Advanced to show it", async () => {
+    const calls = server(routes({}));
+    const dialog = await openDialog();
+    const advanced = dialog.querySelector("details.advanced") as HTMLDetailsElement;
+    await userEvent.type(within(dialog).getByLabelText("Discovery address"), "https://accounts.example.com");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
-    const sent = calls.filter((c) => c.key === "PUT /plugins/kb.oidc/settings").at(-1)?.body as { values: Record<string, string | null> };
-    expect(Object.keys(sent.values).sort()).toEqual(["signIn.pa1b2c3d4e5.clientSecret", "signIn.pa1b2c3d4e5.issuer"]);
+    expect(within(dialog).getByRole("alert").textContent).toMatch(/Put the provider's address in Issuer/);
+    expect(advanced.open).toBe(true);
+    expect(calls.some((c) => c.key === "PUT /plugins/kb.oidc/settings")).toBe(false);
+  });
+
+  it("Close asks before it drops changed fields", async () => {
+    server(routes({}));
+    const dialog = await openDialog();
+    await userEvent.type(within(dialog).getByLabelText("Issuer (required)"), "https://id.example.com");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.getByText("Discard unsaved changes?")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("dialog", { name: "Lab" })).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(screen.queryByRole("dialog", { name: "Lab" })).toBeNull();
   });
 
   it("Add new asks for a title; Remove says how many accounts keep their link", async () => {
     const calls = server({
-      "GET /plugins": list([oidc]),
-      "GET /plugins/kb.oidc/settings": () => ({ body: { values: {}, secretsSet: [] } }),
+      ...routes({}),
       "POST /plugins/kb.oidc/signin-providers": () => ({ body: { id: "pf0f0f0f0f0", title: "Second", redirectAddress: "x" } }),
       "DELETE /plugins/kb.oidc/signin-providers/pa1b2c3d4e5": () => ({ status: 204 }),
     });

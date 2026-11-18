@@ -1,0 +1,17 @@
+# The workflows name each action by commit and the Dockerfile names each base image by digest. These updates keep
+# those pins current: without them a pin would also hold back security fixes.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    # A new major version of a base image is a platform upgrade (.NET 10 to 11, Node 22 to 26), decided by people and done
+    # with the code. Only the digest of the version in use is kept current: its rebuilds carry the security fixes.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

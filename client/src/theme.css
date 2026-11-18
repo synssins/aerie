@@ -670,6 +670,20 @@ label.inline { display: inline-flex; align-items: center; gap: 8px; font-size: 1
 .plugin-desc { margin: 8px 0 0; max-width: 72ch; }
 .form .hint { grid-column: 2; margin: -2px 0 0; color: var(--ink2); font-size: 12.5px; max-width: 60ch; }
 .plugin-panel { margin-top: 28px; }
+/* A form in a dialog reads top down: each label left, above its field, the help under the field. */
+.form.stacked { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.form.stacked .lbl { margin-top: 10px; align-self: auto; padding-top: 0; }
+.form.stacked .hint, .form.stacked .form-error.wide { margin: 0; }
+.form.stacked .sw, .form.stacked .unit, .form.stacked select.sel { align-self: flex-start; }
+.form.stacked .advanced { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.form.stacked .advanced > summary { cursor: pointer; font-weight: 500; }
+/* A long dialog scrolls in its body; its actions stay at the foot. */
+.dlg.sheet { padding: 0; gap: 0; max-height: calc(100vh - 32px); }
+.dlg.sheet .dlg-body { overflow: auto; padding: 22px; display: flex; flex-direction: column; gap: 12px; }
+.dlg-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 22px; border-top: 1px solid var(--line); }
+.dlg-foot .grow { flex: 1; }
+.copy-row { display: flex; align-items: center; gap: 8px; }
+.copy-row input { flex: 1; min-width: 0; height: 34px; }
 .plugin-panel > h2 { font-size: 15px; margin: 0 0 10px; }
 .plugin-panel > input.wide { width: 100%; max-width: 72ch; height: 34px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; background: var(--paper); color: var(--ink); }
 .signin-methods { display: flex; flex-direction: column; gap: 8px; }

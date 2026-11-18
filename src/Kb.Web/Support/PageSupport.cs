@@ -27,12 +27,16 @@ internal static class PageSupport
         _ => false,
     };
 
-    internal static async Task<Outcome<PageDto>> PublishAsync(KbDbContext db, IAccess access, DocRenderers renderers, Actor actor, Page page, string contentJson, bool major, string? note, IEnumerable<string> tags, DateTimeOffset now)
+    /// <param name="folderBody">A folder's new body: saved, with a version, as a page's is. Its first version is the body it had before, as the compatible API shows it.</param>
+    internal static async Task<Outcome<PageDto>> PublishAsync(KbDbContext db, IAccess access, DocRenderers renderers, Actor actor, Page page, string contentJson, bool major, string? note, IEnumerable<string> tags, DateTimeOffset now,
+        bool folderBody = false)
     {
         if (actor.UserId is not { } me) return Problem.Unauthorized; // a version names its author
+        if (folderBody && !await db.PageVersions.AnyAsync(v => v.PageId == page.Id))
+            db.PageVersions.Add(new PageVersion { PageId = page.Id, Major = page.Major, Minor = page.Minor, Title = page.Title, ContentJson = page.ContentJson, AuthorId = page.CreatedBy, At = page.CreatedAt });
         page.UpdatedBy = me;
         page.UpdatedAt = now;
-        if (page.Kind == PageKind.Page)
+        if (page.Kind == PageKind.Page || folderBody)
         {
             page.ContentJson = Kb.Core.Content.DocLinks.Clean(contentJson);
             if (major) { page.Major++; page.Minor = 0; } else page.Minor++;
