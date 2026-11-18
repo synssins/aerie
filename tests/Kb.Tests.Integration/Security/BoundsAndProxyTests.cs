@@ -117,6 +117,29 @@ public sealed class BoundsAndProxyTests
         await (await UploadAsync(cora, $"/rest/api/content/{page}/child/attachment", wordy)).ErrorAsync(HttpStatusCode.BadRequest);
     }
 
+    /// <summary>A body that says it is longer than it is: the length an upload declares, with a few bytes behind it.</summary>
+    private sealed class Declared(long length, byte[] sent, string boundary) : HttpContent
+    {
+        public Declared Typed() { Headers.TryAddWithoutValidation("Content-Type", "multipart/form-data; boundary=" + boundary); return this; }
+        protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context) => stream.WriteAsync(sent, 0, sent.Length);
+        protected override bool TryComputeLength(out long computed) { computed = length; return true; }
+    }
+
+    /// <summary>An upload that declares more than one request may carry is too large (413), not "not multipart" (415), and none of it is read.</summary>
+    [Fact]
+    public async Task Upload_ThatDeclaresMoreThanARequestMayCarry_Is413()
+    {
+        var (f, cora, page) = await SiteAsync();
+        await using var _ = f;
+        const string boundary = "----kb-test-boundary";
+        var start = Encoding.ASCII.GetBytes("--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"huge.bin\"\r\nContent-Type: application/octet-stream\r\n\r\nonly the start of it");
+        var declared = await UploadAsync(cora, $"/rest/api/content/{page}/child/attachment", new Declared(100L * 1024 * 1024, start, boundary).Typed());
+        await declared.ErrorAsync(HttpStatusCode.RequestEntityTooLarge);
+        // The same request with its true length is an ordinary, if cut off, upload: it is the declared size that is refused.
+        var honest = await UploadAsync(cora, $"/rest/api/content/{page}/child/attachment", new Declared(start.Length, start, boundary).Typed());
+        Assert.NotEqual(HttpStatusCode.RequestEntityTooLarge, honest.StatusCode);
+    }
+
     // ---- H2 ----
 
     private static string Nested(string tag, int depth) => string.Concat(Enumerable.Repeat($"<{tag}>", depth)) + "x" + string.Concat(Enumerable.Repeat($"</{tag}>", depth));

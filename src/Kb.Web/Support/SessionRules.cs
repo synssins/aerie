@@ -11,8 +11,10 @@ internal static class SessionAge
 
 /// <summary>
 /// The session cookie is SameSite=Lax, which stops other sites. It does not stop a page on a sibling host of the same domain from sending
-/// a write with the visitor's cookie. So a write to the API by a cookie caller is refused when the browser says it did not come from
-/// this site's own pages. A caller with an Authorization header carries no cookie risk, and the compatible surface has its own header rule.
+/// a write with the visitor's cookie. So a write by a cookie caller is refused when the browser says it did not come from this site's
+/// own pages. That is one rule for every route the app serves: its own API, plugin routes, and the compatible surface (whose XSRF
+/// header is asked for as well). A caller with an Authorization header carries no cookie risk. The OAuth token and revoke endpoints
+/// are left out: they are called by applications from anywhere and act on the client's credentials, never on the session cookie.
 /// </summary>
 internal static class CrossSiteGuard
 {
@@ -20,9 +22,11 @@ internal static class CrossSiteGuard
     {
         var r = http.Request;
         var write = !(HttpMethods.IsGet(r.Method) || HttpMethods.IsHead(r.Method) || HttpMethods.IsOptions(r.Method));
-        if (write && r.Path.StartsWithSegments("/api") && http.User.Identity?.IsAuthenticated == true && r.Headers.Authorization.Count == 0 && FromElsewhere(r))
+        if (write && http.User.Identity?.IsAuthenticated == true && r.Headers.Authorization.Count == 0 && FromElsewhere(r)
+            && http.GetEndpoint()?.Metadata.GetMetadata<Kb.Web.DataCenter.DcOAuthRoute>() is null)
         {
-            await Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "This request did not come from this site's own pages.").ExecuteAsync(http);
+            const string why = "This request did not come from this site's own pages.";
+            await (Kb.Web.DataCenter.DcRest.IsUnderRoot(http) ? Kb.Web.DataCenter.DcRest.Fail(403, why) : Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: why)).ExecuteAsync(http);
             return;
         }
         await next(http);
