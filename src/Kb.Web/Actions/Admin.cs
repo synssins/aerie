@@ -89,7 +89,8 @@ internal sealed class ListUsersHandler(KbDbContext db, IAccess access, Kb.Core.P
     public async Task<Outcome<IReadOnlyList<AdminUserDto>>> HandleAsync(ActionContext<ListUsers> ctx)
     {
         var users = await db.Users.AsNoTracking().Where(u => u.DeletedAt == null).OrderBy(u => u.DisplayName)
-            .Select(u => new AdminUserDto(u.Id, u.UserName!, u.DisplayName, u.Source.ToString(), u.IsAdmin, u.IsBreakGlass, u.CreatedAt, u.DeactivatedAt, u.CanAnnounce, null, null, u.CodesExempt))
+            .Select(u => new AdminUserDto(u.Id, u.UserName!, u.DisplayName, u.Source.ToString(), u.IsAdmin, u.IsBreakGlass, u.CreatedAt, u.DeactivatedAt, u.CanAnnounce, null, null, u.CodesExempt)
+                { Linked = u.ExternalIssuer != null })
             .ToListAsync(ctx.Cancel);
         // The global plugin permissions each person holds: an Admin every one, anyone else those they were given.
         var (all, grants) = (PluginPermissions.Global(plugins), await PluginPermissions.GrantsAsync(db, plugins, ctx.Cancel));
@@ -184,6 +185,7 @@ internal sealed class NewPasswordLinkHandler(KbDbContext db, UserManager<KbUser>
         // The break-glass password is the server's secret, and an account of a directory has its password there.
         if (u.IsBreakGlass) return Problem.Conflict("The break-glass account has no password link.");
         if (u.Source != UserSource.Local || u.DeactivatedAt is not null) return Problem.Conflict("Only an active local user has a password.");
+        if (u.ExternalIssuer is not null) return Problem.Conflict("An account linked to a sign-in method has no password.");
         var token = await users.GeneratePasswordResetTokenAsync(u);
         ctx.Audit(AuditActions.UserPasswordLink, "user", u.Id.ToString());
         return new InvitedUser(u.Id, token);

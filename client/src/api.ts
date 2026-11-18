@@ -102,7 +102,9 @@ export type PluginSetting = {
   key: string; label: string; secret: boolean; required: boolean; type: string; options: string[] | null; restart: boolean;
   help?: string | null; default?: string | null; unit?: string | null; min?: number | null; max?: number | null; optionLabels?: Record<string, string> | null;
 };
-export type AdminUser = { id: string; userName: string; displayName: string; source: string; isAdmin: boolean; isBreakGlass: boolean; createdAt: string; deactivatedAt: string | null; canAnnounce: boolean; permissions: string[]; groups?: string[]; codesExempt?: boolean };
+export type AdminUser = { id: string; userName: string; displayName: string; source: string; isAdmin: boolean; isBreakGlass: boolean; createdAt: string; deactivatedAt: string | null; canAnnounce: boolean; permissions: string[]; groups?: string[]; codesExempt?: boolean;
+  /** Linked to a sign-in method: entered through it only, no password. */
+  linked?: boolean };
 export type Group = { id: string; key: string; name: string; isLocal: boolean; members: number };
 export type GroupMember = { userId: string; userName: string; displayName: string; source: string };
 export type Principal = { type: "User" | "Group"; id: string; name: string; detail: string };

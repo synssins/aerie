@@ -96,6 +96,11 @@ describe("UserTools", () => {
     expect(calls.map((c) => c.key)).toEqual(["DELETE /admin/users/u1"]);
     cleanup();
 
+    show(user({ linked: true }));
+    await userEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Reset authenticator", "No codes", "Delete"]); // a local account linked to a method
+    cleanup();
+
     show(user({ source: "SignInMethod", isBreakGlass: true }));
     expect(screen.queryByRole("button", { name: "More" })).toBeNull();
   });

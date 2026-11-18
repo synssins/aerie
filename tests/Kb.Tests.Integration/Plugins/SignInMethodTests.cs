@@ -184,9 +184,50 @@ public sealed class SignInMethodTests : IAsyncLifetime
         var later = Browser();
         await SignInAsync(later, c => (c["email"], c["email_verified"]) = ("other@example.net", false));
         Assert.Equal("ann", (await MeAsync(later))!.Value.GetProperty("userName").GetString());
+    }
 
-        // The local password still works.
-        Assert.True((await _f.NewClient().PostAsJsonAsync("/api/v1/auth/local/signin", new { userName = "ann", password = "user-password-0123456789" }, Ct)).IsSuccessStatusCode);
+    /// <summary>A linked account is entered through its method only: the link takes its password and every password link made before it.</summary>
+    [Fact]
+    public async Task ALinkedAccount_HasNoOtherWayIn()
+    {
+        await SetUpAsync(newAccounts: false);
+        var local = await LocalUserAsync("ann", "ann@example.org");
+        var before = (await (await _admin.PostAsync($"/api/v1/admin/users/{local.Id}/password-link", null, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("setPasswordToken").GetString();
+        await SignInAsync(Browser());
+        await _f.WithDbAsync(async db => Assert.Null((await db.Users.SingleAsync(x => x.Id == local.Id, Ct)).PasswordHash));
+
+        // The password link made before the link is dead, and no new one is made.
+        var set = await _f.NewClient().PostAsJsonAsync("/api/v1/auth/local/password", new { userId = local.Id, token = before, password = "a-new-password-0123456789" }, Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, set.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await _admin.PostAsync($"/api/v1/admin/users/{local.Id}/password-link", null, Ct)).StatusCode);
+        // The old password opens nothing: the sign-in page and Basic answer as for a wrong password.
+        Assert.Equal(HttpStatusCode.Unauthorized, (await _f.NewClient().PostAsJsonAsync("/api/v1/auth/local/signin", new { userName = "ann", password = "user-password-0123456789" }, Ct)).StatusCode);
+        // The method still lets the person in.
+        var again = Browser();
+        await SignInAsync(again);
+        Assert.Equal("ann", (await MeAsync(again))!.Value.GetProperty("userName").GetString());
+    }
+
+    /// <summary>An account linked before the rule kept its password: it still opens nothing, on the sign-in page or with Basic.</summary>
+    [Fact]
+    public async Task AnAccountLinkedWithAPasswordLeft_IsRefusedAsForAWrongPassword()
+    {
+        var local = await LocalUserAsync("old", "old@example.org");
+        await _f.WithDbAsync(async db => { var u = await db.Users.SingleAsync(x => x.Id == local.Id, Ct); (u.ExternalIssuer, u.ExternalId) = (StandInProvider.Issuer, "person-9"); await db.SaveChangesAsync(Ct); });
+
+        var r = await _f.NewClient().PostAsJsonAsync("/api/v1/auth/local/signin", new { userName = "old", password = "user-password-0123456789" }, Ct);
+        var wrong = await _f.NewClient().PostAsJsonAsync("/api/v1/auth/local/signin", new { userName = "old", password = "not-the-password-0123456" }, Ct);
+        Assert.Equal((HttpStatusCode.Unauthorized, HttpStatusCode.Unauthorized), (r.StatusCode, wrong.StatusCode));
+        static async Task<string?> Title(HttpResponseMessage m) => (await m.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("title").GetString();
+        Assert.Equal(await Title(wrong), await Title(r));
+
+        var basic = _f.NewClient();
+        basic.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes("old:user-password-0123456789")));
+        await basic.GetAsync("/rest/api/space", Ct);
+        await _f.WithDbAsync(async db => Assert.Contains(await db.AuditEntries.Where(a => a.Action == AuditActions.BasicRefused).Select(a => a.DataJson).ToListAsync(Ct),
+            d => d.Contains("linked to a sign-in method", StringComparison.Ordinal)));
+        await _f.WithDbAsync(async db => Assert.Contains(await db.AuditEntries.Where(a => a.Action == AuditActions.SignInFailed).Select(a => a.DataJson).ToListAsync(Ct),
+            d => d.Contains("linked to a sign-in method", StringComparison.Ordinal)));
     }
 
     [Fact]

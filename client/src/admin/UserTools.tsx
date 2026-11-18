@@ -12,7 +12,7 @@ const linkFor = (m: Made) => `${location.origin}/set-password/${m.id}#${encodeUR
 
 /**
  * Administration > Users: the tools. New user, and for the selected local user a new password link, Reset authenticator or Delete.
- * A user a sign-in method made gets the same, without the password link: it has no password here.
+ * A user a sign-in method made, or any account linked to one, gets the same without the password link: it has no password here.
  * Any other account (a directory's, a service account) can only be deleted here. The break-glass account is not managed here.
  */
 export function UserTools({ picked, onChanged, onError }: { picked: AdminUser | null; onChanged: () => void; onError: (text: string | null) => void }) {
@@ -54,7 +54,7 @@ export function UserTools({ picked, onChanged, onError }: { picked: AdminUser | 
       {any && (
         <MenuButton label="More" iconOnly icon={<Ellipsis className="ic" aria-hidden />} items={[
           ...(!local ? [] : [
-            ...(local.source === "Local" ? [{ label: "Password link", icon: <KeyRound className="ic" aria-hidden />, onClick: () => void newLink(local) }] : []),
+            ...(local.source === "Local" && !local.linked ? [{ label: "Password link", icon: <KeyRound className="ic" aria-hidden />, onClick: () => void newLink(local) }] : []),
             { label: "Reset authenticator", icon: <ShieldOff className="ic" aria-hidden />, onClick: () => void resetCodes(local) },
             ...(local.isAdmin ? [] : [local.codesExempt
               ? { label: "Use codes", icon: <ShieldCheck className="ic" aria-hidden />, onClick: () => void setExempt(local, false) }

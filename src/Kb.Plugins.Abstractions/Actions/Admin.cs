@@ -32,7 +32,11 @@ public sealed record DisableLocalSignIn : IAction<Unit>;
 
 /// <summary>Permissions: the global plugin permissions the person holds ("&lt;plugin id&gt;:&lt;key&gt;").</summary>
 public sealed record AdminUserDto(Guid Id, string UserName, string DisplayName, string Source, bool IsAdmin, bool IsBreakGlass, DateTimeOffset CreatedAt, DateTimeOffset? DeactivatedAt, bool CanAnnounce,
-    IReadOnlyList<string>? Permissions = null, IReadOnlyList<string>? Groups = null, bool CodesExempt = false);
+    IReadOnlyList<string>? Permissions = null, IReadOnlyList<string>? Groups = null, bool CodesExempt = false)
+{
+    /// <summary>Linked to a sign-in method: the person enters through it only, and the account has no password.</summary>
+    public bool Linked { get; init; }
+}
 /// <summary>Via: "API" when it was done with an API token (Token names it), else "Web".</summary>
 public sealed record AuditEntryDto(long Sequence, DateTimeOffset At, string Action, string? Actor, string? TargetType, string? TargetId, string Via = "Web", string? Token = null,
     AuditAiSearchDto? AiSearch = null);

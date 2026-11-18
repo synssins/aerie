@@ -1203,7 +1203,7 @@ The app adds three settings to the plugin's page for each method: **Client ID**,
 Who gets in:
 
 1. An account already linked to this issuer and subject. A turned-off account is refused.
-2. Otherwise, when the provider verified the email address, the one account with that address (never the break-glass account or a service account) is linked, and from then on found by the link alone. Two accounts with the address, or an account already linked to another sign-in, are refused. An unverified address is refused.
+2. Otherwise, when the provider verified the email address, the one account with that address (never the break-glass account or a service account) is linked, and from then on found by the link alone. Linking removes its password and ends every password link made for it: a linked account is entered through its method only (password sign-in and Basic with a password answer as for a wrong password, and no password link can be made for it). Two accounts with the address, or an account already linked to another sign-in, are refused. An unverified address is refused.
 3. Otherwise, when **New accounts** is on, a new account: never an Administrator, in no group and no space. Its user name is the email address (or `user-` and 8 hex digits when that is taken), and it has no password.
 
 An Administrator who signs in with a method still gives their one-time code, as after a password. Password sign-in and the break-glass account are unchanged: a method cannot turn them off, and Safe Mode loads no plugin, so the break-glass account always gets in.

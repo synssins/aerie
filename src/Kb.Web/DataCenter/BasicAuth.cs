@@ -65,6 +65,8 @@ public sealed class BasicAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions
         }
         var result = await signIn.CheckPasswordSignInAsync(user, password, lockoutOnFailure: true);
         if (!result.Succeeded) return await RefuseAsync(user, name, "wrong password", ip);
+        // An account linked to a sign-in method is entered through that method only: the same 401 as a wrong password.
+        if (user.ExternalIssuer is not null) return await RefuseAsync(user, name, "linked to a sign-in method", ip);
         // Checked after the password, so the answer tells nothing to someone who does not know it.
         // The same 401 as a wrong password; the audit entry says why.
         if (await Context.RequestServices.GetRequiredService<CodeSignIn>().NeededAsync(user, Context.RequestAborted))

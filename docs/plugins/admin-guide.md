@@ -65,6 +65,8 @@ To set one up:
 3. On the plugin's page, set **Client ID** and **Client secret**, and save. The button shows on the sign-in screen from then on. The secret is stored encrypted and never shown again.
 4. Decide **New accounts**. Off (the default): only people who already have an account here sign in, matched by the email address the provider verified, and linked to that provider for good at their first sign-in. On: a person the provider vouches for who has no account gets one, never an Administrator and in no space; give them roles as for anyone.
 
+A linked account is entered through its sign-in method only. Linking removes the account's password and makes every password link made for it before stop working; after that, password sign-in (and Basic with a password) is refused for it with the same answer as a wrong password, and Users offers no Password link for it. One-time codes still apply where they are required. To get a person a password again, delete the account and make a new one.
+
 An account that is turned off is refused. An Administrator still gives their one-time code. Password sign-in and the break-glass account keep working whatever a plugin does; in [Safe Mode](#safe-mode) no plugin is loaded, so only they are. Deleting an account removes its link: the person is unknown here again. An Administrator can delete any account in Users, whatever its source, except the break-glass account, their own, and the last Administrator.
 The audit log records each start (`auth.method.start`), success (`auth.signin` with the method), refusal (`auth.signin.failed` with the reason), and each account linked (`user.signin.link`) or made (`user.signin.create`).
 
