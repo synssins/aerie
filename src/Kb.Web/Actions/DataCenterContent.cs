@@ -172,15 +172,19 @@ internal static partial class DcContentRules
             if (DcRest.Text(b, "representation") is { } r && r != name) return (null, new Problem(400, $"body.{name} has representation {r}."));
             var value = DcRest.Text(b, "value") ?? "";
             if (value.Length > PageSupport.MaxContentChars) return (null, new Problem(400, $"A body is at most {PageSupport.MaxContentChars} characters."));
-            if (name == "editor") value = VoidTags().Replace(value, "<$1$2 />");
-            try { return (StorageFormat.ToDoc(value).ToJsonString(), null); }
+            try
+            {
+                if (name == "editor") value = VoidTags().Replace(value, "<$1$2 />");
+                return (StorageFormat.ToDoc(value).ToJsonString(), null);
+            }
             catch (StorageException e) { return (null, new Problem(400, "The body is not valid storage format: " + e.Message)); }
+            catch (RegexMatchTimeoutException) { return (null, new Problem(400, "The body is not valid storage format: a tag is not closed.")); }
         }
         return (null, null);
     }
 
     /// <summary>HTML's empty elements written without a close (&lt;br&gt;), as an editor may send them.</summary>
-    [GeneratedRegex(@"<(br|hr|img|col)(\s[^<>]*?)?\s*(?<!/)>", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"<(br|hr|img|col)(\s[^<>]*?)?\s*(?<!/)>", RegexOptions.IgnoreCase, 2000)]
     private static partial Regex VoidTags();
 
     public static string Type(JsonObject body) => DcRest.Text(body, "type") ?? "";
