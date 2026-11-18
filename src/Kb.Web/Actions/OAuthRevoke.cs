@@ -46,11 +46,11 @@ internal sealed class DcOAuthRevokeHandler(KbDbContext db, IPasswordHasher<KbUse
         var a = ctx.Action;
         var p = a.Parameters;
         if (throttle.Hit("address:" + a.Address) is { } wait) return OAuthEndpoint.Limited(wait);
-        if ((a.Basic?.Id ?? OAuthEndpoint.One(p, "client_id")) is { } named && throttle.Hit("client:" + named) is { } clientWait) return OAuthEndpoint.Limited(clientWait);
         if (await OAuthFlow.NeedsHttpsAsync(db, env, a.SiteIsHttps, ctx.Cancel)) return OAuthEndpoint.Error(400, "invalid_request", "OAuth 2.0 works only when this site is served over https.");
         if (p.Any(kv => kv.Value.Length > 1)) return OAuthEndpoint.Error(400, "invalid_request", "A parameter was sent more than once.");
         var (client, error) = await OAuthEndpoint.AuthenticateAsync(db, hasher, p, a.Basic, a.BadBasic, ctx.Cancel);
         if (error is not null) return error;
+        if (OAuthEndpoint.ClientLimited(throttle, client!) is { } clientWait) return OAuthEndpoint.Limited(clientWait);
         var text = OAuthEndpoint.One(p, "token");
         if (string.IsNullOrEmpty(text)) return OAuthEndpoint.Error(400, "invalid_request", "token is needed.");
         var now = time.GetUtcNow();

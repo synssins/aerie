@@ -1,6 +1,7 @@
 using Kb.Core.Audit;
 using Kb.Core.Spaces;
 using Kb.Data;
+using Microsoft.EntityFrameworkCore;
 using System.Text.RegularExpressions;
 
 namespace Kb.Web;
@@ -53,7 +54,18 @@ internal static partial class SpaceSupport
         if (req.Visibility is { } p) s.Visibility = p;
         var sensitiveChanged = req.IsSensitive is { } sens && sens != s.IsSensitive;
         if (req.IsSensitive is { } v) s.IsSensitive = v;
+        // A service token that names the space was made while an Admin could name any space. From now on only someone who manages the
+        // space may make one, so the old ones end here: the Owners could neither see nor revoke them.
+        var ended = new List<Kb.Core.Identity.ApiToken>();
+        if (sensitiveChanged && s.IsSensitive)
+        {
+            var now = ctx.Services.GetRequiredService<TimeProvider>().GetUtcNow();
+            foreach (var token in await db.ApiTokens.Where(t => t.Kind == Kb.Core.Identity.TokenKind.Service && t.RevokedAt == null).ToListAsync())
+                if (token.Scopes().Any(x => x.SpaceId == s.Id)) { token.RevokedAt = now; ended.Add(token); }
+        }
         await db.SaveChangesAsync();
+        foreach (var token in ended)
+            ctx.Audit(AuditActions.TokenRevoke, "token", token.Id.ToString(), s.Id, new Dictionary<string, string> { ["name"] = token.Name, ["reason"] = "the space became sensitive" });
         ctx.Audit(sensitiveChanged ? AuditActions.SpaceSensitiveSet : AuditActions.SpaceUpdate, "space", s.Id.ToString(), s.Id,
             new Dictionary<string, string> { ["isSensitive"] = s.IsSensitive.ToString(), ["visibility"] = s.Visibility.ToString() });
         // The Owners hear of it whoever did it and by whichever address, as they do of emergency access.
