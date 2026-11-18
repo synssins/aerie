@@ -185,6 +185,39 @@ internal sealed class ActionBus(ActionCatalog catalog, IServiceProvider services
     }
 
     /// <summary>
+    /// The checks plugins put on an action, without its work: the enforcing-plugin lock (step 3) and the before hooks (step 4), as the
+    /// caller. For a write the compatible API makes itself because no core action does it (a new version of an attachment, a move or a
+    /// rename of one), sent as the attachment.add it amounts to: the hooks and the lock of that action see it. The caller has checked the
+    /// rights already. A hook that refuses refuses the write; one that replaces the payload refuses it too, because the compatible handler
+    /// cannot store what the hook made instead. After handlers do not run: there is no result of that action.
+    /// </summary>
+    internal async Task<Problem?> HooksAsync<TAction>(TAction action, CancellationToken ct) where TAction : class
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        var ctx = new ActionContext<TAction>(ActionCatalog.Describe(typeof(TAction)).Name, actors.Current, services, action, ct);
+        Problem? problem = null;
+        if (await LockedAsync(ctx) is { } locked) problem = locked;
+        else
+            foreach (var hook in catalog.Before(typeof(TAction)))
+            {
+                try
+                {
+                    var before = (IBeforeAction<TAction>)ActivatorUtilities.CreateInstance(services, hook.Value.Hook);
+                    if (await before.BeforeAsync(ctx) is { } refused) { problem = refused; break; }
+                }
+                catch (Exception e) when (!(e is OperationCanceledException && ctx.Cancel.IsCancellationRequested))
+                {
+                    if (Failed(hook.PluginId, $"{ctx.Name} hook", e, hook.Value.Optional) is { } failed) { problem = failed; break; }
+                }
+            }
+        if (problem is null && !ReferenceEquals(action, ctx.Action) && !Equals(action, ctx.Action))
+            problem = new Problem(422, "A plugin changed this file; the compatible API cannot store it so.");
+        foreach (var note in ctx.AuditNotes(problem is null))
+            await audit.AppendAsync(new AuditEvent(note.Action, ctx.Actor.UserId, note.TargetType, note.TargetId, note.SpaceId, AuditData.WithToken(note.Data, ctx.Actor, http.HttpContext)), CancellationToken.None);
+        return problem;
+    }
+
+    /// <summary>
     /// Step 3. An enforcing plugin (one that guards a rule the organisation relies on) that the core had to disable leaves its actions locked:
     /// running them without it would skip the rule. Everyone but an Admin is refused until an Admin releases the lock or repairs the plugin.
     /// It comes after the core's own check, so it tells nothing to someone who may not see the target anyway. Safe Mode ignores locks.

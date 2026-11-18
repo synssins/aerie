@@ -1,3 +1,4 @@
+using Kb.Web.Pipeline;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -131,6 +132,17 @@ internal static partial class DcAttachmentRules
 {
     public static readonly Problem NotFound = new(404, "No attachment with this id is on this content.");
 
+    /// <summary>
+    /// An attachment that arrives on a page or folder, or under a new name, without new bytes (a move or a rename): attachment.add's lock and
+    /// before hooks see it as that action, with the stored file under its new name.
+    /// </summary>
+    public static Task<Problem?> HooksAsync(ActionBus bus, DcAttachmentService files, Attachment a, Page target, string name) =>
+        bus.HooksAsync(new AddAttachment
+        {
+            PageId = target.Id,
+            File = UploadContent.FromStream(name, async ct => await files.OpenAsync(a.Id, ct) ?? throw new InvalidOperationException("The file of an attachment is missing."), a.Size),
+        }, CancellationToken.None);
+
     /// <summary>The content in the path when the caller may write attachments to it: 404 unseen, 403 no edit right, archived space 403.</summary>
     public static async Task<(Page? Page, Problem? Problem)> WritableAsync(DcContentService content, IAccess access, Actor actor, string id, CancellationToken ct)
     {
@@ -177,7 +189,7 @@ internal sealed class DcListAttachmentsHandler(DcContentService content, DcAttac
     }
 }
 
-internal sealed class DcCreateAttachmentsHandler(KbDbContext db, IAccess access, DcContentService content, DcAttachmentService files, IActionBus bus, IFileStore store, TimeProvider time) : IActionHandler<DcCreateAttachments, JsonObject>
+internal sealed class DcCreateAttachmentsHandler(KbDbContext db, IAccess access, DcContentService content, DcAttachmentService files, ActionBus bus) : IActionHandler<DcCreateAttachments, JsonObject>
 {
     private Page? _page;
 
@@ -209,19 +221,14 @@ internal sealed class DcCreateAttachmentsHandler(KbDbContext db, IAccess access,
             var media = file.FileName is null ? "application/octet-stream" : DcAttachmentService.MediaType(file.ContentType, file.FileName);
             if (file.FileName is not null && existing.FirstOrDefault(a => a.FileName == file.FileName) is { } same)
             {
-                if (await NewVersionAsync(ctx, files, db, same, page, file, file.FileName!, media, comment, req.MinorEdit, max) is { } p) return p;
+                if (await NewVersionAsync(ctx, bus, files, db, same, page, file, file.FileName!, media, comment, req.MinorEdit, max) is { } p) return p;
                 made.Add(same);
                 continue;
             }
-            Attachment a;
-            if (page.Kind == PageKind.Page)
-            {
-                var added = await bus.SendAsync(new AddAttachment { PageId = page.Id, File = file }, CancellationToken.None);
-                if (added.Problem is { } ap) return ap.Fields?.ContainsKey("file") == true && ap.Fields["file"][0].Contains("MB", StringComparison.Ordinal) ? DcAttachmentRules.TooLarge(max) : ap;
-                a = await db.Attachments.FirstAsync(x => x.Id == added.Value!.Id, CancellationToken.None);
-            }
-            else if (await ToFolderAsync(ctx, page, file, max) is { } folderFile) a = folderFile;
-            else return DcAttachmentRules.TooLarge(max);
+            // A page or a folder: aerie's own attachment.add, so its hooks and an enforcing plugin's lock see the file.
+            var added = await bus.SendAsync(new AddAttachment { PageId = page.Id, File = file }, CancellationToken.None);
+            if (added.Problem is { } ap) return ap.Fields?.ContainsKey("file") == true && ap.Fields["file"][0].Contains("MB", StringComparison.Ordinal) ? DcAttachmentRules.TooLarge(max) : ap;
+            var a = await db.Attachments.FirstAsync(x => x.Id == added.Value!.Id, CancellationToken.None);
             db.DcAttachmentVersions.Add(new DcAttachmentVersion { AttachmentId = a.Id, Number = 1, BlobId = a.Id, Size = a.Size, MediaType = media, Comment = comment, MinorEdit = req.MinorEdit, CreatedBy = me, CreatedAt = a.CreatedAt });
             await db.SaveChangesAsync(CancellationToken.None);
             if (file.FileName is null)
@@ -238,25 +245,14 @@ internal sealed class DcCreateAttachmentsHandler(KbDbContext db, IAccess access,
     }
 
     /// <summary>
-    /// A file attached to a folder (attachments.md, Q-0006: clients cannot tell folders from pages, so both take attachments). Aerie's own
-    /// attachment.add takes pages only, so the file is stored here, as that action stores it, and audited the same way. Null when too large.
+    /// A new version of an attachment with this file: the current one is set aside under a key of its own, the new one takes the attachment's key.
+    /// No core action makes versions, so the file goes past attachment.add's lock and hooks first, as the file it is on its page.
     /// </summary>
-    private async Task<Attachment?> ToFolderAsync(ActionContext ctx, Page folder, DcFilePart file, long max)
-    {
-        var name = file.FileName ?? "attachment";
-        var a = new Attachment { PageId = folder.Id, FileName = name[..Math.Min(name.Length, 255)], CreatedBy = ctx.Actor.UserId!.Value, CreatedAt = time.GetUtcNow() };
-        a.Size = await store.SaveAsync(a.Id.ToString("N"), await file.OpenReadAsync(CancellationToken.None), max, CancellationToken.None);
-        if (a.Size < 0) return null;
-        db.Attachments.Add(a);
-        await db.SaveChangesAsync(CancellationToken.None);
-        ctx.Audit(AuditActions.AttachmentAdd, "attachment", a.Id.ToString(), folder.SpaceId, new Dictionary<string, string> { ["name"] = a.FileName, ["page"] = folder.Id.ToString() });
-        return a;
-    }
-
-    /// <summary>A new version of an attachment with this file: the current one is set aside under a key of its own, the new one takes the attachment's key.</summary>
-    internal static async Task<Problem?> NewVersionAsync(ActionContext ctx, DcAttachmentService files, KbDbContext db, Attachment a, Page page, DcFilePart file, string name, string media,
+    internal static async Task<Problem?> NewVersionAsync(ActionContext ctx, ActionBus bus, DcAttachmentService files, KbDbContext db, Attachment a, Page page, DcFilePart file, string name, string media,
         string comment, bool minor, long max)
     {
+        var named = UploadContent.FromStream(name, file.OpenReadAsync, file.Length);
+        if (await bus.HooksAsync(new AddAttachment { PageId = page.Id, File = named }, CancellationToken.None) is { } refused) return refused;
         var (staged, size) = await files.StageAsync(await file.OpenReadAsync(CancellationToken.None), max, CancellationToken.None);
         if (size < 0) return DcAttachmentRules.TooLarge(max);
         if (size == 0) return new Problem(400, $"{name} is empty.");
@@ -275,7 +271,7 @@ internal sealed class DcCreateAttachmentsHandler(KbDbContext db, IAccess access,
     }
 }
 
-internal sealed class DcAttachmentDataHandler(KbDbContext db, IAccess access, DcContentService content, DcAttachmentService files) : IActionHandler<DcAttachmentData, JsonObject>
+internal sealed class DcAttachmentDataHandler(KbDbContext db, IAccess access, DcContentService content, DcAttachmentService files, ActionBus bus) : IActionHandler<DcAttachmentData, JsonObject>
 {
     private Page? _page;
     private Attachment? _attachment;
@@ -298,13 +294,13 @@ internal sealed class DcAttachmentDataHandler(KbDbContext db, IAccess access, Dc
         // title and the media type as they are, and its Content-Type is ignored (attachments.md, Q-0018).
         if (file.FileName is not null && file.FileName != a.FileName && (await files.OfPageAsync(page.Id, ctx.Cancel)).Any(x => x.FileName == file.FileName)) return new Problem(400, $"{file.FileName} is already attached here.");
         var (name, media) = file.FileName is { } given ? (given, DcAttachmentService.MediaType(file.ContentType, given)) : (a.FileName, (await files.VersionsAsync(a, ctx.Cancel))[^1].MediaType);
-        if (await DcCreateAttachmentsHandler.NewVersionAsync(ctx, files, db, a, page, file, name, media, req.Comment ?? "", req.MinorEdit, max) is { } p)
+        if (await DcCreateAttachmentsHandler.NewVersionAsync(ctx, bus, files, db, a, page, file, name, media, req.Comment ?? "", req.MinorEdit, max) is { } p)
             return p;
         return await files.JsonAsync(ctx.Actor, a, page, Expand.None, CancellationToken.None, top: true);
     }
 }
 
-internal sealed class DcUpdateAttachmentHandler(KbDbContext db, IAccess access, DcContentService content, DcAttachmentService files) : IActionHandler<DcUpdateAttachment, JsonObject>
+internal sealed class DcUpdateAttachmentHandler(KbDbContext db, IAccess access, DcContentService content, DcAttachmentService files, ActionBus bus) : IActionHandler<DcUpdateAttachment, JsonObject>
 {
     private Page? _page;
     private Attachment? _attachment;
@@ -338,6 +334,9 @@ internal sealed class DcUpdateAttachmentHandler(KbDbContext db, IAccess access, 
         if ((name != a.FileName || target.Id != page.Id) && (await files.OfPageAsync(target.Id, ctx.Cancel)).Any(x => x.Id != a.Id && x.FileName == name))
             return new Problem(400, $"{name} is already attached there.");
 
+        // A new name or another page or folder: the file arrives there under that name, so attachment.add's lock and hooks see it first.
+        if ((name != a.FileName || target.Id != page.Id) && await DcAttachmentRules.HooksAsync(bus, files, a, target, name) is { } refused) return refused;
+
         // The bytes stay; a new version records the change.
         await files.SetAsideAsync(current);
         var row = await db.Attachments.FirstAsync(x => x.Id == a.Id, CancellationToken.None);
@@ -357,7 +356,7 @@ internal sealed class DcUpdateAttachmentHandler(KbDbContext db, IAccess access, 
     }
 }
 
-internal sealed class DcMoveAttachmentHandler(KbDbContext db, IAccess access, DcContentService content, DcAttachmentService files) : IActionHandler<DcMoveAttachment, Unit>
+internal sealed class DcMoveAttachmentHandler(KbDbContext db, IAccess access, DcContentService content, DcAttachmentService files, ActionBus bus) : IActionHandler<DcMoveAttachment, Unit>
 {
     private Page? _page;
     private Attachment? _attachment;
@@ -384,6 +383,8 @@ internal sealed class DcMoveAttachmentHandler(KbDbContext db, IAccess access, Dc
         var name = req.NewName?.Trim() is { Length: > 0 } n ? n : a.FileName;
         if (name.Length > 255) return new Problem(400, "A file name is at most 255 characters.");
         if ((await files.OfPageAsync(target.Id, ctx.Cancel)).Any(x => x.Id != a.Id && x.FileName == name)) return new Problem(400, $"{name} is already attached there.");
+        // The file arrives on its new page or folder, or under its new name: attachment.add's lock and hooks see it first.
+        if (await DcAttachmentRules.HooksAsync(bus, files, a, target, name) is { } refused) return refused;
         var row = await db.Attachments.FirstAsync(x => x.Id == a.Id, CancellationToken.None);
         (row.FileName, row.PageId) = (name, target.Id);
         await db.SaveChangesAsync(CancellationToken.None);
