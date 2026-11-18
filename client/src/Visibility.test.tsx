@@ -96,6 +96,19 @@ describe("Visibility in space settings", () => {
     expect(calls.find((c) => c.key === "PATCH /admin/spaces/s1")?.body).toMatchObject({ visibility: "Anyone" });
   });
 
+  it("a visibility chosen on Space settings is saved from the other tabs too", async () => {
+    const calls = server({ "GET /spaces/s1/tree": () => ({ body: [] }), "GET /roles": () => ({ body: [] }), "GET /spaces/s1/roles": () => ({ body: [] }), "PATCH /admin/spaces/s1": () => ({ body: space({ visibility: "SignedIn" }) }) });
+    const onSaved = show(true);
+    await userEvent.click(screen.getByRole("tab", { name: "Space settings" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Signed-in users" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Members" }));
+    expect(screen.getByText("Changes on Details or Space settings are not saved yet.")).toBeTruthy();
+    await userEvent.click(screen.getByRole("tab", { name: "Details" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(calls.find((c) => c.key === "PATCH /admin/spaces/s1")?.body).toMatchObject({ visibility: "SignedIn", description: "" });
+  });
+
   it("cancelling the question leaves it as it was; an Owner has no Visibility control", async () => {
     server({ "GET /spaces/s1/tree": () => ({ body: [] }) });
     show(true);
