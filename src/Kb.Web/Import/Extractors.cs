@@ -379,7 +379,20 @@ public static partial class Extractors
 
     private static XDocument? Xml(ZipArchive zip, string path) => zip.GetEntry(path) is { } e ? Xml(e) : null;
 
-    private static XDocument Xml(ZipArchiveEntry e) => XDocument.Load(new MemoryStream(Bytes(e, MaxPartBytes)));
+    /// <summary>How deep the elements of a part may nest. A real document is nowhere near; reading an element's text walks its children by calling itself.</summary>
+    public const int MaxXmlDepth = 256;
+
+    private static XDocument Xml(ZipArchiveEntry e)
+    {
+        var bytes = Bytes(e, MaxPartBytes);
+        // The same reader settings as XDocument.Load(Stream) uses: a DTD is read, nothing outside the part is fetched.
+        var settings = new System.Xml.XmlReaderSettings { DtdProcessing = System.Xml.DtdProcessing.Parse, MaxCharactersFromEntities = 10_000_000, XmlResolver = null };
+        using (var depth = System.Xml.XmlReader.Create(new MemoryStream(bytes), settings))
+            while (depth.Read())
+                if (depth.Depth > MaxXmlDepth) throw new TooLargeException("A part inside the file is nested too deep.");
+        using var reader = System.Xml.XmlReader.Create(new MemoryStream(bytes), settings);
+        return XDocument.Load(reader);
+    }
 
     /// <summary>An entry's bytes, counted while they are unpacked: the size an archive declares is not believed.</summary>
     private static byte[] Bytes(ZipArchiveEntry e, long max)
