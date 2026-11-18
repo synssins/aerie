@@ -189,9 +189,14 @@ public sealed class SpacePermissionService(ISpaceAccessData data, TimeProvider t
 
         if (adminOverride && p.IsAdmin && !space.IsSensitive) mask = SpacePerms.All;
 
-        // Emergency access and approved requests are at a built-in level: that role's permissions as they are now.
+        // A grant is at a built-in level: that role's permissions as they are now. Emergency access is never more than the level as
+        // it was shipped: an Admin can edit the Reader role, and must not be able to widen their own emergency access by doing so.
         foreach (var g in await data.GetActiveGrantsAsync(userId, time.GetUtcNow(), ct))
-            if (g.SpaceId == spaceId) mask |= roles.TryGetValue(SpacePerms.IdOf(g.Role), out var builtIn) ? builtIn.Permissions : SpacePerms.Default(g.Role);
+            if (g.SpaceId == spaceId)
+            {
+                var level = roles.TryGetValue(SpacePerms.IdOf(g.Role), out var builtIn) ? builtIn.Permissions : SpacePerms.Default(g.Role);
+                mask |= g.IsEmergency ? level & SpacePerms.Default(g.Role) : level;
+            }
 
         return mask;
     }

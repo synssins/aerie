@@ -29,6 +29,13 @@ internal sealed class ReadHomeHandler(KbDbContext db, IAccess access, TimeProvid
                             join u in db.Users on p.UpdatedBy equals u.Id into pu
                             from u in pu.DefaultIfEmpty()
                             select new RecentPageDto(p.Id, p.Title, p.SpaceId, s.Name, p.UpdatedAt, u == null ? "Unknown" : u.DisplayName)).Take(10).ToListAsync(ctx.Cancel);
+        // Who changed a page last is history: empty for someone who may not see that page's history, as on the page itself.
+        var sees = new Dictionary<Guid, bool>();
+        for (var i = 0; i < recent.Count; i++)
+        {
+            if (!sees.TryGetValue(recent[i].SpaceId, out var may)) sees[recent[i].SpaceId] = may = await access.SeesHistoryAsync(ctx.Actor, recent[i].SpaceId, ctx.Cancel);
+            if (!may) recent[i] = recent[i] with { UpdatedBy = "" };
+        }
         return new HomeDto(announcements, recent);
     }
 }

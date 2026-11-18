@@ -72,7 +72,8 @@ internal sealed partial class AssistPageHandler(KbDbContext db, IAccess access, 
             return Problem.NotFound;
         if (!await access.CanAsync(ctx.Actor, ctx.Action.SpaceId, SpaceAction.CreateEdit, ctx.Cancel)) return new Problem(403, "You can't add or change pages in this space.");
         if (ctx.Actor.TokenId is not null) return new Problem(403, "AI assist is used in the app, not with an API token.");
-        return await imports.MayAsync(ctx.Actor, AiFeatures.Assist, ctx.Cancel) ? null : new Problem(403, "AI assist is not open to you.");
+        if (!await imports.MayAsync(ctx.Actor, AiFeatures.Assist, ctx.Cancel)) return new Problem(403, "AI assist is not open to you.");
+        return await db.Spaces.AnyAsync(s => s.Id == ctx.Action.SpaceId && s.IsSensitive, ctx.Cancel) ? Problem.Refused("Sensitive spaces are never sent to the AI.") : null;
     }
 
     [GeneratedRegex(@"^(note|warning|important|tip|caution|attention)\s*:\s*")]

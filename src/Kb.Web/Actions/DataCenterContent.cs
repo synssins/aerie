@@ -171,15 +171,20 @@ internal static partial class DcContentRules
             if (node is not JsonObject b) continue;
             if (DcRest.Text(b, "representation") is { } r && r != name) return (null, new Problem(400, $"body.{name} has representation {r}."));
             var value = DcRest.Text(b, "value") ?? "";
-            if (name == "editor") value = VoidTags().Replace(value, "<$1$2 />");
-            try { return (StorageFormat.ToDoc(value).ToJsonString(), null); }
+            if (value.Length > PageSupport.MaxContentChars) return (null, new Problem(400, $"A body is at most {PageSupport.MaxContentChars} characters."));
+            try
+            {
+                if (name == "editor") value = VoidTags().Replace(value, "<$1$2 />");
+                return (StorageFormat.ToDoc(value).ToJsonString(), null);
+            }
             catch (StorageException e) { return (null, new Problem(400, "The body is not valid storage format: " + e.Message)); }
+            catch (RegexMatchTimeoutException) { return (null, new Problem(400, "The body is not valid storage format: a tag is not closed.")); }
         }
         return (null, null);
     }
 
     /// <summary>HTML's empty elements written without a close (&lt;br&gt;), as an editor may send them.</summary>
-    [GeneratedRegex(@"<(br|hr|img|col)(\s[^<>]*?)?\s*(?<!/)>", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"<(br|hr|img|col)(\s[^<>]*?)?\s*(?<!/)>", RegexOptions.IgnoreCase, 2000)]
     private static partial Regex VoidTags();
 
     public static string Type(JsonObject body) => DcRest.Text(body, "type") ?? "";
@@ -204,7 +209,7 @@ internal static partial class DcContentRules
     public static Problem AsSurface(Problem p) => p.Status == 409 && p.Message is null ? new Problem(409, "The content changed since this version.") : p;
 }
 
-internal sealed class DcReadContentHandler(DcContentService content, DcAttachmentService files) : IActionHandler<DcReadContent, JsonObject>
+internal sealed class DcReadContentHandler(DcContentService content, DcAttachmentService files, IAccess access) : IActionHandler<DcReadContent, JsonObject>
 {
     private Page? _page;
     private (Attachment Attachment, Page Page)? _file;
@@ -214,6 +219,8 @@ internal sealed class DcReadContentHandler(DcContentService content, DcAttachmen
     {
         if ((_page = await content.FindAsync(ctx.Actor, ctx.Action.Id, ctx.Action.Statuses, track: false, ctx.Cancel)) is not null) return null;
         _file = await files.FindAsync(ctx.Actor, ctx.Action.Id, null, trashedToo: ctx.Action.Statuses.Contains("trashed"), ctx.Cancel);
+        // A trashed attachment is in the bin: for those who manage the bin of its space, like a trashed page.
+        if (_file is { Attachment.DeletedAt: not null } t && !await access.CanAsync(ctx.Actor, t.Page.SpaceId, SpaceAction.ManageBinAgingComments, ctx.Cancel)) _file = null;
         return _file is { } f && (f.Attachment.DeletedAt is null ? ctx.Action.Statuses.Contains("current") : ctx.Action.Statuses.Contains("trashed")) ? null : DcContentRules.NotFound;
     }
 
@@ -461,6 +468,8 @@ internal sealed class DcUpdateContentHandler(KbDbContext db, IAccess access, DcC
         else
         {
             // A folder: aerie's own save only renames it. Its body and its versions are kept here (content.md: a folder's body is its own content).
+            // The body is held to what a page's body is held to (its size).
+            if (json is not null && !PageSupport.IsEditorDoc(json)) return new Problem(400, "The body is too large or nested too deep.");
             if (title != page.Title)
             {
                 var renamed = await bus.SendAsync(new SavePage { PageId = page.Id, Title = title, ContentJson = page.ContentJson, BaseVersion = page.Version }, CancellationToken.None);

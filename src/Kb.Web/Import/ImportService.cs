@@ -30,6 +30,18 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
     ImportContributors contributors)
 {
     public const int MaxFilesPerBatch = 1000;
+    /// <summary>What everything inside the files of one upload (archives in archives, mail attachments, pictures) may add up to once unpacked.</summary>
+    public const long MaxUnpackedBytes = 2L * 1024 * 1024 * 1024;
+    public const int MaxUnpackedFiles = 5000;
+    public const string OverBudget = "Left out: this upload holds too much once unpacked.";
+
+    /// <summary>What is left of one upload's allowance for unpacked files.</summary>
+    private sealed class Budget
+    {
+        private long _bytes = MaxUnpackedBytes;
+        private int _files = MaxUnpackedFiles;
+        public bool Take(long bytes) => --_files >= 0 && (_bytes -= bytes) >= 0;
+    }
     public const string FileUrl = "/api/v1/imports/files/";
     // shortcut: the model reads at most the first 60,000 characters of an item (about 15,000 tokens); a longer one is cut, with a warning.
     private const int MaxSourceChars = 60_000, MaxPictures = 8, MaxPictureBytes = 4 * 1024 * 1024;
@@ -70,10 +82,11 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
     public async Task GroupBatchAsync(ImportBatch batch, CancellationToken ct)
     {
         var pending = await db.ImportFiles.Where(f => f.BatchId == batch.Id && f.Kind == "Pending").ToListAsync(ct);
+        var budget = new Budget();
         foreach (var f in pending)
         {
             var data = await ReadAsync(f.Id, ct);
-            await ReadFileAsync(batch, f, data, 0, ct);
+            await ReadFileAsync(batch, f, data, 0, budget, ct);
         }
         await db.SaveChangesAsync(ct);
         var files = await db.ImportFiles.Where(f => f.BatchId == batch.Id && f.ItemId == null).ToListAsync(ct);
@@ -107,7 +120,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         return ms.ToArray();
     }
 
-    private async Task ReadFileAsync(ImportBatch batch, ImportFile f, byte[] data, int depth, CancellationToken ct)
+    private async Task ReadFileAsync(ImportBatch batch, ImportFile f, byte[] data, int depth, Budget budget, CancellationToken ct)
     {
         foreach (var scanner in scanners)
         {
@@ -147,16 +160,19 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         if (x.Kind == ExtractKind.Text)
             foreach (var img in x.Images)
             {
+                if (!budget.Take(img.Data.Length)) { f.Note = OverBudget; break; }
                 var child = await AddFileAsync(batch, $"{f.Path}/{img.Name}", img.Data, ct);
                 (child.Kind, child.Mime, child.Embedded, child.ParentId) = ("Image", img.Mime, true, f.Id);
             }
         // Files inside (a zip, a mail's attachments): read in turn, to a limited depth.
         foreach (var c in x.Children)
         {
+            // Nothing more is stored once the upload's allowance is used up; the archive says that files were left out.
+            if (!budget.Take(c.Data.Length)) { f.Note = OverBudget; break; }
             var child = await AddFileAsync(batch, $"{f.Path}/{c.Path}", c.Data, ct);
             child.ParentId = f.Id;
             if (depth + 1 > Extractors.MaxDepth) (child.Kind, child.Note) = ("Blocked", "Nested too deep.");
-            else await ReadFileAsync(batch, child, c.Data, depth + 1, ct);
+            else await ReadFileAsync(batch, child, c.Data, depth + 1, budget, ct);
         }
     }
 

@@ -126,7 +126,8 @@ public static class DcRest
 
     /// <summary>
     /// Runs for every request under the root, after authentication. Unknown paths answer 404, refused Basic credentials 401 (never served as
-    /// nobody), a multipart or form write without the XSRF header 403, and any error without a body gets the RestError body.
+    /// nobody), a multipart or form write without the XSRF header 403, a write by a caller who is not signed in 401 before its body is read,
+    /// and any error without a body gets the RestError body.
     /// </summary>
     public static async Task GuardAsync(HttpContext http, RequestDelegate next)
     {
@@ -176,6 +177,12 @@ public static class DcRest
             await Fail(403, "This request needs the X-Atlassian-Token header.").ExecuteAsync(http);
             return;
         }
+        // No operation of the surface lets a caller who is not signed in write. The answer is given here, before any of the body is read.
+        if (!IsSafe(http.Request.Method) && http.User.Identity?.IsAuthenticated != true)
+        {
+            await Fail(401, "This operation needs a signed-in caller.").ExecuteAsync(http);
+            return;
+        }
         try { await next(http); }
         catch (Exception e) when (!res.HasStarted && !(e is OperationCanceledException && http.RequestAborted.IsCancellationRequested))
         {
@@ -207,8 +214,11 @@ public static class DcRest
         return HasXsrfHeader(request);
     }
 
+    /// <summary>The surface's XSRF header; its value is no-check or nocheck.</summary>
+    public const string XsrfHeader = "X-Atlassian-Token";
+
     private static bool HasXsrfHeader(HttpRequest request) =>
-        request.Headers["X-Atlassian-Token"].Any(v => string.Equals(v, "no-check", StringComparison.OrdinalIgnoreCase) || string.Equals(v, "nocheck", StringComparison.OrdinalIgnoreCase));
+        request.Headers[XsrfHeader].Any(v => string.Equals(v, "no-check", StringComparison.OrdinalIgnoreCase) || string.Equals(v, "nocheck", StringComparison.OrdinalIgnoreCase));
 
     private static bool IsSafe(string method) => HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method);
 

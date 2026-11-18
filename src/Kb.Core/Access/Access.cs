@@ -68,6 +68,10 @@ public sealed class AccessService(
         if (!await perms.CanAsync(deciderId, r.SpaceId, SpaceAction.ApproveAccessRequests, ct))
             throw new AccessDeniedException("Only a space Owner can decide access requests.");
         if (r.Status != AccessRequestStatus.Pending) throw new InvalidOperationException("Request already decided.");
+        // Only an Admin makes an Owner; in a sensitive space, where Admins have no access, its Owners do. The same rule as granting a role.
+        if (approve && r.RequestedRole >= SpaceRole.Owner && await spaces.GetSpaceAsync(r.SpaceId, ct) is not { IsSensitive: true }
+            && await spaces.GetPrincipalAsync(deciderId, ct) is not { IsAdmin: true })
+            throw new AccessDeniedException("Only an administrator makes an Owner.");
 
         r.Status = approve ? AccessRequestStatus.Approved : AccessRequestStatus.Denied;
         r.DecidedBy = deciderId;

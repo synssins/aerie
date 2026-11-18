@@ -198,8 +198,11 @@ internal sealed class DcContentService(KbDbContext db, IAccess access, IHttpCont
             else expandable[name] = path;
         }
         await Field("space", spacePath, e => Task.FromResult<JsonNode?>(DcSpaceJson.Of(space, Links, e, Icon)));
-        await Field("history", self + "/history", async e => await HistoryAsync(actor, p, versions, shown, e, ct));
-        await Field("version", "", async e => await VersionJsonAsync(actor, p, shown, e, ct));
+        // A page's history is for members of its space, here as on the history resource. For anyone else history is left out (it is
+        // not offered for expansion either) and the version names nobody and carries no note; its number and date stay.
+        var seesHistory = await SeesHistoryAsync(actor, p, ct);
+        if (seesHistory) await Field("history", self + "/history", async e => await HistoryAsync(actor, p, versions, shown, e, ct));
+        await Field("version", "", async e => await VersionJsonAsync(actor, p, shown, e, ct, seesHistory));
         await Field("ancestors", "", async _ => await AncestorsAsync(p, ct));
         await Field("container", spacePath, e => Task.FromResult<JsonNode?>(DcSpaceJson.Of(space, Links, e, Icon)));
         await Field("body", "", async e => await BodyAsync(actor, p, historical ? shown.ContentJson : p.ContentJson, historical ? shown.Title : p.Title, e, ct));
@@ -216,14 +219,15 @@ internal sealed class DcContentService(KbDbContext db, IAccess access, IHttpCont
         return top ? Links.Top(o) : o;
     }
 
-    private async Task<JsonObject> VersionJsonAsync(Actor actor, Page p, DcPageVersion v, Expand expand, CancellationToken ct)
+    /// <param name="named">False for a caller who may not see the page's history: the author is the unknown user and the note is empty.</param>
+    private async Task<JsonObject> VersionJsonAsync(Actor actor, Page p, DcPageVersion v, Expand expand, CancellationToken ct, bool named = true)
     {
         var id = await IdOfAsync(p.Id, ct);
         var o = new JsonObject
         {
-            ["by"] = await UserJsonAsync(v.AuthorId, expand.Inside("by"), ct),
+            ["by"] = named ? await UserJsonAsync(v.AuthorId, expand.Inside("by"), ct) : DcUserJson.Of(new DcUser(Guid.Empty, "", "", true, true), Links, expand.Inside("by")),
             ["when"] = DcSpaceJson.Date(v.At),
-            ["message"] = v.Note ?? "",
+            ["message"] = named ? v.Note ?? "" : "",
             ["number"] = v.Number,
             ["minorEdit"] = v.Minor != 0,
             ["hidden"] = false,
@@ -436,7 +440,10 @@ internal sealed class DcContentService(KbDbContext db, IAccess access, IHttpCont
             KbUser? u = null;
             if (userKey is not null && Guid.TryParseExact(userKey, "N", out var id)) u = await svc.Db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
             else if (userName is not null) { var n = userName.ToUpperInvariant(); u = await svc.Db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.NormalizedUserName == n); }
-            return u is null || u.DeletedAt is not null ? null : u.DisplayName;
+            // A name is given to those who may look people up (and to oneself), as the user resource does; a deactivated account has none here.
+            if (u is null || u.DeletedAt is not null) return null;
+            if (u.Id == actor.UserId) return u.DisplayName;
+            return u.DeactivatedAt is null && await Kb.Web.Actions.ListPrincipalsHandler.MayBrowseAsync(svc.Db, svc.Access, actor, CancellationToken.None) ? u.DisplayName : null;
         }
 
         public async Task<IReadOnlyList<(string Title, string Url)>> ChildrenAsync() =>

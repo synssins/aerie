@@ -12,7 +12,7 @@ namespace Kb.Web;
 /// <summary>What the page actions share. Nothing here answers HTTP: a check gives a <see cref="Problem"/>, a write an <see cref="Outcome{T}"/>.</summary>
 internal static class PageSupport
 {
-    private const int MaxContentChars = 5_000_000;
+    internal const int MaxContentChars = 5_000_000;
 
     /// <summary>Writes a new version of a page (or renames a folder), re-indexes it and clears the author's draft.</summary>
     private static bool OfPage(object row, Guid page) => row switch
@@ -167,10 +167,16 @@ internal static class PageSupport
         // Who changed the page last is history too: empty for someone who may not see it.
         var updatedBy = !canSeeHistory ? "" : await db.Users.Where(u => u.Id == page.UpdatedBy).Select(u => u.DisplayName).FirstOrDefaultAsync() ?? "Unknown";
 
+        // Names of people, applications and servers are not for everyone who can read the page: nobody who is not signed in learns who is
+        // editing it or who owns it, and the applications it is about are for those who may view the inventory.
+        var details = await Kb.Web.Actions.InventorySupport.PageDetailsAsync(db, page, CancellationToken.None);
+        if (me is null) (draft, details) = (null, details with { Owner = null });
+        if (!await new InventoryService(db, access, TimeProvider.System).CanViewAsync(actor, CancellationToken.None)) details = details with { AppliesTo = [] };
+
         return new PageDto(page.Id, page.SpaceId, page.ParentId, page.Kind.ToString(), page.Title, page.ContentJson, page.Version,
             page.UpdatedAt, updatedBy, path, canSeeHistory ? await HistoryAsync(db, page.Id, 10) : [], canEdit, tags, canDelete,
             draft is null ? null : new DraftInfoDto(draft.UserId == me, draft.DisplayName, draft.UpdatedAt), files, await UploadLimits.AttachmentBytesAsync(db),
-            await Kb.Web.Actions.InventorySupport.PageDetailsAsync(db, page, CancellationToken.None), page.AiFlag) { CanSeeHistory = canSeeHistory };
+            details, page.AiFlag) { CanSeeHistory = canSeeHistory };
     }
 
     /// <summary>The audit entry of a page whose flag a save changed: text addressed to an AI found, or gone.</summary>
