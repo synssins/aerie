@@ -97,7 +97,7 @@ public static class Exports
             sb.AppendJoin(',', row.Select(cell =>
             {
                 // A cell that starts like a formula would run in Excel; a leading apostrophe makes it text.
-                var v = cell.Length > 0 && cell[0] is '=' or '+' or '-' or '@' && !double.TryParse(cell, NumberStyles.Float, CultureInfo.InvariantCulture, out _) ? "'" + cell : cell;
+                var v = cell.Length > 0 && cell[0] is '=' or '+' or '-' or '@' or '\t' or '\r' && !double.TryParse(cell, NumberStyles.Float, CultureInfo.InvariantCulture, out _) ? "'" + cell : cell;
                 return v.AsSpan().IndexOfAny(",\"\r\n") >= 0 ? "\"" + v.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"" : v;
             })).Append("\r\n");
         }

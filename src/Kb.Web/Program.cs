@@ -182,7 +182,9 @@ services.AddSingleton<IFileStore>(sp => sp.GetRequiredService<ActiveFileStore>()
 services.AddSingleton<ILogShipperKind, FileLogShipperKind>();
 services.AddSingleton<ILogShipperKind, SyslogShipperKind>();
 services.AddSingleton<ILogShipperKind, HttpsLogShipperKind>();
-services.AddHttpClient(HttpsLogShipperKind.ClientName, c => c.Timeout = TimeSpan.FromSeconds(15));
+// No redirect is followed: the request carries the target's secret header, which is for the host the Admin named and no other.
+services.AddHttpClient(HttpsLogShipperKind.ClientName, c => c.Timeout = TimeSpan.FromSeconds(15))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
 services.AddSingleton<LogShipperService>();
 services.AddHostedService(sp => sp.GetRequiredService<LogShipperService>());
 services.AddSingleton<IAuditSink, LogShipSignal>();
