@@ -46,7 +46,7 @@ internal sealed class CreatePageHandler(KbDbContext db, IAccess access, TimeProv
 
         var now = time.GetUtcNow();
         var page = new Page { SpaceId = req.SpaceId, ParentId = req.ParentId, Kind = kind, Title = req.Title.Trim(), Sort = await NextSortAsync(db, req.SpaceId, req.ParentId), CreatedBy = me, CreatedAt = now, UpdatedBy = me, UpdatedAt = now };
-        if (kind == PageKind.Page) page.ContentJson = req.ContentJson ?? """{"type":"doc","content":[]}""";
+        if (kind == PageKind.Page) page.ContentJson = DocLinks.Clean(req.ContentJson ?? """{"type":"doc","content":[]}""");
         var flagged = PageScan.Apply(page);
         db.Pages.Add(page);
         db.PageTags.AddRange(tags.Select(t => new PageTag { PageId = page.Id, Tag = t }));
@@ -87,6 +87,7 @@ internal sealed class SavePageHandler(KbDbContext db, IAccess access, TimeProvid
         if (TitleError(req.Title) is { } title) return title;
         if (CleanTags(req.Tags) is not { } tags) return TagError();
         if (page.Kind == PageKind.Page && !IsEditorDoc(req.ContentJson)) return Problem.Invalid("contentJson", "Not an editor document.");
+        if (req.Note is { Length: > MaxNote }) return Problem.Invalid("note", $"{MaxNote} characters at most.");
         // Someone else saved since this editor loaded: refuse rather than overwrite.
         if (req.BaseVersion != page.Version) return Problem.Conflict(body: new { current = page.Version });
 

@@ -32,6 +32,7 @@ public sealed class SamplePlugin : IKbPlugin
         .DraftContributor<NoticeFromDraft>()                       // ... from the text the AI drafted
         .ImportFileKinds(".notice")                                // a kind the app does not read: drafted by this plugin
         .SignInMethod<SampleSignIn>("example", "Sign in with Example ID") // a button on the sign-in screen
+        .SignInProviders<SampleProviderCheck>() // providers an Admin adds on this plugin's page, each with its own button
         .Routes(SampleRoutes.Map);                                 // under /api/v1/plugins/kb.sample/
     // #endregion
 }

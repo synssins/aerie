@@ -469,7 +469,7 @@ internal sealed class DcAttachmentTextHandler(DcContentService content, DcAttach
     }
 }
 
-internal sealed class DcDownloadAttachmentHandler(DcAttachmentService files, IHttpContextAccessor http) : IActionHandler<DcDownloadAttachment, FileOut>
+internal sealed class DcDownloadAttachmentHandler(KbDbContext db, IAccess access, DcAttachmentService files, IHttpContextAccessor http) : IActionHandler<DcDownloadAttachment, FileOut>
 {
     private Attachment? _attachment;
 
@@ -482,6 +482,9 @@ internal sealed class DcDownloadAttachmentHandler(DcAttachmentService files, IHt
         var versions = await files.VersionsAsync(a, ctx.Cancel);
         var v = ctx.Action.Version is { } n ? versions.FirstOrDefault(x => x.Number == n) : versions[^1];
         if (v is null) return new Problem(404, "No such version.");
+        // An older version is history: for members of the space, like a page's.
+        if (v.Number != versions[^1].Number && await db.Pages.AsNoTracking().IgnoreQueryFilters().Where(p => p.Id == a.PageId).Select(p => (Guid?)p.SpaceId).FirstOrDefaultAsync(ctx.Cancel) is { } space // system: the page of an attachment the caller may read
+            && !await access.SeesHistoryAsync(ctx.Actor, space, ctx.Cancel)) return DcContentRules.NoHistory;
         var s = await files.OpenAsync(v.BlobId, ctx.Cancel);
         if (s is null) return Problem.NotFound;
         http.HttpContext?.Response.RegisterForDispose(s);

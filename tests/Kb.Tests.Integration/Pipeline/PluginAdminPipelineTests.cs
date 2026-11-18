@@ -37,6 +37,10 @@ public sealed class PluginAdminPipelineTests : IAsyncLifetime
         ("plugin.list", await c.GetAsync(Url, Ct)),
         ("plugin.settings.read", await c.GetAsync($"{Probe}/settings", Ct)),
         ("plugin.settings.save", await c.PutAsJsonAsync($"{Probe}/settings", new { values = new Dictionary<string, string> { ["Greeting"] = "Hello" } }, Ct)),
+        // The probe offers no sign-in providers: the core refuses (404), and names the action.
+        ("plugin.signin.provider.add", await c.PostAsJsonAsync($"{Probe}/signin-providers", new { title = "Lab" }, Ct)),
+        ("plugin.signin.provider.rename", await c.PutAsJsonAsync($"{Probe}/signin-providers/pnone", new { title = "Lab" }, Ct)),
+        ("plugin.signin.provider.remove", await c.DeleteAsync($"{Probe}/signin-providers/pnone", Ct)),
         ("plugin.lock.release", await c.PostAsync($"{Probe}/release-lock", null, Ct)),
         ("plugin.state.set", await c.PutAsJsonAsync($"{Probe}/state", new { enabled = false }, Ct)),
         ("plugin.install", await c.PostAsync(Url, new ByteArrayContent(TestPlugins.Package(TestPlugins.Lib)), Ct)),
@@ -51,16 +55,16 @@ public sealed class PluginAdminPipelineTests : IAsyncLifetime
 
         Assert.All(answers, a => Assert.Equal(a.Name, Action(a.Answer)));
         // The answers are what they were. A refusal by the core (404: the probe has no tables, so its removal left nothing to delete) names the action too.
-        Assert.Equal([HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.NoContent, HttpStatusCode.NoContent, HttpStatusCode.OK, HttpStatusCode.NoContent, HttpStatusCode.NotFound],
+        Assert.Equal([HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.NotFound, HttpStatusCode.NotFound, HttpStatusCode.NotFound, HttpStatusCode.NoContent, HttpStatusCode.NoContent, HttpStatusCode.OK, HttpStatusCode.NoContent, HttpStatusCode.NotFound],
             answers.Select(a => a.Answer.StatusCode));
         var list = await answers[0].Answer.Content.ReadFromJsonAsync<JsonElement>(Ct);
         Assert.Equal(["plugins", "safeMode"], list.EnumerateObject().Select(p => p.Name));
         var probe = list.GetProperty("plugins").EnumerateArray().Single(p => p.GetProperty("id").GetString() == "kb.test.probe");
         Assert.Equal(["id", "name", "version", "publisher", "description", "origin", "state", "reason", "locked", "loaded", "source", "requires", "requiredBy", "extensionPoints",
-            "outboundHosts", "permissions", "enforcing", "settings", "replaces", "removed", "importFileKinds", "signInMethods"], probe.EnumerateObject().Select(p => p.Name));
+            "outboundHosts", "permissions", "enforcing", "settings", "replaces", "removed", "importFileKinds", "signInMethods", "signInProviders"], probe.EnumerateObject().Select(p => p.Name));
         Assert.Equal(["values", "secretsSet"], (await answers[1].Answer.Content.ReadFromJsonAsync<JsonElement>(Ct)).EnumerateObject().Select(p => p.Name));
         Assert.Equal("""{"restart":false}""", await answers[2].Answer.Content.ReadAsStringAsync(Ct));
-        Assert.Equal("""{"id":"kb.test.lib","version":"1.0.0","restart":true}""", await answers[5].Answer.Content.ReadAsStringAsync(Ct));
+        Assert.Equal("""{"id":"kb.test.lib","version":"1.0.0","restart":true}""", await answers[8].Answer.Content.ReadAsStringAsync(Ct));
     }
 
     [Fact]

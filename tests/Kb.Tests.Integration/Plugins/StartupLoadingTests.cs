@@ -191,7 +191,7 @@ public sealed class StartupLoadingTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task UnpackFolder_ReusedWhenHashMatches_ReplacedWhenNot()
+    public async Task UnpackFolder_IsMadeAnewFromThePackageAtEveryStart()
     {
         await SeedAsync(TestPlugins.Probe);
         await RestartAsync();
@@ -201,13 +201,16 @@ public sealed class StartupLoadingTests : IAsyncLifetime
         await File.WriteAllTextAsync(stray, "left by a test", Ct);
         Directory.CreateDirectory(Path.Combine(_f.WorkFolder, "kb.test.probe", "0.9.0")); // an older version's folder
 
-        await RestartAsync();
-        Assert.True(File.Exists(stray)); // same package: the folder is used as it is
-        Assert.False(Directory.Exists(Path.Combine(_f.WorkFolder, "kb.test.probe", "0.9.0")));
+        // Someone who can write to the folder changes the code and leaves the marker as it was: the marker proves nothing.
+        var dll = Path.Combine(folder, "Kb.TestPlugin.Probe.dll");
+        var real = await File.ReadAllBytesAsync(dll, Ct);
+        await _f.DisposeAsync(); // the app holds the file while it runs
+        await File.WriteAllBytesAsync(dll, [.. real, 0, 0, 0, 0], Ct);
 
-        await File.WriteAllTextAsync(Path.Combine(folder, ".sha256"), "another package", Ct);
         await RestartAsync();
-        Assert.False(File.Exists(stray)); // not this package: unpacked again
+        Assert.False(File.Exists(stray)); // what an earlier start left is not used
+        Assert.Equal(real, await File.ReadAllBytesAsync(dll, Ct)); // the code is the package's again
+        Assert.False(Directory.Exists(Path.Combine(_f.WorkFolder, "kb.test.probe", "0.9.0")));
         Assert.True(Info("kb.test.probe").Loaded);
     }
 

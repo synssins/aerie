@@ -143,7 +143,7 @@ internal sealed class CodeSignIn(KbDbContext db, UserManager<KbUser> users, Sign
     public static bool IsAppCode(string code) => code.Length == 6 && code.All(char.IsAsciiDigit);
 }
 
-internal sealed class SignInCodeHandler(CodeSignIn codes, UserManager<KbUser> users, IAuditLog audit) : IActionHandler<SignInCode, MeResponse>
+internal sealed class SignInCodeHandler(CodeSignIn codes, UserManager<KbUser> users, IAuditLog audit, TimeProvider time) : IActionHandler<SignInCode, MeResponse>
 {
     // Nobody is signed in yet; the pending sign-in and the code are checked as the work.
     public Task<Problem?> AuthorizeAsync(ActionContext<SignInCode> ctx) => Task.FromResult<Problem?>(null);
@@ -154,7 +154,10 @@ internal sealed class SignInCodeHandler(CodeSignIn codes, UserManager<KbUser> us
         if (await codes.PendingAsync() is not { TwoFactorEnabled: true } user) return Problem.Unauthorized;
         var code = CodeSignIn.Clean(ctx.Action.Code);
         var app = CodeSignIn.IsAppCode(code);
-        var ok = !await users.IsLockedOutAsync(user) && (app
+        // A code from the app is good once: its time step, and every earlier one, is not taken again after it was accepted.
+        var step = app ? CodeSteps.StepOf(await users.GetAuthenticatorKeyAsync(user), code, time.GetUtcNow()) : null;
+        var used = step is { } at && long.TryParse(await users.GetAuthenticationTokenAsync(user, CodeSteps.Provider, CodeSteps.Name), System.Globalization.CultureInfo.InvariantCulture, out var last) && at <= last;
+        var ok = !await users.IsLockedOutAsync(user) && !used && (app
             ? await users.VerifyTwoFactorTokenAsync(user, users.Options.Tokens.AuthenticatorTokenProvider, code)
             : code.Length > 0 && (await users.RedeemTwoFactorRecoveryCodeAsync(user, code.ToUpperInvariant())).Succeeded);
         if (!ok)
@@ -167,10 +170,52 @@ internal sealed class SignInCodeHandler(CodeSignIn codes, UserManager<KbUser> us
             return Problem.Unauthorized;
         }
         await users.ResetAccessFailedCountAsync(user);
+        if (step is { } accepted) await users.SetAuthenticationTokenAsync(user, CodeSteps.Provider, CodeSteps.Name, accepted.ToString(System.Globalization.CultureInfo.InvariantCulture));
         await codes.FinishAsync(user);
         await audit.AppendAsync(new AuditEvent(AuditActions.SignIn, user.Id, "user", user.Id.ToString(), Data: new Dictionary<string, string>
             { ["method"] = app ? "local+code" : "local+recovery", ["ip"] = ip }));
         return await codes.MeAsync(user, ctx.Cancel);
+    }
+}
+
+/// <summary>Which 30-second step a code from an authenticator app belongs to (RFC 6238, as the apps compute it).</summary>
+public static class CodeSteps
+{
+    public const string Provider = "kb", Name = "code.step";
+
+    /// <summary>The step, of the five around now, whose code this is; null when it is none of them or there is no key.</summary>
+    public static long? StepOf(string? base32Key, string code, DateTimeOffset now)
+    {
+        if (string.IsNullOrEmpty(base32Key) || code is not { Length: 6 }) return null;
+        var key = Base32(base32Key);
+        var current = now.ToUnixTimeSeconds() / 30;
+        foreach (var step in new[] { current, current - 1, current + 1, current - 2, current + 2 })
+        {
+            var counter = BitConverter.GetBytes(step);
+            if (BitConverter.IsLittleEndian) Array.Reverse(counter);
+#pragma warning disable CA5350 // RFC 6238 as every authenticator app computes it; the key is the secret, not the hash's strength
+            var hash = System.Security.Cryptography.HMACSHA1.HashData(key, counter);
+#pragma warning restore CA5350
+            var o = hash[^1] & 0xf;
+            var n = ((hash[o] & 0x7f) << 24) | (hash[o + 1] << 16) | (hash[o + 2] << 8) | hash[o + 3];
+            if (System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(System.Text.Encoding.ASCII.GetBytes((n % 1_000_000).ToString("D6", System.Globalization.CultureInfo.InvariantCulture)), System.Text.Encoding.ASCII.GetBytes(code)))
+                return step;
+        }
+        return null;
+    }
+
+    private static byte[] Base32(string text)
+    {
+        const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+        var (bits, value, bytes) = (0, 0, new List<byte>());
+        foreach (var ch in text.ToUpperInvariant())
+        {
+            var index = alphabet.IndexOf(ch, StringComparison.Ordinal);
+            if (index < 0) continue; // padding and spaces
+            (value, bits) = ((value << 5) | index, bits + 5);
+            if (bits >= 8) { bytes.Add((byte)(value >> (bits - 8))); bits -= 8; }
+        }
+        return [.. bytes];
     }
 }
 
@@ -263,8 +308,9 @@ internal sealed class ReadMyCodesHandler(CodeSignIn codes, UserManager<KbUser> u
         new MyCodes(_me!.TwoFactorEnabled, await codes.RequiredByPolicyAsync(_me, ctx.Cancel), !_me.IsBreakGlass && !CodeSignIn.Barred(_me));
 }
 
-internal sealed class TurnOffMyCodesHandler(CodeSignIn codes, UserManager<KbUser> users, SignInManager<KbUser> signIn) : IActionHandler<TurnOffMyCodes, Unit>
+internal sealed class TurnOffMyCodesHandler(CodeSignIn codes, UserManager<KbUser> users, SignInManager<KbUser> signIn, IHttpContextAccessor http, TimeProvider time) : IActionHandler<TurnOffMyCodes, Unit>
 {
+    private static readonly TimeSpan Recent = TimeSpan.FromMinutes(10);
     private KbUser? _me;
 
     public async Task<Problem?> AuthorizeAsync(ActionContext<TurnOffMyCodes> ctx)
@@ -279,6 +325,10 @@ internal sealed class TurnOffMyCodesHandler(CodeSignIn codes, UserManager<KbUser
     {
         var u = _me!;
         if (await codes.RequiredByPolicyAsync(u, ctx.Cancel)) return Problem.Conflict("Codes are required for this account.");
+        // Whoever sits down at an open session must not be able to take the second step away: turning codes off needs a sign-in
+        // (password and code) made just now.
+        if (u.TwoFactorEnabled && !SessionAge.OpenedWithin(http.HttpContext, Recent, time.GetUtcNow()))
+            return new Problem(403, "Sign out and sign in again, then turn codes off within 10 minutes.");
         u.CodesRequired = false;
         await users.UpdateAsync(u);
         await codes.ClearAsync(u);

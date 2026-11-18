@@ -157,7 +157,7 @@ public sealed class MatrixTests : IAsyncLifetime
             case "image": return (await SentAsync(Upload($"/api/v1/spaces/{space}/images", Png, "dot.png"))).ToString();
             case "assignment":
             {
-                var principal = Guid.NewGuid().ToString();
+                var principal = (await NewUserAsync("member" + Guid.NewGuid().ToString("N")[..8])).ToString(); // a role is for an account that exists
                 (await _owner.PutAsJsonAsync($"/api/v1/spaces/{space}/roles", new { principalType = "User", principalId = principal, role = "Reader" }, Ct)).EnsureSuccessStatusCode();
                 var roles = await _owner.GetFromJsonAsync<JsonElement>($"/api/v1/spaces/{space}/roles", Ct);
                 return roles.EnumerateArray().Single(a => a.GetProperty("principalId").GetString() == principal).GetProperty("id").GetGuid().ToString();

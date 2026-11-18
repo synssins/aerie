@@ -19,9 +19,15 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Kb.Web;
 
-/// <summary>A sign-in method on this server: the plugin that registered it, its id there, the text of its button, and its type.</summary>
-public sealed record SignInMethodInfo(string PluginId, string Id, string Name, Type Method)
+/// <summary>
+/// A sign-in method on this server: the plugin that registered it, its id there, the text of its button, and its type. A provider an Admin
+/// added (0.9.0) has no type: its provider comes from its settings, and <paramref name="Check"/> is the plugin's optional check on it.
+/// </summary>
+public sealed record SignInMethodInfo(string PluginId, string Id, string Name, Type? Method, Type? Check = null)
 {
+    /// <summary>A provider an Admin added on the plugin's page, not one the plugin's code describes.</summary>
+    public bool ByAdmin => Method is null;
+
     /// <summary>How the API names it: "{plugin}/{id}".</summary>
     public string Key => $"{PluginId}/{Id}";
 }
@@ -34,14 +40,53 @@ public sealed class SignInMethods(IRegistrations registrations, PluginSettingsSt
 {
     public const string Root = "/api/v1/auth/methods";
 
+    /// <summary>The methods plugins registered, then the providers Admins added to plugins that offer them (0.9.0).</summary>
     public IReadOnlyList<SignInMethodInfo> All =>
-        [.. registrations.All<SignInMethodReg>().Select(r => new SignInMethodInfo(r.PluginId, r.Value.Id, r.Value.Name, r.Value.Method)).DistinctBy(m => m.Key)];
+        [.. registrations.All<SignInMethodReg>().Select(r => new SignInMethodInfo(r.PluginId, r.Value.Id, r.Value.Name, r.Value.Method))
+            .Concat(registrations.All<SignInProvidersReg>().DistinctBy(r => r.PluginId)
+                .SelectMany(r => settings.Providers(r.PluginId).Select(p => new SignInMethodInfo(r.PluginId, p.Id, p.Title, null, r.Value.Check))))
+            .DistinctBy(m => m.Key)];
 
     public SignInMethodInfo? Find(string pluginId, string id) => All.FirstOrDefault(m => m.PluginId == pluginId && m.Id == id);
 
-    public IReadOnlyList<SignInMethodInfo> Ready => [.. All.Where(m => ClientId(m) is not null)];
+    /// <summary>On the sign-in screen: a client id is set, and for a provider an Admin added, its issuer too.</summary>
+    public IReadOnlyList<SignInMethodInfo> Ready => [.. All.Where(IsReady)];
 
-    public string? ClientId(SignInMethodInfo m) => settings.Get(m.PluginId, SignInSettings.ClientId(m.Id))?.Trim() is { Length: > 0 } v ? v : null;
+    public bool IsReady(SignInMethodInfo m) => ClientId(m) is not null && (!m.ByAdmin || Value(m, SignInSettings.Issuer(m.Id)) is not null);
+
+    public string? ClientId(SignInMethodInfo m) => Value(m, SignInSettings.ClientId(m.Id));
+
+    private string? Value(SignInMethodInfo m, string key) => settings.Get(m.PluginId, key)?.Trim() is { Length: > 0 } v ? v : null;
+
+    private string Value(SignInMethodInfo m, Func<string, string> key, string fallback) => Value(m, key(m.Id)) ?? fallback;
+
+    /// <summary>The provider of a method an Admin added, from its settings as they are now. Its issuer may be empty: the flow then refuses.</summary>
+    public OidcProvider FromSettings(SignInMethodInfo m)
+    {
+        ArgumentNullException.ThrowIfNull(m);
+        return new OidcProvider
+        {
+            Issuer = Value(m, SignInSettings.Issuer(m.Id)) ?? "",
+            DiscoveryAddress = Value(m, SignInSettings.Discovery(m.Id)),
+            Scopes = Value(m, SignInSettings.Scopes, "openid email profile").Split(' ', StringSplitOptions.RemoveEmptyEntries),
+            SubjectClaim = Value(m, SignInSettings.SubjectClaim, "sub"),
+            EmailClaim = Value(m, SignInSettings.EmailClaim, "email"),
+            EmailVerifiedClaim = Value(m, SignInSettings.EmailVerifiedClaim, "email_verified"),
+            NameClaim = Value(m, SignInSettings.NameClaim, "name"),
+            UserInfo = Value(m, SignInSettings.UserInfo, "true") == "true",
+        };
+    }
+
+    /// <summary>The claim a person of this provider must have, and the values it may hold; null when none is required.</summary>
+    public (string Claim, IReadOnlyList<string> Values)? Required(SignInMethodInfo m)
+    {
+        ArgumentNullException.ThrowIfNull(m);
+        if (!m.ByAdmin || Value(m, SignInSettings.RequiredClaim(m.Id)) is not { } claim) return null;
+        return (claim, [.. (Value(m, SignInSettings.RequiredValues(m.Id)) ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)]);
+    }
+
+    /// <summary>Whether the app may reach this provider at private network addresses: only a provider an Admin added, and only when the Admin said so.</summary>
+    public bool PrivateNetwork(SignInMethodInfo m) => m is { ByAdmin: true } && Value(m, SignInSettings.PrivateNetwork(m.Id)) == "true";
 
     public Task<string?> ClientSecretAsync(SignInMethodInfo m, CancellationToken ct) => settings.GetSecretAsync(m.PluginId, SignInSettings.ClientSecret(m.Id), ct);
 
@@ -70,56 +115,72 @@ public sealed class SignInMethods(IRegistrations registrations, PluginSettingsSt
         && !path.Any(c => c == '\\' || char.IsControl(c)) && Uri.TryCreate(path, UriKind.Relative, out _) ? path : "/";
 }
 
-/// <summary>Where a provider's endpoints are, from its discovery document.</summary>
-public sealed record OidcEndpoints(string Authorization, string Token, string Keys);
+/// <summary>Where a provider's endpoints are, from its discovery document. <paramref name="UserInfo"/> is null when it names none.</summary>
+public sealed record OidcEndpoints(string Authorization, string Token, string Keys, string? UserInfo = null);
 
 /// <summary>
-/// Discovery documents and signing keys, kept for an hour. Read with the HTTP client of the plugin that registered the method, so the
-/// provider's hosts must be in that plugin's outbound hosts. Keys are read again (once a minute at most) when a token is signed with
-/// a key that is not known yet: the provider rotated its keys.
+/// The HTTP clients of the providers Admins add (0.9.0). They reach only the addresses the Admin entered and those the provider's own discovery
+/// document names, never follow a redirect, and by default connect only to public addresses (<see cref="NetGuard"/>). The private one may
+/// connect to private addresses too: only for a provider whose "Provider on a private network" setting an Admin turned on.
 /// </summary>
-public sealed class OidcCache(IHttpClientFactory http, TimeProvider time)
+public static class SignInProviderHttp
+{
+    public const string Public = "kb-signin-provider", Private = "kb-signin-provider-private";
+}
+
+/// <summary>
+/// Discovery documents and signing keys, kept for an hour. A method a plugin's code describes is read with that plugin's HTTP client, so the
+/// provider's hosts must be in the plugin's outbound hosts. A provider an Admin added is read with <see cref="SignInProviderHttp"/>'s clients.
+/// Keys are read again (once a minute at most) when a token is signed with a key that is not known yet: the provider rotated its keys.
+/// </summary>
+public sealed class OidcCache(IHttpClientFactory http, TimeProvider time, SignInMethods methods)
 {
     public const int MaxDocumentBytes = 512 * 1024;
     private static readonly TimeSpan Keep = TimeSpan.FromHours(1), KeysAgain = TimeSpan.FromMinutes(1);
     private readonly ConcurrentDictionary<string, (DateTimeOffset At, OidcEndpoints Value)> _endpoints = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, (DateTimeOffset At, IList<SecurityKey> Value)> _keys = new(StringComparer.Ordinal);
 
-    public async Task<OidcEndpoints> EndpointsAsync(string pluginId, OidcProvider p, CancellationToken ct)
+    public async Task<OidcEndpoints> EndpointsAsync(SignInMethodInfo m, OidcProvider p, CancellationToken ct)
     {
         var address = p.DiscoveryAddress ?? p.Issuer.TrimEnd('/') + "/.well-known/openid-configuration";
-        var key = pluginId + " " + address;
+        var key = Source(m) + " " + address;
         if (_endpoints.TryGetValue(key, out var hit) && time.GetUtcNow() - hit.At < Keep) return hit.Value;
-        using var doc = await GetJsonAsync(pluginId, address, ct);
+        using var doc = await GetJsonAsync(m, address, ct);
         var root = doc.RootElement;
         string Field(string name) => root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : throw new OidcException($"discovery has no {name}");
         // OpenID Connect Discovery 1.0, section 4.3: the issuer in the document is exactly the one asked for.
         if (Field("issuer") != p.Issuer) throw new OidcException("discovery names another issuer");
-        var found = new OidcEndpoints(Field("authorization_endpoint"), Field("token_endpoint"), Field("jwks_uri"));
-        if (!SignInFlow.IsHttps(found.Authorization) || !SignInFlow.IsHttps(found.Token) || !SignInFlow.IsHttps(found.Keys)) throw new OidcException("an endpoint is not https");
+        var userInfo = root.TryGetProperty("userinfo_endpoint", out var ui) && ui.ValueKind == JsonValueKind.String ? ui.GetString() : null;
+        var found = new OidcEndpoints(Field("authorization_endpoint"), Field("token_endpoint"), Field("jwks_uri"), userInfo);
+        if (!SignInFlow.IsHttps(found.Authorization) || !SignInFlow.IsHttps(found.Token) || !SignInFlow.IsHttps(found.Keys) || userInfo is not null && !SignInFlow.IsHttps(userInfo))
+            throw new OidcException("an endpoint is not https");
         _endpoints[key] = (time.GetUtcNow(), found);
         return found;
     }
 
     /// <summary>The signing keys; <paramref name="again"/> reads them from the provider unless they were read in the last minute.</summary>
-    public async Task<(IList<SecurityKey> Keys, bool Fresh)> KeysAsync(string pluginId, string address, bool again, CancellationToken ct)
+    public async Task<(IList<SecurityKey> Keys, bool Fresh)> KeysAsync(SignInMethodInfo m, string address, bool again, CancellationToken ct)
     {
-        var key = pluginId + " " + address;
+        var key = Source(m) + " " + address;
         var now = time.GetUtcNow();
         if (_keys.TryGetValue(key, out var hit) && (again ? now - hit.At < KeysAgain : now - hit.At < Keep)) return (hit.Value, false);
-        using var doc = await GetJsonAsync(pluginId, address, ct);
+        using var doc = await GetJsonAsync(m, address, ct);
         var keys = new JsonWebKeySet(doc.RootElement.GetRawText()).GetSigningKeys();
         _keys[key] = (now, keys);
         return (keys, true);
     }
 
-    public HttpClient Client(string pluginId) => http.CreateClient(PluginHttp.ClientName(pluginId));
+    /// <summary>The client a method's provider is reached with: its plugin's, or for a provider an Admin added, the public or private one.</summary>
+    public HttpClient Client(SignInMethodInfo m) => http.CreateClient(Source(m));
 
-    private async Task<JsonDocument> GetJsonAsync(string pluginId, string address, CancellationToken ct)
+    private string Source(SignInMethodInfo m) =>
+        !m.ByAdmin ? PluginHttp.ClientName(m.PluginId) : methods.PrivateNetwork(m) ? SignInProviderHttp.Private : SignInProviderHttp.Public;
+
+    private async Task<JsonDocument> GetJsonAsync(SignInMethodInfo m, string address, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, address);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        using var response = await Client(pluginId).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var response = await Client(m).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!response.IsSuccessStatusCode) throw new OidcException($"{address} answered {(int)response.StatusCode}");
         return await ReadJsonAsync(response, ct);
     }
@@ -176,7 +237,7 @@ internal sealed class SignInFlow(SignInMethods methods, OidcCache cache, IDataPr
         try
         {
             var provider = await ProviderAsync(m, ct);
-            var endpoints = await cache.EndpointsAsync(m.PluginId, provider, ct);
+            var endpoints = await cache.EndpointsAsync(m, provider, ct);
             var state = new State(m.Key, Random(), Random(), Random(), SignInMethods.LocalPath(returnTo), SignInMethods.RedirectAddress(Http.Request, m));
             Http.Response.Cookies.Append(StateCookie, Protector.Protect(JsonSerializer.Serialize(state), Lasts), CookieOptions(Lasts));
             await audit.AppendAsync(new AuditEvent(AuditActions.SignInMethodStart, null, "signInMethod", m.Key, Data: new Dictionary<string, string> { ["method"] = m.Key, ["ip"] = Ip }), ct);
@@ -209,17 +270,18 @@ internal sealed class SignInFlow(SignInMethods methods, OidcCache cache, IDataPr
         try
         {
             var provider = await ProviderAsync(m, ct);
-            var endpoints = await cache.EndpointsAsync(m.PluginId, provider, ct);
-            var idToken = await ExchangeAsync(m, endpoints, clientId, code, state, ct);
+            var endpoints = await cache.EndpointsAsync(m, provider, ct);
+            var (idToken, accessToken) = await ExchangeAsync(m, endpoints, clientId, code, state, ct);
             claims = await ValidateAsync(m, provider, endpoints, clientId, idToken, state.Nonce, ct);
+            if (provider.UserInfo && endpoints.UserInfo is { } userInfo) claims = await UserInfoAsync(m, provider, userInfo, accessToken, claims, ct);
         }
         catch (Exception e) when (e is OidcException or HttpRequestException or InvalidOperationException or TaskCanceledException && !ct.IsCancellationRequested)
         {
             return await RefuseAsync(m, e.Message, Generic, null, ct);
         }
 
-        var refusal = await CheckAsync(m, claims, ct);
-        if (refusal is not null) return await RefuseAsync(m, "refused by the plugin", refusal, claims, ct);
+        var (refused, refusal) = await CheckAsync(m, claims, ct);
+        if (refused is not null) return await RefuseAsync(m, refused, refusal!, claims, ct);
 
         var (user, problem, message) = await AccountAsync(m, claims, ct);
         if (user is null) return await RefuseAsync(m, problem!, message!, claims, ct);
@@ -273,19 +335,28 @@ internal sealed class SignInFlow(SignInMethods methods, OidcCache cache, IDataPr
 
     private async Task<OidcProvider> ProviderAsync(SignInMethodInfo m, CancellationToken ct)
     {
-        var (ok, p) = await AsPluginAsync(m, (method, _) => Task.FromResult(method.Provider), ct);
-        if (!ok || p is null) throw new OidcException("the plugin gave no provider");
+        OidcProvider? p;
+        if (m.ByAdmin) p = methods.FromSettings(m);
+        else
+        {
+            var (ok, given) = await AsPluginAsync<ISignInMethod, OidcProvider>(m, m.Method!, (method, _) => Task.FromResult(method.Provider), ct);
+            if (!ok || given is null) throw new OidcException("the plugin gave no provider");
+            p = given;
+        }
         var problem = !IsHttps(p.Issuer) || p.Issuer.Length > 400 || p.Issuer.Contains('?', StringComparison.Ordinal) || p.Issuer.Contains('#', StringComparison.Ordinal) ? "the issuer is not an https address"
             : p.DiscoveryAddress is { } d && !IsHttps(d) ? "the discovery address is not https"
             : p.Scopes is null || !p.Scopes.Contains("openid") || p.Scopes.Any(s => string.IsNullOrEmpty(s) || s.Any(c => c <= ' ')) ? "the scopes are not openid and others"
             : new[] { p.SubjectClaim, p.EmailClaim, p.EmailVerifiedClaim, p.NameClaim }.Any(string.IsNullOrWhiteSpace) ? "a claim name is empty"
             : null;
         if (problem is null) return p;
+        // A provider an Admin set up wrong is not the plugin's failure.
+        if (m.ByAdmin) throw new OidcException("the provider's settings are wrong: " + problem);
         failures.Report(m.PluginId, "sign-in method", new InvalidDataException(problem));
         throw new OidcException("the plugin's provider is wrong: " + problem);
     }
 
-    private async Task<string> ExchangeAsync(SignInMethodInfo m, OidcEndpoints endpoints, string clientId, string code, State state, CancellationToken ct)
+    /// <summary>The token request: the ID token, and the access token when the answer has one (for the userinfo endpoint only; it is kept nowhere).</summary>
+    private async Task<(string IdToken, string? AccessToken)> ExchangeAsync(SignInMethodInfo m, OidcEndpoints endpoints, string clientId, string code, State state, CancellationToken ct)
     {
         var form = new Dictionary<string, string> { ["grant_type"] = "authorization_code", ["code"] = code, ["redirect_uri"] = state.Redirect, ["code_verifier"] = state.Verifier };
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoints.Token);
@@ -297,12 +368,40 @@ internal sealed class SignInFlow(SignInMethods methods, OidcCache cache, IDataPr
         request.Content = new FormUrlEncodedContent(form);
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
         stop.CancelAfter(TimeSpan.FromSeconds(15));
-        using var response = await cache.Client(m.PluginId).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, stop.Token);
+        using var response = await cache.Client(m).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, stop.Token);
         // The answer's body is not logged: it may hold tokens.
         if (!response.IsSuccessStatusCode) throw new OidcException($"the token request was refused ({(int)response.StatusCode})");
         using var doc = await OidcCache.ReadJsonAsync(response, stop.Token);
-        return doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("id_token", out var t) && t.ValueKind == JsonValueKind.String
-            ? t.GetString()! : throw new OidcException("the token answer has no ID token");
+        var root = doc.RootElement;
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("id_token", out var t) || t.ValueKind != JsonValueKind.String) throw new OidcException("the token answer has no ID token");
+        var access = root.TryGetProperty("access_token", out var a) && a.ValueKind == JsonValueKind.String ? a.GetString() : null;
+        return (t.GetString()!, access);
+    }
+
+    /// <summary>
+    /// OpenID Connect Core 1.0, section 5.3: the userinfo endpoint, with the access token. Its sub must be the ID token's (section 5.3.2), or the
+    /// sign-in is refused. Its claims fill those the ID token lacks; a claim the ID token has is kept as the ID token gives it. Only a JSON answer is read.
+    /// </summary>
+    private async Task<SignInClaims> UserInfoAsync(SignInMethodInfo m, OidcProvider p, string address, string? accessToken, SignInClaims claims, CancellationToken ct)
+    {
+        if (accessToken is not { Length: > 0 }) throw new OidcException("the token answer has no access token for userinfo");
+        using var request = new HttpRequestMessage(HttpMethod.Get, address);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        stop.CancelAfter(TimeSpan.FromSeconds(15));
+        using var response = await cache.Client(m).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, stop.Token);
+        if (!response.IsSuccessStatusCode) throw new OidcException($"the userinfo request was refused ({(int)response.StatusCode})");
+        if (response.Content.Headers.ContentType?.MediaType is { } type && type != "application/json") throw new OidcException("the userinfo answer is not JSON");
+        using var doc = await OidcCache.ReadJsonAsync(response, stop.Token);
+        if (doc.RootElement.ValueKind != JsonValueKind.Object) throw new OidcException("the userinfo answer is not JSON");
+        var info = doc.RootElement.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.Clone(), StringComparer.Ordinal);
+        var idSub = claims.All.TryGetValue("sub", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() : null;
+        var infoSub = info.TryGetValue("sub", out var u) && u.ValueKind == JsonValueKind.String ? u.GetString() : null;
+        if (idSub is null || infoSub is null || !FixedEquals(infoSub, idSub)) throw new OidcException("the userinfo answer is for another subject");
+        var all = new Dictionary<string, JsonElement>(claims.All, StringComparer.Ordinal);
+        foreach (var (name, value) in info) all.TryAdd(name, value);
+        return Claims(p, all);
     }
 
     /// <summary>OpenID Connect Core 1.0, section 3.1.3.7: signature (asymmetric only), issuer, audience, authorized party, expiry, issue time, nonce.</summary>
@@ -312,7 +411,7 @@ internal sealed class SignInFlow(SignInMethods methods, OidcCache cache, IDataPr
         TokenValidationResult result = null!;
         foreach (var again in new[] { false, true })
         {
-            var (keys, fresh) = await cache.KeysAsync(m.PluginId, endpoints.Keys, again, ct);
+            var (keys, fresh) = await cache.KeysAsync(m, endpoints.Keys, again, ct);
             result = await handler.ValidateTokenAsync(idToken, new TokenValidationParameters
             {
                 ValidIssuer = p.Issuer, ValidAudience = clientId, IssuerSigningKeys = keys, ValidAlgorithms = Algorithms, RequireSignedTokens = true,
@@ -341,30 +440,56 @@ internal sealed class SignInFlow(SignInMethods methods, OidcCache cache, IDataPr
         if (!all.ContainsKey("iat")) throw new OidcException("the ID token has no issue time");
         var audiences = all.TryGetValue("aud", out var aud) && aud.ValueKind == JsonValueKind.Array ? aud.GetArrayLength() : 1;
         if ((audiences > 1 || Text("azp") is not null) && Text("azp") != clientId) throw new OidcException("the ID token's authorized party is another client");
-        if (Text(p.SubjectClaim) is not { Length: > 0 and <= 450 } subject) throw new OidcException("the ID token has no subject");
+        if (Text(p.SubjectClaim) is not { Length: > 0 and <= 450 }) throw new OidcException("the ID token has no subject");
+        return Claims(p, all);
+    }
 
+    /// <summary>The claims as the provider description maps them: subject, email (and whether it is verified), name.</summary>
+    private static SignInClaims Claims(OidcProvider p, Dictionary<string, JsonElement> all)
+    {
+        string? Text(string claim) => all.TryGetValue(claim, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+        var subject = Text(p.SubjectClaim) is { Length: > 0 and <= 450 } sub ? sub : throw new OidcException("the ID token has no subject");
         var verified = all.TryGetValue(p.EmailVerifiedClaim, out var v) && (v.ValueKind == JsonValueKind.True || v.ValueKind == JsonValueKind.String && v.GetString() == "true");
         var email = Text(p.EmailClaim) is { Length: > 0 and <= 256 } e && e.Contains('@', StringComparison.Ordinal) ? e : null;
         var name = Text(p.NameClaim) is { Length: > 0 } n ? n.Trim()[..Math.Min(n.Trim().Length, 200)] : null;
         return new SignInClaims(p.Issuer, subject, email, verified && email is not null, name, all);
     }
 
-    private async Task<string?> CheckAsync(SignInMethodInfo m, SignInClaims claims, CancellationToken ct)
+    private async Task<(string? Reason, string? Message)> CheckAsync(SignInMethodInfo m, SignInClaims claims, CancellationToken ct)
     {
-        var (ok, text) = await AsPluginAsync(m, (method, t) => method.CheckAsync(claims, t), ct);
-        if (!ok) return Generic;
-        return text is null ? null : string.IsNullOrWhiteSpace(text) ? Generic : text.Trim()[..Math.Min(text.Trim().Length, 200)];
+        // A provider an Admin added: its required claim first, then the plugin's own check when it has one.
+        if (methods.Required(m) is { } required && !Holds(claims, required.Claim, required.Values))
+            return ("the required claim does not match", "Your account at this provider is not allowed here. Ask an Administrator.");
+        bool ok;
+        string? text;
+        if (!m.ByAdmin) (ok, text) = await AsPluginAsync<ISignInMethod, string?>(m, m.Method!, (method, t) => method.CheckAsync(claims, t), ct);
+        else if (m.Check is { } check) (ok, text) = await AsPluginAsync<ISignInProviderCheck, string?>(m, check, (c, t) => c.CheckAsync(m.Id, claims, t), ct);
+        else return (null, null);
+        if (!ok) return ("refused by the plugin", Generic);
+        return text is null ? (null, null) : ("refused by the plugin", string.IsNullOrWhiteSpace(text) ? Generic : text.Trim()[..Math.Min(text.Trim().Length, 200)]);
     }
 
-    /// <summary>Runs the method's code in a scope of its own, as its plugin, within the time limit. A failure is logged and counted against the plugin.</summary>
-    private async Task<(bool Ok, T? Value)> AsPluginAsync<T>(SignInMethodInfo m, Func<ISignInMethod, CancellationToken, Task<T>> call, CancellationToken ct)
+    /// <summary>The claim equals one of the values: a text or a number as written, true or false, or for a list one of its items.</summary>
+    internal static bool Holds(SignInClaims claims, string claim, IReadOnlyList<string> values)
+    {
+        if (!claims.All.TryGetValue(claim, out var v)) return false;
+        static string? Of(JsonElement e) => e.ValueKind switch
+        {
+            JsonValueKind.String => e.GetString(), JsonValueKind.Number => e.GetRawText(), JsonValueKind.True => "true", JsonValueKind.False => "false", _ => null,
+        };
+        IEnumerable<string?> found = v.ValueKind == JsonValueKind.Array ? v.EnumerateArray().Select(Of) : [Of(v)];
+        return found.Any(f => f is not null && values.Contains(f, StringComparer.Ordinal));
+    }
+
+    /// <summary>Runs the plugin's code in a scope of its own, as its plugin, within the time limit. A failure is logged and counted against the plugin.</summary>
+    private async Task<(bool Ok, T? Value)> AsPluginAsync<TCode, T>(SignInMethodInfo m, Type type, Func<TCode, CancellationToken, Task<T>> call, CancellationToken ct)
     {
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
         try
         {
             await using var scope = scopes.CreateAsyncScope();
             scope.ServiceProvider.GetRequiredService<ActorAccessor>().Use(Actor.Plugin(m.PluginId, ActorSources.SignIn));
-            var run = call((ISignInMethod)ActivatorUtilities.CreateInstance(scope.ServiceProvider, m.Method), stop.Token);
+            var run = call((TCode)ActivatorUtilities.CreateInstance(scope.ServiceProvider, type), stop.Token);
             _ = run.ContinueWith(static t => _ = t.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
             return (true, await run.WaitAsync(PluginTimeLimit, ct));
         }

@@ -189,6 +189,10 @@ internal sealed class AddGroupMemberHandler(KbDbContext db, IAccess access) : IA
         {
             db.KbGroupMembers.Add(new KbGroupMember { GroupId = groupId, UserId = userId });
             await db.SaveChangesAsync();
+            // The group's roles are the new member's from now on. Where that is a sensitive space, its Owners hear of it.
+            var group = await db.KbGroups.AsNoTracking().FirstAsync(g => g.Id == groupId, CancellationToken.None);
+            var name = await db.Users.Where(u => u.Id == userId).Select(u => u.DisplayName).FirstAsync(CancellationToken.None);
+            await SensitiveAlerts.SendAsync(db, ctx.Services, [group.Key], s => $"{name} was added to a group that has access to {s.Name}", $"An administrator added them to the group {group.Name}.");
         }
         ctx.Audit(AuditActions.GroupMemberAdd, "group", groupId.ToString(), data: new Dictionary<string, string> { ["user"] = userId.ToString() });
         return new Unit();

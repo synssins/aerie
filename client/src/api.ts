@@ -134,8 +134,13 @@ export type PluginInfo = {
   reason: string | null; locked: boolean; loaded: boolean; source: string; requires: string[]; requiredBy: string[]; extensionPoints: string[]; outboundHosts: string[];
   permissions: { key: string; label: string; scope: string; defaultRole: string }[]; enforcing: boolean; settings: PluginSetting[]; replaces: string[]; removed: boolean;
   importFileKinds: string[];
-  /** The sign-in methods it adds (contract 0.8.0): id "{plugin}/{id}", button text, and the redirect address to register with the provider. */
-  signInMethods?: { id: string; name: string; redirectAddress: string }[];
+  /**
+   * The sign-in methods it adds (contract 0.8.0): id "{plugin}/{id}", button text, and the redirect address to register with the provider.
+   * byAdmin: a provider an Admin added (0.9.0); linked: the accounts linked to its issuer.
+   */
+  signInMethods?: { id: string; name: string; redirectAddress: string; byAdmin?: boolean; linked?: number }[];
+  /** It offers sign-in providers an Admin adds on its page (0.9.0). */
+  signInProviders?: boolean;
 };
 /** A button on the sign-in screen. */
 export type SignInMethod = { id: string; name: string };

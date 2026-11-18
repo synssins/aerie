@@ -373,9 +373,16 @@ internal sealed class DcContentService(KbDbContext db, IAccess access, IHttpCont
         if (p.Kind != PageKind.Folder) return [];
         var all = await db.Pages.AsNoTracking().Where(x => x.SpaceId == p.SpaceId).ToListAsync(ct); // system: the tree of a space the caller sees
         var kids = all.Where(x => x.ParentId is not null).ToLookup(x => x.ParentId!.Value);
+        // With a stack of its own, not by calling itself: nothing limits how deep pages nest, and a stack overflow ends the process.
         var list = new List<Page>();
-        void Walk(Guid id) { foreach (var k in kids[id].OrderBy(x => x.Sort).ThenBy(x => x.Title)) { list.Add(k); Walk(k.Id); } }
-        Walk(p.Id);
+        var seen = new HashSet<Guid> { p.Id };
+        var next = new Stack<Page>(kids[p.Id].OrderByDescending(x => x.Sort).ThenByDescending(x => x.Title));
+        while (next.TryPop(out var k))
+        {
+            if (!seen.Add(k.Id)) continue;
+            list.Add(k);
+            foreach (var c in kids[k.Id].OrderByDescending(x => x.Sort).ThenByDescending(x => x.Title)) next.Push(c);
+        }
         return list;
     }
 
@@ -440,7 +447,10 @@ internal sealed class DcContentService(KbDbContext db, IAccess access, IHttpCont
             KbUser? u = null;
             if (userKey is not null && Guid.TryParseExact(userKey, "N", out var id)) u = await svc.Db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
             else if (userName is not null) { var n = userName.ToUpperInvariant(); u = await svc.Db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.NormalizedUserName == n); }
-            return u is null || u.DeletedAt is not null ? null : u.DisplayName;
+            // A name is given to those who may look people up (and to oneself), as the user resource does; a deactivated account has none here.
+            if (u is null || u.DeletedAt is not null) return null;
+            if (u.Id == actor.UserId) return u.DisplayName;
+            return u.DeactivatedAt is null && await Kb.Web.Actions.ListPrincipalsHandler.MayBrowseAsync(svc.Db, svc.Access, actor, CancellationToken.None) ? u.DisplayName : null;
         }
 
         public async Task<IReadOnlyList<(string Title, string Url)>> ChildrenAsync() =>

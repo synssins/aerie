@@ -13,9 +13,9 @@ Pages live in spaces, in a tree of folders. The editor handles code blocks, tabl
 
 Access is per space. Someone is a Reader, Contributor, Supervisor or Owner in a space, either directly or through a group. An Admin creates spaces and Owners. Owners handle the rest of their space's members. A space marked sensitive is closed to Admins as well, unless they use emergency access, and its Owners hear about it when they do.
 
-Deleted pages and spaces go to a recycle bin. Sign-ins, permission changes, deletions and other security events go into an audit log whose entries are hash-chained, and the log can be sent to a syslog or SIEM. Entries of a sensitive space leave the database with who did what, when and from where, and without the details that can hold the space's own words (a page title, a file name, an excerpt): an Admin chooses where the log goes, and has no access to those spaces. API tokens are scoped and always expire.
+Deleted pages and spaces go to a recycle bin. Sign-ins, permission changes, deletions and other security events go into an audit log whose entries are hash-chained, and the log can be sent to a syslog or SIEM. Entries of a sensitive space leave the database with who did what, when and from where, and without the details that can hold the space's own words (a page title, a file name, an excerpt): an Admin chooses where the log goes, and has no access to those spaces. API tokens are scoped and always expire. A session ends after 8 hours without use and, however much it is used, 12 hours after it was opened. People change their own password under Settings > Sign-in.
 
-Most extra features are meant to be plugins. A plugin brings its own code, tables and screens, and an Admin installs one by uploading it.
+Set `AllowedHosts` in the server's configuration to the site's own host names once they are known; it ships as `*`, which accepts any. Most extra features are meant to be plugins. A plugin brings its own code, tables and screens, and an Admin installs one by uploading it.
 
 Not built yet: sign-in through Entra ID, AD/LDAP or passkeys, AD and Entra groups, comments and ratings, and Azure Blob storage. What is planned is in [ROADMAP.md](ROADMAP.md).
 
