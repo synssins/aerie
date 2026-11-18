@@ -460,27 +460,19 @@ internal sealed class DcUpdateContentHandler(KbDbContext db, IAccess access, DcC
             }
         }
 
-        if (page.Kind == PageKind.Page)
+        // A page or a folder, through aerie's own save: its hooks and an enforcing plugin's lock see the write, and the body is held to a
+        // page's rules (an editor document of a page's size). A folder's body is its own content (content.md).
+        var saved = await bus.SendAsync(new SavePage { PageId = page.Id, Title = title, ContentJson = json ?? page.ContentJson, BaseVersion = page.Version, Major = !minor, Note = message }, CancellationToken.None);
+        if (saved.Problem is { } sp) return DcContentRules.AsSurface(json is not null && sp.Fields?.ContainsKey("contentJson") == true ? new Problem(400, "The body is too large or nested too deep.") : sp);
+        if (page.Kind == PageKind.Folder && json is null)
         {
-            var saved = await bus.SendAsync(new SavePage { PageId = page.Id, Title = title, ContentJson = json ?? page.ContentJson, BaseVersion = page.Version, Major = !minor, Note = message }, CancellationToken.None);
-            if (saved.Problem is { } sp) return DcContentRules.AsSurface(sp);
-        }
-        else
-        {
-            // A folder: aerie's own save only renames it. Its body and its versions are kept here (content.md: a folder's body is its own content).
-            // The body is held to what a page's body is held to (its size).
-            if (json is not null && !PageSupport.IsEditorDoc(json)) return new Problem(400, "The body is too large or nested too deep.");
-            if (title != page.Title)
-            {
-                var renamed = await bus.SendAsync(new SavePage { PageId = page.Id, Title = title, ContentJson = page.ContentJson, BaseVersion = page.Version }, CancellationToken.None);
-                if (renamed.Problem is { } rp) return DcContentRules.AsSurface(rp);
-            }
+            // Only a new title: the save renamed the folder and kept its body. The surface counts every update as a version, so it adds the
+            // version here, with the body as it is (the write itself went through the save above).
             var folder = await db.Pages.FirstAsync(x => x.Id == page.Id, CancellationToken.None); // system: the folder the caller may edit, checked above
             var now = time.GetUtcNow();
             if (versions.Count == 0) // the version the surface showed as 1 becomes a real one first
                 db.PageVersions.Add(new PageVersion { PageId = folder.Id, Major = folder.Major, Minor = folder.Minor, Title = folder.Title, ContentJson = folder.ContentJson, AuthorId = folder.CreatedBy, At = folder.CreatedAt, Source = "api" });
             if (minor) folder.Minor++; else { folder.Major++; folder.Minor = 0; }
-            folder.ContentJson = json ?? folder.ContentJson;
             (folder.UpdatedBy, folder.UpdatedAt) = (me, now);
             db.PageVersions.Add(new PageVersion { PageId = folder.Id, Major = folder.Major, Minor = folder.Minor, Title = folder.Title, ContentJson = folder.ContentJson, AuthorId = me, At = now, Note = message, Source = "api" });
             try { await db.SaveChangesAsync(CancellationToken.None); }

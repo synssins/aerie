@@ -38,7 +38,7 @@ public sealed class DcFilesTests : IAsyncLifetime
         return (await (await _cora.PostJsonAsync("/rest/api/content", page)).JsonAsync(HttpStatusCode.OK)).GetProperty("id").GetString()!;
     }
 
-    private static MultipartFormDataContent Files(params (string Name, string Text, string? Type)[] files)
+    internal static MultipartFormDataContent Files(params (string Name, string Text, string? Type)[] files)
     {
         var form = new MultipartFormDataContent();
         foreach (var (name, text, type) in files)
@@ -50,7 +50,7 @@ public sealed class DcFilesTests : IAsyncLifetime
         return form;
     }
 
-    private static Task<HttpResponseMessage> UploadAsync(HttpClient c, string path, HttpContent form, bool xsrf = true)
+    internal static Task<HttpResponseMessage> UploadAsync(HttpClient c, string path, HttpContent form, bool xsrf = true)
     {
         var req = new HttpRequestMessage(HttpMethod.Post, path) { Content = form };
         if (xsrf) req.Headers.Add("X-Atlassian-Token", "no-check");
