@@ -1,6 +1,7 @@
 using Kb.Core.Audit;
 using Kb.Core.Spaces;
 using Kb.Data;
+using Microsoft.EntityFrameworkCore;
 using System.Text.RegularExpressions;
 
 namespace Kb.Web;
@@ -27,6 +28,13 @@ internal static partial class SpaceSupport
 
     internal static readonly Problem SensitiveStaysPrivate = Problem.Conflict("A sensitive space stays private.");
 
+    internal const int MaxName = 200, MaxDescription = 2000;
+
+    /// <summary>A space's name and description are shown in lists: a name and a paragraph, not a document.</summary>
+    internal static Problem? TextError(string? name, string? description) =>
+        name?.Trim().Length > MaxName ? Problem.Invalid("name", $"{MaxName} characters at most.")
+        : description?.Trim().Length > MaxDescription ? Problem.Invalid("description", $"{MaxDescription} characters at most.") : null;
+
     private static bool IsRename(Space s, UpdateSpace req) => req.Name is { } n && !string.IsNullOrWhiteSpace(n) && n.Trim() != s.Name;
 
     /// <summary>
@@ -38,6 +46,7 @@ internal static partial class SpaceSupport
         if (req.AgingDays is < 1 or > 3650 || req.RecycleDays is < 1 or > 3650) return Problem.Invalid("days", "1-3650.");
         if (req.ReviewMonths is { } rm && !ReviewChoices.Contains(rm)) return Problem.Invalid("reviewMonths", "0, 1, 3, 6, 12, 24 or 36.");
         if (req.Visibility is { } vis && !Enum.IsDefined(vis)) return Problem.Invalid("visibility", "Private, SignedIn or Anyone.");
+        if (TextError(req.Name, req.Description) is { } text) return text;
         if ((req.IsSensitive ?? s.IsSensitive) && (req.Visibility ?? s.Visibility) != SpaceVisibility.Private) return SensitiveStaysPrivate;
 
         // Protection taken from a sensitive space: the flag cleared (every Admin is its Owner from then on).
@@ -53,7 +62,18 @@ internal static partial class SpaceSupport
         if (req.Visibility is { } p) s.Visibility = p;
         var sensitiveChanged = req.IsSensitive is { } sens && sens != s.IsSensitive;
         if (req.IsSensitive is { } v) s.IsSensitive = v;
+        // A service token that names the space was made while an Admin could name any space. From now on only someone who manages the
+        // space may make one, so the old ones end here: the Owners could neither see nor revoke them.
+        var ended = new List<Kb.Core.Identity.ApiToken>();
+        if (sensitiveChanged && s.IsSensitive)
+        {
+            var now = ctx.Services.GetRequiredService<TimeProvider>().GetUtcNow();
+            foreach (var token in await db.ApiTokens.Where(t => t.Kind == Kb.Core.Identity.TokenKind.Service && t.RevokedAt == null).ToListAsync())
+                if (token.Scopes().Any(x => x.SpaceId == s.Id)) { token.RevokedAt = now; ended.Add(token); }
+        }
         await db.SaveChangesAsync();
+        foreach (var token in ended)
+            ctx.Audit(AuditActions.TokenRevoke, "token", token.Id.ToString(), s.Id, new Dictionary<string, string> { ["name"] = token.Name, ["reason"] = "the space became sensitive" });
         ctx.Audit(sensitiveChanged ? AuditActions.SpaceSensitiveSet : AuditActions.SpaceUpdate, "space", s.Id.ToString(), s.Id,
             new Dictionary<string, string> { ["isSensitive"] = s.IsSensitive.ToString(), ["visibility"] = s.Visibility.ToString() });
         // The Owners hear of it whoever did it and by whichever address, as they do of emergency access.

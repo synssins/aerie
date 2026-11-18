@@ -27,6 +27,13 @@ public sealed record OidcProvider
     public string EmailVerifiedClaim { get; init; } = "email_verified";
 
     public string NameClaim { get; init; } = "name";
+
+    /// <summary>
+    /// 0.9.0. True: after the token request the app reads the provider's userinfo endpoint (when its discovery document names one) with
+    /// the access token. Its <c>sub</c> must be the ID token's, or the sign-in is refused; its claims fill those the ID token lacks. The
+    /// userinfo endpoint's host must be reachable like the others. False (the default): only the ID token is read, as in 0.8.0.
+    /// </summary>
+    public bool UserInfo { get; init; }
 }
 
 /// <summary>
@@ -55,6 +62,19 @@ public interface ISignInMethod
 /// <summary>A sign-in method a plugin registered: its id (unique within the plugin), the text of its button, and its type.</summary>
 public sealed record SignInMethodReg(string Id, string Name, Type Method);
 
+/// <summary>
+/// 0.9.0. An optional check on the people a provider made by an Admin vouches for (<see cref="SignInExtensions.SignInProviders"/>): runs on the
+/// validated claims after the app's own checks, and is told which provider it is. Null lets the person on; a text refuses them, shown on the
+/// sign-in screen (at most 200 characters). A call that throws or runs past 10 seconds refuses too.
+/// </summary>
+public interface ISignInProviderCheck
+{
+    Task<string?> CheckAsync(string providerId, SignInClaims claims, CancellationToken ct);
+}
+
+/// <summary>0.9.0. The plugin offers sign-in providers that an Admin adds, names and sets up on its page; <paramref name="Check"/> is its optional check.</summary>
+public sealed record SignInProvidersReg(Type? Check);
+
 public static class SignInExtensions
 {
     /// <summary>
@@ -69,6 +89,26 @@ public static class SignInExtensions
         if (!IsId(id)) throw new ArgumentException($"\"{id}\" is not a sign-in method id: 1 to 32 lowercase letters, digits and hyphens, starting with a letter or digit.", nameof(id));
         if (string.IsNullOrWhiteSpace(name) || name.Length > 60 || name.Any(char.IsControl)) throw new ArgumentException("A sign-in method's name is 1 to 60 characters.", nameof(name));
         return app.Add(new SignInMethodReg(id, name.Trim(), typeof(TMethod)));
+    }
+
+    /// <summary>
+    /// 0.9.0. The plugin offers sign-in providers that an Admin manages: its page under Administration &gt; Plugins gets a list of providers
+    /// with "Add new". Each has a title (its button's text), a stable id of its own (part of its redirect address), and settings the app keeps:
+    /// issuer, discovery address, client id and secret, scopes, claim names, userinfo, new accounts, a required claim, and whether the provider
+    /// may be on a private network. Each is a sign-in method like one registered with <see cref="SignInMethod{TMethod}"/>; the plugin reads none
+    /// of its settings. Registered once per plugin.
+    /// </summary>
+    public static IPluginApp SignInProviders(this IPluginApp app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        return app.Add(new SignInProvidersReg(null));
+    }
+
+    /// <summary>As <see cref="SignInProviders(IPluginApp)"/>, with a check of the plugin's own on each provider's sign-ins.</summary>
+    public static IPluginApp SignInProviders<TCheck>(this IPluginApp app) where TCheck : class, ISignInProviderCheck
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        return app.Add(new SignInProvidersReg(typeof(TCheck)));
     }
 
     public static bool IsId(string? id) =>

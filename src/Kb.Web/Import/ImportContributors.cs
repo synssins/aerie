@@ -124,7 +124,8 @@ public sealed class ImportContributors(IServiceScopeFactory scopes, IRegistratio
         {
             if (e is TimeoutException) await stop.CancelAsync();
             log.LogWarning(e, "The {Where} of {Plugin} failed on {What}.", where, pluginId, what);
-            failures.Report(pluginId, where, e);
+            // A file a contributor is slow on is the file's doing as much as the plugin's: it is skipped, and does not count toward turning the plugin off.
+            if (e is not TimeoutException) failures.Report(pluginId, where, e);
             return null;
         }
     }

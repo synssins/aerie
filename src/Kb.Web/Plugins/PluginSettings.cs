@@ -50,7 +50,43 @@ public sealed class PluginSettingsStore
         return methods.Count == 0 ? manifest.Settings : [.. manifest.Settings, .. SignInSettings.For(methods)];
     }
 
-    public IReadOnlyList<PluginSetting> Definitions(PluginManifest manifest) => Definitions(manifest, _registrations);
+    /// <summary>The definitions, with those of each provider an Admin added (0.9.0) when the plugin offers them.</summary>
+    public IReadOnlyList<PluginSetting> Definitions(PluginManifest manifest)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        var all = Definitions(manifest, _registrations);
+        if (!OffersProviders(manifest.Id)) return all;
+        return [.. all, .. Providers(manifest.Id).SelectMany(p => SignInSettings.ForProvider(p.Id))];
+    }
+
+    /// <summary>Whether the plugin offers sign-in providers an Admin adds (0.9.0).</summary>
+    public bool OffersProviders(string pluginId) => _registrations.All<SignInProvidersReg>().Any(r => r.PluginId == pluginId);
+
+    /// <summary>The providers an Admin added to the plugin (0.9.0).</summary>
+    public IReadOnlyList<SignInSettings.Provider> Providers(string pluginId) => SignInSettings.Providers(_snapshot.Get(pluginId, SignInSettings.ProvidersKey));
+
+    /// <summary>
+    /// Writes the list of a plugin's providers. With <paramref name="removed"/>, that provider's settings go too, its secret with them.
+    /// Applies at once, here and on the other servers, without a restart.
+    /// </summary>
+    public async Task SaveProvidersAsync(string pluginId, IReadOnlyList<SignInSettings.Provider> providers, string? removed, Guid by)
+    {
+        ArgumentNullException.ThrowIfNull(providers);
+        await using var scope = _scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<KbDbContext>();
+        var now = _time.GetUtcNow();
+        var none = CancellationToken.None;
+        var rows = await db.PluginSettingValues.Where(v => v.PluginId == pluginId && v.Key.StartsWith(SignInSettings.Prefix)).ToListAsync(none);
+        var list = rows.FirstOrDefault(r => r.Key == SignInSettings.ProvidersKey);
+        if (list is null) db.PluginSettingValues.Add(list = new PluginSettingValue { PluginId = pluginId, Key = SignInSettings.ProvidersKey });
+        (list.Value, list.Secret, list.UpdatedAt, list.UpdatedBy) = (SignInSettings.Write(providers), false, now, by);
+        if (removed is not null) db.PluginSettingValues.RemoveRange(rows.Where(r => r.Key.StartsWith($"{SignInSettings.Prefix}{removed}.", StringComparison.Ordinal)));
+        await db.SaveChangesAsync(none);
+        var stamp = Guid.NewGuid().ToString("N");
+        await db.SetAsync(RuntimeSettingKeys.PluginSettingsStamp, stamp, by, now, none);
+        _watcher.SawStamp(stamp);
+        await ReloadAsync(db, none);
+    }
 
     private IDataProtector Protector(string pluginId) => _protection.CreateProtector("kb.plugin.secret:" + pluginId);
 

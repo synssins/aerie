@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Kb.Web.Actions;
 
-internal sealed class AddAttachmentHandler(KbDbContext db, IAccess access, IFileStore store, TimeProvider time) : IActionHandler<AddAttachment, AttachmentDto>
+internal sealed class AddAttachmentHandler(KbDbContext db, IAccess access, IFileStore store, TimeProvider time, Microsoft.Extensions.Options.IOptions<Kb.Core.Config.KbOptions> options) : IActionHandler<AddAttachment, AttachmentDto>
 {
     private Page? _page;
     private long _max;
@@ -28,6 +28,7 @@ internal sealed class AddAttachmentHandler(KbDbContext db, IAccess access, IFile
         var (page, me, max) = (_page!, ctx.Actor.UserId!.Value, _max);
         if (ctx.Action.File is not { } file) return Problem.Invalid("file", "Empty file.");
         if (file.Length > max) return TooLarge(max);
+        if (await UploadLimits.SpaceFullAsync(db, options.Value.Storage.SpaceQuotaMb, page.SpaceId, file.Length ?? 0, ctx.Cancel)) return UploadLimits.SpaceFull;
         var name = file.FileName;
         var a = new Attachment { PageId = page.Id, FileName = string.IsNullOrWhiteSpace(name) ? "file" : name[..Math.Min(name.Length, 255)], CreatedBy = me, CreatedAt = time.GetUtcNow() };
         var key = a.Id.ToString("N");

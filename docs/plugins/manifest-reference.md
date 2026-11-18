@@ -16,8 +16,8 @@ A list may be left out (it is then empty) but may not be `null`, and no item of 
 | `name` | text | the id | The name people see. |
 | `description` | text | none | One line about what it does. |
 | `assembly` | text | `<id>.dll` | The file name of the main assembly, at the top of the package. A file name only: no `/`, `\` or `:`. |
-| `minKbVersion` | text | `0.1.0` | The lowest app version it runs on. The app is at 0.8.0. |
-| `abstractionsVersion` | text | `0.1.0` | The version of `Kb.Plugins.Abstractions` it was built against. The app's is 0.8.0; a plugin fits when its major number is the app's and it is not higher. |
+| `minKbVersion` | text | `0.1.0` | The lowest app version it runs on. The app is at 0.9.0. |
+| `abstractionsVersion` | text | `0.1.0` | The version of `Kb.Plugins.Abstractions` it was built against. The app's is 0.9.0; a plugin fits when its major number is the app's and it is not higher. |
 | `uiApiVersion` | text | none | The version of the script API its script was written for: `1.0.0`, or `1.1.0` for a script that adds panels to the plugin's page or uploads with `kb.api.upload`. The app's is 1.1.0. Needed when the plugin has a script: without it the install is refused. |
 | `enforcing` | true or false | false | True when the plugin enforces a rule. If the core disables it, the actions it guarded stay locked until an Admin releases the lock. |
 | `requires` | list | empty | The plugins it needs. See below. |
