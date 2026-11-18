@@ -30,6 +30,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
     ImportContributors contributors)
 {
     public const int MaxFilesPerBatch = 1000;
+    public const long MaxFileBytes = 256L * 1024 * 1024;
     /// <summary>What everything inside the files of one upload (archives in archives, mail attachments, pictures) may add up to once unpacked.</summary>
     public const long MaxUnpackedBytes = 2L * 1024 * 1024 * 1024;
     public const int MaxUnpackedFiles = 5000;
@@ -232,7 +233,8 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         // A digest (a change calendar, a meeting log) names many stories: it joins none of them.
         for (var i = 0; i < ids.Count; i++) if (ids[i].Count > MaxSharedIds) ids[i].Clear();
         var parent = Enumerable.Range(0, groups.Count).ToArray();
-        int Find(int i) => parent[i] == i ? i : parent[i] = Find(parent[i]);
+        // A loop, not a call to itself: a long chain of files that name each other's numbers would otherwise be as deep as it is long.
+        int Find(int i) { while (parent[i] != i) i = parent[i] = parent[parent[i]]; return i; }
         var owner = new Dictionary<string, int>();
         for (var i = 0; i < groups.Count; i++)
             foreach (var id in ids[i])

@@ -47,6 +47,8 @@ services.AddIdentity<KbUser, KbRole>(o =>
         o.User.RequireUniqueEmail = false;
     })
     .AddEntityFrameworkStores<KbDbContext>()
+    .AddUserStore<KbUserStore>()
+    .AddPasswordValidator<Kb.Web.Actions.CommonPasswordValidator>()
     .AddDefaultTokenProviders();
 
 services.ConfigureApplicationCookie(o =>
@@ -68,11 +70,23 @@ services.ConfigureApplicationCookie(o =>
             ? await ctx.HttpContext.RequestServices.GetRequiredService<KbDbContext>().Users.AsNoTracking()
                 .Where(u => u.Id == id && u.DeactivatedAt == null).Select(u => u.SecurityStamp).FirstOrDefaultAsync(ctx.HttpContext.RequestAborted)
             : null;
-        if (stamp is null || stamp != ctx.Principal!.FindFirst(ctx.HttpContext.RequestServices.GetRequiredService<IOptions<IdentityOptions>>().Value.ClaimsIdentity.SecurityStampClaimType)?.Value)
+        // A session also ends a fixed time after it was opened, however much it is used: its start travels in the cookie. A session
+        // from before this rule gets its start now, so nobody is signed out by the update.
+        var now = ctx.HttpContext.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow();
+        var start = ctx.Properties.Items.TryGetValue(SessionAge.Key, out var text) && long.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out var s) ? DateTimeOffset.FromUnixTimeSeconds(s) : (DateTimeOffset?)null;
+        if (stamp is null || stamp != ctx.Principal!.FindFirst(ctx.HttpContext.RequestServices.GetRequiredService<IOptions<IdentityOptions>>().Value.ClaimsIdentity.SecurityStampClaimType)?.Value
+            || now - start > kb.Auth.SessionMaxAge)
         {
             ctx.RejectPrincipal();
             await Microsoft.AspNetCore.Authentication.AuthenticationHttpContextExtensions.SignOutAsync(ctx.HttpContext, IdentityConstants.ApplicationScheme);
+            return;
         }
+        if (start is null)
+        {
+            ctx.Properties.Items[SessionAge.Key] = now.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+            ctx.ShouldRenew = true;
+        }
+        ctx.HttpContext.Items[SessionAge.Key] = start ?? now;
     };
 });
 
@@ -135,6 +149,12 @@ services.AddRateLimiter(o =>
 // Shared keys so any instance can read any instance's cookie (A/B patching, load balancing).
 var dp = services.AddDataProtection().SetApplicationName("kb").PersistKeysToDbContext<KbDbContext>();
 _ = dp;
+// With the secret set, the keys are stored encrypted with it (KeyProtection). Without it they are stored as before.
+if (config[KeyProtection.SecretName] is { Length: > 0 } keySecret)
+    services.Configure<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>(o => o.XmlEncryptor = new KeyProtection.Encryptor(keySecret));
+
+// A browser that reached the site over https keeps to https for a year, its subdomains included (the framework's default is 30 days).
+services.AddHsts(o => { o.MaxAge = TimeSpan.FromDays(365); o.IncludeSubDomains = true; });
 
 services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
@@ -166,7 +186,9 @@ services.AddSingleton<IFileStore>(sp => sp.GetRequiredService<ActiveFileStore>()
 services.AddSingleton<ILogShipperKind, FileLogShipperKind>();
 services.AddSingleton<ILogShipperKind, SyslogShipperKind>();
 services.AddSingleton<ILogShipperKind, HttpsLogShipperKind>();
-services.AddHttpClient(HttpsLogShipperKind.ClientName, c => c.Timeout = TimeSpan.FromSeconds(15));
+// No redirect is followed: the request carries the target's secret header, which is for the host the Admin named and no other.
+services.AddHttpClient(HttpsLogShipperKind.ClientName, c => c.Timeout = TimeSpan.FromSeconds(15))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
 services.AddSingleton<LogShipperService>();
 services.AddHostedService(sp => sp.GetRequiredService<LogShipperService>());
 services.AddSingleton<IAuditSink, LogShipSignal>();
@@ -273,11 +295,14 @@ await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<KbDbContext>();
     var audit = scope.ServiceProvider.GetRequiredService<IAuditLog>();
+    await KeyProtection.OnStartupAsync(db, config[KeyProtection.SecretName], app.Logger); // before the first key is read
+    await KbUserStore.ProtectStraysAsync(db, app.Services.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>(), config[KeyProtection.SecretName]);
     foreach (var e in boot.Events) await audit.AppendAsync(e);
     await app.Services.GetRequiredService<PluginSettingsStore>().ProtectStraysAsync(CancellationToken.None); // from here a plugin can read its secrets
 
     await scope.ServiceProvider.GetRequiredService<BreakGlassService>().EnsureAccountAsync();
     await scope.ServiceProvider.GetRequiredService<SetupService>().OnStartupAsync();
+    await ServiceTokenRules.RevokeStraysAsync(db, scope.ServiceProvider.GetRequiredService<ISpacePermissionService>(), audit, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow());
     await SearchIndex.BackfillAsync(db, app.Services.GetRequiredService<DocRenderers>()); // pages saved before the search index existed
     // Image grants no page needs any more (a page moved in and out again, or a grant written before moves checked what they pass on).
     // A failed clean-up must not stop the start: the grants stay one more run.
@@ -301,6 +326,7 @@ app.UseStaticFiles(new StaticFileOptions
 app.Use(Kb.Web.DataCenter.BasicThrottle.GateAsync); // before authentication: a limited address's credentials are not checked
 app.UseAuthentication();
 app.UseRateLimiter();
+app.Use(CrossSiteGuard.InvokeAsync);
 app.Use(Kb.Web.DataCenter.DcRest.GuardAsync);
 app.Use(ApiTokenAuth.EnforceAsync);
 app.UseAuthorization();
@@ -310,6 +336,7 @@ app.MapHealthChecks("/health/ready", new() { Predicate = c => c.Tags.Contains("r
 
 var api = app.MapGroup("/api/v1");
 api.MapAuthEndpoints();
+api.MapMyPassword();
 api.MapSetupEndpoints();
 api.MapPageEndpoints();
 api.MapPageStructureEndpoints();

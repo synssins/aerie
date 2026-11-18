@@ -13,9 +13,9 @@ Pages live in spaces, in a tree of folders. The editor handles code blocks, tabl
 
 Access is per space. Someone is a Reader, Contributor, Supervisor or Owner in a space, either directly or through a group. An Admin creates spaces and Owners. Owners handle the rest of their space's members. A space marked sensitive is closed to Admins as well, unless they use emergency access, and its Owners hear about it when they do.
 
-Deleted pages and spaces go to a recycle bin. Sign-ins, permission changes, deletions and other security events go into an audit log whose entries are hash-chained, and the log can be sent to a syslog or SIEM. API tokens are scoped and always expire.
+Deleted pages and spaces go to a recycle bin. Sign-ins, permission changes, deletions and other security events go into an audit log whose entries are hash-chained, and the log can be sent to a syslog or SIEM. Entries of a sensitive space leave the database with who did what, when and from where, and without the details that can hold the space's own words (a page title, a file name, an excerpt): an Admin chooses where the log goes, and has no access to those spaces. API tokens are scoped and always expire. A session ends after 8 hours without use and, however much it is used, 12 hours after it was opened. People change their own password under Settings > Sign-in.
 
-Most extra features are meant to be plugins. A plugin brings its own code, tables and screens, and an Admin installs one by uploading it.
+Set `AllowedHosts` in the server's configuration to the site's own host names once they are known; it ships as `*`, which accepts any. Most extra features are meant to be plugins. A plugin brings its own code, tables and screens, and an Admin installs one by uploading it.
 
 Not built yet: sign-in through Entra ID, AD/LDAP or passkeys, AD and Entra groups, comments and ratings, and Azure Blob storage. What is planned is in [ROADMAP.md](ROADMAP.md).
 
@@ -51,6 +51,16 @@ Tell Aerie which proxy to believe. Set `Kb__Proxy__Trusted__0` (and `__1`, `__2`
 Open the site and the setup page asks for the first admin account, or set one up front in `docker-compose.yml`, which also shows how to point it at SQL Server instead.
 
 The volume holds everything: the database, uploaded files and logs. Back up `/app/App_Data` and you have it all.
+
+### Protecting the keys in the database
+
+The keys that sign the session cookie and encrypt stored secrets (plugin secrets, log target secrets, storage passwords, a sign-in method's client secret) are kept in the database, so that several servers share them. By default they are stored as they are, which makes a copy of the database enough to read those secrets and to forge a session. Set `Kb--KeyProtectionSecret` to a long random value and they are stored encrypted with it: the keys already there are encrypted at the next start, and new ones from then on. Set it where the database is not: an environment variable of the container, a Fly secret, an environment variable of the IIS app pool. This applies to every kind of install.
+
+With the secret set, each account's authenticator key and recovery codes are stored encrypted too (they are in clear otherwise), also at the next start for the ones already there.
+
+This was run on both databases. On SQLite the tests run it on every build. On SQL Server it was run on 2026-11-18 against SQL Server Express: keys and authenticator keys made without the secret were encrypted at the first start with it, read at that start and the next, a sign-in with a one-time code worked at both, and a start without the secret was refused. The test is `KeyProtectionSqlServerTests`; it runs when `KB_TEST_SQLSERVER` names an instance, in a database of its own that it drops.
+
+Keep the value as safe as a backup. Without it the app refuses to start on that database and says so, and if it is lost for good the stored secrets have to be typed in again, everyone is signed out, and nobody's one-time codes work until an Admin resets them. The break-glass account uses no codes and is the way back in, so give it a password before turning this on. Backups of the database made before the secret was set still hold the keys unencrypted.
 
 ## Dependency checks
 

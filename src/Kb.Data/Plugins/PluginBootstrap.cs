@@ -257,7 +257,8 @@ public static class PluginBootstrap
 
     /// <summary>
     /// Call last, just before the host is built. Puts the plugins' services in front of every other registration,
-    /// so a core or framework registration of the same service wins, also one made with TryAdd. A plugin adds to the app; it does not replace a core service.
+    /// so a core or framework registration of the same service wins, also one made with TryAdd. A plugin is meant to add to the app, not to
+    /// replace a core service; this ordering is what stands in its way, and it is not a sandbox (a plugin's code runs in the server process).
     /// </summary>
     public static void Seal(IServiceCollection services, PluginBoot boot)
     {
@@ -280,22 +281,23 @@ public static class PluginBootstrap
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "kb-plugins")).FullName;
+            // A folder of this start's own, under a name nobody could have made ready: the temp folder is shared with other accounts.
+            return Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "kb-plugins-" + Guid.NewGuid().ToString("N"))).FullName;
         }
     }
 
-    /// <summary>The folder of this version, unpacked. It is used as it is when its marker names this package; folders of other versions go.</summary>
+    /// <summary>
+    /// The folder of this version, unpacked from the package in the database at every start. A folder left by an earlier start is not
+    /// used as it is: whoever can write there could have changed the code, and a marker file does not show that. Folders of other versions go.
+    /// </summary>
     private static string Unpacked(string work, PluginManifest manifest, string sha256, byte[] package)
     {
         var root = Path.Combine(work, manifest.Id);
         var folder = Path.Combine(root, manifest.Version);
         var marker = Path.Combine(folder, ".sha256");
-        if (!File.Exists(marker) || File.ReadAllText(marker) != sha256)
-        {
-            if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
-            PluginPackageReader.Unpack(package, folder);
-            File.WriteAllText(marker, sha256);
-        }
+        if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
+        PluginPackageReader.Unpack(package, folder);
+        File.WriteAllText(marker, sha256);
         foreach (var other in Directory.GetDirectories(root).Where(d => !string.Equals(Path.GetFullPath(d), Path.GetFullPath(folder), StringComparison.OrdinalIgnoreCase)))
         {
             try { Directory.Delete(other, recursive: true); }

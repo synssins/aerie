@@ -46,6 +46,7 @@ public static class OAuthRedirects
         if (hostPort.Contains('@', StringComparison.Ordinal)) return null; // no user info in a redirect URI
         var portAt = hostPort.StartsWith('[') ? hostPort.IndexOf("]:", StringComparison.Ordinal) is var b and >= 0 ? b + 1 : -1 : hostPort.LastIndexOf(':');
         var (host, port) = portAt < 0 ? (hostPort, "") : (hostPort[..portAt], hostPort[(portAt + 1)..]);
+        if (!port.All(char.IsAsciiDigit)) return null; // a port is digits: anything else after the colon is not this address
         return (scheme, host.ToLowerInvariant(), port, rest);
     }
 }

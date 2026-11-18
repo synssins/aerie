@@ -13,6 +13,8 @@ namespace Kb.Web;
 internal static class PageSupport
 {
     internal const int MaxContentChars = 5_000_000;
+    /// <summary>A version's note is shown in lists of versions: a line or two, not a document.</summary>
+    internal const int MaxNote = 500;
 
     /// <summary>Writes a new version of a page (or renames a folder), re-indexes it and clears the author's draft.</summary>
     private static bool OfPage(object row, Guid page) => row switch
@@ -32,7 +34,7 @@ internal static class PageSupport
         page.UpdatedAt = now;
         if (page.Kind == PageKind.Page)
         {
-            page.ContentJson = contentJson;
+            page.ContentJson = Kb.Core.Content.DocLinks.Clean(contentJson);
             if (major) { page.Major++; page.Minor = 0; } else page.Minor++;
             db.PageVersions.Add(new PageVersion { PageId = page.Id, Major = page.Major, Minor = page.Minor, Title = page.Title, ContentJson = page.ContentJson, AuthorId = me, At = now, Note = note });
         }
