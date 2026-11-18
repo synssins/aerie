@@ -319,3 +319,58 @@ describe("Plugins", () => {
     expect(screen.getByRole("button", { name: "Disable" })).toBeTruthy();
   });
 });
+
+describe("Plugins: sign-in providers an Admin adds", () => {
+  const oidc = plugin({
+    id: "kb.oidc", name: "OpenID Connect", origin: "Uploaded", source: "upload", signInProviders: true,
+    signInMethods: [{ id: "kb.oidc/pa1b2c3d4e5", name: "Lab", redirectAddress: "https://kb.test/api/v1/auth/methods/kb.oidc/pa1b2c3d4e5/callback", byAdmin: true, linked: 2 }],
+    settings: [
+      setting({ key: "Own", label: "Own setting" }),
+      setting({ key: "signIn.pa1b2c3d4e5.issuer", label: "Issuer" }),
+      setting({ key: "signIn.pa1b2c3d4e5.clientSecret", label: "Client secret", secret: true }),
+    ],
+  });
+
+  it("lists each provider with its own gear; its settings are under the gear, not in the plugin's form", async () => {
+    const calls = server({
+      "GET /plugins": list([oidc]),
+      "GET /plugins/kb.oidc/settings": () => ({ body: { values: { Own: "x", "signIn.pa1b2c3d4e5.issuer": "https://id.example.com" }, secretsSet: [] } }),
+      "PUT /plugins/kb.oidc/settings": () => ({ body: { restart: false } }),
+    });
+    show();
+    await userEvent.click(await screen.findByText("OpenID Connect"));
+    const section = await screen.findByRole("region", { name: "Sign-in providers" });
+    expect(within(section).getByText("https://kb.test/api/v1/auth/methods/kb.oidc/pa1b2c3d4e5/callback")).toBeTruthy();
+    expect(await screen.findByLabelText("Own setting")).toBeTruthy();
+    expect(screen.queryByLabelText("Issuer")).toBeNull();
+
+    await userEvent.click(within(section).getByRole("button", { name: "Settings of Lab" }));
+    const dialog = screen.getByRole("dialog", { name: "Lab" });
+    expect(await within(dialog).findByLabelText("Issuer")).toHaveProperty("value", "https://id.example.com");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    const sent = calls.filter((c) => c.key === "PUT /plugins/kb.oidc/settings").at(-1)?.body as { values: Record<string, string | null> };
+    expect(Object.keys(sent.values).sort()).toEqual(["signIn.pa1b2c3d4e5.clientSecret", "signIn.pa1b2c3d4e5.issuer"]);
+  });
+
+  it("Add new asks for a title; Remove says how many accounts keep their link", async () => {
+    const calls = server({
+      "GET /plugins": list([oidc]),
+      "GET /plugins/kb.oidc/settings": () => ({ body: { values: {}, secretsSet: [] } }),
+      "POST /plugins/kb.oidc/signin-providers": () => ({ body: { id: "pf0f0f0f0f0", title: "Second", redirectAddress: "x" } }),
+      "DELETE /plugins/kb.oidc/signin-providers/pa1b2c3d4e5": () => ({ status: 204 }),
+    });
+    show();
+    await userEvent.click(await screen.findByText("OpenID Connect"));
+    await userEvent.click(await screen.findByRole("button", { name: "Add new" }));
+    await userEvent.type(screen.getByLabelText("Title (the text of its button)"), "Second");
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(calls.find((c) => c.key === "POST /plugins/kb.oidc/signin-providers")?.body).toEqual({ title: "Second" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Settings of Lab" }));
+    await userEvent.click(within(screen.getByRole("dialog", { name: "Lab" })).getByRole("button", { name: "Remove" }));
+    expect(screen.getByText(/2 accounts are linked to this provider's issuer/)).toBeTruthy();
+    expect(calls.some((c) => c.key.startsWith("DELETE"))).toBe(false);
+    await userEvent.click(screen.getAllByRole("button", { name: "Remove" }).at(-1)!);
+    expect(calls.some((c) => c.key === "DELETE /plugins/kb.oidc/signin-providers/pa1b2c3d4e5")).toBe(true);
+  });
+});

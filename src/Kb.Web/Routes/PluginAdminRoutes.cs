@@ -68,6 +68,16 @@ public static class PluginAdminRoutes
         admin.MapPut("/plugins/{id}/settings", (string id, PluginSettingsRequest req, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new SavePluginSettings { Id = id, Values = req.Values ?? [] }, ct).ToHttp()).WithAction<SavePluginSettings>();
 
+        // Sign-in providers an Admin adds to a plugin that offers them (0.9.0). Their settings are saved with the plugin's settings.
+        admin.MapPost("/plugins/{id}/signin-providers", (string id, SignInProviderRequest req, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new AddSignInProvider { PluginId = id, Title = req.Title ?? "" }, ct).ToHttp()).WithAction<AddSignInProvider>();
+
+        admin.MapPut("/plugins/{id}/signin-providers/{provider}", (string id, string provider, SignInProviderRequest req, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new RenameSignInProvider { PluginId = id, ProviderId = provider, Title = req.Title ?? "" }, ct).ToHttp()).WithAction<RenameSignInProvider>();
+
+        admin.MapDelete("/plugins/{id}/signin-providers/{provider}", (string id, string provider, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new RemoveSignInProvider { PluginId = id, ProviderId = provider }, ct).ToHttp()).WithAction<RemoveSignInProvider>();
+
         admin.MapPost("/plugins/{id}/release-lock", (string id, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new ReleasePluginLock { Id = id }, ct).ToHttp()).WithAction<ReleasePluginLock>();
     }

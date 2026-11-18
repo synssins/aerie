@@ -42,7 +42,7 @@ public static class AuthRoutes
         api.MapPost("/auth/local/password", (SetPasswordRequest req, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new SetPassword { UserId = req.UserId, Token = req.Token ?? "", Password = req.Password ?? "" }, ct).ToHttp()).AllowAnonymous().WithAction<SetPassword>();
 
-        // Sign-in methods of plugins (contract 0.8.0). The list holds only each method's id and button text.
+        // Sign-in methods of plugins (contract 0.8.0), and providers Admins add to them (0.9.0). The list holds only each method's id and button text.
         api.MapGet("/auth/methods", (IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new ListSignInMethods(), ct).ToHttp()).AllowAnonymous().WithAction<ListSignInMethods>();
 

@@ -1566,6 +1566,122 @@ paths:
       security:
         - cookieAuth: []
       "x-kb-api-token": "closed"
+  "/api/v1/admin/plugins/{id}/signin-providers":
+    post:
+      tags:
+        - "admin"
+      operationId: "plugin.signin.provider.add"
+      "x-kb-action": "plugin.signin.provider.add"
+      "x-kb-changes-data": true
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/SignInProviderRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/SignInProviderDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
+  "/api/v1/admin/plugins/{id}/signin-providers/{provider}":
+    delete:
+      tags:
+        - "admin"
+      operationId: "plugin.signin.provider.remove"
+      "x-kb-action": "plugin.signin.provider.remove"
+      "x-kb-changes-data": true
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+        - name: "provider"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: "No content"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
+    put:
+      tags:
+        - "admin"
+      operationId: "plugin.signin.provider.rename"
+      "x-kb-action": "plugin.signin.provider.rename"
+      "x-kb-changes-data": true
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+        - name: "provider"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/SignInProviderRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/SignInProviderDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
   "/api/v1/admin/plugins/{id}/state":
     put:
       tags:
@@ -8486,6 +8602,8 @@ components:
           type: "array"
           items:
             "$ref": "#/components/schemas/PluginSignInMethodDto"
+        signInProviders:
+          type: "boolean"
     PluginJobDto:
       type: "object"
       properties:
@@ -8632,6 +8750,11 @@ components:
           type: "string"
         redirectAddress:
           type: "string"
+        byAdmin:
+          type: "boolean"
+        linked:
+          type: "integer"
+          format: "int32"
     PluginState:
       type: "string"
       enum:
@@ -9042,6 +9165,21 @@ components:
           type: "string"
           nullable: true
         step:
+          type: "string"
+          nullable: true
+    SignInProviderDto:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+        title:
+          type: "string"
+        redirectAddress:
+          type: "string"
+    SignInProviderRequest:
+      type: "object"
+      properties:
+        title:
           type: "string"
           nullable: true
     SignInRedirect:

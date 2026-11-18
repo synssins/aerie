@@ -204,6 +204,10 @@ services.AddScoped<SetupService>();
 services.AddScoped<Kb.Web.Actions.CodeSignIn>();
 services.AddSingleton<SignInMethods>();
 services.AddSingleton<OidcCache>();
+// Providers Admins add (sign-in providers, 0.9.0): no redirects; public addresses only, unless an Admin marked the provider as on a private network.
+services.AddHttpClient(SignInProviderHttp.Public, c => c.Timeout = TimeSpan.FromSeconds(20)).ConfigurePrimaryHttpMessageHandler(NetGuard.Handler);
+services.AddHttpClient(SignInProviderHttp.Private, c => c.Timeout = TimeSpan.FromSeconds(20))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseProxy = false, ConnectTimeout = TimeSpan.FromSeconds(5) });
 services.AddScoped<SignInFlow>();
 services.AddScoped<InventoryService>();
 services.AddScoped<AiService>();
