@@ -8,13 +8,24 @@ namespace Kb.Web.Actions;
 // AccessService does the work, repeats the checks, writes the audit entry and notifies. These handlers add no audit entry of their own.
 // AuthorizeAsync makes the service's 403 answer first, so that no plugin hook sees an action its caller may not do.
 
-internal sealed class RequestAccessHandler(AccessService service) : IActionHandler<RequestAccess, AccessRequestedDto>
+internal sealed class RequestAccessHandler(KbDbContext db, AccessService service) : IActionHandler<RequestAccess, AccessRequestedDto>
 {
+    public const int MaxReason = 280;
+
     // Anyone signed in may ask. The service answers 404 for a space that does not exist.
     public Task<Problem?> AuthorizeAsync(ActionContext<RequestAccess> ctx) => Task.FromResult(ctx.Actor.UserId is null ? Problem.Unauthorized : null);
 
     public async Task<Outcome<AccessRequestedDto>> HandleAsync(ActionContext<RequestAccess> ctx)
     {
+        var (req, me) = (ctx.Action, ctx.Actor.UserId!.Value);
+        if (!Enum.IsDefined(req.Role)) return Problem.Invalid("role", "Reader, Contributor, Supervisor or Owner.");
+        if (req.Reason is { Length: > MaxReason }) return Problem.Invalid("reason", $"{MaxReason} characters at most.");
+        // An Owner is made by an Admin, not by an Owner approving a request; a sensitive space is the exception, as for granting a role.
+        if (req.Role >= SpaceRole.Owner && await db.Spaces.AsNoTracking().AnyAsync(s => s.Id == req.SpaceId && !s.IsSensitive, ctx.Cancel))
+            return Problem.Invalid("role", "Ask for Reader, Contributor or Supervisor. An Admin makes an Owner.");
+        // Each request is stored and sent to every Owner: one waiting request per person and space is enough.
+        if (await db.AccessRequests.AnyAsync(r => r.SpaceId == req.SpaceId && r.RequesterId == me && r.Status == AccessRequestStatus.Pending, ctx.Cancel))
+            return Problem.Conflict("You already have a request waiting for this space.");
         try { return new AccessRequestedDto((await service.RequestAsync(ctx.Action.SpaceId, ctx.Actor.UserId!.Value, ctx.Action.Role, ctx.Action.Reason)).Id); }
         catch (NotFoundException) { return Problem.NotFound; }
     }
