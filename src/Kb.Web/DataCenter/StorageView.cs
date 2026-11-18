@@ -88,7 +88,7 @@ public static class StorageView
                     {
                         "href" when e.Name == "a" => SafeHref(value) is { } href ? Local(href) : null,
                         "colspan" or "rowspan" or "span" => value,
-                        "style" => value, // kept as written: alignment, indents and colours are what the author set
+                        "style" => SafeStyle(value), // alignment, indents, colours and widths are what the author set; nothing else is kept
                         _ => null,
                     };
                     if (keep is not null) sb.Append(' ').Append(name).Append("=\"").Append(WebUtility.HtmlEncode(keep)).Append('"');
@@ -129,6 +129,18 @@ public static class StorageView
                     return;
             }
             Placeholder(e, sb);
+        }
+
+        private static readonly HashSet<string> StyleNames = new(StringComparer.OrdinalIgnoreCase) { "text-align", "margin-left", "color", "background-color", "width" };
+
+        /// <summary>The declarations of a style that only place or colour text. One that could fetch or cover something (url(, position, an expression) is dropped.</summary>
+        private static string? SafeStyle(string style)
+        {
+            var kept = style.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(d => d.Split(':', 2, StringSplitOptions.TrimEntries))
+                .Where(d => d.Length == 2 && StyleNames.Contains(d[0]) && d[1].All(c => char.IsAsciiLetterOrDigit(c) || c is ' ' or '#' or '.' or '%' or '-' or ',' or '(' or ')') && !d[1].Contains("url", StringComparison.OrdinalIgnoreCase)
+                    && !d[1].Contains("expression", StringComparison.OrdinalIgnoreCase))
+                .Select(d => $"{d[0]}: {d[1]};").ToList();
+            return kept.Count == 0 ? null : string.Join(' ', kept);
         }
 
         private static string? SafeHref(string href)

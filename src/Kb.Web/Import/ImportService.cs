@@ -30,6 +30,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
     ImportContributors contributors)
 {
     public const int MaxFilesPerBatch = 1000;
+    public const long MaxFileBytes = 256L * 1024 * 1024;
     /// <summary>What everything inside the files of one upload (archives in archives, mail attachments, pictures) may add up to once unpacked.</summary>
     public const long MaxUnpackedBytes = 2L * 1024 * 1024 * 1024;
     public const int MaxUnpackedFiles = 5000;

@@ -177,7 +177,8 @@ internal sealed class AddImportFileHandler(KbDbContext db, ImportService imports
         if (await ImportGate.MayAsync(imports, ctx.Actor, ctx.Cancel) is { } refused) return refused;
         var me = ctx.Actor.UserId!.Value;
         if ((_batch = await db.ImportBatches.FirstOrDefaultAsync(b => b.Id == ctx.Action.BatchId && b.UserId == me, ctx.Cancel)) is null) return Problem.NotFound;
-        _max = await UploadLimits.AttachmentBytesAsync(db, ctx.Cancel);
+        // An imported file is read whole into memory, so it is also held to a limit of its own, whatever the attachment limit is set to.
+        _max = Math.Min(await UploadLimits.AttachmentBytesAsync(db, ctx.Cancel), ImportService.MaxFileBytes);
         if (ctx.Action.File is AttachmentUpload upload && !(upload.Length > _max)) upload.Allow(_max);
         return null;
     }
@@ -190,7 +191,9 @@ internal sealed class AddImportFileHandler(KbDbContext db, ImportService imports
         if (file.Length > _max) return Problem.Invalid("file", $"{_max / 1_048_576} MB at most per file.");
         if (await db.ImportFiles.CountAsync(f => f.BatchId == b.Id, ctx.Cancel) >= ImportService.MaxFilesPerBatch) return Problem.Invalid("file", $"{ImportService.MaxFilesPerBatch} files at most in one upload.");
         using var ms = new MemoryStream();
-        await (await file.OpenReadAsync(ctx.Cancel)).CopyToAsync(ms, ctx.Cancel);
+        var (source, buffer) = (await file.OpenReadAsync(ctx.Cancel), new byte[81920]);
+        int read;
+        while (ms.Length <= _max && (read = await source.ReadAsync(buffer, ctx.Cancel)) > 0) ms.Write(buffer, 0, read);
         if (ms.Length > _max) return Problem.Invalid("file", $"{_max / 1_048_576} MB at most per file.");
         if (ms.Length == 0) return Problem.Invalid("file", "Empty file.");
         var raw = (ctx.Services.GetRequiredService<IHttpContextAccessor>().HttpContext?.Request.Headers["X-File-Name"].ToString()) ?? file.FileName ?? "file";

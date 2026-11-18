@@ -59,6 +59,7 @@ internal sealed class CreateSpaceHandler(KbDbContext db, IAccess access, TimePro
         else if (!SpaceKeyPattern().IsMatch(key)) return Problem.Invalid("key", "2-32 chars: lowercase letters, digits, hyphen.");
         else if (await db.Spaces.IgnoreQueryFilters().AnyAsync(x => x.Key == key, ctx.Cancel)) return new Problem(409);
         if (!Enum.IsDefined(req.Visibility)) return Problem.Invalid("visibility", "Private, SignedIn or Anyone.");
+        if (TextError(req.Name, req.Description) is { } text) return text;
         if (req.IsSensitive && req.Visibility != SpaceVisibility.Private) return SensitiveStaysPrivate;
         var s = new Space { Key = key, Name = req.Name.Trim(), Description = req.Description, IsSensitive = req.IsSensitive, Visibility = req.Visibility, CreatedAt = time.GetUtcNow() };
         db.Spaces.Add(s);
