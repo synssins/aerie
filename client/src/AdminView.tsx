@@ -370,16 +370,16 @@ export function SpaceEditor({ space, isAdmin, area, onBack, onSaved, onHome, onD
   }
   const dirty = JSON.stringify(form) !== JSON.stringify(space);
 
-  async function save(e: FormEvent) {
-    e.preventDefault();
+  async function save(e?: FormEvent) {
+    e?.preventDefault();
     setBusy(true);
     setStatus(null);
-    const body = tab === "details"
-      ? { description: form.description ?? "", ...(isAdmin ? { name: form.name } : {}) }
-      : {
-          commentsEnabled: form.commentsEnabled, ratingsEnabled: form.ratingsEnabled ?? true, agingDays: form.agingDays, agingAudience: form.agingAudience,
-          recycleDays: form.recycleDays ?? undefined, reviewMonths: form.reviewMonths ?? 0, ...(isAdmin ? { isSensitive: form.isSensitive, visibility: form.visibility } : {}),
-        };
+    // Everything changed on both tabs is sent, whichever tab Save is pressed on: a change made on the other tab is not left behind.
+    const body = {
+      description: form.description ?? "", ...(isAdmin ? { name: form.name } : {}),
+      commentsEnabled: form.commentsEnabled, ratingsEnabled: form.ratingsEnabled ?? true, agingDays: form.agingDays, agingAudience: form.agingAudience,
+      recycleDays: form.recycleDays ?? undefined, reviewMonths: form.reviewMonths ?? 0, ...(isAdmin ? { isSensitive: form.isSensitive, visibility: form.visibility } : {}),
+    };
     try {
       await api.patch(isAdmin ? `/admin/spaces/${space.id}` : `/spaces/${space.id}`, body);
       await onSaved();
@@ -416,7 +416,17 @@ export function SpaceEditor({ space, isAdmin, area, onBack, onSaved, onHome, onD
             <button role="tab" aria-selected={tab === "settings"} className={tab === "settings" ? "on" : ""} onClick={() => setTab("settings")}>Space settings</button>
             <button role="tab" aria-selected={tab === "members"} className={tab === "members" ? "on" : ""} onClick={() => setTab("members")}>Members</button>
           </div>
-          {tab === "members" ? <SpaceMembers spaceId={space.id} isAdmin={isAdmin} /> : (
+          {tab === "members" ? (
+            <>
+              {dirty && (
+                <div className="actions">
+                  <span className="muted" role="status">{status ?? "Changes on Details or Space settings are not saved yet."}</span>
+                  <button type="button" className="tb primary" disabled={busy} onClick={() => void save()}>{busy ? "Saving…" : "Save"}</button>
+                </div>
+              )}
+              <SpaceMembers spaceId={space.id} isAdmin={isAdmin} />
+            </>
+          ) : (
           <form className="form" onSubmit={save}>
             {tab === "details" ? (
               <>
