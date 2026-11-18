@@ -3,7 +3,7 @@
 
 # Base images are named by digest, so a build uses the image that was looked at, not whatever the tag points to that day.
 # Dependabot (.github/dependabot.yml) proposes the new digest when a base image is updated.
-FROM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS client
+FROM node:26-bookworm-slim@sha256:5df79989ed685e09f0a98019db4cebfb22fb9df1a53c0161664a011f7ff6b0f1 AS client
 WORKDIR /src/client
 COPY client/package.json client/package-lock.json ./
 RUN npm ci --no-fund --no-audit
