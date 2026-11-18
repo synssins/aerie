@@ -209,7 +209,6 @@ internal sealed class DeleteUserHandler(KbDbContext db, IAccess access, TimeProv
         var u = _user!;
         if (u.Id == ctx.Actor.UserId) return Problem.Conflict("You can't delete your own account.");
         if (u.IsBreakGlass) return Problem.Conflict("The break-glass account can't be deleted.");
-        if (u.Source is not (UserSource.Local or UserSource.SignInMethod)) return Problem.Conflict("Only local users and users of a sign-in method can be deleted.");
         await Gate.WaitAsync(ctx.Cancel);
         try { return await DeleteAsync(ctx, u); }
         finally { Gate.Release(); }
