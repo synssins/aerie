@@ -12,13 +12,14 @@ const linkFor = (m: Made) => `${location.origin}/set-password/${m.id}#${encodeUR
 
 /**
  * Administration > Users: the tools. New user, and for the selected local user a new password link, Reset authenticator or Delete.
+ * A user a sign-in method made gets the same, without the password link: it has no password here.
  * An account of a directory, and the break-glass account, are not managed here.
  */
 export function UserTools({ picked, onChanged, onError }: { picked: AdminUser | null; onChanged: () => void; onError: (text: string | null) => void }) {
   const dialogs = useDialogs();
   const [adding, setAdding] = useState(false);
   const [link, setLink] = useState<Link | null>(null);
-  const local = picked && picked.source === "Local" && !picked.isBreakGlass ? picked : null;
+  const local = picked && (picked.source === "Local" || picked.source === "SignInMethod") && !picked.isBreakGlass ? picked : null;
 
   async function newLink(u: AdminUser) {
     onError(null);
@@ -51,7 +52,7 @@ export function UserTools({ picked, onChanged, onError }: { picked: AdminUser | 
     <>
       {local && (
         <MenuButton label="More" iconOnly icon={<Ellipsis className="ic" aria-hidden />} items={[
-          { label: "Password link", icon: <KeyRound className="ic" aria-hidden />, onClick: () => void newLink(local) },
+          ...(local.source === "Local" ? [{ label: "Password link", icon: <KeyRound className="ic" aria-hidden />, onClick: () => void newLink(local) }] : []),
           { label: "Reset authenticator", icon: <ShieldOff className="ic" aria-hidden />, onClick: () => void resetCodes(local) },
           ...(local.isAdmin ? [] : [local.codesExempt
             ? { label: "Use codes", icon: <ShieldCheck className="ic" aria-hidden />, onClick: () => void setExempt(local, false) }

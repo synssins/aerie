@@ -79,6 +79,24 @@ describe("UserTools", () => {
     expect(screen.getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Password link", "Reset authenticator", "No codes", "Delete"]);
   });
 
+  it("offers a user a sign-in method made everything but Password link, and deletes them as a local user", async () => {
+    const calls = server({ "DELETE /admin/users/u1": () => ({ status: 204 }) });
+    const p = show(user({ source: "SignInMethod" }));
+    await userEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Reset authenticator", "No codes", "Delete"]);
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+    expect(screen.getByText("Delete “Gail”?")).toBeTruthy();
+    expect(calls).toEqual([]);
+    await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(p.onChanged).toHaveBeenCalled());
+    expect(calls.map((c) => c.key)).toEqual(["DELETE /admin/users/u1"]);
+    cleanup();
+
+    show(user({ source: "SignInMethod", isBreakGlass: true }));
+    expect(screen.queryByRole("button", { name: "More" })).toBeNull();
+  });
+
   it("Password link asks the server for a new link and shows it", async () => {
     const calls = server({ "POST /admin/users/u1/password-link": () => ({ body: { id: "u1", setPasswordToken: "abc" } }) });
     show(user());
