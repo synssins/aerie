@@ -12,7 +12,7 @@ namespace Kb.Web;
 /// <summary>What the page actions share. Nothing here answers HTTP: a check gives a <see cref="Problem"/>, a write an <see cref="Outcome{T}"/>.</summary>
 internal static class PageSupport
 {
-    private const int MaxContentChars = 5_000_000;
+    internal const int MaxContentChars = 5_000_000;
 
     /// <summary>Writes a new version of a page (or renames a folder), re-indexes it and clears the author's draft.</summary>
     private static bool OfPage(object row, Guid page) => row switch
