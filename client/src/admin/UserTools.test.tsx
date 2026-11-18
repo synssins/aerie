@@ -63,7 +63,7 @@ describe("UserTools", () => {
     expect((await screen.findByRole("alert")).textContent).toBe("Username 'rita' is already taken.");
   });
 
-  it("offers Password link and Delete for a local user only", async () => {
+  it("offers Password link for a local user only, and Delete for every account but the break-glass one", async () => {
     server({});
     show(null);
     expect(screen.queryByRole("button", { name: "More" })).toBeNull();
@@ -71,9 +71,12 @@ describe("UserTools", () => {
     show(user({ isBreakGlass: true }));
     expect(screen.queryByRole("button", { name: "More" })).toBeNull();
     cleanup();
-    show(user({ source: "Entra" }));
-    expect(screen.queryByRole("button", { name: "More" })).toBeNull();
-    cleanup();
+    for (const source of ["Entra", "Ldap", "Service"]) {
+      show(user({ source }));
+      await userEvent.click(screen.getByRole("button", { name: "More" }));
+      expect(screen.getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Delete"]);
+      cleanup();
+    }
     show(user());
     await userEvent.click(screen.getByRole("button", { name: "More" }));
     expect(screen.getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Password link", "Reset authenticator", "No codes", "Delete"]);

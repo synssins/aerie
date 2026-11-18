@@ -224,12 +224,42 @@ public sealed class UserAdminTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, (await _admin.DeleteAsync($"/api/v1/admin/users/{id}", Ct)).StatusCode); // already deleted
     }
 
+    /// <summary>An Admin deletes an account of any source: a service account's tokens stop at once, a directory account's session ends.</summary>
+    [Fact]
+    public async Task Delete_TakesAnAccountOfAnySource()
+    {
+        // A service account, made with a service token.
+        var made = await (await _admin.PostAsJsonAsync("/api/v1/tokens", new { name = "Robot", kind = "Service", scopes = new[] { new { spaceId = (Guid?)null, access = "Read" } }, days = 1 }, Ct))
+            .Content.ReadFromJsonAsync<JsonElement>(Ct);
+        var robot = _f.NewClient();
+        robot.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", made.GetProperty("token").GetString());
+        Assert.Equal(HttpStatusCode.OK, (await robot.GetAsync("/api/v1/spaces", Ct)).StatusCode);
+        var service = Guid.Empty;
+        await _f.WithDbAsync(async db => service = (await db.Users.AsNoTracking().SingleAsync(u => u.Source == UserSource.Service, Ct)).Id);
+        Assert.Equal(HttpStatusCode.NoContent, (await _admin.DeleteAsync($"/api/v1/admin/users/{service}", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await robot.GetAsync("/api/v1/spaces", Ct)).StatusCode);
+        await _f.WithDbAsync(async db => Assert.All(await db.ApiTokens.AsNoTracking().Where(t => t.OwnerUserId == service).ToListAsync(Ct), t => Assert.NotNull(t.RevokedAt)));
+
+        // Accounts of a directory, signed in: the delete ends the session at its next request.
+        foreach (var (name, source) in new[] { ("dora", UserSource.Entra), ("lars", UserSource.Ldap) })
+        {
+            var (c, id) = await UserAsync(name);
+            await _f.WithDbAsync(async db => { (await db.Users.SingleAsync(u => u.Id == id, Ct)).Source = source; await db.SaveChangesAsync(Ct); });
+            Assert.Equal(HttpStatusCode.OK, (await c.GetAsync("/api/v1/me", Ct)).StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent, (await _admin.DeleteAsync($"/api/v1/admin/users/{id}", Ct)).StatusCode);
+            Assert.Equal(HttpStatusCode.Unauthorized, (await c.GetAsync("/api/v1/me", Ct)).StatusCode);
+        }
+        Assert.Equal(3, (await AuditAsync("user.delete")).Count); // the service account, dora, lars
+    }
+
     [Fact]
     public async Task Delete_Refuses_Yourself_TheBreakGlassAccount_AndTheLastAdministrator()
     {
         var breakGlass = (await _admin.GetFromJsonAsync<JsonElement>("/api/v1/me", Ct)).GetProperty("id").GetGuid();
         var (adam, adamId) = await UserAsync("adam", admin: true);
         var (cara, caraId) = await UserAsync("cara");
+        // The protections hold whatever the source: Adam is an Administrator of a directory.
+        await _f.WithDbAsync(async db => { (await db.Users.SingleAsync(u => u.Id == adamId, Ct)).Source = UserSource.Entra; await db.SaveChangesAsync(Ct); });
 
         async Task RefusedAsync(HttpClient by, Guid user, string why)
         {
