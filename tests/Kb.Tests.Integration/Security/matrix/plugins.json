@@ -65,6 +65,30 @@
     "scope": "server"
   },
   {
+    "action": "plugin.signin.provider.add",
+    "method": "POST",
+    "path": "/api/v1/admin/plugins/kb.none/signin-providers",
+    "body": {"title": "Lab"},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 404},
+    "scope": "server",
+    "note": "Only an Admin adds a provider, and only to a loaded plugin that offers them: kb.none is not one."
+  },
+  {
+    "action": "plugin.signin.provider.rename",
+    "method": "PUT",
+    "path": "/api/v1/admin/plugins/kb.none/signin-providers/pnone",
+    "body": {"title": "Lab"},
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 404},
+    "scope": "server"
+  },
+  {
+    "action": "plugin.signin.provider.remove",
+    "method": "DELETE",
+    "path": "/api/v1/admin/plugins/kb.none/signin-providers/pnone",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 404},
+    "scope": "server"
+  },
+  {
     "action": "plugin.settings.save",
     "method": "PUT",
     "path": "/api/v1/admin/plugins/kb.none/settings",

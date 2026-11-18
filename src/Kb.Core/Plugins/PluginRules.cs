@@ -7,9 +7,9 @@ namespace Kb.Core.Plugins;
 /// <summary>The versions this host offers to plugins.</summary>
 public static class KbHost
 {
-    public const string Version = "0.8.0";
+    public const string Version = "0.9.0";
     /// <summary>Raised one minor step per phase of the plugin model; 1.0.0 when the contracts are frozen.</summary>
-    public const string AbstractionsVersion = "0.8.0";
+    public const string AbstractionsVersion = "0.9.0";
     public const string UiApiVersion = "1.1.0";
 }
 
@@ -58,6 +58,72 @@ public static class SignInSettings
             yield return new PluginSetting(NewAccounts(id), "New accounts" + of, Type: "toggle", Default: "false",
                 Help: "On: a person the provider vouches for who has no account here gets one, never an Administrator and in no space. Off: only people who have an account sign in.");
         }
+    }
+
+    // ---- 0.9.0: providers an Admin adds (SignInProvidersReg). The list is kept under ProvidersKey; each provider's settings under its id.
+
+    /// <summary>The list of a plugin's providers: a JSON array of { "id", "title" }. Not a setting the form shows; written by the provider actions.</summary>
+    public const string ProvidersKey = Prefix + "providers";
+    public const int MaxProviders = 20;
+
+    public static string Issuer(string id) => $"{Prefix}{id}.issuer";
+    public static string Discovery(string id) => $"{Prefix}{id}.discovery";
+    public static string Scopes(string id) => $"{Prefix}{id}.scopes";
+    public static string SubjectClaim(string id) => $"{Prefix}{id}.subjectClaim";
+    public static string EmailClaim(string id) => $"{Prefix}{id}.emailClaim";
+    public static string EmailVerifiedClaim(string id) => $"{Prefix}{id}.emailVerifiedClaim";
+    public static string NameClaim(string id) => $"{Prefix}{id}.nameClaim";
+    public static string UserInfo(string id) => $"{Prefix}{id}.userInfo";
+    public static string RequiredClaim(string id) => $"{Prefix}{id}.requiredClaim";
+    public static string RequiredValues(string id) => $"{Prefix}{id}.requiredValues";
+    public static string PrivateNetwork(string id) => $"{Prefix}{id}.privateNetwork";
+
+    /// <summary>A provider an Admin added: its stable id (part of its redirect address) and its title (its button's text).</summary>
+    public sealed record Provider(string Id, string Title);
+
+    /// <summary>The providers in the stored list; an empty list for nothing or a value that is not one.</summary>
+    public static IReadOnlyList<Provider> Providers(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return [];
+        try
+        {
+            return JsonSerializer.Deserialize<List<Provider>>(json, JsonOptions)?.Where(p => p is not null && SignInExtensions.IsId(p.Id) && IsTitle(p.Title)).DistinctBy(p => p.Id).ToList() ?? [];
+        }
+        catch (JsonException) { return []; }
+    }
+
+    public static string Write(IEnumerable<Provider> providers) => JsonSerializer.Serialize(providers, JsonOptions);
+
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    /// <summary>A title is 1 to 60 characters, no control characters: the button's text, as for a method a plugin registers.</summary>
+    public static bool IsTitle(string? title) => !string.IsNullOrWhiteSpace(title) && title.Trim().Length <= 60 && !title.Any(char.IsControl);
+
+    /// <summary>The settings of one provider an Admin added: what a 0.8.0 plugin's code said about its provider, set on its page instead.</summary>
+    public static IEnumerable<PluginSetting> ForProvider(string id)
+    {
+        yield return new PluginSetting(Issuer(id), "Issuer",
+            Help: "The provider's issuer, exactly as its ID tokens give it: an https address, such as https://login.example.com/tenant/v2.0. The sign-in button shows once this and the client ID are set.");
+        yield return new PluginSetting(Discovery(id), "Discovery address",
+            Help: "Only when the provider's discovery document is not at the issuer followed by /.well-known/openid-configuration. An https address.");
+        yield return new PluginSetting(ClientId(id), "Client ID", Help: "From the provider, where this app is registered with the redirect address shown for this provider.");
+        yield return new PluginSetting(ClientSecret(id), "Client secret", Secret: true, Help: "From the provider. Stored encrypted; it is never shown again.");
+        yield return new PluginSetting(Scopes(id), "Scopes", Default: "openid email profile", Help: "Separated by spaces; openid must be one of them.");
+        yield return new PluginSetting(SubjectClaim(id), "Subject claim", Default: "sub", Help: "The claim that names the person for good. Accounts are linked by issuer and this value.");
+        yield return new PluginSetting(EmailClaim(id), "Email claim", Default: "email");
+        yield return new PluginSetting(EmailVerifiedClaim(id), "Email verified claim", Default: "email_verified",
+            Help: "True when the provider verified the address. Only a verified address is matched to an account here.");
+        yield return new PluginSetting(NameClaim(id), "Name claim", Default: "name");
+        yield return new PluginSetting(UserInfo(id), "Read userinfo", Type: "toggle", Default: "true",
+            Help: "On: after the sign-in the app reads the provider's userinfo endpoint, when it has one; its subject must match the ID token's, and it fills claims the ID token lacks.");
+        yield return new PluginSetting(RequiredClaim(id), "Required claim",
+            Help: "A claim the person must have, such as hd for a domain or tid for a tenant. Empty: none is required.");
+        yield return new PluginSetting(RequiredValues(id), "Allowed values", Type: "multiline",
+            Help: "One per line. The required claim must equal one of them (for a list claim, one of its values must).");
+        yield return new PluginSetting(NewAccounts(id), "New accounts", Type: "toggle", Default: "false",
+            Help: "On: a person the provider vouches for who has no account here gets one, never an Administrator and in no space. Off: only people who have an account sign in.");
+        yield return new PluginSetting(PrivateNetwork(id), "Provider on a private network", Type: "toggle", Default: "false",
+            Help: "Off (the default): the app reaches this provider only at public internet addresses, so a mistyped or hostile address cannot aim it at the internal network. On: private addresses too, for a provider on your own network such as a test provider in a lab. Https stays required.");
     }
 }
 

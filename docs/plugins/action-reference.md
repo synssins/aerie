@@ -1125,6 +1125,15 @@ Write. `TurnOffMyCodes`, answers `Unit`. Core only.
 
 Read. `ReadMyCodes`, answers `MyCodes` ([MyCodes](#mycodes)). Core only.
 
+## me.password.set
+
+Write. `SetMyPassword`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Current | `string` | never logged |
+| Password | `string` | never logged |
+
 ## me.read
 
 Read. `ReadMe`, answers `MeResponse` ([MeResponse](#meresponse)).
@@ -1542,6 +1551,34 @@ Write. `SavePluginSettings`, answers `PluginSettingsSaved` ([PluginSettingsSaved
 |---|---|---|
 | Id | `string` | required |
 | Values | `IReadOnlyDictionary<string, string>` | required, never logged |
+
+## plugin.signin.provider.add
+
+Write. `AddSignInProvider`, answers `SignInProviderDto` ([SignInProviderDto](#signinproviderdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| PluginId | `string` | required |
+| Title | `string` | required |
+
+## plugin.signin.provider.remove
+
+Write. `RemoveSignInProvider`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| PluginId | `string` | required |
+| ProviderId | `string` | required |
+
+## plugin.signin.provider.rename
+
+Write. `RenameSignInProvider`, answers `SignInProviderDto` ([SignInProviderDto](#signinproviderdto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| PluginId | `string` | required |
+| ProviderId | `string` | required |
+| Title | `string` | required |
 
 ## plugin.state.set
 
@@ -4612,6 +4649,20 @@ Enum: `Same`, `Add`, `Del`.
 }
 ```
 
+### MyPasswordRequest
+
+| Field | Type |
+|---|---|
+| current | `string?` |
+| password | `string?` |
+
+```json
+{
+  "current": "text",
+  "password": "text"
+}
+```
+
 ### NotificationCountDto
 
 | Field | Type |
@@ -5178,6 +5229,7 @@ Enum: `Folder`, `Page`.
 | removed | `bool` |
 | importFileKinds | `IReadOnlyList<string>` |
 | signInMethods | `IReadOnlyList<PluginSignInMethodDto>` ([PluginSignInMethodDto](#pluginsigninmethoddto)) |
+| signInProviders | `bool` |
 
 ```json
 {
@@ -5245,9 +5297,12 @@ Enum: `Folder`, `Page`.
     {
       "id": "text",
       "name": "text",
-      "redirectAddress": "text"
+      "redirectAddress": "text",
+      "byAdmin": false,
+      "linked": 0
     }
-  ]
+  ],
+  "signInProviders": false
 }
 ```
 
@@ -5321,7 +5376,8 @@ Enum: `Folder`, `Page`.
       ],
       "signInMethods": [
         null
-      ]
+      ],
+      "signInProviders": false
     }
   ],
   "safeMode": false
@@ -5495,12 +5551,16 @@ Enum: `BuiltIn`, `Uploaded`.
 | id | `string` |
 | name | `string` |
 | redirectAddress | `string` |
+| byAdmin | `bool` |
+| linked | `int` |
 
 ```json
 {
   "id": "text",
   "name": "text",
-  "redirectAddress": "text"
+  "redirectAddress": "text",
+  "byAdmin": false,
+  "linked": 0
 }
 ```
 
@@ -6084,6 +6144,34 @@ Enum: `User`, `Group`.
 {
   "message": "text",
   "step": "text"
+}
+```
+
+### SignInProviderDto
+
+| Field | Type |
+|---|---|
+| id | `string` |
+| title | `string` |
+| redirectAddress | `string` |
+
+```json
+{
+  "id": "text",
+  "title": "text",
+  "redirectAddress": "text"
+}
+```
+
+### SignInProviderRequest
+
+| Field | Type |
+|---|---|
+| title | `string?` |
+
+```json
+{
+  "title": "text"
 }
 ```
 

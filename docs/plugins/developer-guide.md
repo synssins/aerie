@@ -71,6 +71,7 @@ public void Configure(IPluginApp app, IPluginContext context) => app
     .DraftContributor<NoticeFromDraft>()                       // ... from the text the AI drafted
     .ImportFileKinds(".notice")                                // a kind the app does not read: drafted by this plugin
     .SignInMethod<SampleSignIn>("example", "Sign in with Example ID") // a button on the sign-in screen
+    .SignInProviders<SampleProviderCheck>() // providers an Admin adds on this plugin's page, each with its own button
     .Routes(SampleRoutes.Map);                                 // under /api/v1/plugins/kb.sample/
 ```
 
@@ -1190,7 +1191,8 @@ What the plugin gives, in `Provider` (`OidcProvider`), asked at each sign-in so 
 | `DiscoveryAddress` | the issuer + `/.well-known/openid-configuration` | An https address. Its `issuer` must equal `Issuer`. |
 | `Scopes` | `openid`, `email`, `profile` | Must hold `openid`. |
 | `SubjectClaim` | `sub` | The claim that names the person for good. The account is linked by issuer plus this value. |
-| `EmailClaim`, `EmailVerifiedClaim`, `NameClaim` | `email`, `email_verified`, `name` | Read from the ID token only; the userinfo endpoint is not called. |
+| `EmailClaim`, `EmailVerifiedClaim`, `NameClaim` | `email`, `email_verified`, `name` | Read from the ID token, and from the userinfo answer when `UserInfo` is on. |
+| `UserInfo` | `false` | 0.9.0. Read the userinfo endpoint too ([below](#sign-in-providers-an-admin-adds)). |
 
 A provider description the app cannot use (an issuer that is not https, scopes without `openid`) refuses the sign-in and counts as a failure of the plugin.
 
@@ -1209,6 +1211,54 @@ Who gets in:
 An Administrator who signs in with a method still gives their one-time code, as after a password. Password sign-in and the break-glass account are unchanged: a method cannot turn them off, and Safe Mode loads no plugin, so the break-glass account always gets in.
 
 The audit log has `auth.method.start`, then `auth.signin` or `auth.signin.failed` (with the method and the reason, never a code or a token), and `user.signin.link` or `user.signin.create` when an account is linked or made.
+
+## Sign-in providers an Admin adds
+
+From 0.9.0 a plugin can leave the provider to the Admin. It says it offers providers, and its page under Administration > Plugins gets a **Sign-in providers** list with **Add new**. Each provider has a title (the text of its button), a gear that opens its settings, and its own redirect address. A plugin that does this needs no code for the provider at all: one generic OpenID Connect plugin covers a lab's test provider, a company's tenant at a cloud identity service, or any other, each as one more entry in the list.
+
+<!-- sample:providers -->
+```csharp
+/// <summary>
+/// The check on the providers an Admin adds on this plugin's page (0.9.0). The app reads each provider from its settings and checks its
+/// required claim; this runs after, on every provider of the plugin, and is told which one. The sample refuses an account its provider
+/// marks as a test account.
+/// </summary>
+public sealed class SampleProviderCheck : ISignInProviderCheck
+{
+    public Task<string?> CheckAsync(string providerId, SignInClaims claims, CancellationToken ct) =>
+        Task.FromResult(claims.All.TryGetValue("test_account", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.True
+            ? "Test accounts cannot sign in here."
+            : null);
+}
+```
+
+Register in `Configure`: `app.SignInProviders()`, or `app.SignInProviders<TCheck>()` with a check of the plugin's own (`ISignInProviderCheck`: like `ISignInMethod.CheckAsync`, told which provider it is). Both may be used next to `app.SignInMethod<T>(id, name)`, which is unchanged.
+
+What each provider is to the app: a sign-in method like any other. It has its own button, its own start and callback addresses (`/api/v1/auth/methods/{plugin}/{provider id}/start` and `/callback`), and its own sign-ins. Accounts are linked by issuer and subject, as before. The provider id is made by the app when the Admin adds it (a `p` and 10 hex digits). It is not the title, so renaming a provider keeps its redirect address. Adding, renaming and removing a provider apply at once, without a restart and without a new package, and are audited as `plugin.signin.provider.add`, `plugin.signin.provider.rename` and `plugin.signin.provider.remove`.
+
+What the Admin sets for each provider, all read at the time of each sign-in:
+
+| Setting | Default | |
+|---|---|---|
+| Issuer | (required for its button) | Exactly as the provider's ID tokens give it; an https address. |
+| Discovery address | the issuer + `/.well-known/openid-configuration` | An https address. Its `issuer` must equal the issuer. |
+| Client ID, Client secret | | From the provider. The secret is stored encrypted and never sent back. |
+| Scopes | `openid email profile` | Separated by spaces; must hold `openid`. |
+| Subject, Email, Email verified, Name claims | `sub`, `email`, `email_verified`, `name` | As `OidcProvider`'s properties. |
+| Read userinfo | on | The app reads the provider's userinfo endpoint after the token request (below). |
+| Required claim, Allowed values | none | The claim must equal one of the values, one per line; for a list claim, one of its items must. A domain (`hd`) or a tenant (`tid`) goes here. |
+| New accounts | off | As for any method. |
+| Provider on a private network | off | Below. |
+
+The button shows once the issuer and the client ID are set. The plugin cannot read any of these settings: they are under `signIn.`, and the list itself is kept under `signIn.providers`.
+
+**Which hosts the app calls for a provider an Admin added.** Only these: the discovery address the Admin entered (or the issuer's), and the token endpoint, keys and userinfo endpoint named by the discovery document read from it. The manifest's `outboundHosts` do not apply. Every one of these must be https, and no redirect is followed. By default the app connects to them only at public internet addresses, the same guard the app uses for any address someone typed: a mistyped or hostile address cannot aim the server at its own network. **Provider on a private network** lifts the address check for that one provider, and only an Admin can turn it on. It exists for a provider on your own network, such as a test provider in a lab on an internal Docker network. Https stays required, and the provider's certificate must be one the server trusts: for a lab provider with its own certificate authority, add that authority to the trust store of the server (or its container). There is no switch that skips certificate checks.
+
+**Userinfo.** `OidcProvider.UserInfo` (new in 0.9.0, off by default, so a 0.8.0 method behaves as before) and the **Read userinfo** setting (on by default) make the app call the userinfo endpoint with the access token when the discovery document names one. Its `sub` must equal the ID token's, or the sign-in is refused. Its claims fill those the ID token lacks; a claim the ID token has is kept as the ID token gives it. Only a JSON answer is read; a signed userinfo answer is refused. A method in code that sets `UserInfo` must list the userinfo endpoint's host in `outboundHosts`.
+
+**Removing a provider.** Its button and its settings, secret included, are deleted. Accounts linked through it keep their link (issuer and subject). They have no password, so they cannot sign in until a provider with the same issuer is set up again, which finds them by the same link. The confirmation tells the Admin how many accounts are linked to the provider's issuer, and the audit entry records the number. To give such a person another way in, an Admin deletes the account and makes it again.
+
+Everything else is as for any method: state, nonce, PKCE S256, the ID token's signature, issuer, audience, authorized party, expiry, issue time and nonce, the encrypted state cookie read once, the return path on this site only, the linking rules, and a linked account having no password.
 
 ## Library plugins
 
@@ -1244,7 +1294,8 @@ The plugin stays disabled until an Admin selects Enable. Uploading a new version
 - `abstractionsVersion`: the version of `Kb.Plugins.Abstractions` the plugin was built against. The app refuses a plugin built for a newer one.
 - `minKbVersion`: the lowest app version the plugin runs on.
 
-The contract and the app are at 0.8.0, and can still change before 1.0.0.
+The contract and the app are at 0.9.0, and can still change before 1.0.0.
+0.9.0 added [sign-in providers an Admin adds](#sign-in-providers-an-admin-adds) (`app.SignInProviders()`, `app.SignInProviders<TCheck>()`, `ISignInProviderCheck`, `SignInProvidersReg`) and `OidcProvider.UserInfo`; a plugin that uses them says `"abstractionsVersion": "0.9.0"`. Nothing of 0.8.0 changed, and a plugin built for 0.8.0 or earlier loads as it did.
 0.8.0 added [sign-in methods](#sign-in-methods) (`ISignInMethod`, `OidcProvider`, `SignInClaims`, `SignInMethodReg`, `app.SignInMethod<T>(id, name)`) and the actor source `signin`; a plugin that uses them says `"abstractionsVersion": "0.8.0"`. One thing changed that an earlier plugin can see: a setting key starting with `signIn.` is the app's, so a manifest that declares one is refused at install. Nothing else of 0.7.0 changed, and a plugin built for 0.7.0 or earlier loads as it did.
 0.7.0 added a setting's `help`, `default`, `unit`, `min`, `max` and `optionLabels` ([settings](#settings-and-secrets)), and `GetSetting` returns the default while nothing is saved; a plugin that uses them says `"abstractionsVersion": "0.7.0"`. Its browser script API is 1.1.0: the slot `plugin.settings` ([panels](#panels-on-the-plugins-own-page)) and `kb.api.upload` ([uploading](#uploading-a-file-from-a-panel)); a script that uses them says `"uiApiVersion": "1.1.0"`. Nothing of 0.6.0 changed: a plugin built for 0.6.0 or earlier loads as it did, and its settings read and save as they did.
 0.6.0 added [file kinds a plugin claims](#file-kinds-the-app-does-not-read) (`app.ImportFileKinds(...)`, `ImportFileKindReg`); a plugin that uses them says `"abstractionsVersion": "0.6.0"`. Nothing of 0.5.0 changed, and a plugin built for 0.5.0 or earlier loads as it did.
@@ -1277,7 +1328,7 @@ The whole plugin, hooks included, is tested in the app: install the package on a
 
 - More slots in the app's screens (today: `page.tools`, `page.panel`, `editor.toolbar`, `header.gear`), the screen kit (tables, forms), wrapping or replacing parts of the app's screens.
 - A build preset for scripts written in TypeScript or JSX; scripts on the sign-in screen; calling other hosts from the browser.
-- For sign-in methods: the userinfo endpoint, an issuer that differs per tenant (multi-tenant issuers), signing out at the provider, an Admin unlinking an account, and outbound hosts set by an Admin rather than the manifest.
+- For sign-in methods: an issuer that differs per tenant (multi-tenant issuers), signing out at the provider, an Admin unlinking an account, a signed userinfo answer, client authentication other than a client secret in HTTP Basic, and setup help per provider.
 - Data attached to core rows (a count that comes with the page).
 - Page kinds of a plugin's own, export formats.
 - The extension points the contract declares and the core does not call yet: maps, an AI provider, record importers, page actions, export formats, DNS, a search engine.

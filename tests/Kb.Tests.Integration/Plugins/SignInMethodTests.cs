@@ -31,8 +31,28 @@ public sealed class SignInMethodTests : IAsyncLifetime
     private HttpClient _admin = null!;
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    private readonly List<string> _clients = [];
+
     public SignInMethodTests() =>
-        _f = new(KbAppFactory.NewDbPath(), services: s => s.AddHttpClient(PluginHttp.ClientName("kb.sample")).ConfigurePrimaryHttpMessageHandler(() => _provider));
+        _f = new(KbAppFactory.NewDbPath(), services: s =>
+        {
+            s.AddHttpClient(PluginHttp.ClientName("kb.sample")).ConfigurePrimaryHttpMessageHandler(() => _provider);
+            // The clients of the providers an Admin adds: the stand-in, and a note of which of the two was used.
+            foreach (var name in new[] { SignInProviderHttp.Public, SignInProviderHttp.Private })
+                s.AddHttpClient(name).ConfigurePrimaryHttpMessageHandler(() => new Recorder(name, _clients, _provider));
+        });
+
+    /// <summary>Notes which client was used, then hands the request to the stand-in, which it does not dispose: every client shares it.</summary>
+    private sealed class Recorder(string name, List<string> used, HttpMessageHandler inner) : HttpMessageHandler
+    {
+        private readonly HttpMessageInvoker _to = new(inner, disposeHandler: false);
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            lock (used) used.Add(name);
+            return _to.SendAsync(request, ct);
+        }
+    }
 
     public async ValueTask InitializeAsync()
     {
@@ -59,9 +79,9 @@ public sealed class SignInMethodTests : IAsyncLifetime
     /// and comes back. <paramref name="back"/> may change the callback's query. Answers where the app sent the browser at the end.
     /// </summary>
     private async Task<string> SignInAsync(HttpClient browser, Action<Dictionary<string, object>>? claims = null, string? returnTo = null,
-        Func<Dictionary<string, string>, Dictionary<string, string>>? back = null, Func<Dictionary<string, object>, string>? token = null)
+        Func<Dictionary<string, string>, Dictionary<string, string>>? back = null, Func<Dictionary<string, object>, string>? token = null, string method = Method)
     {
-        var start = await browser.GetAsync(Start + (returnTo is null ? "" : "?returnTo=" + Uri.EscapeDataString(returnTo)), Ct);
+        var start = await browser.GetAsync($"/api/v1/auth/methods/{method}/start" + (returnTo is null ? "" : "?returnTo=" + Uri.EscapeDataString(returnTo)), Ct);
         Assert.Equal(HttpStatusCode.Redirect, start.StatusCode);
         var at = start.Headers.Location!;
         Assert.StartsWith("https://id.example.com/authorize?", at.ToString(), StringComparison.Ordinal);
@@ -69,7 +89,7 @@ public sealed class SignInMethodTests : IAsyncLifetime
         var code = _provider.Authorize(ask, claims, token);
         var query = new Dictionary<string, string> { ["code"] = code, ["state"] = ask["state"] };
         if (back is not null) query = back(query);
-        var end = await browser.GetAsync(Back(query), Ct);
+        var end = await browser.GetAsync($"/api/v1/auth/methods/{method}/callback?" + string.Join("&", query.Select(kv => kv.Key + "=" + Uri.EscapeDataString(kv.Value))), Ct);
         Assert.Equal(HttpStatusCode.Redirect, end.StatusCode);
         return end.Headers.Location!.ToString();
     }
@@ -241,6 +261,133 @@ public sealed class SignInMethodTests : IAsyncLifetime
         Assert.Equal("enroll", (await browser.GetFromJsonAsync<JsonElement>("/api/v1/auth/methods/outcome", Ct)).GetProperty("step").GetString());
     }
 
+    // ---- providers an Admin adds (contract 0.9.0)
+
+    private async Task<string> AddProviderAsync(string title = "Lab", Dictionary<string, string>? more = null)
+    {
+        var r = await _admin.PostAsJsonAsync("/api/v1/admin/plugins/kb.sample/signin-providers", new { title }, Ct);
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var id = (await r.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("id").GetString()!;
+        var values = new Dictionary<string, string>
+        {
+            [$"signIn.{id}.issuer"] = StandInProvider.Issuer, [$"signIn.{id}.clientId"] = StandInProvider.ClientId,
+            [$"signIn.{id}.clientSecret"] = StandInProvider.Secret, [$"signIn.{id}.newAccounts"] = "true",
+        };
+        foreach (var (k, v) in more ?? []) values[$"signIn.{id}.{k}"] = v;
+        await SetAsync(values);
+        return id;
+    }
+
+    private async Task<List<string>> ButtonsAsync() =>
+        [.. (await _f.NewClient().GetFromJsonAsync<JsonElement>("/api/v1/auth/methods", Ct)).EnumerateArray().Select(m => m.GetProperty("id").GetString() + " " + m.GetProperty("name").GetString())];
+
+    private async Task<JsonElement> SampleMethodAsync(string key) =>
+        (await _admin.GetFromJsonAsync<JsonElement>("/api/v1/admin/plugins", Ct)).GetProperty("plugins").EnumerateArray().Single(p => p.GetProperty("id").GetString() == "kb.sample")
+            .GetProperty("signInMethods").EnumerateArray().Single(m => m.GetProperty("id").GetString() == key);
+
+    [Fact]
+    public async Task AProviderAnAdminAdds_IsAButtonOfItsOwn_SignsPeopleIn_AndKeepsItsAddressWhenRenamed()
+    {
+        var id = await AddProviderAsync();
+        var key = "kb.sample/" + id;
+        Assert.Contains(key + " Lab", await ButtonsAsync());
+        var address = (await SampleMethodAsync(key)).GetProperty("redirectAddress").GetString();
+        Assert.EndsWith($"/api/v1/auth/methods/kb.sample/{id}/callback", address, StringComparison.Ordinal);
+
+        var browser = Browser();
+        Assert.Equal("/spaces", await SignInAsync(browser, returnTo: "/spaces", method: key));
+        Assert.Equal("ann@example.org", (await MeAsync(browser))!.Value.GetProperty("userName").GetString());
+        Assert.True(_provider.VerifierFitted);
+        Assert.True(_provider.UserInfoCalls > 0); // "Read userinfo" is on unless an Admin turns it off
+        Assert.All(_clients, c => Assert.Equal(SignInProviderHttp.Public, c));
+
+        Assert.Equal(HttpStatusCode.OK, (await _admin.PutAsJsonAsync($"/api/v1/admin/plugins/kb.sample/signin-providers/{id}", new { title = "Lab two" }, Ct)).StatusCode);
+        Assert.Contains(key + " Lab two", await ButtonsAsync());
+        Assert.Equal(address, (await SampleMethodAsync(key)).GetProperty("redirectAddress").GetString());
+        var actions = (await AuditAsync()).Select(a => a.Action).ToList();
+        await _f.WithDbAsync(async db => Assert.Equal(2, await db.AuditEntries.CountAsync(a => a.Action.StartsWith("plugin.signin.provider."), Ct)));
+        Assert.Contains("auth.method.start", actions);
+
+    }
+
+    [Fact]
+    public async Task AProvider_WithoutAnIssuer_IsNoButton_AndOnlyAnAdminAddsOne()
+    {
+        var r = await _admin.PostAsJsonAsync("/api/v1/admin/plugins/kb.sample/signin-providers", new { title = "Half set up" }, Ct);
+        var id = (await r.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("id").GetString()!;
+        await SetAsync(new() { [$"signIn.{id}.clientId"] = StandInProvider.ClientId });
+        Assert.DoesNotContain(await ButtonsAsync(), b => b.StartsWith("kb.sample/" + id, StringComparison.Ordinal));
+        Assert.Equal(HttpStatusCode.NotFound, (await Browser().GetAsync($"/api/v1/auth/methods/kb.sample/{id}/start", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await _admin.PostAsJsonAsync("/api/v1/admin/plugins/kb.sample/signin-providers", new { title = "" }, Ct)).StatusCode);
+    }
+
+    [Fact]
+    public async Task AProvidersRequiredClaim_LetsOnlyItsValuesIn_AndUserinfoFillsWhatTheIdTokenLacks()
+    {
+        // hd is only in the userinfo answer.
+        var id = await AddProviderAsync(more: new() { ["requiredClaim"] = "hd", ["requiredValues"] = "other.org" });
+        var key = "kb.sample/" + id;
+        var refused = Browser();
+        await SignInAsync(refused, method: key);
+        Assert.Null(await MeAsync(refused));
+        Assert.Equal("Your account at this provider is not allowed here. Ask an Administrator.", await MessageAsync(refused));
+        Assert.Contains((await AuditAsync()).Where(a => a.Action == AuditActions.SignInFailed), a => a.Data.Contains("the required claim does not match", StringComparison.Ordinal));
+
+        await SetAsync(new() { [$"signIn.{id}.requiredValues"] = "other.org\nexample.org" });
+        var allowed = Browser();
+        await SignInAsync(allowed, method: key);
+        Assert.NotNull(await MeAsync(allowed));
+    }
+
+    [Fact]
+    public async Task AUserinfoAnswer_ForAnotherSubject_RefusesTheSignIn()
+    {
+        _provider.UserInfo = new() { ["sub"] = "someone-else" };
+        var key = "kb.sample/" + await AddProviderAsync();
+        var browser = Browser();
+        await SignInAsync(browser, method: key);
+        Assert.Null(await MeAsync(browser));
+        Assert.Contains((await AuditAsync()).Where(a => a.Action == AuditActions.SignInFailed), a => a.Data.Contains("another subject", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ThePluginsOwnCheck_RunsOnItsProviders()
+    {
+        var key = "kb.sample/" + await AddProviderAsync();
+        var browser = Browser();
+        await SignInAsync(browser, c => c["test_account"] = true, method: key);
+        Assert.Equal("Test accounts cannot sign in here.", await MessageAsync(browser));
+    }
+
+    [Fact]
+    public async Task AProviderOnAPrivateNetwork_IsReachedWithThePrivateClient_OnlyWhenAnAdminSaysSo()
+    {
+        var key = "kb.sample/" + await AddProviderAsync(more: new() { ["privateNetwork"] = "true" });
+        await SignInAsync(Browser(), method: key);
+        Assert.Contains(SignInProviderHttp.Private, _clients);
+        Assert.DoesNotContain(SignInProviderHttp.Public, _clients);
+    }
+
+    [Fact]
+    public async Task RemovingAProvider_TakesItsButton_AndKeepsTheLinksOfItsAccounts()
+    {
+        var id = await AddProviderAsync();
+        var key = "kb.sample/" + id;
+        var browser = Browser();
+        await SignInAsync(browser, method: key);
+        Assert.Equal(1, (await SampleMethodAsync(key)).GetProperty("linked").GetInt32());
+
+        Assert.Equal(HttpStatusCode.NoContent, (await _admin.DeleteAsync($"/api/v1/admin/plugins/kb.sample/signin-providers/{id}", Ct)).StatusCode);
+        Assert.DoesNotContain(await ButtonsAsync(), b => b.StartsWith(key, StringComparison.Ordinal));
+        Assert.Equal(HttpStatusCode.NotFound, (await Browser().GetAsync($"/api/v1/auth/methods/{key}/start", Ct)).StatusCode);
+        await _f.WithDbAsync(async db =>
+        {
+            Assert.Equal(1, await db.Users.CountAsync(u => u.ExternalIssuer == StandInProvider.Issuer && u.ExternalId == "person-1", Ct));
+            Assert.False(await db.PluginSettingValues.AnyAsync(v => v.PluginId == "kb.sample" && v.Key.StartsWith($"signIn.{id}."), Ct)); // its secret too
+            Assert.Contains("\"linkedAccounts\":\"1\"", (await db.AuditEntries.SingleAsync(a => a.Action == AuditActions.SignInProviderRemove, Ct)).DataJson, StringComparison.Ordinal);
+        });
+    }
+
     public static TheoryData<string, string> Refusals => new()
     {
         { "unverified", "email not verified" },
@@ -385,6 +532,9 @@ public sealed class SignInMethodTests : IAsyncLifetime
         public bool VerifierFitted { get; private set; }
         public string? LastAuthorization { get; private set; }
         public string? LastCode { get; private set; }
+        public int UserInfoCalls { get; private set; }
+        /// <summary>What the userinfo endpoint answers.</summary>
+        public Dictionary<string, object> UserInfo { get; set; } = new() { ["sub"] = "person-1", ["hd"] = "example.org" };
 
         public string Authorize(Dictionary<string, string> ask, Action<Dictionary<string, object>>? change, Func<Dictionary<string, object>, string>? make)
         {
@@ -411,7 +561,10 @@ public sealed class SignInMethodTests : IAsyncLifetime
             switch (request.RequestUri.AbsolutePath)
             {
                 case "/.well-known/openid-configuration":
-                    return Json(new { issuer = Issuer, authorization_endpoint = Issuer + "/authorize", token_endpoint = Issuer + "/token", jwks_uri = Issuer + "/keys" });
+                    return Json(new { issuer = Issuer, authorization_endpoint = Issuer + "/authorize", token_endpoint = Issuer + "/token", jwks_uri = Issuer + "/keys", userinfo_endpoint = Issuer + "/userinfo" });
+                case "/userinfo":
+                    lock (this) UserInfoCalls++;
+                    return request.Headers.Authorization?.ToString() == "Bearer at" ? Json(UserInfo) : new HttpResponseMessage(HttpStatusCode.Unauthorized);
                 case "/keys":
                     var jwk = JsonWebKeyConverter.ConvertFromRSASecurityKey(Key);
                     return Json(new { keys = new[] { new { kty = "RSA", kid = KeyId, use = "sig", alg = "RS256", n = jwk.N, e = jwk.E } } });

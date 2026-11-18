@@ -14,8 +14,11 @@ internal sealed class ImageUpload(HttpRequest request) : UploadContent
     {
         if (_data is null)
         {
+            // Counted while it is read: a body sent in chunks says no length up front, and must not be held whole before it is refused.
             using var ms = new MemoryStream();
-            await request.Body.CopyToAsync(ms, ct);
+            var buffer = new byte[81920];
+            int read;
+            while (ms.Length <= ImageEndpoints.MaxImageBytes && (read = await request.Body.ReadAsync(buffer, ct)) > 0) ms.Write(buffer, 0, read);
             _data = ms.ToArray();
         }
         return new MemoryStream(_data, writable: false);

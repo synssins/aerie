@@ -61,6 +61,8 @@ public sealed class AuthOptions
     public BreakGlassOptions BreakGlass { get; set; } = new();
     public List<string> AllowedGroupIds { get; set; } = [];
     public TimeSpan EmergencyAccessDuration { get; set; } = TimeSpan.FromHours(4);
+    /// <summary>How long a session lasts at most, however much it is used. Without use it ends after 8 hours.</summary>
+    public TimeSpan SessionMaxAge { get; set; } = TimeSpan.FromHours(12);
     /// <summary>Sign-in attempts one address may make in a minute, on one server. Bounds password guessing and the audit entries it writes.</summary>
     public int SignInsPerMinutePerAddress { get; set; } = 30;
     /// <summary>Requests to the API by someone not signed in (reading Anyone spaces), per address.</summary>
@@ -123,6 +125,8 @@ public sealed class StorageOptions
 {
     /// <summary>Folder for uploaded files (images); relative paths are under the content root.</summary>
     public string Folder { get; set; } = "App_Data/files";
+    /// <summary>The most megabytes the attachments of one space may add up to; 0 for no limit. Removed attachments still count until they are purged.</summary>
+    public int SpaceQuotaMb { get; set; }
 }
 
 public sealed class LogOptions
@@ -173,6 +177,7 @@ public sealed class KbOptionsValidator : IValidateOptions<KbOptions>
         if (string.IsNullOrWhiteSpace(o.Auth.BreakGlass.PasswordSecretName)) errors.Add("Kb:Auth:BreakGlass:PasswordSecretName is required.");
         if (string.IsNullOrWhiteSpace(o.Auth.BreakGlass.UserName)) errors.Add("Kb:Auth:BreakGlass:UserName is required.");
         if (o.Auth.EmergencyAccessDuration <= TimeSpan.Zero) errors.Add("Kb:Auth:EmergencyAccessDuration must be greater than zero.");
+        if (o.Auth.SessionMaxAge < TimeSpan.FromMinutes(15)) errors.Add("Kb:Auth:SessionMaxAge must be at least 15 minutes.");
         if (o.Auth.Entra is { } e && (string.IsNullOrWhiteSpace(e.TenantId) || string.IsNullOrWhiteSpace(e.ClientId)))
             errors.Add("Kb:Auth:Entra requires TenantId and ClientId.");
         var dupes = o.Hostnames.GroupBy(h => h.Host, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
