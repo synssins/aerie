@@ -188,6 +188,10 @@ internal sealed class NewPasswordLinkHandler(KbDbContext db, UserManager<KbUser>
         if (u.ExternalIssuer is not null) return Problem.Conflict("An account linked to a sign-in method has no password.");
         var token = await users.GeneratePasswordResetTokenAsync(u);
         ctx.Audit(AuditActions.UserPasswordLink, "user", u.Id.ToString());
+        // Whoever holds the link sets the password and is that person from then on. Where they are a member of a sensitive space, its Owners hear of it.
+        var groups = await db.KbGroupMembers.Where(m => m.UserId == u.Id).Join(db.KbGroups, m => m.GroupId, g => g.Id, (m, g) => g.Key).ToListAsync(CancellationToken.None);
+        await SensitiveAlerts.SendAsync(db, ctx.Services, [u.Id.ToString("D"), .. groups], s => $"A password link was made for {u.DisplayName}, a member of {s.Name}",
+            "An administrator made it. Whoever has the link can set that account's password.");
         return new InvitedUser(u.Id, token);
     }
 }
