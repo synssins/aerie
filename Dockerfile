@@ -24,7 +24,6 @@ COPY --from=build /out .
 RUN mkdir -p /app/App_Data && chown app:app /app/App_Data
 ENV ASPNETCORE_ENVIRONMENT=Production \
     ASPNETCORE_HTTP_PORTS=8080 \
-    ASPNETCORE_FORWARDEDHEADERS_ENABLED=true \
     Kb__Database__Provider=Sqlite \
     Kb__Database__ConnectionString="Data Source=/app/App_Data/kb.db"
 VOLUME /app/App_Data

@@ -11,6 +11,11 @@ primary_region = "ord"
   # The password is a Fly secret: fly secrets set KB_SETUP_ADMIN_PASSWORD=...
   Kb__Setup__AdminUserName = "admin"
   Kb__Setup__AdminPasswordSecretName = "KB_SETUP_ADMIN_PASSWORD"
+  # Fly's proxy is believed when it says who the client is and that the client used https; nobody else is.
+  # These are the private networks a Machine is reached over. If the log says a forwarded request from another
+  # address was ignored, name that address here instead.
+  Kb__Proxy__Trusted__0 = "172.16.0.0/12"
+  Kb__Proxy__Trusted__1 = "fdaa::/16"
   # Tells visitors to the public read-only demo how to sign in. Off on every other install.
   Kb__Brand__SignInNote = "Read-Only Preview: demo/demo"
 

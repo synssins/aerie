@@ -44,7 +44,11 @@ docker compose up -d
 
 To build it yourself instead, run `docker build -t aerie .` and change the image name in the compose file.
 
-It listens on port 8080 over plain HTTP. Put it behind a reverse proxy that serves HTTPS, because the sign-in cookie is only sent over HTTPS. Open the site and the setup page asks for the first admin account, or set one up front in `docker-compose.yml`, which also shows how to point it at SQL Server instead.
+It listens on port 8080 over plain HTTP. Put it behind a reverse proxy that serves HTTPS, because the sign-in cookie is only sent over HTTPS. The compose file publishes the port on the Docker host itself (`127.0.0.1`), so the proxy is the only way in.
+
+Tell Aerie which proxy to believe. Set `Kb__Proxy__Trusted__0` (and `__1`, `__2` for more) to the address the proxy connects from, as the container sees it: one address or a network such as `172.18.0.0/16`. Only a proxy named there is believed when it sends `X-Forwarded-For` (who the client is) and `X-Forwarded-Proto` (that the client used HTTPS). Without the setting the site still works, but rate limits and the audit log see the proxy's address for every caller, and sign-in methods and OAuth on the compatible API refuse because they do not see HTTPS. The log names the address the first time it ignores a forwarded request. An install that is not behind a proxy, such as IIS below, needs nothing.
+
+Open the site and the setup page asks for the first admin account, or set one up front in `docker-compose.yml`, which also shows how to point it at SQL Server instead.
 
 The volume holds everything: the database, uploaded files and logs. Back up `/app/App_Data` and you have it all.
 

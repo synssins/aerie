@@ -231,8 +231,38 @@ services.AddHealthChecks().AddCheck<ReadinessCheck>("ready", tags: ["ready"]);
 services.AddProblemDetails();
 services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
+// Forwarded headers are believed only on the app's own terms (below). The framework's switch (ASPNETCORE_FORWARDEDHEADERS_ENABLED)
+// believes every caller; an install that still sets it gets nothing from it.
+services.PostConfigure<ForwardedHeadersOptions>(o => o.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.None);
+
 PluginBootstrap.Seal(services, boot);
 var app = builder.Build();
+
+// A proxy named in Kb:Proxy:Trusted says who the client is and whether it came over https; nobody else does. Each address in the
+// header is taken only while the one that passed it on is trusted, so a chain of named proxies works and a caller's own entry does not.
+if (kb.Proxy.Trusted.Count > 0)
+{
+    var forwarded = new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto,
+        ForwardLimit = null,
+    };
+    forwarded.KnownProxies.Clear();
+    forwarded.KnownIPNetworks.Clear();
+    foreach (var network in kb.Proxy.Networks()) forwarded.KnownIPNetworks.Add(network);
+    app.UseForwardedHeaders(forwarded);
+}
+else
+{
+    // Said once: an install behind a proxy that is not named yet sees every caller as the proxy, and http where the client used https.
+    var told = 0;
+    app.Use((ctx, next) =>
+    {
+        if (ctx.Request.Headers.ContainsKey("X-Forwarded-For") && Interlocked.Exchange(ref told, 1) == 0)
+            app.Logger.LogWarning("A request from {Address} carries X-Forwarded-For, which is ignored. If that address is your reverse proxy, name it in Kb:Proxy:Trusted.", ctx.Connection.RemoteIpAddress);
+        return next(ctx);
+    });
+}
 
 // ---- startup: record what the plugin start found, ensure break-glass ----
 await using (var scope = app.Services.CreateAsyncScope())
