@@ -1,0 +1,12 @@
+# The workflows name each action by commit and the Dockerfile names each base image by digest. These updates keep
+# those pins current: without them a pin would also hold back security fixes.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
