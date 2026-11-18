@@ -214,8 +214,11 @@ public static class DcRest
         return HasXsrfHeader(request);
     }
 
+    /// <summary>The surface's XSRF header; its value is no-check or nocheck.</summary>
+    public const string XsrfHeader = "X-Atlassian-Token";
+
     private static bool HasXsrfHeader(HttpRequest request) =>
-        request.Headers["X-Atlassian-Token"].Any(v => string.Equals(v, "no-check", StringComparison.OrdinalIgnoreCase) || string.Equals(v, "nocheck", StringComparison.OrdinalIgnoreCase));
+        request.Headers[XsrfHeader].Any(v => string.Equals(v, "no-check", StringComparison.OrdinalIgnoreCase) || string.Equals(v, "nocheck", StringComparison.OrdinalIgnoreCase));
 
     private static bool IsSafe(string method) => HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method);
 
