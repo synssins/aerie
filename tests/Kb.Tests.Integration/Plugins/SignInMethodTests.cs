@@ -388,6 +388,17 @@ public sealed class SignInMethodTests : IAsyncLifetime
         });
     }
 
+    /// <summary>A provider's clock a little ahead of this one: an issue time and a not-before time inside the clock skew are accepted.</summary>
+    [Fact]
+    public async Task AnIssueTimeOrNotBefore_JustAhead_WithinTheClockSkew_IsAccepted()
+    {
+        await SetUpAsync();
+        var browser = Browser();
+        var ahead = DateTimeOffset.UtcNow.Add(SignInFlow.ClockSkew / 2).ToUnixTimeSeconds();
+        await SignInAsync(browser, c => (c["iat"], c["nbf"]) = (ahead, ahead));
+        Assert.NotNull(await MeAsync(browser));
+    }
+
     public static TheoryData<string, string> Refusals => new()
     {
         { "unverified", "email not verified" },
@@ -397,6 +408,8 @@ public sealed class SignInMethodTests : IAsyncLifetime
         { "bad-signature", "signature is wrong" },
         { "wrong-audience", "another audience" },
         { "expired", "has expired" },
+        { "issued-in-the-future", "issue time is in the future (iat)" },
+        { "not-valid-yet", "not valid yet (nbf)" },
         { "wrong-issuer", "another issuer" },
         { "unsigned", "signature is wrong" },
         { "provider-error", "provider answered access_denied" },
@@ -424,6 +437,9 @@ public sealed class SignInMethodTests : IAsyncLifetime
                 "wrong-audience" => c => c["aud"] = "another-client",
                 "expired" => c => (c["iat"], c["exp"]) = (DateTimeOffset.UtcNow.AddHours(-2).ToUnixTimeSeconds(), DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds()),
                 "wrong-issuer" => c => c["iss"] = "https://other.example.com",
+                // An issue time an hour ahead, with an expiry still later: everything else is right.
+                "issued-in-the-future" => c => (c["iat"], c["exp"]) = (DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds(), DateTimeOffset.UtcNow.AddHours(2).ToUnixTimeSeconds()),
+                "not-valid-yet" => c => (c["nbf"], c["exp"]) = (DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds(), DateTimeOffset.UtcNow.AddHours(2).ToUnixTimeSeconds()),
                 _ => null,
             },
             back: kind switch
