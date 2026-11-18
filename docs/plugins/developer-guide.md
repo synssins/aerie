@@ -751,6 +751,15 @@ var file = await bus.SendAsync(new AddAttachment { PageId = pageId, File = Uploa
 - Neither action scans the file, whoever sends it: only the files of an AI import are scanned ([below](#import-the-virus-scan-hook)).
 - A before hook on `page.create` that adds an image runs before the page is made. If the page is then refused, the image is stored and no page shows it.
 
+### Folders, and writes of the compatible API
+
+A hook on `page.save` or `attachment.add`, and an enforcing plugin's lock on them, see every write to a page's or a folder's content and files, whichever API made it:
+
+- `page.save` takes a folder too. Its `ContentJson` is saved as the folder's body, with a version, when it differs from the body the folder has; sent unchanged (a rename), the body is left as it is. Aerie's own screens show no folder body; the compatible API (`/rest/api`) writes one, through this action. A hook that reads `ContentJson` checks `PageDto.Kind` or loads the page when it treats folders apart.
+- `attachment.add` takes a folder too: `PageId` may name one.
+- A new version of an attachment, and an attachment renamed or moved to another page or folder, are made by the compatible API alone: no core action does them. Before writing, it runs `attachment.add`'s lock and before hooks with the file as it would arrive: `PageId` the page or folder it lands on, `File` the new file (or the stored one, under its new name). A refusal refuses the write. A hook that replaces the payload refuses it too (`422`): the compatible API cannot store what the hook made instead. `attachment.add`'s after handlers do not run for these: no attachment is added.
+- The compatible API answers a refusal or a lock as its errors are shaped (`403` with the hook's message), as it does for pages.
+
 ## Editor blocks
 
 A plugin can add its own kind of content to pages: a block, an inline node or a mark of the editor (TipTap 3).
@@ -1251,6 +1260,27 @@ What the Admin sets for each provider, all read at the time of each sign-in:
 | Provider on a private network | off | Below. |
 
 The button shows once the issuer and the client ID are set. The plugin cannot read any of these settings: they are under `signIn.`, and the list itself is kept under `signIn.providers`.
+
+To set a provider up from a script, these are the keys:
+
+| Key | Type | Default | |
+|---|---|---|---|
+| `signIn.<providerId>.issuer` | text | none | The issuer, an https address. With the client ID, it puts the button on the sign-in screen. |
+| `signIn.<providerId>.discovery` | text | the issuer + `/.well-known/openid-configuration` | An https address. |
+| `signIn.<providerId>.clientId` | text | none | |
+| `signIn.<providerId>.clientSecret` | secret | none | Write-only: reading the settings says only whether it is set. |
+| `signIn.<providerId>.scopes` | text | `openid email profile` | Separated by spaces; must hold `openid`. |
+| `signIn.<providerId>.subjectClaim` | text | `sub` | |
+| `signIn.<providerId>.emailClaim` | text | `email` | |
+| `signIn.<providerId>.emailVerifiedClaim` | text | `email_verified` | |
+| `signIn.<providerId>.nameClaim` | text | `name` | |
+| `signIn.<providerId>.userInfo` | toggle (`true`, `false`) | `true` | |
+| `signIn.<providerId>.requiredClaim` | text | none | Empty: no claim is required. |
+| `signIn.<providerId>.requiredValues` | multiline | none | One value per line (`\n` between them in JSON). |
+| `signIn.<providerId>.newAccounts` | toggle | `false` | |
+| `signIn.<providerId>.privateNetwork` | toggle | `false` | |
+
+`<providerId>` is the `id` that adding the provider answered (`POST /api/v1/admin/plugins/{id}/signin-providers` with `{ "title": "..." }`; `PUT .../signin-providers/{providerId}` renames it, `DELETE` removes it). The values are saved with the plugin's other settings, by an Admin: `PUT /api/v1/admin/plugins/{id}/settings` with `{ "values": { "signIn.<providerId>.issuer": "https://...", ... } }`. A key left out is kept; an empty value clears it. A save applies at once, without a restart.
 
 **Which hosts the app calls for a provider an Admin added.** Only these: the discovery address the Admin entered (or the issuer's), and the token endpoint, keys and userinfo endpoint named by the discovery document read from it. The manifest's `outboundHosts` do not apply. Every one of these must be https, and no redirect is followed. By default the app connects to them only at public internet addresses, the same guard the app uses for any address someone typed: a mistyped or hostile address cannot aim the server at its own network. **Provider on a private network** lifts the address check for that one provider, and only an Admin can turn it on. It exists for a provider on your own network, such as a test provider in a lab on an internal Docker network. Https stays required, and the provider's certificate must be one the server trusts: for a lab provider with its own certificate authority, add that authority to the trust store of the server (or its container). There is no switch that skips certificate checks.
 

@@ -13,7 +13,8 @@ internal sealed class AddAttachmentHandler(KbDbContext db, IAccess access, IFile
 
     public async Task<Problem?> AuthorizeAsync(ActionContext<AddAttachment> ctx)
     {
-        if ((_page = await db.FindVisibleAsync(access, ctx.Actor, ctx.Action.PageId, track: false, ctx.Cancel)) is not { Kind: PageKind.Page }) return Problem.NotFound;
+        // A page or a folder: both take attachments (the compatible API attaches files to folders).
+        if ((_page = await db.FindVisibleAsync(access, ctx.Actor, ctx.Action.PageId, track: false, ctx.Cancel)) is null) return Problem.NotFound;
         if (!await access.CanAsync(ctx.Actor, _page.SpaceId, SpaceAction.CreateEdit, ctx.Cancel)) return Problem.Forbidden;
         if (ctx.Actor.UserId is null) return Problem.Unauthorized; // an attachment names who added it
         // The app's limit replaces the web server's here, before a plugin hook can read the file.
