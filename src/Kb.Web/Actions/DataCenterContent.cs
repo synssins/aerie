@@ -171,6 +171,7 @@ internal static partial class DcContentRules
             if (node is not JsonObject b) continue;
             if (DcRest.Text(b, "representation") is { } r && r != name) return (null, new Problem(400, $"body.{name} has representation {r}."));
             var value = DcRest.Text(b, "value") ?? "";
+            if (value.Length > PageSupport.MaxContentChars) return (null, new Problem(400, $"A body is at most {PageSupport.MaxContentChars} characters."));
             if (name == "editor") value = VoidTags().Replace(value, "<$1$2 />");
             try { return (StorageFormat.ToDoc(value).ToJsonString(), null); }
             catch (StorageException e) { return (null, new Problem(400, "The body is not valid storage format: " + e.Message)); }

@@ -18,23 +18,29 @@ public static class DcAttachmentRoutes
         public List<string> All(string name) => Fields.TryGetValue(name, out var v) ? v : [];
     }
 
+    /// <summary>A text part (comment, minorEdit) is short; a longer one is refused instead of being held in memory.</summary>
+    private const int MaxTextPart = 64 * 1024;
+
     /// <summary>
     /// Reads a multipart upload section by section. A part named file is a file whether or not it has a file name (attachments.md, Q-0018):
     /// its bytes, as received, go to a temporary file, never through a text decoder. The web server's own cap is raised to the most an Admin
-    /// may allow; the action holds each file to the configured limit (413). Null for a body that is not multipart, or that cannot be read.
+    /// may allow. A file part is read up to the configured limit and one byte more: reading stops there and the action answers 413.
+    /// Form is null for a body that is not multipart, or that cannot be read; Refused is set for a text part that is too long.
     /// </summary>
-    private static async Task<Upload?> ReadUploadAsync(HttpRequest request)
+    private static async Task<(Upload? Form, IResult? Refused)> ReadUploadAsync(HttpRequest request)
     {
-        if (!Microsoft.Net.Http.Headers.MediaTypeHeaderValue.TryParse(request.ContentType, out var type) || !type.MediaType.Equals("multipart/form-data", StringComparison.OrdinalIgnoreCase)) return null;
+        if (!Microsoft.Net.Http.Headers.MediaTypeHeaderValue.TryParse(request.ContentType, out var type) || !type.MediaType.Equals("multipart/form-data", StringComparison.OrdinalIgnoreCase)) return (null, null);
         var boundary = Microsoft.Net.Http.Headers.HeaderUtilities.RemoveQuotes(type.Boundary).Value;
-        if (string.IsNullOrEmpty(boundary)) return null;
+        if (string.IsNullOrEmpty(boundary)) return (null, null);
         var cap = (long)UploadLimits.MaxMb * 1_048_576 + 1_048_576;
         if (request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } feature) feature.MaxRequestBodySize = cap;
+        var abort = request.HttpContext.RequestAborted;
+        var maxFile = await UploadLimits.AttachmentBytesAsync(request.HttpContext);
         var reader = new Microsoft.AspNetCore.WebUtilities.MultipartReader(boundary, request.Body) { BodyLengthLimit = cap };
         var upload = new Upload([], new Dictionary<string, List<string>>(StringComparer.Ordinal));
         try
         {
-            while (await reader.ReadNextSectionAsync(request.HttpContext.RequestAborted) is { } section)
+            while (await reader.ReadNextSectionAsync(abort) is { } section)
             {
                 if (!Microsoft.Net.Http.Headers.ContentDispositionHeaderValue.TryParse(section.ContentDisposition, out var disposition)) continue;
                 var name = Microsoft.Net.Http.Headers.HeaderUtilities.RemoveQuotes(disposition.Name).Value ?? "";
@@ -42,20 +48,32 @@ public static class DcAttachmentRoutes
                 {
                     var path = Path.GetTempFileName();
                     request.HttpContext.Response.RegisterForDispose(new TempFile(path));
-                    long length;
-                    await using (var target = File.Create(path)) { await section.Body.CopyToAsync(target, request.HttpContext.RequestAborted); length = target.Length; }
+                    long length = 0;
+                    await using (var target = File.Create(path))
+                    {
+                        var buffer = new byte[81920];
+                        int read;
+                        while (length <= maxFile && (read = await section.Body.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, maxFile + 1 - length)), abort)) > 0)
+                        {
+                            await target.WriteAsync(buffer.AsMemory(0, read), abort);
+                            length += read;
+                        }
+                    }
                     var fileName = Microsoft.Net.Http.Headers.HeaderUtilities.RemoveQuotes(disposition.FileNameStar.HasValue ? disposition.FileNameStar : disposition.FileName).Value;
                     upload.Files.Add(new DcFilePart(string.IsNullOrWhiteSpace(fileName) ? null : Path.GetFileName(fileName), section.ContentType, length, () => File.OpenRead(path)));
+                    if (length > maxFile) break; // too large: the rest of the body is not read
                     continue;
                 }
+                var chars = new char[MaxTextPart + 1];
                 using var text = new StreamReader(section.Body, System.Text.Encoding.UTF8);
-                var value = await text.ReadToEndAsync(request.HttpContext.RequestAborted);
+                var count = await text.ReadBlockAsync(chars.AsMemory(), abort);
+                if (count > MaxTextPart) return (null, DcRest.Fail(400, $"The part {(name.Length > 50 ? name[..50] : name)} is longer than {MaxTextPart / 1024} KB."));
                 if (!upload.Fields.TryGetValue(name, out var list)) upload.Fields[name] = list = [];
-                list.Add(value);
+                list.Add(new string(chars, 0, count));
             }
         }
-        catch (Exception e) when (e is IOException or InvalidDataException) { return null; }
-        return upload;
+        catch (Exception e) when (e is IOException or InvalidDataException) { return (null, null); }
+        return (upload, null);
     }
 
     /// <summary>A part's temporary file, deleted when the response is done.</summary>
@@ -87,7 +105,8 @@ public static class DcAttachmentRoutes
             var status = http.Request.Query["status"].ToString();
             if (status.Length > 0 && status is not ("current" or "draft")) return DcRest.Fail(400, "status is current or draft.");
             if (status == "draft") return DcRest.Fail(404, "Aerie has no drafts to attach to.");
-            if (await ReadUploadAsync(http.Request) is not { } form) return NotMultipart;
+            var (form, refused) = await ReadUploadAsync(http.Request);
+            if (form is null) return refused ?? NotMultipart;
             return await bus.SendAsync(new DcCreateAttachments
             {
                 Id = id, Files = form.Files, Comments = form.All("comment"),
@@ -107,7 +126,8 @@ public static class DcAttachmentRoutes
 
         dc.MapPost("/content/{id}/child/attachment/{attachmentId}/data", async (HttpContext http, string id, string attachmentId, IActionBus bus, CancellationToken ct) =>
         {
-            if (await ReadUploadAsync(http.Request) is not { } form) return NotMultipart;
+            var (form, refused) = await ReadUploadAsync(http.Request);
+            if (form is null) return refused ?? NotMultipart;
             if (form.Files.Count != 1) return DcRest.Fail(400, "Exactly one file part is needed.");
             return await bus.SendAsync(new DcAttachmentData
             {
