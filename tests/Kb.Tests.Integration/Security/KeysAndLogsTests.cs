@@ -152,7 +152,7 @@ public sealed class KeysAndLogsTests
     // ---- M11, the tokens from before ----
 
     [Fact]
-    public async Task ServiceToken_NamingASensitiveSpace_NotMadeByItsManager_EndsAtTheNextStart()
+    public async Task ServiceToken_NamingASensitiveSpace_NotMadeByItsManager_EndsAtTheFirstStartWithTheRule_AndOnlyThen()
     {
         var path = KbAppFactory.NewDbPath();
         HttpClient Bearer(KbAppFactory on, string token)
@@ -178,14 +178,27 @@ public sealed class KeysAndLogsTests
             await f.WithDbAsync(async db =>
             {
                 foreach (var s in await db.Spaces.Where(s => s.Id == vault || s.Id == mine).ToListAsync(Ct)) s.IsSensitive = true;
+                // A database from before the update has no record that the clean-up ran.
+                db.RuntimeSettings.RemoveRange(db.RuntimeSettings.Where(s => s.Key == ServiceTokenRules.DoneKey));
                 await db.SaveChangesAsync(Ct);
             });
         }
 
-        await using var restarted = new KbAppFactory(path);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await Bearer(restarted, strayToken).GetAsync($"/api/v1/spaces/{vault}", Ct)).StatusCode);
-        // The one its maker manages is kept, at this start and at every later one.
-        Assert.Equal(HttpStatusCode.OK, (await Bearer(restarted, keptToken).GetAsync($"/api/v1/spaces/{mine}", Ct)).StatusCode);
-        await restarted.WithDbAsync(async db => Assert.Equal(1, await db.AuditEntries.CountAsync(a => a.Action == Kb.Core.Audit.AuditActions.TokenRevoke && a.SpaceId == vault, Ct)));
+        await using (var restarted = new KbAppFactory(path))
+        {
+            Assert.Equal(HttpStatusCode.Unauthorized, (await Bearer(restarted, strayToken).GetAsync($"/api/v1/spaces/{vault}", Ct)).StatusCode);
+            // The one its maker manages is kept.
+            Assert.Equal(HttpStatusCode.OK, (await Bearer(restarted, keptToken).GetAsync($"/api/v1/spaces/{mine}", Ct)).StatusCode);
+            // Later its maker loses the role in the space. The token was made rightly and is not for a later start to end.
+            await restarted.WithDbAsync(async db =>
+            {
+                db.SpaceRoleAssignments.RemoveRange(db.SpaceRoleAssignments.Where(a => a.SpaceId == mine));
+                await db.SaveChangesAsync(Ct);
+            });
+        }
+
+        await using var again = new KbAppFactory(path);
+        Assert.Equal(HttpStatusCode.OK, (await Bearer(again, keptToken).GetAsync($"/api/v1/spaces/{mine}", Ct)).StatusCode);
+        await again.WithDbAsync(async db => Assert.Equal(1, await db.AuditEntries.CountAsync(a => a.Action == Kb.Core.Audit.AuditActions.TokenRevoke, Ct)));
     }
 }

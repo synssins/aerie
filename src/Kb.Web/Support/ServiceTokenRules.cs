@@ -10,10 +10,21 @@ namespace Kb.Web;
 internal static class ServiceTokenRules
 {
     /// <summary>
-    /// At start: revokes each service token that names a sensitive space and was made by someone who does not manage the space. Such a
-    /// token is from before the space was sensitive (an Admin could then name any space); the space's Owners can neither see nor revoke it.
+    /// Once per database, at the first start with this rule: revokes each service token that names a sensitive space and was made by
+    /// someone who does not manage the space. Such a token is from before the space was sensitive (an Admin could then name any space);
+    /// the space's Owners can neither see nor revoke it. It runs once because from then on a space that becomes sensitive ends its
+    /// tokens at that moment, and a token made rightly must not end later because its maker's role changed.
     /// </summary>
     public static async Task RevokeStraysAsync(KbDbContext db, ISpacePermissionService perms, IAuditLog audit, DateTimeOffset now)
+    {
+        if (await db.GetAsync(DoneKey) is not null) return;
+        await RevokeAsync(db, perms, audit, now);
+        await db.SetAsync(DoneKey, "true", null, now);
+    }
+
+    public const string DoneKey = "Security.ServiceTokenStraysRevoked";
+
+    private static async Task RevokeAsync(KbDbContext db, ISpacePermissionService perms, IAuditLog audit, DateTimeOffset now)
     {
         var sensitive = (await db.Spaces.AsNoTracking().Where(s => s.IsSensitive).Select(s => s.Id).ToListAsync()).ToHashSet();
         if (sensitive.Count == 0) return;
