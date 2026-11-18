@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Kb.Web.Actions;
 
-// Sign-in methods (contract 0.8.0): a plugin describes an OpenID Connect provider, the app runs the sign-in. Core only: no plugin can
+// Sign-in methods (contract 0.8.0; providers an Admin adds, 0.9.0): a plugin describes an OpenID Connect provider, the app runs the sign-in. Core only: no plugin can
 // hook these actions. Nobody is signed in when they are sent, so each handler permits everyone and checks as the work.
 
 /// <summary>A sign-in method on the sign-in screen: how the API names it ("{plugin}/{id}") and the text of its button. Nothing else.</summary>
@@ -64,8 +64,8 @@ internal sealed class StartSignInHandler(SignInMethods methods, SignInFlow flow)
 
     public async Task<Outcome<SignInRedirect>> HandleAsync(ActionContext<StartSignIn> ctx)
     {
-        // A method that is not there, or has no client id yet, is not on the sign-in screen either.
-        if (methods.Find(ctx.Action.Plugin, ctx.Action.Method) is not { } m || methods.ClientId(m) is not { } clientId) return Problem.NotFound;
+        // A method that is not there, or is not set up yet (a client id; for a provider an Admin added, an issuer too), is not on the sign-in screen either.
+        if (methods.Find(ctx.Action.Plugin, ctx.Action.Method) is not { } m || !methods.IsReady(m) || methods.ClientId(m) is not { } clientId) return Problem.NotFound;
         return new SignInRedirect(await flow.StartAsync(m, clientId, ctx.Action.ReturnTo, ctx.Cancel));
     }
 }

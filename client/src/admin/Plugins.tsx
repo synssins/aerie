@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ChevronRight, House, Settings, Upload } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { ChevronRight, House, Plus, Settings, Upload } from "lucide-react";
 import { api, ApiError, fmtDateTime, upload, type PluginHealth, type PluginInfo, type PluginPermissions, type PluginSetting } from "../api";
 import { useDialogs } from "../Dialogs";
 import { PluginPanels } from "../kit/SlotViews";
@@ -50,6 +50,8 @@ export function Plugins({ area, onHome }: { area: string; onHome: () => void }) 
 
   const selected = data?.plugins.find((p) => p.id === selectedId) ?? null;
   const selectedHealth = health?.plugins.find((p) => p.id === selectedId) ?? null;
+  // Kept while the list is the same: the settings form reads its values again when its plugin changes.
+  const own = useMemo(() => selected ? pluginOwn(selected) : null, [selected]);
 
   async function change(work: () => Promise<unknown>, failed: string) {
     setError(null);
@@ -131,14 +133,15 @@ export function Plugins({ area, onHome }: { area: string; onHome: () => void }) 
                 {selected.origin !== "BuiltIn" && <button type="button" className="tb" disabled={restarting} onClick={() => setRemoving(true)}>Remove</button>}
                 {selected.locked && <button type="button" className="tb" disabled={restarting} onClick={() => void change(() => api.post(`/admin/plugins/${selected.id}/release-lock`), "Not released.")}>Release lock</button>}
               </div>}
-              {(selected.signInMethods ?? []).map((m) => (
+              {(selected.signInMethods ?? []).filter((m) => !m.byAdmin).map((m) => (
                 <section key={m.id} className="plugin-panel" aria-label={m.name}>
                   <h2>{m.name}</h2>
                   <p>Register this app with the provider using this redirect address, then set the client ID and secret below.</p>
                   <input className="mono wide" readOnly value={m.redirectAddress} aria-label={`Redirect address of ${m.name}`} onFocus={(e) => e.currentTarget.select()} />
                 </section>
               ))}
-              {selected.settings.length > 0 && <SettingsForm key={selected.id} plugin={selected} onRestart={() => setRestarting(true)} />}
+              {selected.signInProviders && selected.loaded && <SignInProviders key={`${selected.id}-providers`} plugin={selected} onChanged={load} onRestart={() => setRestarting(true)} />}
+              {own && own.settings.length > 0 && <SettingsForm key={selected.id} plugin={own} onRestart={() => setRestarting(true)} />}
               {!selected.removed && selected.permissions.some((p) => p.scope === "space") && <PermissionsForm key={`${selected.id}-permissions`} plugin={selected} />}
               {selected.loaded && <PluginPanels key={`${selected.id}-panels`} plugin={{ id: selected.id, version: selected.version }} />}
             </>
@@ -201,6 +204,97 @@ export function Plugins({ area, onHome }: { area: string; onHome: () => void }) 
           }} />
       )}
     </>
+  );
+}
+
+type Provider = NonNullable<PluginInfo["signInMethods"]>[number];
+const providerId = (m: Provider) => m.id.slice(m.id.indexOf("/") + 1);
+const providerKeys = (p: PluginInfo) => new Set((p.signInMethods ?? []).filter((m) => m.byAdmin).map((m) => `signIn.${providerId(m)}.`));
+/** The plugin with its own settings only: each provider's are under its gear. */
+const pluginOwn = (p: PluginInfo): PluginInfo => {
+  const keys = providerKeys(p);
+  return keys.size === 0 ? p : { ...p, settings: p.settings.filter((s) => ![...keys].some((k) => s.key.startsWith(k))) };
+};
+
+/**
+ * Sign-in providers an Admin adds (contract 0.9.0): a list with Add new; each has its own gear that opens its title, its redirect address,
+ * and its settings. Each is a button on the sign-in screen once its issuer and client ID are set.
+ */
+function SignInProviders({ plugin, onChanged, onRestart }: { plugin: PluginInfo; onChanged: () => Promise<void>; onRestart: () => void }) {
+  const { ask, confirm } = useDialogs();
+  const [open, setOpen] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const providers = (plugin.signInMethods ?? []).filter((m) => m.byAdmin);
+  const shown = providers.find((m) => m.id === open) ?? null;
+  const validate = (v: string) => v.trim().length === 0 || v.trim().length > 60 ? "A title is 1 to 60 characters." : null;
+
+  async function run(work: () => Promise<unknown>, failed: string) {
+    setError(null);
+    try { await work(); await onChanged(); } catch (e) { setError(problem(e, failed)); }
+  }
+
+  async function add() {
+    const title = await ask({ title: "New sign-in provider", label: "Title (the text of its button)", ok: "Add", validate });
+    if (title === null) return;
+    await run(async () => { const made = await api.post<{ id: string }>(`/admin/plugins/${plugin.id}/signin-providers`, { title: title.trim() }); setOpen(`${plugin.id}/${made.id}`); }, "Not added.");
+  }
+
+  async function rename(m: Provider) {
+    const title = await ask({ title: `Rename ${m.name}`, label: "Title", initial: m.name, ok: "Rename", validate });
+    if (title === null || title.trim() === m.name) return;
+    await run(() => api.put(`/admin/plugins/${plugin.id}/signin-providers/${providerId(m)}`, { title: title.trim() }), "Not renamed.");
+  }
+
+  async function remove(m: Provider) {
+    const linked = m.linked ?? 0;
+    const body = linked === 0 ? "Its button leaves the sign-in screen and its settings are deleted."
+      : `${linked === 1 ? "1 account is" : `${linked} accounts are`} linked to this provider's issuer. They keep the link and have no password, so they cannot sign in until a provider with the same issuer is set up again. To give one of them another way in, delete the account and make it again.`;
+    if (!await confirm({ title: `Remove ${m.name}?`, body, ok: "Remove", danger: true })) return;
+    await run(async () => { await api.del(`/admin/plugins/${plugin.id}/signin-providers/${providerId(m)}`); setOpen(null); }, "Not removed.");
+  }
+
+  const shownSettings = useMemo(() => shown && { ...plugin, settings: plugin.settings.filter((s) => s.key.startsWith(`signIn.${providerId(shown)}.`)) }, [plugin, shown]);
+
+  return (
+    <section className="plugin-panel" aria-label="Sign-in providers">
+      <h2>Sign-in providers</h2>
+      <p>Each provider is a button on the sign-in screen, through any OpenID Connect provider. It shows once its issuer and client ID are set.</p>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      {providers.length > 0 && (
+        <table className="grid-table">
+          <thead><tr><th>Title</th><th>Redirect address</th></tr></thead>
+          <tbody>
+            {providers.map((m) => (
+              <tr key={m.id}>
+                <td>
+                  <span className="plugin-name">
+                    <button type="button" className="tb icon gear" aria-label={`Settings of ${m.name}`} title={`Settings of ${m.name}`} onClick={() => { setError(null); setOpen(m.id); }}>
+                      <Settings className="ic" aria-hidden />
+                    </button>
+                    {m.name}
+                  </span>
+                </td>
+                <td className="mono">{m.redirectAddress}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="ptools row"><button type="button" className="tb" onClick={() => void add()}><Plus className="ic" aria-hidden />Add new</button></div>
+      {shown && (
+        <dialog ref={(d) => { if (d && !d.open) d.showModal(); }} className="dlg wide" onCancel={(e) => { e.preventDefault(); setOpen(null); }} aria-labelledby="sp-title">
+          <h2 id="sp-title">{shown.name}</h2>
+          <p>Register this app at the provider with this redirect address. It stays the same when you rename the provider.</p>
+          <input className="mono wide" readOnly value={shown.redirectAddress} aria-label={`Redirect address of ${shown.name}`} onFocus={(e) => e.currentTarget.select()} />
+          {shownSettings && <SettingsForm key={shown.id} plugin={shownSettings} onRestart={onRestart} />}
+          <div className="dlg-actions">
+            <button type="button" className="tb danger" onClick={() => void remove(shown)}>Remove</button>
+            <button type="button" className="tb" onClick={() => void rename(shown)}>Rename</button>
+            <button type="button" className="tb primary" onClick={() => setOpen(null)}>Done</button>
+          </div>
+        </dialog>
+      )}
+    </section>
   );
 }
 
