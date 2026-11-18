@@ -19,7 +19,7 @@ namespace Kb.Tests.Integration.Security;
 /// </summary>
 public sealed class BoundsAndProxyTests
 {
-    private const string XsrfHeader = "X-Atlassian-Token";
+    private const string XsrfHeader = Kb.Web.DataCenter.DcRest.XsrfHeader;
 
     private static async Task<(KbAppFactory F, HttpClient Cora, string Page)> SiteAsync()
     {
