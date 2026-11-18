@@ -135,6 +135,48 @@ public sealed class SignInSessionTests
         Assert.Contains("too easy to guess", await r.Content.ReadAsStringAsync(Ct), StringComparison.Ordinal);
     }
 
+    /// <summary>The same rule on the compatible surface, where the surface's own XSRF header is asked for as well, and on nothing that a token or a password makes.</summary>
+    [Fact]
+    public async Task AWriteWithTheSessionCookie_FromAnotherSitesPage_IsRefusedOnTheCompatibleSurfaceToo()
+    {
+        await using var f = new KbAppFactory(KbAppFactory.NewDbPath());
+        var admin = await f.SignedInBreakGlassAsync();
+        (await admin.PostAsJsonAsync("/api/v1/spaces", new { name = "Operations", key = "ops" }, Ct)).EnsureSuccessStatusCode();
+        var n = 0;
+        async Task<HttpResponseMessage> PostAsync(HttpClient by, params (string Name, string Value)[] headers)
+        {
+            var req = new HttpRequestMessage(HttpMethod.Post, "/rest/api/content")
+            {
+                Content = JsonContent.Create(new { type = "page", title = "Page " + ++n, space = new { key = "OPS" }, body = new { storage = new { value = "<p>x</p>", representation = "storage" } } }),
+            };
+            req.Headers.Add(Kb.Web.DataCenter.DcRest.XsrfHeader, "no-check");
+            foreach (var (name, value) in headers) req.Headers.Add(name, value);
+            return await by.SendAsync(req, Ct);
+        }
+        foreach (var header in new[] { ("Sec-Fetch-Site", "cross-site"), ("Sec-Fetch-Site", "same-site"), ("Origin", "https://evil.example") })
+        {
+            var refused = await PostAsync(admin, header);
+            Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+            // The surface's own error body, like every other refusal there.
+            Assert.Equal(403, (await refused.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("statusCode").GetInt32());
+        }
+        Assert.Equal(HttpStatusCode.OK, (await PostAsync(admin, ("Sec-Fetch-Site", "same-origin"))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await PostAsync(admin)).StatusCode);
+
+        // A caller who sends a password or a token is not a browser acting on a cookie: the rule is not for them.
+        var cora = (await UserAsync(f, "cora")).ToString();
+        var space = (await admin.GetFromJsonAsync<JsonElement>("/api/v1/spaces", Ct)).EnumerateArray().First().GetProperty("id").GetGuid();
+        (await admin.PutAsJsonAsync($"/api/v1/spaces/{space}/roles", new { principalType = "User", principalId = cora, role = "Contributor" }, Ct)).EnsureSuccessStatusCode();
+        var basic = f.NewClient();
+        basic.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("cora:" + Password)));
+        Assert.Equal(HttpStatusCode.OK, (await PostAsync(basic, ("Sec-Fetch-Site", "cross-site"))).StatusCode);
+
+        // The OAuth token endpoint is called by applications from anywhere and never acts on the cookie: a cookie that comes along changes nothing.
+        var token = new HttpRequestMessage(HttpMethod.Post, "/rest/oauth2/latest/token") { Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["grant_type"] = "authorization_code" }) };
+        token.Headers.Add("Sec-Fetch-Site", "cross-site");
+        Assert.NotEqual(HttpStatusCode.Forbidden, (await admin.SendAsync(token, Ct)).StatusCode);
+    }
+
     // ---- L5 ----
 
     [Fact]

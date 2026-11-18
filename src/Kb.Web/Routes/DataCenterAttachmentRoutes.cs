@@ -24,8 +24,8 @@ public static class DcAttachmentRoutes
 
     /// <summary>
     /// Reads a multipart upload section by section. A part named file is a file whether or not it has a file name (attachments.md, Q-0018):
-    /// its bytes, as received, go to a temporary file, never through a text decoder. The web server's own cap is raised to the most an Admin
-    /// may allow. A file part is read up to the configured limit and one byte more: reading stops there and the action answers 413.
+    /// its bytes, as received, go to a temporary file, never through a text decoder. The web server's own cap is set to what one request
+    /// may carry at the configured limit. A file part is read up to the configured limit and one byte more: reading stops there and the action answers 413.
     /// The files of one request together are held to that same limit, and its text parts together to <see cref="MaxTextParts"/>:
     /// a request is one upload, however many parts it is cut into.
     /// Form is null for a body that is not multipart, or that cannot be read; Refused is set for a request that is over one of the totals.
@@ -35,10 +35,14 @@ public static class DcAttachmentRoutes
         if (!Microsoft.Net.Http.Headers.MediaTypeHeaderValue.TryParse(request.ContentType, out var type) || !type.MediaType.Equals("multipart/form-data", StringComparison.OrdinalIgnoreCase)) return (null, null);
         var boundary = Microsoft.Net.Http.Headers.HeaderUtilities.RemoveQuotes(type.Boundary).Value;
         if (string.IsNullOrEmpty(boundary)) return (null, null);
-        var cap = (long)UploadLimits.MaxMb * 1_048_576 + 1_048_576;
-        if (request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } feature) feature.MaxRequestBodySize = cap;
         var abort = request.HttpContext.RequestAborted;
         var maxFile = await UploadLimits.AttachmentBytesAsync(request.HttpContext);
+        // The most one request can carry: its files together up to the attachment limit, its text parts, and what holds the parts
+        // together. A request that says it is longer is refused as too large before any of it is read.
+        var cap = maxFile + MaxTextParts + 1_048_576;
+        var tooLarge = DcRest.Fail(413, $"The files of one request are together at most {maxFile / 1_048_576} MB.");
+        if (request.ContentLength > cap) return (null, tooLarge);
+        if (request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } feature) feature.MaxRequestBodySize = cap;
         var reader = new Microsoft.AspNetCore.WebUtilities.MultipartReader(boundary, request.Body) { BodyLengthLimit = cap };
         var upload = new Upload([], new Dictionary<string, List<string>>(StringComparer.Ordinal));
         long files = 0, texts = 0;
@@ -66,7 +70,7 @@ public static class DcAttachmentRoutes
                     var fileName = Microsoft.Net.Http.Headers.HeaderUtilities.RemoveQuotes(disposition.FileNameStar.HasValue ? disposition.FileNameStar : disposition.FileName).Value;
                     upload.Files.Add(new DcFilePart(string.IsNullOrWhiteSpace(fileName) ? null : Path.GetFileName(fileName), section.ContentType, length, () => File.OpenRead(path)));
                     if (length > maxFile) break; // too large: the rest of the body is not read
-                    if ((files += length) > maxFile) return (null, DcRest.Fail(413, $"The files of one request are together at most {maxFile / 1_048_576} MB."));
+                    if ((files += length) > maxFile) return (null, tooLarge);
                     continue;
                 }
                 var chars = new char[MaxTextPart + 1];
@@ -78,6 +82,8 @@ public static class DcAttachmentRoutes
                 list.Add(new string(chars, 0, count));
             }
         }
+        // A body sent in chunks says no length up front: the web server stops it at the cap, and that is "too large", not "not multipart".
+        catch (BadHttpRequestException e) when (e.StatusCode == StatusCodes.Status413PayloadTooLarge) { return (null, tooLarge); }
         catch (Exception e) when (e is IOException or InvalidDataException) { return (null, null); }
         return (upload, null);
     }
