@@ -133,6 +133,42 @@ public sealed class VisibilityTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task History_IsForMembers_NotForWhoReadsOnlyBecauseOfVisibility()
+    {
+        var team = await SpaceAsync("history");
+        var (page, _, _) = await ContentAsync(team);
+        var doc = JsonSerializer.Serialize(new { type = "doc", content = new[] { new { type = "paragraph", content = new[] { new { type = "text", text = "Second" } } } } });
+        (await _admin.PutAsJsonAsync($"/api/v1/pages/{page}", new { title = "Zebra router", contentJson = doc, baseVersion = "1.0" }, Ct)).EnsureSuccessStatusCode();
+        Assert.Equal(HttpStatusCode.OK, (await SetAsync(team, "SignedIn")).StatusCode);
+        var outsider = await UserAsync("nina");
+        var reader = await UserAsync("rory", team, "Reader");
+
+        // Not a member: the page, but no history from any route.
+        var seen = await outsider.GetFromJsonAsync<JsonElement>($"/api/v1/pages/{page}", Ct);
+        Assert.Equal("Zebra router", seen.GetProperty("title").GetString());
+        Assert.Empty(seen.GetProperty("history").EnumerateArray());
+        Assert.False(seen.GetProperty("canSeeHistory").GetBoolean());
+        foreach (var path in new[] { $"/api/v1/pages/{page}/versions", $"/api/v1/pages/{page}/versions/1.0", $"/api/v1/pages/{page}/diff?from=1.0&to=1.1" })
+            Assert.Equal(HttpStatusCode.Forbidden, (await outsider.GetAsync(path, Ct)).StatusCode);
+
+        // A Reader of the space and an Admin keep it.
+        foreach (var member in new[] { reader, _admin })
+        {
+            var full = await member.GetFromJsonAsync<JsonElement>($"/api/v1/pages/{page}", Ct);
+            Assert.Equal(2, full.GetProperty("history").GetArrayLength());
+            Assert.True(full.GetProperty("canSeeHistory").GetBoolean());
+            foreach (var path in new[] { $"/api/v1/pages/{page}/versions", $"/api/v1/pages/{page}/versions/1.0", $"/api/v1/pages/{page}/diff?from=1.0&to=1.1" })
+                Assert.Equal(HttpStatusCode.OK, (await member.GetAsync(path, Ct)).StatusCode);
+        }
+
+        // Someone not signed in reading an Anyone space is not a member either.
+        Assert.Equal(HttpStatusCode.OK, (await SetAsync(team, "Anyone")).StatusCode);
+        var nobody = await _f.NewClient().GetFromJsonAsync<JsonElement>($"/api/v1/pages/{page}", Ct);
+        Assert.Empty(nobody.GetProperty("history").EnumerateArray());
+        Assert.False(nobody.GetProperty("canSeeHistory").GetBoolean());
+    }
+
+    [Fact]
     public async Task OnlyAnAdmin_SetsVisibility_AndItIsAudited()
     {
         var mine = await SpaceAsync("mine");

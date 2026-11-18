@@ -46,6 +46,28 @@ public sealed class DcContentTests : IAsyncLifetime
     private static IEnumerable<string?> Titles(JsonElement page) => page.GetProperty("results").EnumerateArray().Select(x => x.GetProperty("title").GetString());
 
     [Fact]
+    public async Task History_IsForMembers_NotForWhoReadsOnlyBecauseOfVisibility()
+    {
+        var id = await CreateAsync("Open runbook", "<p>1</p><ac:structured-macro ac:name=\"info\" ac:macro-id=\"m-1\"><ac:rich-text-body><p>x</p></ac:rich-text-body></ac:structured-macro>");
+        await (await _cora.PutAsJsonAsync($"/rest/api/content/{id}", Update(2, "Open runbook", "<p>2</p>"), Ct)).JsonAsync(HttpStatusCode.OK);
+        (await _admin.PatchAsJsonAsync($"/api/v1/admin/spaces/{_space}", new { visibility = "SignedIn" }, Ct)).EnsureSuccessStatusCode();
+        await UserAsync(_f, "nils");
+        var nils = Basic(_f, "nils");
+
+        // Not a member: the current page, but no history, no old version, no macro of an old version.
+        Assert.Equal("<p>2</p>", Storage(await nils.GetJsonAsync($"/rest/api/content/{id}?expand=body.storage")));
+        Assert.Equal("<p>2</p>", Storage(await nils.GetJsonAsync($"/rest/api/content/{id}?version=2&expand=body.storage")));
+        await (await nils.GetAsync($"/rest/api/content/{id}/history", Ct)).ErrorAsync(HttpStatusCode.Forbidden);
+        await (await nils.GetAsync($"/rest/api/content/{id}?version=1", Ct)).ErrorAsync(HttpStatusCode.Forbidden);
+        await (await nils.GetAsync($"/rest/api/content/{id}/history/1/macro/id/m-1", Ct)).ErrorAsync(HttpStatusCode.Forbidden);
+
+        // A Reader of the space keeps it.
+        Assert.True((await _rita.GetJsonAsync($"/rest/api/content/{id}/history")).GetProperty("latest").GetBoolean());
+        Assert.StartsWith("<p>1</p>", Storage(await _rita.GetJsonAsync($"/rest/api/content/{id}?version=1&expand=body.storage")), StringComparison.Ordinal);
+        Assert.Equal("info", (await _rita.GetJsonAsync($"/rest/api/content/{id}/history/1/macro/id/m-1")).GetProperty("name").GetString());
+    }
+
+    [Fact]
     public async Task Create_StoresTheBody_AndReadsBackAsWritten()
     {
         const string body = "<h2>Steps</h2><p>Run <code>reset</code> <ac:link><ri:page ri:content-title=\"Other\" /></ac:link></p><ac:structured-macro ac:name=\"jira\" ac:macro-id=\"j1\"><ac:parameter ac:name=\"key\">OPS-1</ac:parameter></ac:structured-macro>";

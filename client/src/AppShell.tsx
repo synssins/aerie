@@ -632,7 +632,7 @@ export function AppShell({ me, brand, onBrandChanged, onSignedOut, onSignIn }: {
                 <BinPageView id={binItem} onHome={onHome} onBin={() => setBinItem(null)} onOpen={setBinItem} onRestored={(id) => { setBinItem(null); setBinKey((k) => k + 1); void loadTree(id); }} />
               ) : binOf ? (
                 <BinView space={current} onHome={onHome} onOpenSpace={() => void openSpace(current)} onOpen={setBinItem} onEmptied={() => setBinKey((k) => k + 1)} onRestored={(id) => { setBinKey((k) => k + 1); void loadTree(id); }} />
-              ) : historyOf && page?.kind === "Page" ? (
+              ) : historyOf && page?.kind === "Page" && page.canSeeHistory !== false ? (
                 <HistoryView
                   page={page}
                   spaceName={current.name}

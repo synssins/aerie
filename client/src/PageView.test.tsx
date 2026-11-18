@@ -139,3 +139,25 @@ describe("the editor's toolbar", () => {
     expect(names.indexOf("Bold")).toBeLessThan(names.indexOf("Box"));
   });
 });
+
+describe("PageView and the page's history", () => {
+  const history = [{ version: "1.0", at: "2026-11-12T10:00:00Z", author: "Pat", note: null }];
+
+  it("shows the History button and table to a member of the space", async () => {
+    server();
+    show(page({ history, canSeeHistory: true }));
+    await screen.findByText("Before");
+
+    expect(screen.getByRole("button", { name: "History" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "History" })).toBeTruthy();
+  });
+
+  it("shows neither to someone who reads the space only because of its visibility", async () => {
+    server();
+    show(page({ history: [], canSeeHistory: false }));
+    await screen.findByText("Before");
+
+    expect(screen.queryByRole("button", { name: "History" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "History" })).toBeNull();
+  });
+});

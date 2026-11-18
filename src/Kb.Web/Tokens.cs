@@ -243,6 +243,17 @@ public sealed class TokenScopedPermissions(SpacePermissionService inner, ISpaceA
     public async Task<bool> CanAsync(Guid userId, Guid spaceId, SpaceAction action, CancellationToken ct = default) =>
         SpacePerms.Has(await GetPermissionsAsync(userId, spaceId, ct), action);
 
+    /// <summary>
+    /// A personal token is its owner's membership, and only where its scope reaches: it never makes a member of someone who is not one.
+    /// A service token is a member where its scope reaches, as before: an Admin made it, and it has no person behind it.
+    /// </summary>
+    public async Task<bool> IsMemberAsync(Guid userId, Guid spaceId, CancellationToken ct = default)
+    {
+        if (TokenOf(userId) is not { } token) return await inner.IsMemberAsync(userId, spaceId, ct);
+        if (token.Kind == TokenKind.Service) return await GetPermissionsAsync(userId, spaceId, ct) != 0;
+        return token.AccessTo(spaceId) is not null && await inner.IsMemberAsync(userId, spaceId, ct);
+    }
+
     public async Task<IReadOnlyList<Guid>> VisibleSpaceIdsAsync(Guid userId, CancellationToken ct = default)
     {
         if (TokenOf(userId) is not { } token) return await inner.VisibleSpaceIdsAsync(userId, ct);

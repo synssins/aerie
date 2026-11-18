@@ -234,6 +234,9 @@ internal sealed class DcContentService(KbDbContext db, IAccess access, IHttpCont
         return o;
     }
 
+    /// <summary>Whether the caller may see the page's history: a member of its space may (<see cref="PageScopes.SeesHistoryAsync"/>).</summary>
+    public Task<bool> SeesHistoryAsync(Actor actor, Page p, CancellationToken ct) => access.SeesHistoryAsync(actor, p.SpaceId, ct);
+
     public async Task<JsonObject> HistoryAsync(Actor actor, Page p, IReadOnlyList<DcPageVersion> versions, DcPageVersion shown, Expand expand, CancellationToken ct)
     {
         var current = Current(p, versions);

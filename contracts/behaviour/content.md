@@ -134,6 +134,8 @@ The `version` object: `number` (integer), `when` (ISO 8601 date-time, UTC), `mes
 
 ## History
 
+A page's history is for members of its space (any role, through a group, a grant, or an administrator). Someone who reads the space only because it is readable by everyone signed in (or by anyone) gets `403` from `GET /rest/api/content/{id}/history`, from reading a version that is not the current one (`version=`), and from the macro routes for a version that is not the current one. The current version reads as before.
+
 `GET /rest/api/content/{id}/history`
 
 Returns:

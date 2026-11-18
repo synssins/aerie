@@ -158,6 +158,8 @@ internal static partial class DcContentRules
 {
     public static readonly Problem NotFound = new(404, "No content with this id is visible to you.");
     public static readonly Problem Archived = new(403, "The space is archived.");
+    /// <summary>A page's history (its old versions and the history resource) is for members of its space, not for someone who reads it only because of its visibility.</summary>
+    public static readonly Problem NoHistory = new(403, "You may not see the history of this content.");
 
     /// <summary>The editor document of a write's body: storage, or the editor form aerie writes (the same markup). Null when there is no body.</summary>
     public static (string? Json, Problem? Problem) Body(JsonObject request)
@@ -219,8 +221,12 @@ internal sealed class DcReadContentHandler(DcContentService content, DcAttachmen
     {
         if (_file is { } file) return await files.JsonAsync(ctx.Actor, file.Attachment, file.Page, Expand.Parse(ctx.Action.Expand), ctx.Cancel, top: true);
         var page = _page!;
-        if (ctx.Action.Version is { } n && (await content.VersionsAsync(page.Id, ctx.Cancel)).All(v => v.Number != n) && !(n == 1 && page.Kind == PageKind.Folder))
-            return new Problem(404, "No such version.");
+        if (ctx.Action.Version is { } n)
+        {
+            var versions = await content.VersionsAsync(page.Id, ctx.Cancel);
+            if (versions.All(v => v.Number != n) && !(n == 1 && page.Kind == PageKind.Folder)) return new Problem(404, "No such version.");
+            if (n != DcContentService.Current(page, versions).Number && !await content.SeesHistoryAsync(ctx.Actor, page, ctx.Cancel)) return DcContentRules.NoHistory;
+        }
         return await content.ContentAsync(ctx.Actor, page, Expand.Parse(ctx.Action.Expand), ctx.Cancel, ctx.Action.Version, top: true);
     }
 }
@@ -517,8 +523,11 @@ internal sealed class DcContentHistoryHandler(DcContentService content) : IActio
 {
     private Page? _page;
 
-    public async Task<Problem?> AuthorizeAsync(ActionContext<DcContentHistory> ctx) =>
-        (_page = await content.FindAsync(ctx.Actor, ctx.Action.Id, ["current", "trashed"], track: false, ctx.Cancel)) is null ? DcContentRules.NotFound : null;
+    public async Task<Problem?> AuthorizeAsync(ActionContext<DcContentHistory> ctx)
+    {
+        if ((_page = await content.FindAsync(ctx.Actor, ctx.Action.Id, ["current", "trashed"], track: false, ctx.Cancel)) is null) return DcContentRules.NotFound;
+        return await content.SeesHistoryAsync(ctx.Actor, _page, ctx.Cancel) ? null : DcContentRules.NoHistory;
+    }
 
     public async Task<Outcome<JsonObject>> HandleAsync(ActionContext<DcContentHistory> ctx)
     {
@@ -539,6 +548,7 @@ internal sealed class DcReadMacroHandler(DcContentService content) : IActionHand
     {
         var req = ctx.Action;
         var versions = await content.VersionsAsync(_page!.Id, ctx.Cancel);
+        if (req.Version != DcContentService.Current(_page, versions).Number && !await content.SeesHistoryAsync(ctx.Actor, _page, ctx.Cancel)) return DcContentRules.NoHistory;
         var v = versions.FirstOrDefault(x => x.Number == req.Version) ?? (req.Version == 1 && versions.Count == 0 ? DcContentService.Current(_page, versions) : null);
         if (v is null) return new Problem(404, "No such version.");
         var macros = StorageFormat.Macros(StorageFormat.Parse(StorageFormat.FromDoc(v.ContentJson)));

@@ -142,6 +142,11 @@ public interface ISpacePermissionService
     Task<int> GetPermissionsAsync(Guid userId, Guid spaceId, CancellationToken ct = default);
     Task<bool> CanAsync(Guid userId, Guid spaceId, SpaceAction action, CancellationToken ct = default);
     Task<IReadOnlyList<Guid>> VisibleSpaceIdsAsync(Guid userId, CancellationToken ct = default);
+    /// <summary>
+    /// Whether the person holds something in the space besides what its visibility gives everyone signed in: a role (directly or through a
+    /// group), a grant, or the Owner role of an Admin. Someone who reads a SignedIn or Anyone space only because of its visibility is not a member.
+    /// </summary>
+    Task<bool> IsMemberAsync(Guid userId, Guid spaceId, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -164,13 +169,16 @@ public sealed class SpacePermissionService(ISpaceAccessData data, TimeProvider t
 
     public Task<int> GetPermissionsAsync(Guid userId, Guid spaceId, CancellationToken ct = default) => MaskAsync(userId, spaceId, adminOverride: true, ct);
 
-    private async Task<int> MaskAsync(Guid userId, Guid spaceId, bool adminOverride, CancellationToken ct)
+    public async Task<bool> IsMemberAsync(Guid userId, Guid spaceId, CancellationToken ct = default) =>
+        await MaskAsync(userId, spaceId, adminOverride: true, ct, byVisibility: false) != 0;
+
+    private async Task<int> MaskAsync(Guid userId, Guid spaceId, bool adminOverride, CancellationToken ct, bool byVisibility = true)
     {
         var p = await data.GetPrincipalAsync(userId, ct);
         var space = await data.GetSpaceAsync(spaceId, ct);
         if (p is null || space is null) return 0;
         // A sensitive space is always Private; the check here holds even if a row says otherwise.
-        var mask = space.Visibility != SpaceVisibility.Private && !space.IsSensitive ? SpacePerms.Read : 0;
+        var mask = byVisibility && space.Visibility != SpaceVisibility.Private && !space.IsSensitive ? SpacePerms.Read : 0;
         if (!p.HasFullAccess) return mask;
 
         // The union of every role the person holds there, directly and through groups. A role that is gone gives nothing.

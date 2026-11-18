@@ -164,11 +164,12 @@ internal static class PageSupport
         var canEdit = await access.CanAsync(actor, page.SpaceId, SpaceAction.CreateEdit);
         // Folders: whether their contents allow it is checked on the delete itself.
         var canDelete = await access.CanAsync(actor, page.SpaceId, page.CreatedBy == me ? SpaceAction.MoveDeleteOwn : SpaceAction.MoveDeleteOthers);
+        var canSeeHistory = await access.SeesHistoryAsync(actor, page.SpaceId, CancellationToken.None);
 
         return new PageDto(page.Id, page.SpaceId, page.ParentId, page.Kind.ToString(), page.Title, page.ContentJson, page.Version,
-            page.UpdatedAt, updatedBy, path, await HistoryAsync(db, page.Id, 10), canEdit, tags, canDelete,
+            page.UpdatedAt, updatedBy, path, canSeeHistory ? await HistoryAsync(db, page.Id, 10) : [], canEdit, tags, canDelete,
             draft is null ? null : new DraftInfoDto(draft.UserId == me, draft.DisplayName, draft.UpdatedAt), files, await UploadLimits.AttachmentBytesAsync(db),
-            await Kb.Web.Actions.InventorySupport.PageDetailsAsync(db, page, CancellationToken.None), page.AiFlag);
+            await Kb.Web.Actions.InventorySupport.PageDetailsAsync(db, page, CancellationToken.None), page.AiFlag) { CanSeeHistory = canSeeHistory };
     }
 
     /// <summary>The audit entry of a page whose flag a save changed: text addressed to an AI found, or gone.</summary>
