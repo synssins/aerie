@@ -40,7 +40,7 @@ Each hit carries:
 ## Read
 
 - `GET /pages/{id}/markdown`: the page as Markdown, with its title, version and last update.
-- `GET /pages/{id}`: the page as editor JSON (ProseMirror), with tags, breadcrumbs, attachments, recent history and its details: the applications it applies to, its owner, its review cycle.
+- `GET /pages/{id}`: the page as editor JSON (ProseMirror), with tags, breadcrumbs, attachments, recent history and its details: the applications it applies to, its owner, its review cycle. The applications are listed only for a caller who may view the inventory, and a caller who is not signed in gets no owner.
 - `GET /pages/{id}/versions`, `GET /pages/{id}/versions/{version}` and `GET /pages/{id}/diff?from=1.2&to=1.4`: history and a line diff. History is for members of the space: someone who reads it only because it is open to everyone signed in (or to anyone) gets `403` here, and the page's `history` and `updatedBy` are empty with `canSeeHistory` false.
 - `GET /pages/{id}/export` (Word or PDF), `.../export/code/{n}`, `.../export/table/{n}`: a page, a code block or a table as a file.
 - `GET /spaces`, `GET /spaces/{id}` and `GET /spaces/{id}/tree`: what exists. `GET /home`: recent pages.

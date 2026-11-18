@@ -440,7 +440,10 @@ internal sealed class DcContentService(KbDbContext db, IAccess access, IHttpCont
             KbUser? u = null;
             if (userKey is not null && Guid.TryParseExact(userKey, "N", out var id)) u = await svc.Db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
             else if (userName is not null) { var n = userName.ToUpperInvariant(); u = await svc.Db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.NormalizedUserName == n); }
-            return u is null || u.DeletedAt is not null ? null : u.DisplayName;
+            // A name is given to those who may look people up (and to oneself), as the user resource does; a deactivated account has none here.
+            if (u is null || u.DeletedAt is not null) return null;
+            if (u.Id == actor.UserId) return u.DisplayName;
+            return u.DeactivatedAt is null && await Kb.Web.Actions.ListPrincipalsHandler.MayBrowseAsync(svc.Db, svc.Access, actor, CancellationToken.None) ? u.DisplayName : null;
         }
 
         public async Task<IReadOnlyList<(string Title, string Url)>> ChildrenAsync() =>
