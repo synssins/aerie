@@ -73,6 +73,23 @@ public sealed class SpaceAccess(ISpacePermissionService permissions, ISpaceAcces
         };
     }
 
+    /// <summary>
+    /// Whether the actor may see the history of pages in the space (their versions, old content and differences): a member of the space
+    /// does (any role, through a group, a grant, or an Admin). Someone who reads it only because it is SignedIn or Anyone does not, nor does
+    /// nobody (not signed in). A plugin doing background work is Owner of every space that is not sensitive, so it does there.
+    /// </summary>
+    public async Task<bool> SeesHistoryAsync(Actor actor, Guid spaceId, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        if (!await CanAsync(actor, spaceId, SpaceAction.Read, ct)) return false;
+        return actor switch
+        {
+            { Kind: ActorKind.User, UserId: { } user } => await permissions.IsMemberAsync(user, spaceId, ct),
+            { Kind: ActorKind.Plugin } => true,
+            _ => false,
+        };
+    }
+
     public async Task<bool> IsAdminAsync(Actor actor, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(actor);

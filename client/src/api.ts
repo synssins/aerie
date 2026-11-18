@@ -61,6 +61,8 @@ export type Page = {
   id: string; spaceId: string; parentId: string | null; kind: "Folder" | "Page"; title: string; contentJson: string; version: string;
   updatedAt: string; updatedBy: string; path: { id: string; title: string }[]; history: PageVersion[]; canEdit: boolean; tags: string[];
   canDelete: boolean; draft: { mine: boolean; by: string; updatedAt: string } | null; attachments: Attachment[]; maxAttachmentBytes: number;
+  /** False for someone who reads the space only because of its visibility, not as a member: no history for them (and `history` is empty). */
+  canSeeHistory?: boolean;
   details?: PageDetails | null;
   /** Set when the page holds text addressed to an AI (what and where): AI features leave it alone until it is gone or reviewed. */
   aiFlag?: string | null;

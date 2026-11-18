@@ -34,4 +34,15 @@ internal static class PageScopes
         var page = await (track ? db.Pages : db.Pages.AsNoTracking()).FirstOrDefaultAsync(p => p.Id == pageId, ct);
         return page is not null && await access.RoleAsync(actor, page.SpaceId, ct) is not null ? page : null;
     }
+
+    /// <summary>
+    /// Whether the actor may see the history of pages in the space: members do, someone who reads it only because of its visibility does not
+    /// (<see cref="Kb.Core.Spaces.SpaceAccess.SeesHistoryAsync"/>). An access front that is neither of the app's own answers no.
+    /// </summary>
+    public static Task<bool> SeesHistoryAsync(this IAccess access, Actor actor, Guid spaceId, CancellationToken ct) => access switch
+    {
+        Kb.Web.DataCenter.DcAccess dc => dc.SeesHistoryAsync(actor, spaceId, ct),
+        Kb.Core.Spaces.SpaceAccess space => space.SeesHistoryAsync(actor, spaceId, ct),
+        _ => Task.FromResult(false),
+    };
 }

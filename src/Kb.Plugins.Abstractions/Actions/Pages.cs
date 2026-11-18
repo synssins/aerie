@@ -47,4 +47,11 @@ public sealed record DraftInfoDto(bool Mine, string By, DateTimeOffset UpdatedAt
 public sealed record AttachmentDto(Guid Id, string Name, long Size, string Url, DateTimeOffset At);
 public sealed record PageDto(Guid Id, Guid SpaceId, Guid? ParentId, string Kind, string Title, string ContentJson, string Version,
     DateTimeOffset UpdatedAt, string UpdatedBy, IReadOnlyList<CrumbDto> Path, IReadOnlyList<VersionDto> History, bool CanEdit, IReadOnlyList<string> Tags,
-    bool CanDelete, DraftInfoDto? Draft, IReadOnlyList<AttachmentDto> Attachments, long MaxAttachmentBytes, PageDetailsDto? Details = null, string? AiFlag = null);
+    bool CanDelete, DraftInfoDto? Draft, IReadOnlyList<AttachmentDto> Attachments, long MaxAttachmentBytes, PageDetailsDto? Details = null, string? AiFlag = null)
+{
+    /// <summary>
+    /// Whether the caller may see the page's history. A member of the space may; someone who reads it only because it is open to everyone
+    /// signed in (or to anyone) may not, and then <see cref="History"/> is empty.
+    /// </summary>
+    public bool CanSeeHistory { get; init; }
+}

@@ -1139,7 +1139,8 @@ Before 0.4.0 an accepted import's actions had source `web`, and a hook could not
 ### Spaces open to more people
 
 A space is Private (its members), Signed in (every signed-in person reads it) or Anyone (read without signing in, as Reader). A sensitive space is always Private.
-`IAccess.RoleAsync` and `VisibleSpacesAsync` already count this: a signed-in person has the Reader role in a Signed in space they are not a member of. A plugin route that should be read by people who are not signed in says `AllowAnonymous()`, and its handler still asks `IAccess`.
+`IAccess.RoleAsync` and `VisibleSpacesAsync` already count this: a signed-in person has the Reader role in a Signed in space they are not a member of.
+A page's history is for members only: someone who reads a Signed in or Anyone space without a role there (directly, through a group, or as an Admin) gets `403` from `page.version.list`, `page.version.read` and `page.diff`, and a `PageDto` with an empty `History` and `CanSeeHistory` false. A plugin's background work is Owner of every space that is not sensitive, so it keeps history. A plugin route that should be read by people who are not signed in says `AllowAnonymous()`, and its handler still asks `IAccess`.
 
 ### The audit log
 

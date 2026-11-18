@@ -4953,6 +4953,7 @@ Enum: `Same`, `Add`, `Del`.
 | maxAttachmentBytes | `long` |
 | details | `PageDetailsDto?` ([PageDetailsDto](#pagedetailsdto)) |
 | aiFlag | `string?` |
+| canSeeHistory | `bool` |
 
 ```json
 {
@@ -5014,7 +5015,8 @@ Enum: `Same`, `Add`, `Del`.
     },
     "reviewMonths": 0
   },
-  "aiFlag": "text"
+  "aiFlag": "text",
+  "canSeeHistory": false
 }
 ```
 

@@ -15,6 +15,7 @@ public sealed class DcAccess(SpaceAccess inner, IHttpContextAccessor http, ISpac
     public Task<bool> CanAsync(Actor actor, Guid spaceId, SpaceAction action, CancellationToken ct = default) => inner.CanAsync(actor, spaceId, action, ct);
     public Task<bool> CanAsync(Actor actor, string permission, Guid? spaceId = null, CancellationToken ct = default) => inner.CanAsync(actor, permission, spaceId, ct);
     public Task<IReadOnlyList<Guid>> VisibleSpacesAsync(Actor actor, CancellationToken ct = default) => inner.VisibleSpacesAsync(actor, ct);
+    public Task<bool> SeesHistoryAsync(Actor actor, Guid spaceId, CancellationToken ct = default) => inner.SeesHistoryAsync(actor, spaceId, ct);
 
     public async Task<bool> IsAdminAsync(Actor actor, CancellationToken ct = default)
     {

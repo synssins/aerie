@@ -380,7 +380,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
             ) : (
               <>
                 {page.canEdit && <button className="tb" onClick={startEdit}><Pencil className="ic" aria-hidden />Edit</button>}
-                {!guest && <button className="tb icon" aria-label="History" title="History" onClick={onHistory}><History className="ic" aria-hidden /></button>}
+                {!guest && page.canSeeHistory !== false && <button className="tb icon" aria-label="History" title="History" onClick={onHistory}><History className="ic" aria-hidden /></button>}
                 <button className="tb icon" aria-label="Copy link" title="Copy link" onClick={() => navigator.clipboard?.writeText(`${location.origin}/p/${page.id}`)}><LinkIcon className="ic" aria-hidden /></button>
                 <SlotTools slot="page.tools" ctx={{ page }} />
                 {!guest && <MenuButton label="Export" icon={<Download className="ic" aria-hidden />} items={exportItems} />}
@@ -426,7 +426,7 @@ export function PageView({ page, spaceName, role, onSaved, onOpen, onHome, onDir
         {page.draft && !page.draft.mine && <div className="note-row" role="status"><span>Being edited by {page.draft.by}</span></div>}
         {editing && editor && <Toolbar editor={editor} onImages={(files) => void insertImages(editor.view, page.spaceId, files).then(setError)} />}
         <EditorContent editor={editor} className={editing ? "editing" : ""} />
-        {!editing && page.history.length > 0 && (
+        {!editing && page.canSeeHistory !== false && page.history.length > 0 && (
           <section className="history" aria-label="History">
             <h2 className="s">History</h2>
             <table>

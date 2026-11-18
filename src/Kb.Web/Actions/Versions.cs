@@ -6,10 +6,20 @@ using static Kb.Web.PageSupport;
 
 namespace Kb.Web.Actions;
 
+internal static class HistoryChecks
+{
+    /// <summary>404 for a page the caller cannot see; 403 when they read it only because of its space's visibility, not as a member.</summary>
+    public static async Task<Problem?> MaySeeAsync(KbDbContext db, IAccess access, Actor actor, Guid pageId, CancellationToken ct)
+    {
+        if (await db.FindVisibleAsync(access, actor, pageId, track: false, ct) is not { } page) return Problem.NotFound;
+        return await access.SeesHistoryAsync(actor, page.SpaceId, ct) ? null : Problem.Forbidden;
+    }
+}
+
 internal sealed class ListVersionsHandler(KbDbContext db, IAccess access) : IActionHandler<ListVersions, IReadOnlyList<VersionDto>>
 {
     public async Task<Problem?> AuthorizeAsync(ActionContext<ListVersions> ctx) =>
-        await db.FindVisibleAsync(access, ctx.Actor, ctx.Action.PageId, track: false, ctx.Cancel) is null ? Problem.NotFound : null;
+        await HistoryChecks.MaySeeAsync(db, access, ctx.Actor, ctx.Action.PageId, ctx.Cancel);
 
     public async Task<Outcome<IReadOnlyList<VersionDto>>> HandleAsync(ActionContext<ListVersions> ctx) =>
         Outcome.List(await HistoryAsync(db, ctx.Action.PageId, int.MaxValue));
@@ -21,7 +31,7 @@ internal sealed class ReadVersionHandler(KbDbContext db, IAccess access) : IActi
 
     public async Task<Problem?> AuthorizeAsync(ActionContext<ReadVersion> ctx)
     {
-        if (await db.FindVisibleAsync(access, ctx.Actor, ctx.Action.PageId, track: false, ctx.Cancel) is null) return Problem.NotFound;
+        if (await HistoryChecks.MaySeeAsync(db, access, ctx.Actor, ctx.Action.PageId, ctx.Cancel) is { } refused) return refused;
         return (_version = await VersionAsync(db, ctx.Action.PageId, ctx.Action.Version)) is null ? Problem.NotFound : null;
     }
 
@@ -40,7 +50,7 @@ internal sealed class DiffPageHandler(KbDbContext db, IAccess access, DocRendere
     public async Task<Problem?> AuthorizeAsync(ActionContext<DiffPage> ctx)
     {
         var req = ctx.Action;
-        if (await db.FindVisibleAsync(access, ctx.Actor, req.PageId, track: false, ctx.Cancel) is null) return Problem.NotFound;
+        if (await HistoryChecks.MaySeeAsync(db, access, ctx.Actor, req.PageId, ctx.Cancel) is { } refused) return refused;
         return (_from = await VersionAsync(db, req.PageId, req.From)) is null || (_to = await VersionAsync(db, req.PageId, req.To)) is null ? Problem.NotFound : null;
     }
 
