@@ -23,9 +23,13 @@ internal sealed class ExportPageHandler(KbDbContext db, IAccess access, IFileSto
         // What the page shows this reader, in formats the document can hold: images the page's space may show (its own, and those a
         // move granted it), and images of another space the reader has a role in (pasted from a page there).
         // Whoever edits a page can write any image id into it; an export must not hand out an image its reader may not see.
+        const long MaxImageBytes = 100L * 1024 * 1024;
         var images = new Dictionary<Guid, ExportImage>();
+        long held = 0;
         foreach (var imageId in DocText.ImageIds(page.ContentJson))
         {
+            // Every image is held in memory until the document is written: past the allowance the rest export as the "[image]" note.
+            if (held >= MaxImageBytes) break;
             var meta = await db.SpaceImages.AsNoTracking().FirstOrDefaultAsync(i => i.Id == imageId, ctx.Cancel);
             if (meta is null) continue;
             if (meta.SpaceId != page.SpaceId && !await db.SpaceImageGrants.AnyAsync(g => g.ImageId == imageId && g.SpaceId == page.SpaceId, ctx.Cancel)
@@ -35,6 +39,7 @@ internal sealed class ExportPageHandler(KbDbContext db, IAccess access, IFileSto
             using var ms = new MemoryStream();
             await s.CopyToAsync(ms, ctx.Cancel);
             var data = ms.ToArray();
+            held += data.Length;
             // shortcut: WebP images export as a "[image]" note; convert them on upload if that becomes common.
             if (Exports.ImageSize(data) is { Width: > 0, Height: > 0 } size) images[imageId] = new ExportImage(data, meta.ContentType, size.Width, size.Height);
         }

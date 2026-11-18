@@ -33,6 +33,17 @@ public static class UploadLimits
         return AttachmentBytesAsync(http.RequestServices.GetRequiredService<KbDbContext>(), http.RequestAborted);
     }
 
+    public static readonly Problem SpaceFull = Problem.Invalid("file", "This space has no room left for attachments. An Owner can remove some, or an Admin can raise the limit.");
+
+    /// <summary>True when the space's attachments, with this many bytes more, would pass the limit set in Kb:Storage:SpaceQuotaMb (0: no limit).</summary>
+    public static async Task<bool> SpaceFullAsync(KbDbContext db, int quotaMb, Guid spaceId, long adding, CancellationToken ct)
+    {
+        if (quotaMb <= 0) return false;
+        // system: a total over the space's pages, the binned ones included, for the limit only
+        var used = await db.Attachments.IgnoreQueryFilters().Where(a => db.Pages.IgnoreQueryFilters().Any(p => p.Id == a.PageId && p.SpaceId == spaceId)).SumAsync(a => (long?)a.Size, ct) ?? 0;
+        return used + adding > quotaMb * 1_048_576L;
+    }
+
     /// <summary>The web server's request size limit for this site, or null when the app is not behind IIS (nothing to read).</summary>
     public static long? ServerLimit(IWebHostEnvironment env)
     {
