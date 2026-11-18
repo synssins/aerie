@@ -48,11 +48,11 @@ internal sealed class DcSearchHandler(KbDbContext db, DcContentService content, 
     {
         var watch = Stopwatch.StartNew();
         var req = ctx.Action;
-        var (items, archivedSpaces) = await ItemsAsync(ctx.Actor, ctx.Cancel);
         var matched = new List<(CqlItem Item, int Score)>();
         var archived = 0;
         try
         {
+            var (items, archivedSpaces) = await ItemsAsync(ctx.Actor, ctx.Cancel);
             foreach (var item in items)
             {
                 var score = 0;
@@ -100,13 +100,24 @@ internal sealed class DcSearchHandler(KbDbContext db, DcContentService content, 
     }
 
     /// <summary>Every page, folder and attachment in the caller's visible spaces, current only, with the facts CQL reads.</summary>
+    /// <summary>The most pages one search examines (Kb:DataCenter:MaxSearchPages). Past it the answer is 400, not a search over a part of them.</summary>
+    private int MaxExamined => content.Links.MaxSearchPages;
+
     private async Task<(List<CqlItem> Items, HashSet<Guid> Archived)> ItemsAsync(Actor actor, CancellationToken ct)
     {
         // shortcut: the query runs in memory over every visible item; translate it to SQL if spaces grow past a few thousand pages.
         var scope = await content.ScopeAsync(actor, ct);
         await content.EnsureIdsAsync(ct);
         await DcSpaceData.EnsureIdsAsync(db, ct);
-        var pages = await db.Pages.AsNoTracking().In(scope).ToListAsync(ct);
+        // Only what a query reads of a page, never its body, and no more pages than MaxExamined: every query, also one by a caller
+        // who is not signed in, holds all of this in memory while it runs.
+        var pages = await db.Pages.AsNoTracking().In(scope).OrderBy(p => p.Id).Take(MaxExamined + 1).Select(p => new Page
+        {
+            Id = p.Id, SpaceId = p.SpaceId, ParentId = p.ParentId, Kind = p.Kind, Title = p.Title, SearchText = p.SearchText,
+            CreatedBy = p.CreatedBy, CreatedAt = p.CreatedAt, UpdatedBy = p.UpdatedBy, UpdatedAt = p.UpdatedAt,
+        }).ToListAsync(ct);
+        if (pages.Count > MaxExamined)
+            throw new CqlException($"This search would have to look at more than {MaxExamined:N0} pages, which is the most one search examines here. Use aerie's own search, or an account that sees fewer spaces.");
         var pageIds = pages.Select(p => p.Id).ToList();
         var files = await db.Attachments.AsNoTracking().Where(a => pageIds.Contains(a.PageId) && a.DeletedAt == null).ToListAsync(ct);
         var ids = await content.IdsOfAsync([.. pageIds, .. files.Select(f => f.Id)], ct);
