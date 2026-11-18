@@ -1125,6 +1125,15 @@ Write. `TurnOffMyCodes`, answers `Unit`. Core only.
 
 Read. `ReadMyCodes`, answers `MyCodes` ([MyCodes](#mycodes)). Core only.
 
+## me.password.set
+
+Write. `SetMyPassword`, answers `Unit`. Core only.
+
+| Field | Type | |
+|---|---|---|
+| Current | `string` | never logged |
+| Password | `string` | never logged |
+
 ## me.read
 
 Read. `ReadMe`, answers `MeResponse` ([MeResponse](#meresponse)).
@@ -4609,6 +4618,20 @@ Enum: `Same`, `Add`, `Del`.
   "on": false,
   "required": false,
   "allowed": false
+}
+```
+
+### MyPasswordRequest
+
+| Field | Type |
+|---|---|
+| current | `string?` |
+| password | `string?` |
+
+```json
+{
+  "current": "text",
+  "password": "text"
 }
 ```
 

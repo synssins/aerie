@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import type { Brand } from "./api";
 import { SignIn } from "./SignIn";
 import { CodeSettingsPanel } from "./admin/CodeSettings";
-import { MyCodesPanel } from "./SettingsView";
+import { MyCodesPanel, MyPasswordPanel } from "./SettingsView";
 import { grouped } from "./Codes";
 
 const brand: Brand = { productName: "KB", logoLightUrl: null, logoDarkUrl: null, primaryColor: "#1b4f8a" };
@@ -101,6 +101,28 @@ describe("one-time codes", () => {
     await userEvent.click(await screen.findByRole("checkbox", { name: "Use codes" }));
     await waitFor(() => expect((screen.getByRole("checkbox", { name: "Use codes" }) as HTMLInputElement).checked).toBe(false));
     expect(calls.map((c) => c.key)).toContain("DELETE /me/codes");
+  });
+
+  it("own settings: turning codes off in a session that has been open a while says to sign in again", async () => {
+    server({ "GET /me/codes": () => ({ body: { on: true, required: false, allowed: true } }), "DELETE /me/codes": () => ({ status: 403, body: { title: "Forbidden" } }) });
+    render(<MyCodesPanel />);
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Use codes" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("sign in again");
+  });
+
+  it("own settings: changing the password sends the current and the new one, and shows the server's reason when refused", async () => {
+    let refuse = true;
+    const calls = server({ "POST /me/password": () => refuse ? { status: 400, body: { errors: { current: ["That is not your current password."] } } } : { status: 204 } });
+    render(<MyPasswordPanel />);
+    await userEvent.type(screen.getByLabelText("Current password"), "the-old-password-123");
+    await userEvent.type(screen.getByLabelText("New password"), "a-much-better-passphrase");
+    await userEvent.click(screen.getByRole("button", { name: "Change password" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("That is not your current password.");
+    refuse = false;
+    await userEvent.click(screen.getByRole("button", { name: "Change password" }));
+    expect((await screen.findByRole("status")).textContent).toContain("Password changed");
+    expect(calls.filter((c) => c.key === "POST /me/password").at(-1)?.body).toEqual({ current: "the-old-password-123", password: "a-much-better-passphrase" });
+    expect((screen.getByLabelText("New password") as HTMLInputElement).value).toBe("");
   });
 
   it("Administration: Require codes for Admins or Everyone", async () => {

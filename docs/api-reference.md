@@ -159,6 +159,7 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | GET | `/api/v1/me/codes` | `me.codes.read` |  | `MyCodes` ([MyCodes](plugins/action-reference.md#mycodes)) | No | Needed | No |
 | GET | `/api/v1/me/oauth/grants` | `oauth.grant.list` |  | `IReadOnlyList<OAuthGrantDto>` ([OAuthGrantDto](plugins/action-reference.md#oauthgrantdto)) | No | Needed | No |
 | DELETE | `/api/v1/me/oauth/grants/{id:guid}` | `oauth.grant.revoke` |  | `Unit` | Yes | Needed | No |
+| POST | `/api/v1/me/password` | `me.password.set` | `MyPasswordRequest` ([MyPasswordRequest](plugins/action-reference.md#mypasswordrequest)) | `Unit` | Yes | Needed | No |
 | GET | `/api/v1/me/settings` | `me.settings.read` |  | `UserSettings` ([UserSettings](plugins/action-reference.md#usersettings)) | No | Needed | No |
 | PUT | `/api/v1/me/settings` | `me.settings.save` | `UserSettings` ([UserSettings](plugins/action-reference.md#usersettings)) | `UserSettings` ([UserSettings](plugins/action-reference.md#usersettings)) | Yes | Needed | No |
 | GET | `/api/v1/notifications` | `notification.list` |  | `IReadOnlyList<NotificationDto>` ([NotificationDto](plugins/action-reference.md#notificationdto)) | No | Needed | No |
