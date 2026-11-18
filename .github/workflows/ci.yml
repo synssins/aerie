@@ -38,7 +38,7 @@ jobs:
         run: dotnet test --project tests/Kb.Tests.Unit --no-build
       # For tests/Kb.Tests.Integration/ExitWatch.cs: when the test process does not end after the last test, the run says which thread held it.
       - name: Stack tool
-        run: dotnet tool install --global dotnet-stack --version 10.0.750501
+        run: dotnet tool install --global dotnet-dump --version 10.0.750501
       - name: Integration tests
         shell: pwsh
         run: tools/test-shard.ps1 -Shard ${{ matrix.shard }} -Of $env:SHARDS
