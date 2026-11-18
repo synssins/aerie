@@ -20,6 +20,9 @@ services:
       # First admin, made at first start if none exists. Leave both out to use the setup page instead.
       # Kb__Setup__AdminUserName: admin
       # Kb--SetupAdminPassword: change-me-to-15-or-more-characters
+      # Stores the keys in the database encrypted (README, "Protecting the keys in the database"). Keep the value: without it
+      # the app does not start on this database.
+      # Kb--KeyProtectionSecret: a-long-random-value
       # To use SQL Server instead of SQLite:
       # Kb__Database__Provider: SqlServer
       # Kb__Database__ConnectionString: "Server=sql;Database=Kb;User Id=aerie;Password=...;TrustServerCertificate=True"

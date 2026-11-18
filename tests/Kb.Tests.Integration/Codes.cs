@@ -57,6 +57,13 @@ public static class Codes
             var key = (await (await c.PostAsync("/api/v1/auth/codes/key", null, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("key").GetString()!;
             return await c.PostAsJsonAsync("/api/v1/auth/codes", new { code = Totp(key) }, Ct);
         }
+        // A code is good once. Tests sign the same person in several times within one 30-second step, so the mark of the last
+        // accepted step is taken away first; the rule itself has its own test (SignInSessionTests).
+        await using (var scope = f.Services.CreateAsyncScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<KbUser>>();
+            await users.RemoveAuthenticationTokenAsync((await users.FindByNameAsync(userName))!, Kb.Web.Actions.CodeSteps.Provider, Kb.Web.Actions.CodeSteps.Name);
+        }
         return await c.PostAsJsonAsync("/api/v1/auth/local/code", new { code = Totp(await KeyOfAsync(f, userName)) }, Ct);
     }
 }

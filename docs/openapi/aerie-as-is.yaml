@@ -4369,6 +4369,35 @@ paths:
       security:
         - cookieAuth: []
       "x-kb-api-token": "closed"
+  "/api/v1/me/password":
+    post:
+      tags:
+        - "me"
+      operationId: "me.password.set"
+      "x-kb-action": "me.password.set"
+      "x-kb-changes-data": true
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/MyPasswordRequest"
+      responses:
+        "204":
+          description: "No content"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
   "/api/v1/me/settings":
     get:
       tags:
@@ -8209,6 +8238,15 @@ components:
           type: "boolean"
         allowed:
           type: "boolean"
+    MyPasswordRequest:
+      type: "object"
+      properties:
+        current:
+          type: "string"
+          nullable: true
+        password:
+          type: "string"
+          nullable: true
     NotificationCountDto:
       type: "object"
       properties:

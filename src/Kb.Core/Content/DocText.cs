@@ -263,7 +263,7 @@ public static class DocText
                                 "bold" => $"**{t}**",
                                 "italic" => $"*{t}*",
                                 "strike" => $"~~{t}~~",
-                                "link" => $"[{t}]({Attr(m, "href")})",
+                                "link" => DocLinks.SafeLink(Attr(m, "href")) ? $"[{t}]({Attr(m, "href")})" : t,
                                 _ => t,
                             };
                         }

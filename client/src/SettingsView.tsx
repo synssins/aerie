@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AppWindow, ArrowLeft, Bell, ChevronRight, House, KeyRound, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { Link, to } from "./Link";
-import { api } from "./api";
+import { api, ApiError } from "./api";
 import { CodeSetup } from "./Codes";
 import type { NotifyPref, Space, UserSettings } from "./api";
 import { TokensPanel } from "./Tokens";
@@ -37,7 +37,8 @@ export function MyCodesPanel() {
   async function change(on: boolean) {
     setError(null);
     if (on) { setSetup(true); return; }
-    try { await api.del("/me/codes"); await load(); } catch { setError("Could not turn codes off."); }
+    try { await api.del("/me/codes"); await load(); }
+    catch (e) { setError(e instanceof ApiError && e.status === 403 ? "Sign out and sign in again, then turn codes off within 10 minutes." : "Could not turn codes off."); }
   }
 
   return (
@@ -49,6 +50,48 @@ export function MyCodesPanel() {
       {error && <p className="form-error" role="alert">{error}</p>}
       {setup && <CodeSetup className="signin-card" onCancel={() => setSetup(false)} onDone={() => { setSetup(false); void load(); }} />}
     </>
+  );
+}
+
+/** A new password for the person's own account, given with the current one. Other sessions of the account end. */
+export function MyPasswordPanel() {
+  const [current, setCurrent] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setDone(false);
+    setBusy(true);
+    try {
+      await api.post("/me/password", { current, password });
+      setCurrent("");
+      setPassword("");
+      setDone(true);
+    } catch (err) {
+      const body = err instanceof ApiError ? err.body : null;
+      setError(body?.errors?.current?.[0] ?? body?.errors?.password?.[0] ?? body?.detail ?? body?.error ?? "Not changed. Server unavailable.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="form" onSubmit={(e) => void submit(e)} aria-label="Change password">
+      <label className="lbl" htmlFor="my-password-current">Current password</label>
+      <input id="my-password-current" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required />
+      <label className="lbl" htmlFor="my-password-new">New password</label>
+      <input id="my-password-new" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={15} />
+      <span />
+      <div>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        {done && <p role="status">Password changed. Your other sessions were signed out.</p>}
+        <button className="btn" type="submit" disabled={busy}>{busy ? "Changing…" : "Change password"}</button>
+      </div>
+    </form>
   );
 }
 
@@ -104,7 +147,7 @@ export function SettingsView({ section, settings, isAdmin, ownsSpaces, spaces, o
           <nav className="crumb" aria-label="Breadcrumb"><Link href={to.home()} className="crumb-home" onNav={onHome} aria-label="Home" title="Home"><House className="ic" aria-hidden /></Link><ChevronRight className="ic sm" aria-hidden /><span>Settings</span></nav>
           <div className="titlebar"><h1>{section === "preferences" ? "Preferences" : section === "tokens" ? "API tokens" : section === "applications" ? "Connected applications" : section === "signin" ? "Sign-in" : "Notifications"}</h1></div>
 
-          {section === "tokens" ? <TokensPanel admin={false} spaces={spaces} /> : section === "applications" ? <ConnectedAppsPanel /> : section === "signin" ? <MyCodesPanel /> : section === "preferences" ? (
+          {section === "tokens" ? <TokensPanel admin={false} spaces={spaces} /> : section === "applications" ? <ConnectedAppsPanel /> : section === "signin" ? <><MyCodesPanel /><MyPasswordPanel /></> : section === "preferences" ? (
             <div className="form">
               <span className="lbl">Theme</span>
               <Seg label="Theme" value={settings.theme} onChange={(v) => set("theme", v)} options={[["light", "Light"], ["dark", "Dark"], ["system", "Match system"]]} />

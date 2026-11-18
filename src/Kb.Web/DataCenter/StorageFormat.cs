@@ -489,7 +489,13 @@ public static class StorageFormat
                 if (AttrOf(n, "alt") is { Length: > 0 } alt) sb.Append(" ac:alt=\"").Append(EscapeAttr(alt)).Append('"');
                 sb.Append("><ri:url ri:value=\"").Append(EscapeAttr(AttrOf(n, "src") ?? "")).Append("\" /></ac:image>");
                 break;
-            case OpaqueBlock or OpaqueInline: sb.Append(AttrOf(n, "xml") ?? ""); break;
+            // An opaque node's markup is written back as it is, so it must be markup: a node whose text does not parse is left out
+            // (a save through aerie's own API can plant any text there), instead of making the whole page unreadable.
+            case OpaqueBlock or OpaqueInline:
+                var xml = AttrOf(n, "xml") ?? "";
+                try { Parse(xml); sb.Append(xml); }
+                catch (StorageException) { }
+                break;
             case "text" or "hardBreak": Runs([n], sb); break;
             default:
                 // A node of a plugin: carried as its JSON, so it comes back as it was.
