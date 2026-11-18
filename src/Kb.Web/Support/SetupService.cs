@@ -31,8 +31,12 @@ public sealed class SetupService(
     public async Task<bool> IsRequiredAsync(CancellationToken ct = default) =>
         !await db.Users.AnyAsync(u => u.IsAdmin && !u.IsBreakGlass && u.DeactivatedAt == null, ct);
 
-    /// <summary>Requests from the server itself skip the setup code.</summary>
-    public static bool IsLocal(HttpContext? http) => http?.Connection.RemoteIpAddress is { } ip && IPAddress.IsLoopback(ip);
+    /// <summary>
+    /// Requests from the server itself skip the setup code. A request that was passed on by a proxy is never one of them, whoever it says
+    /// it is from: a proxy on the same machine connects from loopback for every caller.
+    /// </summary>
+    public static bool IsLocal(HttpContext? http) => http?.Connection.RemoteIpAddress is { } ip && IPAddress.IsLoopback(ip)
+        && !http.Request.Headers.ContainsKey("X-Forwarded-For") && !http.Request.Headers.ContainsKey("X-Original-For");
 
     public async Task OnStartupAsync()
     {

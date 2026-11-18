@@ -26,6 +26,13 @@ public static class UploadLimits
 
     public static async Task<long> AttachmentBytesAsync(KbDbContext db, CancellationToken ct = default) => await AttachmentMbAsync(db, ct) * 1_048_576L;
 
+    /// <summary>For a route that streams an upload to a temporary file: where it stops reading a file. The action still gives the answer.</summary>
+    public static Task<long> AttachmentBytesAsync(HttpContext http)
+    {
+        ArgumentNullException.ThrowIfNull(http);
+        return AttachmentBytesAsync(http.RequestServices.GetRequiredService<KbDbContext>(), http.RequestAborted);
+    }
+
     /// <summary>The web server's request size limit for this site, or null when the app is not behind IIS (nothing to read).</summary>
     public static long? ServerLimit(IWebHostEnvironment env)
     {

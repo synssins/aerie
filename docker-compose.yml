@@ -5,10 +5,18 @@ services:
     image: ghcr.io/synssins/aerie:latest
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      # Published on this machine only, so the proxy is the one way in. A proxy on another machine needs the port on an
+      # address it can reach ("192.168.1.20:8080:8080"); then keep everyone else off that port with a firewall.
+      - "127.0.0.1:8080:8080"
     volumes:
       - aerie-data:/app/App_Data
     environment:
+      # The address your reverse proxy connects from, as the container sees it (one address, or a network such as 172.18.0.0/16).
+      # Only a proxy named here is believed when it says who the client is (X-Forwarded-For) and that the client used https
+      # (X-Forwarded-Proto). Without it, rate limits and the audit log see the proxy instead of the client, and sign-in methods
+      # and OAuth do not see https. A proxy on this machine arrives from the Docker network's gateway; a proxy in this file
+      # arrives from its own container address. The log names the address the first time a forwarded request is ignored.
+      # Kb__Proxy__Trusted__0: 172.18.0.1
       # First admin, made at first start if none exists. Leave both out to use the setup page instead.
       # Kb__Setup__AdminUserName: admin
       # Kb--SetupAdminPassword: change-me-to-15-or-more-characters

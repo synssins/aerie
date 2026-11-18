@@ -10,6 +10,7 @@ Send `Authorization: Bearer <token>` with every call. A token looks like `kbt_..
 - **Personal token:** made in Settings > API tokens. It acts as the person who made it.
 - **Service token:** made by an Admin in Administration > Security > API tokens, for another system. It acts as a service account that cannot sign in; pages it changes carry the account's name.
 - **Scopes:** each scope is Read or Write, for one space or for all spaces. Read gives the Reader role and Write gives the Contributor role, never more, and never more than the owner of a personal token has. A service token's all-spaces scope does not reach a sensitive space; name the space to include it.
+- **Sensitive spaces:** when a space is marked sensitive, every service token that names it is revoked, and the audit log says so. Someone who manages the space makes a new one.
 - **Never an Admin.** A token made by an Admin has no Admin rights. Administration answers `403` to every token.
 - **Expiry:** every token has one. The Admin sets the longest life (default 365 days).
 - **Limits:** 600 calls a minute per token, then `429`. A revoked, expired or mistyped token gets `401`.

@@ -67,6 +67,17 @@ internal static class OAuthEndpoint
         return ok ? (client, null) : (null, Error(401, "invalid_client", "The client is unknown, disabled, or its credentials are wrong.", usedBasic));
     }
 
+    /// <summary>
+    /// A client's own limit, counted only once it has shown its secret: a client id is public, and counting requests that merely name it
+    /// would let anyone use up the client's limit. A public client has no secret to show, so it is limited by address alone.
+    /// </summary>
+    public static int? ClientLimited(OAuthThrottle throttle, OAuthClient client)
+    {
+        ArgumentNullException.ThrowIfNull(throttle);
+        ArgumentNullException.ThrowIfNull(client);
+        return client.IsPublic ? null : throttle.Hit("client:" + client.ClientId);
+    }
+
     public static string? One(IReadOnlyDictionary<string, string[]> p, string name) => p.TryGetValue(name, out var v) && v.Length > 0 ? v[0] : null;
 
     public static JsonObject Tokens(string access, string refresh, int expiresIn, DateTimeOffset now, string scopes) => new()
@@ -118,7 +129,6 @@ internal sealed class DcOAuthTokenHandler(KbDbContext db, IPasswordHasher<KbUser
         var p = a.Parameters;
         // Limited before any credential is checked.
         if (throttle.Hit("address:" + a.Address) is { } wait) return OAuthEndpoint.Limited(wait);
-        if ((a.Basic?.Id ?? OAuthEndpoint.One(p, "client_id")) is { } named && throttle.Hit("client:" + named) is { } clientWait) return OAuthEndpoint.Limited(clientWait);
         if (await OAuthFlow.NeedsHttpsAsync(db, env, a.SiteIsHttps, ctx.Cancel)) return OAuthEndpoint.Error(400, "invalid_request", "OAuth 2.0 works only when this site is served over https.");
         if (p.Any(kv => kv.Value.Length > 1)) return OAuthEndpoint.Error(400, "invalid_request", "A parameter was sent more than once.");
         var grantType = OAuthEndpoint.One(p, "grant_type");
@@ -126,6 +136,7 @@ internal sealed class DcOAuthTokenHandler(KbDbContext db, IPasswordHasher<KbUser
 
         var (client, error) = await OAuthEndpoint.AuthenticateAsync(db, hasher, p, a.Basic, a.BadBasic, ctx.Cancel);
         if (error is not null) return error;
+        if (OAuthEndpoint.ClientLimited(throttle, client!) is { } clientWait) return OAuthEndpoint.Limited(clientWait);
         return grantType switch
         {
             "authorization_code" => await ExchangeAsync(ctx, client!),

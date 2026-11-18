@@ -126,7 +126,8 @@ public static class DcRest
 
     /// <summary>
     /// Runs for every request under the root, after authentication. Unknown paths answer 404, refused Basic credentials 401 (never served as
-    /// nobody), a multipart or form write without the XSRF header 403, and any error without a body gets the RestError body.
+    /// nobody), a multipart or form write without the XSRF header 403, a write by a caller who is not signed in 401 before its body is read,
+    /// and any error without a body gets the RestError body.
     /// </summary>
     public static async Task GuardAsync(HttpContext http, RequestDelegate next)
     {
@@ -174,6 +175,12 @@ public static class DcRest
         if (!XsrfOk(http.Request) || (IsCookieCaller(http) && !IsSafe(http.Request.Method) && !HasXsrfHeader(http.Request)))
         {
             await Fail(403, "This request needs the X-Atlassian-Token header.").ExecuteAsync(http);
+            return;
+        }
+        // No operation of the surface lets a caller who is not signed in write. The answer is given here, before any of the body is read.
+        if (!IsSafe(http.Request.Method) && http.User.Identity?.IsAuthenticated != true)
+        {
+            await Fail(401, "This operation needs a signed-in caller.").ExecuteAsync(http);
             return;
         }
         try { await next(http); }

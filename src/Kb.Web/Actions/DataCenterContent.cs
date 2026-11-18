@@ -171,15 +171,20 @@ internal static partial class DcContentRules
             if (node is not JsonObject b) continue;
             if (DcRest.Text(b, "representation") is { } r && r != name) return (null, new Problem(400, $"body.{name} has representation {r}."));
             var value = DcRest.Text(b, "value") ?? "";
-            if (name == "editor") value = VoidTags().Replace(value, "<$1$2 />");
-            try { return (StorageFormat.ToDoc(value).ToJsonString(), null); }
+            if (value.Length > PageSupport.MaxContentChars) return (null, new Problem(400, $"A body is at most {PageSupport.MaxContentChars} characters."));
+            try
+            {
+                if (name == "editor") value = VoidTags().Replace(value, "<$1$2 />");
+                return (StorageFormat.ToDoc(value).ToJsonString(), null);
+            }
             catch (StorageException e) { return (null, new Problem(400, "The body is not valid storage format: " + e.Message)); }
+            catch (RegexMatchTimeoutException) { return (null, new Problem(400, "The body is not valid storage format: a tag is not closed.")); }
         }
         return (null, null);
     }
 
     /// <summary>HTML's empty elements written without a close (&lt;br&gt;), as an editor may send them.</summary>
-    [GeneratedRegex(@"<(br|hr|img|col)(\s[^<>]*?)?\s*(?<!/)>", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"<(br|hr|img|col)(\s[^<>]*?)?\s*(?<!/)>", RegexOptions.IgnoreCase, 2000)]
     private static partial Regex VoidTags();
 
     public static string Type(JsonObject body) => DcRest.Text(body, "type") ?? "";
@@ -461,6 +466,8 @@ internal sealed class DcUpdateContentHandler(KbDbContext db, IAccess access, DcC
         else
         {
             // A folder: aerie's own save only renames it. Its body and its versions are kept here (content.md: a folder's body is its own content).
+            // The body is held to what a page's body is held to (its size).
+            if (json is not null && !PageSupport.IsEditorDoc(json)) return new Problem(400, "The body is too large or nested too deep.");
             if (title != page.Title)
             {
                 var renamed = await bus.SendAsync(new SavePage { PageId = page.Id, Title = title, ContentJson = page.ContentJson, BaseVersion = page.Version }, CancellationToken.None);

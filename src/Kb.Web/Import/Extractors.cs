@@ -34,6 +34,14 @@ public static partial class Extractors
     public const int MaxZipEntries = 2000;
     public const long MaxZipBytes = 512L * 1024 * 1024;
     public const int MaxDepth = 5;
+    /// <summary>The most one XML or HTML part inside an office file, an e-book or a diagram may unpack to.</summary>
+    public const long MaxPartBytes = 64L * 1024 * 1024;
+    /// <summary>The most one picture inside a document may unpack to; a larger one is left out.</summary>
+    public const long MaxMediaBytes = 20L * 1024 * 1024;
+    /// <summary>The most HTML that is turned into text.</summary>
+    public const int MaxHtmlChars = 20_000_000;
+    /// <summary>How long one search of a pattern over a file's text may take.</summary>
+    private const int PatternMs = 2000;
     public const string NotRead = "This kind of file is not read; it is kept as an attachment.";
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> Known = new(StringComparer.Ordinal);
 
@@ -157,6 +165,8 @@ public static partial class Extractors
         }
         catch (Exception e) when (e is not OutOfMemoryException)
         {
+            if (e is TooLargeException or RegexMatchTimeoutException)
+                return Extraction.Unsupported((e is TooLargeException ? e.Message : "The file took too long to read.") + " It is kept as an attachment.");
             return Extraction.Unsupported(e is InvalidDataException or EndOfStreamException or FormatException || e.GetType().Name.EndsWith("FormatException", StringComparison.Ordinal)
                 ? "The file is damaged or not what its name says, so it could not be read. It is kept as an attachment."
                 : $"The file could not be read ({e.GetType().Name}). It is kept as an attachment.");
@@ -278,28 +288,30 @@ public static partial class Extractors
 
     // ---------- HTML, MHT, mail
 
-    [GeneratedRegex(@"<(script|style|head|noscript)\b[^>]*>.*?</\1\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    [GeneratedRegex(@"<(script|style|head|noscript)\b[^>]*>.*?</\1\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline, PatternMs)]
     private static partial Regex Hidden();
-    [GeneratedRegex(@"<h([1-6])\b[^>]*>(.*?)</h\1\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    [GeneratedRegex(@"<h([1-6])\b[^>]*>(.*?)</h\1\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline, PatternMs)]
     private static partial Regex HtmlHeading();
-    [GeneratedRegex(@"<img\b[^>]*?src\s*=\s*[""']([^""']+)[""'][^>]*>", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"<img\b[^>]*?src\s*=\s*[""']([^""']+)[""'][^>]*>", RegexOptions.IgnoreCase, PatternMs)]
     private static partial Regex HtmlImg();
-    [GeneratedRegex(@"<(/?)(ul|ol|li)\b[^>]*>", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"<(/?)(ul|ol|li)\b[^>]*>", RegexOptions.IgnoreCase, PatternMs)]
     private static partial Regex HtmlList();
-    [GeneratedRegex(@"</?(p|div|br|tr|table|section|article|blockquote|pre|hr)\b[^>]*>", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"</?(p|div|br|tr|table|section|article|blockquote|pre|hr)\b[^>]*>", RegexOptions.IgnoreCase, PatternMs)]
     private static partial Regex HtmlBreak();
-    [GeneratedRegex(@"</t[dh]\s*>", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"</t[dh]\s*>", RegexOptions.IgnoreCase, PatternMs)]
     private static partial Regex HtmlCellEnd();
-    [GeneratedRegex(@"<[^>]+>")]
+    [GeneratedRegex(@"<[^>]+>", RegexOptions.None, PatternMs)]
     private static partial Regex Tag();
-    [GeneratedRegex(@"[ \t]+")]
+    [GeneratedRegex(@"[ \t]+", RegexOptions.None, PatternMs)]
     private static partial Regex Spaces();
-    [GeneratedRegex(@"\n{3,}")]
+    [GeneratedRegex(@"\n{3,}", RegexOptions.None, PatternMs)]
     private static partial Regex Blank();
 
     /// <summary>HTML as Markdown-like text: headings, list items, table cells split by "|", pictures named by their file.</summary>
     public static string HtmlToText(string html)
     {
+        ArgumentNullException.ThrowIfNull(html);
+        if (html.Length > MaxHtmlChars) throw new TooLargeException("The file holds more HTML than is read.");
         var s = Hidden().Replace(html, "");
         s = HtmlHeading().Replace(s, m => $"\n\n{new string('#', int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture))} {Tag().Replace(m.Groups[2].Value, "").Trim()}\n\n");
         s = HtmlImg().Replace(s, m => $"\n![]({Path.GetFileName(Uri.UnescapeDataString(m.Groups[1].Value.Split('?')[0]))})\n");
@@ -362,13 +374,25 @@ public static partial class Extractors
     private static XNamespace R => "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
     private static XNamespace Rel => "http://schemas.openxmlformats.org/package/2006/relationships";
 
-    private static XDocument? Xml(ZipArchive zip, string path) => zip.GetEntry(path) is { } e ? XDocument.Load(e.Open()) : null;
+    /// <summary>A part that would unpack to more than a reader allows. The file is kept as an attachment and says so.</summary>
+    private sealed class TooLargeException(string message) : Exception(message);
 
-    private static byte[] Bytes(ZipArchiveEntry e)
+    private static XDocument? Xml(ZipArchive zip, string path) => zip.GetEntry(path) is { } e ? Xml(e) : null;
+
+    private static XDocument Xml(ZipArchiveEntry e) => XDocument.Load(new MemoryStream(Bytes(e, MaxPartBytes)));
+
+    /// <summary>An entry's bytes, counted while they are unpacked: the size an archive declares is not believed.</summary>
+    private static byte[] Bytes(ZipArchiveEntry e, long max)
     {
         using var s = e.Open();
         using var ms = new MemoryStream();
-        s.CopyTo(ms);
+        var buffer = new byte[81920];
+        int read;
+        while ((read = s.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            if (ms.Length + read > max) throw new TooLargeException("A part inside the file is too large once unpacked.");
+            ms.Write(buffer, 0, read);
+        }
         return ms.ToArray();
     }
 
@@ -382,7 +406,7 @@ public static partial class Extractors
     }
 
     private static List<ExtractedImage> Media(ZipArchive zip, string prefix) =>
-        [.. zip.Entries.Where(e => e.FullName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).Select(e => (e, Bytes(e)))
+        [.. zip.Entries.Where(e => e.FullName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && e.Length <= MaxMediaBytes).Select(e => (e, Bytes(e, MaxMediaBytes)))
             .Where(x => ImageMime(x.Item2) is not null).Select(x => new ExtractedImage(Path.GetFileName(x.e.FullName), x.Item2, ImageMime(x.Item2)!))];
 
     private static Extraction Docx(byte[] data)
@@ -546,7 +570,7 @@ public static partial class Extractors
         using var zip = new ZipArchive(new MemoryStream(data));
         var pages = zip.Entries.Where(e => e.FullName.EndsWith(".xhtml", StringComparison.OrdinalIgnoreCase) || e.FullName.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
             .OrderBy(e => e.FullName, StringComparer.Ordinal).Take(500);
-        return Extraction.Of(string.Join("\n\n", pages.Select(e => HtmlToText(Decode(Bytes(e))))), Media(zip, "OEBPS/images/"));
+        return Extraction.Of(string.Join("\n\n", pages.Select(e => HtmlToText(Decode(Bytes(e, MaxPartBytes))))), Media(zip, "OEBPS/images/"));
     }
 
     private static Extraction Vsdx(byte[] data)
@@ -557,7 +581,7 @@ public static partial class Extractors
         foreach (var e in zip.Entries.Where(e => PageXml().IsMatch(e.FullName)).OrderBy(e => e.FullName, StringComparer.Ordinal))
         {
             sb.Append(CultureInfo.InvariantCulture, $"\n## {Path.GetFileNameWithoutExtension(e.FullName)}\n\n");
-            foreach (var t in XDocument.Load(e.Open()).Descendants(v + "Text")) { var s = t.Value.Trim(); if (s.Length > 0) sb.Append("- ").Append(s).Append('\n'); }
+            foreach (var t in Xml(e).Descendants(v + "Text")) { var s = t.Value.Trim(); if (s.Length > 0) sb.Append("- ").Append(s).Append('\n'); }
         }
         return Extraction.Of(sb.ToString().Trim(), note: "A diagram: its shapes' text, without the drawing.");
     }
@@ -644,6 +668,6 @@ public static partial class Extractors
         if (entries.Count > MaxZipEntries) return Extraction.Blocked($"More than {MaxZipEntries} files inside.");
         // Sizes as declared first: a bomb is refused before anything is unpacked.
         if (entries.Sum(e => e.Length) > MaxZipBytes) return Extraction.Blocked("Too large once unpacked.");
-        return new Extraction(ExtractKind.Container, "", [], [.. entries.Select(e => new ExtractedFile(e.FullName, Bytes(e)))]);
+        return new Extraction(ExtractKind.Container, "", [], [.. entries.Select(e => new ExtractedFile(e.FullName, Bytes(e, e.Length)))]);
     }
 }
