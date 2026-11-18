@@ -56,7 +56,9 @@ The volume holds everything: the database, uploaded files and logs. Back up `/ap
 
 The keys that sign the session cookie and encrypt stored secrets (plugin secrets, log target secrets, storage passwords, a sign-in method's client secret) are kept in the database, so that several servers share them. By default they are stored as they are, which makes a copy of the database enough to read those secrets and to forge a session. Set `Kb--KeyProtectionSecret` to a long random value and they are stored encrypted with it: the keys already there are encrypted at the next start, and new ones from then on. Set it where the database is not: an environment variable of the container, a Fly secret, an environment variable of the IIS app pool. This applies to every kind of install.
 
-Keep the value as safe as a backup. Without it the app refuses to start on that database and says so, and if it is lost for good the stored secrets have to be typed in again and everyone is signed out. Backups of the database made before the secret was set still hold the keys unencrypted.
+With the secret set, each account's authenticator key and recovery codes are stored encrypted too (they are in clear otherwise), also at the next start for the ones already there.
+
+Keep the value as safe as a backup. Without it the app refuses to start on that database and says so, and if it is lost for good the stored secrets have to be typed in again, everyone is signed out, and nobody's one-time codes work until an Admin resets them. The break-glass account uses no codes and is the way back in, so give it a password before turning this on. Backups of the database made before the secret was set still hold the keys unencrypted.
 
 ## Running it on IIS
 

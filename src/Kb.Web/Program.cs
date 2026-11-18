@@ -47,6 +47,7 @@ services.AddIdentity<KbUser, KbRole>(o =>
         o.User.RequireUniqueEmail = false;
     })
     .AddEntityFrameworkStores<KbDbContext>()
+    .AddUserStore<KbUserStore>()
     .AddDefaultTokenProviders();
 
 services.ConfigureApplicationCookie(o =>
@@ -273,6 +274,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     var db = scope.ServiceProvider.GetRequiredService<KbDbContext>();
     var audit = scope.ServiceProvider.GetRequiredService<IAuditLog>();
     await KeyProtection.OnStartupAsync(db, config[KeyProtection.SecretName], app.Logger); // before the first key is read
+    await KbUserStore.ProtectStraysAsync(db, app.Services.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>(), config[KeyProtection.SecretName]);
     foreach (var e in boot.Events) await audit.AppendAsync(e);
     await app.Services.GetRequiredService<PluginSettingsStore>().ProtectStraysAsync(CancellationToken.None); // from here a plugin can read its secrets
 

@@ -75,6 +75,47 @@ public sealed class KeysAndLogsTests
         });
     }
 
+    // ---- I3 ----
+
+    [Fact]
+    public async Task AuthenticatorKeysAndRecoveryCodes_AreStoredEncrypted_OnceTheSecretIsSet_AndStillWork()
+    {
+        var path = KbAppFactory.NewDbPath();
+        async Task<List<string?>> StoredAsync(KbAppFactory f)
+        {
+            var values = new List<string?>();
+            await f.WithDbAsync(async db => values = await db.UserTokens.Where(t => t.LoginProvider == KbUserStore.Internal).Select(t => t.Value).ToListAsync(Ct));
+            return values;
+        }
+        string key;
+        string[] recovery;
+        await using (var before = new KbAppFactory(path))
+        {
+            await using (var scope = before.Services.CreateAsyncScope())
+                Assert.True((await scope.ServiceProvider.GetRequiredService<UserManager<KbUser>>().CreateAsync(new KbUser { UserName = "gus", DisplayName = "gus", CreatedAt = DateTimeOffset.UtcNow }, Password)).Succeeded);
+            var c = before.NewClient();
+            (await c.PostAsJsonAsync("/api/v1/auth/local/signin", new { userName = "gus", password = Password }, Ct)).EnsureSuccessStatusCode();
+            key = (await (await c.PostAsync("/api/v1/auth/codes/key", null, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("key").GetString()!;
+            var enrolled = await (await c.PostAsJsonAsync("/api/v1/auth/codes", new { code = Codes.Totp(key) }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct);
+            recovery = [.. enrolled.GetProperty("recoveryCodes").EnumerateArray().Select(x => x.GetString()!)];
+            Assert.Contains(key, await StoredAsync(before)); // as it always was: readable in the table
+        }
+
+        await using var with = new KbAppFactory(path, settings: Secret("a long secret kept outside the database"));
+        await with.SignedInBreakGlassAsync();
+        var stored = await StoredAsync(with);
+        Assert.NotEmpty(stored);
+        Assert.All(stored, v => Assert.StartsWith("kbp1:", v, StringComparison.Ordinal));
+        Assert.DoesNotContain(stored, v => v!.Contains(key, StringComparison.Ordinal) || v.Contains(recovery[0], StringComparison.Ordinal));
+
+        // The same key and the same recovery codes still sign the person in.
+        (await Codes.SignInAsync(with, with.NewClient(), "gus", Password)).EnsureSuccessStatusCode();
+        var other = with.NewClient();
+        Assert.Equal(HttpStatusCode.Conflict, (await other.PostAsJsonAsync("/api/v1/auth/local/signin", new { userName = "gus", password = Password }, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await other.PostAsJsonAsync("/api/v1/auth/local/code", new { code = recovery[0] }, Ct)).StatusCode);
+        Assert.All(await StoredAsync(with), v => Assert.StartsWith("kbp1:", v, StringComparison.Ordinal)); // the used code was taken out of an encrypted list
+    }
+
     // ---- M9 ----
 
     [Fact]
