@@ -466,6 +466,8 @@ internal sealed class DcUpdateContentHandler(KbDbContext db, IAccess access, DcC
         else
         {
             // A folder: aerie's own save only renames it. Its body and its versions are kept here (content.md: a folder's body is its own content).
+            // The body is held to what a page's body is held to (its size).
+            if (json is not null && !PageSupport.IsEditorDoc(json)) return new Problem(400, "The body is too large or nested too deep.");
             if (title != page.Title)
             {
                 var renamed = await bus.SendAsync(new SavePage { PageId = page.Id, Title = title, ContentJson = page.ContentJson, BaseVersion = page.Version }, CancellationToken.None);
