@@ -38,12 +38,16 @@ public static class StorageFormat
     {
         ArgumentNullException.ThrowIfNull(raw);
         var i = 0;
-        var nodes = ParseNodes(raw, ref i, null, Prefixes);
+        var nodes = ParseNodes(raw, ref i, null, Prefixes, 0);
         return nodes;
     }
 
-    private static List<SNode> ParseNodes(string s, ref int i, string? closing, IReadOnlyCollection<string> declared)
+    /// <summary>How deep elements may nest. The parser calls itself once per level, and a stack overflow ends the process.</summary>
+    public const int MaxDepth = 100;
+
+    private static List<SNode> ParseNodes(string s, ref int i, string? closing, IReadOnlyCollection<string> declared, int depth)
     {
+        if (depth > MaxDepth) throw new StorageException($"Elements are nested more than {MaxDepth} deep.");
         var nodes = new List<SNode>();
         while (i < s.Length)
         {
@@ -100,7 +104,7 @@ public static class StorageFormat
             foreach (var name in attrs.Select(a => a.Key).Where(a => !a.StartsWith("xmlns", StringComparison.Ordinal)).Prepend(tag)) CheckPrefix(name, scope);
             List<SNode> kids;
             if (s[i] == '/') { i += 2; kids = []; }
-            else { i++; kids = ParseNodes(s, ref i, tag, scope); }
+            else { i++; kids = ParseNodes(s, ref i, tag, scope, depth + 1); }
             nodes.Add(new SElem(s[start..i], tag, attrs, kids));
         }
         if (closing is not null) throw new StorageException($"<{closing}> is not closed.");

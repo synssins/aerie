@@ -18,6 +18,22 @@ public sealed class KbOptions
     public TokenOptions Tokens { get; set; } = new();
     public LogOptions Logs { get; set; } = new();
     public DataCenterOptions DataCenter { get; set; } = new();
+    public ProxyOptions Proxy { get; set; } = new();
+}
+
+/// <summary>The reverse proxies in front of the app. Only they are believed when they say who the client is.</summary>
+public sealed class ProxyOptions
+{
+    /// <summary>
+    /// The addresses the proxy connects from, as the app sees them: single addresses ("10.0.0.5") or networks ("172.18.0.0/16").
+    /// X-Forwarded-For and X-Forwarded-Proto are read only on a connection from one of them. Empty: the headers are ignored.
+    /// </summary>
+    public List<string> Trusted { get; set; } = [];
+
+    /// <summary>The entries of <see cref="Trusted"/> as networks. Throws <see cref="FormatException"/> for an entry that is neither.</summary>
+    public IEnumerable<System.Net.IPNetwork> Networks() => Trusted.Select(t =>
+        t.Contains('/', StringComparison.Ordinal) ? System.Net.IPNetwork.Parse(t.Trim())
+        : System.Net.IPAddress.Parse(t.Trim()) is var a ? new System.Net.IPNetwork(a, a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 32 : 128) : default);
 }
 
 public sealed class BrandOptions
@@ -164,6 +180,8 @@ public sealed class KbOptionsValidator : IValidateOptions<KbOptions>
         if (o.DataCenter.ContextPath.Length > 0 && (!o.DataCenter.ContextPath.StartsWith('/') || o.DataCenter.ContextPath.EndsWith('/')))
             errors.Add("Kb:DataCenter:ContextPath must start with \"/\" and not end with one.");
         if (o.DataCenter.MaxLimit < 1) errors.Add("Kb:DataCenter:MaxLimit must be at least 1.");
+        try { _ = o.Proxy.Networks().Count(); }
+        catch (FormatException) { errors.Add("Kb:Proxy:Trusted holds addresses (10.0.0.5) and networks (172.18.0.0/16) only."); }
         if (o.Retention.RecycleDays < 1) errors.Add("Kb:Retention:RecycleDays must be at least 1.");
         return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);
     }

@@ -100,7 +100,7 @@ public static partial class Cql
         var t = Tokens(cql);
         var i = 0;
         if (t.Count > 0 && Is(t[0], "NOT")) throw new CqlException("A query cannot start with NOT.");
-        var where = Expr(t, ref i);
+        var where = Expr(t, ref i, 0);
         var order = new List<(string, bool)>();
         if (i < t.Count && Is(t[i], "ORDER"))
         {
@@ -127,26 +127,30 @@ public static partial class Cql
     private static bool Is(Token t, string word) => !t.Quoted && string.Equals(t.Text, word, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Terms joined by AND and OR, left to right, with no precedence between them.</summary>
-    private static CqlNode Expr(List<Token> t, ref int i)
+    private static CqlNode Expr(List<Token> t, ref int i, int depth)
     {
-        var left = Term(t, ref i);
+        var left = Term(t, ref i, depth);
         while (i < t.Count && (Is(t[i], "AND") || Is(t[i], "OR")))
         {
             var and = Is(t[i++], "AND");
-            var right = Term(t, ref i);
+            var right = Term(t, ref i, depth);
             left = and ? new CqlAnd(left, right) : new CqlOr(left, right);
         }
         return left;
     }
 
-    private static CqlNode Term(List<Token> t, ref int i)
+    /// <summary>How deep brackets and NOT may nest. The parser calls itself once per level, and a stack overflow ends the process.</summary>
+    public const int MaxDepth = 50;
+
+    private static CqlNode Term(List<Token> t, ref int i, int depth)
     {
         if (i >= t.Count) throw new CqlException("The query ends where a clause is expected.");
-        if (Is(t[i], "NOT")) { i++; return new CqlNot(Term(t, ref i)); }
+        if (depth > MaxDepth) throw new CqlException($"Brackets and NOT are nested more than {MaxDepth} deep.");
+        if (Is(t[i], "NOT")) { i++; return new CqlNot(Term(t, ref i, depth + 1)); }
         if (t[i].Text == "(" && !t[i].Quoted)
         {
             i++;
-            var inner = Expr(t, ref i);
+            var inner = Expr(t, ref i, depth + 1);
             if (i >= t.Count || t[i].Text != ")") throw new CqlException("A bracket is not closed.");
             i++;
             return inner;
