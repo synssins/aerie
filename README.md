@@ -25,10 +25,12 @@ Aerie answers a Data Center compatible REST API next to its own, so scripts and 
 
 - **The API** is under `/rest/api`: pages and their versions, attachments, labels, content properties, spaces, users, CQL search and long-running tasks. Bodies are read and written in the storage format. A caller sees only what its account may see in Aerie, and each space keeps its own access rules.
 - **HTTP Basic** takes a username with a password or with an API token. Accounts that sign in with codes, which includes every Admin, must use a token. Failed attempts count against the same lockout limits as the sign-in page.
-- **Personal access tokens** are Aerie's own API tokens, sent as `Authorization: Bearer`. Their space and read-only limits still apply.
+- **Personal access tokens** are Aerie's own API tokens, sent as `Authorization: Bearer`. Their space and read-only limits still apply. An Admin's token does what only an Admin may (create or delete a space, read another user's groups) only when it has a scope for all spaces; a token limited to named spaces never does.
 - **OAuth 2.0** is built in, and Aerie is the authorization server at `/rest/oauth2/latest`. It uses the authorization code flow with PKCE. Refresh tokens rotate, and presenting a used one again revokes every token issued under that grant. An Admin registers each application under Administration › Applications, where the client secret is shown once. A user approves each application on a consent screen and can cut it off again under Connected applications in their profile. Clients can find the endpoints at `/.well-known/oauth-authorization-server`.
 
-OAuth access tokens work on the compatible API only, not on Aerie's own `/api/v1`. OAuth needs HTTPS.
+OAuth access tokens work on the compatible API only, not on Aerie's own `/api/v1`. OAuth needs HTTPS. An application does what only an Admin may only when the Admin who approved it gave it the `ADMIN` scope; with `READ` or `WRITE` it has that Admin's rights on content and no more.
+
+A page's history is for members of its space, on this API as in the app. Someone who reads a page only because the space is open to signed-in people or to anyone gets the page without `history` (it is left out and not offered under `_expandable`), and its `version` carries the number and date with the unknown user as `by` and an empty `message`.
 
 The exact behaviour is in [contracts/](contracts/README.md): `datacenter/openapi.yaml` lists every operation, and `behaviour/identity.md` covers sign-in and tokens. Every published image is run against clients generated in three languages by [aerie-compat-lab](https://github.com/synssins/aerie-compat-lab). The Cloud compatible APIs are not built yet.
 
