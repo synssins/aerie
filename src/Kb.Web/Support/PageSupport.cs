@@ -154,7 +154,6 @@ internal static class PageSupport
         }
 
         var tags = await db.PageTags.AsNoTracking().Where(t => t.PageId == page.Id).OrderBy(t => t.Tag).Select(t => t.Tag).ToListAsync();
-        var updatedBy = await db.Users.Where(u => u.Id == page.UpdatedBy).Select(u => u.DisplayName).FirstOrDefaultAsync() ?? "Unknown";
         var draft = await (from d in db.PageDrafts.AsNoTracking()
                            where d.PageId == page.Id
                            join u in db.Users on d.UserId equals u.Id
@@ -165,6 +164,8 @@ internal static class PageSupport
         // Folders: whether their contents allow it is checked on the delete itself.
         var canDelete = await access.CanAsync(actor, page.SpaceId, page.CreatedBy == me ? SpaceAction.MoveDeleteOwn : SpaceAction.MoveDeleteOthers);
         var canSeeHistory = await access.SeesHistoryAsync(actor, page.SpaceId, CancellationToken.None);
+        // Who changed the page last is history too: empty for someone who may not see it.
+        var updatedBy = !canSeeHistory ? "" : await db.Users.Where(u => u.Id == page.UpdatedBy).Select(u => u.DisplayName).FirstOrDefaultAsync() ?? "Unknown";
 
         return new PageDto(page.Id, page.SpaceId, page.ParentId, page.Kind.ToString(), page.Title, page.ContentJson, page.Version,
             page.UpdatedAt, updatedBy, path, canSeeHistory ? await HistoryAsync(db, page.Id, 10) : [], canEdit, tags, canDelete,

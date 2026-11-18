@@ -51,7 +51,7 @@ public sealed record PageDto(Guid Id, Guid SpaceId, Guid? ParentId, string Kind,
 {
     /// <summary>
     /// Whether the caller may see the page's history. A member of the space may; someone who reads it only because it is open to everyone
-    /// signed in (or to anyone) may not, and then <see cref="History"/> is empty.
+    /// signed in (or to anyone) may not, and then <see cref="History"/> and <see cref="UpdatedBy"/> are empty.
     /// </summary>
     public bool CanSeeHistory { get; init; }
 }
