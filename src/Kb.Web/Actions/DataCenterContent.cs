@@ -209,7 +209,7 @@ internal static partial class DcContentRules
     public static Problem AsSurface(Problem p) => p.Status == 409 && p.Message is null ? new Problem(409, "The content changed since this version.") : p;
 }
 
-internal sealed class DcReadContentHandler(DcContentService content, DcAttachmentService files) : IActionHandler<DcReadContent, JsonObject>
+internal sealed class DcReadContentHandler(DcContentService content, DcAttachmentService files, IAccess access) : IActionHandler<DcReadContent, JsonObject>
 {
     private Page? _page;
     private (Attachment Attachment, Page Page)? _file;
@@ -219,6 +219,8 @@ internal sealed class DcReadContentHandler(DcContentService content, DcAttachmen
     {
         if ((_page = await content.FindAsync(ctx.Actor, ctx.Action.Id, ctx.Action.Statuses, track: false, ctx.Cancel)) is not null) return null;
         _file = await files.FindAsync(ctx.Actor, ctx.Action.Id, null, trashedToo: ctx.Action.Statuses.Contains("trashed"), ctx.Cancel);
+        // A trashed attachment is in the bin: for those who manage the bin of its space, like a trashed page.
+        if (_file is { Attachment.DeletedAt: not null } t && !await access.CanAsync(ctx.Actor, t.Page.SpaceId, SpaceAction.ManageBinAgingComments, ctx.Cancel)) _file = null;
         return _file is { } f && (f.Attachment.DeletedAt is null ? ctx.Action.Statuses.Contains("current") : ctx.Action.Statuses.Contains("trashed")) ? null : DcContentRules.NotFound;
     }
 

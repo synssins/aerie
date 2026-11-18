@@ -34,7 +34,7 @@
     "action": "space.role.grant",
     "method": "PUT",
     "path": "/api/v1/spaces/{space}/roles",
-    "body": {"principalType": "User", "principalId": "{newGuid}", "role": "Reader"},
+    "body": {"principalType": "User", "principalId": "{victim}", "role": "Reader"},
     "expect": {"anonymous": 401, "outsider": 404, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 204, "admin": 204},
     "sensitive": {"admin": 404}
   },
