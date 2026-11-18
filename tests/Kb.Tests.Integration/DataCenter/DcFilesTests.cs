@@ -57,6 +57,27 @@ public sealed class DcFilesTests : IAsyncLifetime
         return c.SendAsync(req, Ct);
     }
 
+    /// <summary>
+    /// A search runs in memory over every page its caller can see. Past the most pages one search examines the answer is 400 with the
+    /// reason, not a search over a part of them (the rest of finding L21 of the code review of 2026-11-17).
+    /// </summary>
+    [Fact]
+    public async Task Search_OverMorePagesThanOneSearchExamines_Is400()
+    {
+        await using var f = new KbAppFactory(KbAppFactory.NewDbPath(), settings: new Dictionary<string, string> { ["Kb:DataCenter:MaxSearchPages"] = "2" });
+        var admin = await f.SignedInBreakGlassAsync();
+        var space = (await (await admin.PostAsJsonAsync("/api/v1/spaces", new { name = "Operations", key = "ops" }, Ct)).JsonAsync(HttpStatusCode.Created)).GetProperty("id").GetGuid();
+        var id = await UserAsync(f, "cora");
+        (await admin.PutAsJsonAsync($"/api/v1/spaces/{space}/roles", new { principalType = "User", principalId = id.ToString(), role = "Contributor" }, Ct)).EnsureSuccessStatusCode();
+        var cora = Basic(f, "cora");
+        async Task AddAsync(string title) => await (await cora.PostJsonAsync("/rest/api/content", new { type = "page", title, space = new { key = "OPS" }, body = new { storage = new { value = "<p>needle</p>", representation = "storage" } } })).JsonAsync(HttpStatusCode.OK);
+        await AddAsync("One");
+        await AddAsync("Two");
+        Assert.Equal(2, (await cora.GetJsonAsync("/rest/api/content/search?cql=" + Uri.EscapeDataString("text ~ needle"))).GetProperty("size").GetInt32());
+        await AddAsync("Three");
+        await (await cora.GetAsync("/rest/api/content/search?cql=" + Uri.EscapeDataString("text ~ needle"), Ct)).ErrorAsync(HttpStatusCode.BadRequest);
+    }
+
     private static IEnumerable<string?> Titles(JsonElement page) => page.GetProperty("results").EnumerateArray().Select(x => x.GetProperty("title").GetString());
 
     [Fact]
