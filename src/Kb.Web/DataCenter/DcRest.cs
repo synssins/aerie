@@ -236,6 +236,7 @@ public sealed class DcLinks(HttpContext http, DataCenterOptions options)
     public string Context { get; } = options.ContextPath;
     public string Base { get; } = options.BaseUrl.Length > 0 ? options.BaseUrl.TrimEnd('/') : $"{http.Request.Scheme}://{http.Request.Host}{options.ContextPath}";
     public int MaxLimit { get; } = options.MaxLimit;
+    public int MaxSearchPages { get; } = options.MaxSearchPages;
 
     public static DcLinks Of(HttpContext http)
     {

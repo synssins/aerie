@@ -24,15 +24,25 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       DOTNET_NOLOGO: "1"
       SHARDS: "8"
+      # The build takes the package versions the lock files name, and fails when a lock file is out of date.
+      RestoreLockedMode: "true"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
           cache: true
           cache-dependency-path: "**/packages.lock.json"
       - name: Build
         run: dotnet build Kb.sln
+      # Fails the build when a package, direct or pulled in by another, has a known vulnerability.
+      - name: Vulnerable packages
+        if: matrix.shard == 0
+        shell: pwsh
+        run: |
+          $report = dotnet list Kb.sln package --vulnerable --include-transitive 2>&1 | Out-String
+          Write-Host $report
+          if ($LASTEXITCODE -ne 0 -or $report -match 'has the following vulnerable packages') { exit 1 }
       - name: Unit tests
         if: matrix.shard == 0
         run: dotnet test --project tests/Kb.Tests.Unit --no-build
@@ -54,12 +64,15 @@ jobs:
       run:
         working-directory: client
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: client/package-lock.json
       - run: npm ci --no-fund --no-audit
+      # What is shipped to browsers has no known vulnerability of high or critical severity, or the build fails.
+      # The build and test tooling (vite, vitest) is not counted here: see README, "Dependency checks".
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm run typecheck
       - run: npm test

@@ -20,12 +20,15 @@ public static class DcAttachmentRoutes
 
     /// <summary>A text part (comment, minorEdit) is short; a longer one is refused instead of being held in memory.</summary>
     private const int MaxTextPart = 64 * 1024;
+    private const int MaxTextParts = 1024 * 1024;
 
     /// <summary>
     /// Reads a multipart upload section by section. A part named file is a file whether or not it has a file name (attachments.md, Q-0018):
     /// its bytes, as received, go to a temporary file, never through a text decoder. The web server's own cap is raised to the most an Admin
     /// may allow. A file part is read up to the configured limit and one byte more: reading stops there and the action answers 413.
-    /// Form is null for a body that is not multipart, or that cannot be read; Refused is set for a text part that is too long.
+    /// The files of one request together are held to that same limit, and its text parts together to <see cref="MaxTextParts"/>:
+    /// a request is one upload, however many parts it is cut into.
+    /// Form is null for a body that is not multipart, or that cannot be read; Refused is set for a request that is over one of the totals.
     /// </summary>
     private static async Task<(Upload? Form, IResult? Refused)> ReadUploadAsync(HttpRequest request)
     {
@@ -38,6 +41,7 @@ public static class DcAttachmentRoutes
         var maxFile = await UploadLimits.AttachmentBytesAsync(request.HttpContext);
         var reader = new Microsoft.AspNetCore.WebUtilities.MultipartReader(boundary, request.Body) { BodyLengthLimit = cap };
         var upload = new Upload([], new Dictionary<string, List<string>>(StringComparer.Ordinal));
+        long files = 0, texts = 0;
         try
         {
             while (await reader.ReadNextSectionAsync(abort) is { } section)
@@ -62,12 +66,14 @@ public static class DcAttachmentRoutes
                     var fileName = Microsoft.Net.Http.Headers.HeaderUtilities.RemoveQuotes(disposition.FileNameStar.HasValue ? disposition.FileNameStar : disposition.FileName).Value;
                     upload.Files.Add(new DcFilePart(string.IsNullOrWhiteSpace(fileName) ? null : Path.GetFileName(fileName), section.ContentType, length, () => File.OpenRead(path)));
                     if (length > maxFile) break; // too large: the rest of the body is not read
+                    if ((files += length) > maxFile) return (null, DcRest.Fail(413, $"The files of one request are together at most {maxFile / 1_048_576} MB."));
                     continue;
                 }
                 var chars = new char[MaxTextPart + 1];
                 using var text = new StreamReader(section.Body, System.Text.Encoding.UTF8);
                 var count = await text.ReadBlockAsync(chars.AsMemory(), abort);
                 if (count > MaxTextPart) return (null, DcRest.Fail(400, $"The part {(name.Length > 50 ? name[..50] : name)} is longer than {MaxTextPart / 1024} KB."));
+                if ((texts += count) > MaxTextParts) return (null, DcRest.Fail(400, "The request carries too much text besides its files."));
                 if (!upload.Fields.TryGetValue(name, out var list)) upload.Fields[name] = list = [];
                 list.Add(new string(chars, 0, count));
             }

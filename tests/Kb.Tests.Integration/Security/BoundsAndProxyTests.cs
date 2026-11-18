@@ -89,6 +89,34 @@ public sealed class BoundsAndProxyTests
         await (await UploadAsync(cora, $"/rest/api/content/{page}/child/attachment", large)).ErrorAsync(HttpStatusCode.RequestEntityTooLarge);
     }
 
+    /// <summary>A request is one upload, however many parts it is cut into: its files together, and its text parts together, have a limit.</summary>
+    [Fact]
+    public async Task Upload_FilesTogetherOverTheLimit_Is413_AndTooMuchTextIs400()
+    {
+        var (f, cora, page) = await SiteAsync();
+        await using var _ = f;
+        var most = Kb.Web.UploadLimits.DefaultAttachmentMb * 1_048_576;
+        // Each file is under the limit of 25 MB; together they are over it.
+        using var two = new MultipartFormDataContent
+        {
+            { new ByteArrayContent(new byte[most * 3 / 5]), "file", "one.bin" },
+            { new ByteArrayContent(new byte[most * 3 / 5]), "file", "two.bin" },
+        };
+        await (await UploadAsync(cora, $"/rest/api/content/{page}/child/attachment", two)).ErrorAsync(HttpStatusCode.RequestEntityTooLarge);
+        // Together within it: taken, as before.
+        using var fits = new MultipartFormDataContent
+        {
+            { new ByteArrayContent(new byte[1000]), "file", "three.bin" }, { new StringContent("c1"), "comment" },
+            { new ByteArrayContent(new byte[1000]), "file", "four.bin" }, { new StringContent("c2"), "comment" },
+        };
+        await (await UploadAsync(cora, $"/rest/api/content/{page}/child/attachment", fits)).JsonAsync(HttpStatusCode.OK);
+
+        // Twenty text parts of 60 KB are each allowed and together are not.
+        using var wordy = new MultipartFormDataContent { { new ByteArrayContent(new byte[10]), "file", "five.bin" } };
+        for (var i = 0; i < 20; i++) wordy.Add(new StringContent(new string('c', 60 * 1024)), "note" + i);
+        await (await UploadAsync(cora, $"/rest/api/content/{page}/child/attachment", wordy)).ErrorAsync(HttpStatusCode.BadRequest);
+    }
+
     // ---- H2 ----
 
     private static string Nested(string tag, int depth) => string.Concat(Enumerable.Repeat($"<{tag}>", depth)) + "x" + string.Concat(Enumerable.Repeat($"</{tag}>", depth));
