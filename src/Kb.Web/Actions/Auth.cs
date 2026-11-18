@@ -36,6 +36,8 @@ internal sealed class SetPasswordHandler(UserManager<KbUser> users, IAuditLog au
             return new Problem(400, "The link is not valid.");
         }
         if (user is null || user.DeactivatedAt is not null || user.IsBreakGlass || user.Source != UserSource.Local) return await RefusedAsync("no such account");
+        // An account linked to a sign-in method is entered through that method only.
+        if (user.ExternalIssuer is not null) return await RefusedAsync("linked to a sign-in method");
         if (string.IsNullOrEmpty(req.Token) || !await users.VerifyUserTokenAsync(user, users.Options.Tokens.PasswordResetTokenProvider, UserManager<KbUser>.ResetPasswordTokenPurpose, req.Token))
             return await RefusedAsync("wrong or used link");
 
@@ -78,6 +80,14 @@ internal sealed class SignInHandler(SignInManager<KbUser> signIn, UserManager<Kb
         {
             await audit.AppendAsync(new AuditEvent(AuditActions.SignInFailed, user.Id, "user", user.Id.ToString(),
                 Data: new Dictionary<string, string> { ["userName"] = user.UserName ?? "", ["reason"] = result.IsLockedOut ? "locked out" : "wrong password", ["lockedOut"] = result.IsLockedOut.ToString(), ["ip"] = ip }));
+            return Problem.Unauthorized;
+        }
+        // An account linked to a sign-in method is entered through that method only. Checked after the password, with the same answer
+        // as a wrong one, so it tells nobody that the account is linked.
+        if (user.ExternalIssuer is not null)
+        {
+            await audit.AppendAsync(new AuditEvent(AuditActions.SignInFailed, user.Id, "user", user.Id.ToString(),
+                Data: new Dictionary<string, string> { ["userName"] = user.UserName ?? "", ["reason"] = "linked to a sign-in method", ["ip"] = ip }));
             return Problem.Unauthorized;
         }
         if (await codes.NeededAsync(user, ctx.Cancel)) return await codes.PendAsync(user);

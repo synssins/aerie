@@ -6649,6 +6649,8 @@ components:
           nullable: true
         codesExempt:
           type: "boolean"
+        linked:
+          type: "boolean"
     AgingAudience:
       type: "string"
       enum:

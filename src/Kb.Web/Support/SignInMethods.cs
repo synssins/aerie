@@ -400,6 +400,8 @@ internal sealed class SignInFlow(SignInMethods methods, OidcCache cache, IDataPr
             if (u.ExternalIssuer is not null) return (null, "the account is linked to another sign-in", "Your account here is linked to another sign-in. Ask an Administrator.");
             if (u.DeactivatedAt is not null) return (null, "deactivated", Off);
             (u.ExternalIssuer, u.ExternalId) = (c.Issuer, c.Subject);
+            // From now on the method is the only way in: the password goes, and a new stamp makes every password link made before it fail.
+            (u.PasswordHash, u.SecurityStamp) = (null, Guid.NewGuid().ToString("N"));
             if (!await SaveAsync(ct)) return (null, "the link could not be saved", Generic);
             await audit.AppendAsync(new AuditEvent(AuditActions.UserSignInLink, u.Id, "user", u.Id.ToString(),
                 Data: new Dictionary<string, string> { ["method"] = m.Key, ["issuer"] = c.Issuer, ["subject"] = c.Subject }), ct);

@@ -2135,6 +2135,7 @@ The records and enums the actions and routes use. `?` means it may be null or le
 | permissions | `IReadOnlyList<string>?` |
 | groups | `IReadOnlyList<string>?` |
 | codesExempt | `bool` |
+| linked | `bool` |
 
 ```json
 {
@@ -2153,7 +2154,8 @@ The records and enums the actions and routes use. `?` means it may be null or le
   "groups": [
     "text"
   ],
-  "codesExempt": false
+  "codesExempt": false,
+  "linked": false
 }
 ```
 
