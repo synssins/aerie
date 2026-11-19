@@ -5,6 +5,24 @@ internal static class SessionAge
 {
     public const string Key = "kb.session.start";
 
+    /// <summary>The start written into a session cookie, or null for a cookie that has none.</summary>
+    public static DateTimeOffset? Read(Microsoft.AspNetCore.Authentication.AuthenticationProperties properties) =>
+        properties.Items.TryGetValue(Key, out var text) && long.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out var seconds) ? DateTimeOffset.FromUnixTimeSeconds(seconds) : null;
+
+    /// <summary>
+    /// For the sign-in the app does again for the person who is already signed in on this request (their security stamp changed and
+    /// this session is to stay open): the new cookie keeps the start of the session it replaces.
+    /// </summary>
+    public static Microsoft.AspNetCore.Authentication.AuthenticationProperties Continued(HttpContext http)
+    {
+        var properties = new Microsoft.AspNetCore.Authentication.AuthenticationProperties();
+        if (http.Items[Key] is DateTimeOffset start) Write(properties, start);
+        return properties;
+    }
+
+    public static void Write(Microsoft.AspNetCore.Authentication.AuthenticationProperties properties, DateTimeOffset start) =>
+        properties.Items[Key] = start.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+
     /// <summary>True when the request is made with a session that was opened no longer ago than this. A token has no session.</summary>
     public static bool OpenedWithin(HttpContext? http, TimeSpan age, DateTimeOffset now) => http?.Items[Key] is DateTimeOffset start && now - start <= age;
 }
