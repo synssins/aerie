@@ -59,10 +59,17 @@ describe("theme tokens", () => {
     expect(clean({ day: { "--nav": "#ABC", "--width": "#fff", "--ink": "red" }, night: {} })).toEqual({ day: { "--nav": "#aabbcc" }, night: {} });
     expect(themeCss({ day: { "--nav": "#000000" }, night: { "--nav": "#111111" } }))
       .toBe(':root:not([data-theme="dark"]) { --nav: #000000; }\n:root[data-theme="dark"] { --nav: #111111; }\n');
+    // Through the CSS object model, never a style element: the content security policy refuses inline style elements.
+    const css = () => [...document.adoptedStyleSheets].flatMap((s) => [...s.cssRules].map((r) => r.cssText)).join(" ");
     applyTheme({ day: { "--paper": "#fefefe" }, night: {} });
-    expect(document.getElementById("kb-theme")?.textContent).toContain("--paper: #fefefe;");
+    expect(document.querySelector("style")).toBeNull();
+    expect(css()).toContain("--paper: #fefefe;");
+    applyTheme({ day: {}, night: { "--paper": "#101010" } });
+    expect(document.adoptedStyleSheets).toHaveLength(1);
+    expect(css()).not.toContain("#fefefe");
+    expect(css()).toContain("--paper: #101010;");
     applyTheme(null);
-    expect(document.getElementById("kb-theme")?.textContent).toBe("");
+    expect(css()).toBe("");
   });
 
   it("each preset holds every text pair at 4.5:1, Day and Night", () => {

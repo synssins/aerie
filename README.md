@@ -54,7 +54,9 @@ The volume holds everything: the database, uploaded files and logs. Back up `/ap
 
 ### Protecting the keys in the database
 
-The keys that sign the session cookie and encrypt stored secrets (plugin secrets, log target secrets, storage passwords, a sign-in method's client secret) are kept in the database, so that several servers share them. By default they are stored as they are, which makes a copy of the database enough to read those secrets and to forge a session. Set `Kb--KeyProtectionSecret` to a long random value and they are stored encrypted with it: the keys already there are encrypted at the next start, and new ones from then on. Set it where the database is not: an environment variable of the container, a Fly secret, an environment variable of the IIS app pool. This applies to every kind of install.
+The keys that sign the session cookie and encrypt stored secrets (plugin secrets, log target secrets, storage passwords, a sign-in method's client secret) are kept in the database, so that several servers share them. By default they are stored as they are, which makes a copy of the database enough to read those secrets and to forge a session. Set `Kb--KeyProtectionSecret` to a long random value and they are stored encrypted with it: the keys already there are encrypted at the next start, and new ones from then on. Set it where the database is not: an environment variable of the container, an environment variable of the IIS app pool, a secret of the host. This applies to every kind of install.
+
+A host that does not allow that name can keep the secret under another one: set `Kb__KeyProtectionSecretName` to the name, and the secret is read from there. Fly is such a host (it allows no dash in the name of a secret). The `fly.toml` in this repository sets the name to `KB_KEY_PROTECTION_SECRET`, so on Fly the secret is set with `fly secrets set KB_KEY_PROTECTION_SECRET=...`.
 
 With the secret set, each account's authenticator key and recovery codes are stored encrypted too (they are in clear otherwise), also at the next start for the ones already there.
 

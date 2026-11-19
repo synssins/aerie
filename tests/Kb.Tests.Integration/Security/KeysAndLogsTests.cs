@@ -62,6 +62,36 @@ public sealed class KeysAndLogsTests
         Assert.Contains(KeyProtection.SecretName, e.ToString(), StringComparison.Ordinal);
     }
 
+    /// <summary>A host that does not allow the default name (no dash in a secret's name) keeps the secret under a name it sets.</summary>
+    [Fact]
+    public async Task TheSecret_IsReadFromTheNameTheInstallationSets_AndTheErrorNamesThatName()
+    {
+        var path = KbAppFactory.NewDbPath();
+        var named = new Dictionary<string, string> { [KeyProtection.SecretNameSetting] = "KB_KEY_PROTECTION_SECRET", ["KB_KEY_PROTECTION_SECRET"] = "a long secret kept outside the database" };
+        string sealedText;
+        await using (var with = new KbAppFactory(path, settings: named))
+        {
+            await with.SignedInBreakGlassAsync();
+            await with.WithDbAsync(async db =>
+            {
+                var xml = string.Concat(await db.DataProtectionKeys.Select(k => k.Xml).ToListAsync(Ct));
+                Assert.DoesNotContain("requiresEncryption", xml, StringComparison.Ordinal);
+                Assert.Contains(typeof(KeyProtection.Decryptor).FullName!, xml, StringComparison.Ordinal);
+            });
+            sealedText = with.Services.GetRequiredService<IDataProtectionProvider>().CreateProtector("test").Protect("the stored secret");
+        }
+
+        // The same secret under the default name opens the same keys: the name is only where it is read from.
+        await using (var byDefault = new KbAppFactory(path, settings: Secret("a long secret kept outside the database")))
+            Assert.Equal("the stored secret", byDefault.Services.GetRequiredService<IDataProtectionProvider>().CreateProtector("test").Unprotect(sealedText));
+
+        // With the name set and no secret under it, the start stops and names the key that is in force, not the default.
+        await using var without = new KbAppFactory(path, settings: new Dictionary<string, string> { [KeyProtection.SecretNameSetting] = "KB_KEY_PROTECTION_SECRET" });
+        var e = await Assert.ThrowsAnyAsync<Exception>(() => without.NewClient().GetAsync("/health/live", Ct));
+        Assert.Contains("KB_KEY_PROTECTION_SECRET", e.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(KeyProtection.SecretName, e.ToString(), StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Keys_MadeWithTheSecretSet_AreEncryptedFromTheStart()
     {
