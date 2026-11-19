@@ -22,7 +22,7 @@ public sealed class KbUserStore(KbDbContext context, IdentityErrorDescriber desc
     private const string Mark = "kbp1:";
     private readonly IDataProtector _protector = protection.CreateProtector("kb.user.codes");
 
-    private bool Protects => !string.IsNullOrEmpty(config[KeyProtection.SecretName]);
+    private bool Protects => KeyProtection.SecretIn(config) is not null;
 
     public override Task SetTokenAsync(KbUser user, string loginProvider, string name, string? value, CancellationToken cancellationToken) =>
         base.SetTokenAsync(user, loginProvider, name, value is not null && loginProvider == Internal && Protects ? Mark + _protector.Protect(value) : value, cancellationToken);

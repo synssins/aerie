@@ -11,6 +11,10 @@ primary_region = "ord"
   # The password is a Fly secret: fly secrets set KB_SETUP_ADMIN_PASSWORD=...
   Kb__Setup__AdminUserName = "admin"
   Kb__Setup__AdminPasswordSecretName = "KB_SETUP_ADMIN_PASSWORD"
+  # The secret that the keys in the database are encrypted with (README, "Protecting the keys in the database").
+  # Fly allows no dash in a secret's name, so the secret has this name: fly secrets set KB_KEY_PROTECTION_SECRET=...
+  # Keep the value: once it is set, the app does not start on this database without it.
+  Kb__KeyProtectionSecretName = "KB_KEY_PROTECTION_SECRET"
   # Fly's proxy is believed when it says who the client is and that the client used https; nobody else is.
   # These are the private networks a Machine is reached over. If the log says a forwarded request from another
   # address was ignored, name that address here instead.
