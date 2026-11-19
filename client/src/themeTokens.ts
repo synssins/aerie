@@ -153,12 +153,16 @@ export function themeCss(theme: ThemeOverrides): string {
   return block(':root:not([data-theme="dark"])', c.day) + block(':root[data-theme="dark"]', c.night);
 }
 
-/** Puts the theme on the page now: one style element after theme.css, replaced on each call. */
+let sheet: CSSStyleSheet | null = null;
+
+/**
+ * Puts the theme on the page now: one constructed style sheet after theme.css, replaced on each call. Not a style element:
+ * the content security policy (style-src 'self') refuses inline style elements, and sheets made through the CSS object model are allowed.
+ */
 export function applyTheme(theme: ThemeOverrides | null | undefined) {
   if (typeof document === "undefined") return;
-  let el = document.getElementById("kb-theme") as HTMLStyleElement | null;
-  if (!el) { el = document.createElement("style"); el.id = "kb-theme"; document.head.append(el); }
-  el.textContent = themeCss(theme ?? EMPTY_THEME);
+  if (!sheet) { sheet = new CSSStyleSheet(); document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet]; }
+  sheet.replaceSync(themeCss(theme ?? EMPTY_THEME));
 }
 
 export type ThemePreset = { name: string; theme: ThemeOverrides };
