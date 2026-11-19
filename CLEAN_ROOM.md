@@ -18,7 +18,7 @@ Spec writers and builders stay separated. Material reaches this repository only 
 - Contract releases from `aerie-spec`, unedited, in `contracts/`.
 - Open standards and RFCs (for example OAuth 2.0, OpenID Connect, HTTP, JSON Schema, OpenAPI).
 - Black-box results from the lab: the requests sent, the responses aerie gave, and the lab's diff of them.
-- Third-party packages under licenses compatible with Apache-2.0, recorded in the lock files.
+- Third-party packages under licenses compatible with Aerie's licenses, recorded in the lock files.
 
 ## Never allowed in any repository
 

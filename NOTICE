@@ -1,7 +1,12 @@
 Aerie
-Copyright 2026 synssins and the Aerie contributors
+Copyright 2026 Christopher Kliewer (https://aeriekb.com)
 
-This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+This product is source-available software, licensed under the PolyForm Noncommercial License 1.0.0 (see LICENSE).
+Commercial use needs a commercial license from the copyright holder (see LICENSING.md).
+
+The plugin contract (src/Kb.Plugins.Abstractions, src/Kb.Plugins.Data, plugins/Kb.Plugin.Sample, docs/plugins,
+tools/pack-plugin.ps1) and the API contracts (contracts) are licensed under the Apache License, Version 2.0.
+Each of those folders has its own LICENSE file.
 
 This product bundles the Liberation Sans and Liberation Mono fonts, version 2.1.5
 (src/Kb.Web/Fonts), which are licensed separately under the SIL Open Font License 1.1.
