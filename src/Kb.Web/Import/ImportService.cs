@@ -426,7 +426,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         var added = outWords.Where(w => !inWords.Contains(w) && w.Length > 3).Distinct().ToList();
         if (source.Length > 0 && outWords.Count > 0 && added.Count > Math.Max(8, outWords.Distinct().Count() / 10))
             warnings.Add($"The draft uses words that are not in the source ({string.Join(", ", added.Take(12))}). Confirm the document is correct before saving.");
-        var given = await ContributeAsync(item, batch, files, findings.Count > 0, pages, warnings, ct, byPlugins ? [] : [.. pictures.Zip(picData)], actor);
+        var given = await ContributeAsync(item, batch, files, findings.Count > 0, pages, warnings, ct, byPlugins ? [] : [.. pictures.Zip(picData)], actor, byPlugins ? "" : source);
         if (byPlugins && pages[0]["doc"]!["content"]!.AsArray().Count == 0)
         {
             (item.Status, item.Error) = (ImportStatus.Failed, given
@@ -522,7 +522,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
     /// </summary>
     /// <returns>False when the plugins were not given the files: they hold a secret, or go to a sensitive space.</returns>
     private async Task<bool> ContributeAsync(ImportItem item, ImportBatch batch, IReadOnlyList<ImportFile> files, bool secret, List<JsonObject> pages, List<string> warnings, CancellationToken ct,
-        IReadOnlyList<(ImportFile File, AiGuard.Picture Data)>? sent = null, Actor? actor = null)
+        IReadOnlyList<(ImportFile File, AiGuard.Picture Data)>? sent = null, Actor? actor = null, string source = "")
     {
         if (!contributors.Any) return true;
         if (secret || (batch.TargetSpaceId is { } ts && await db.Spaces.AnyAsync(s => s.Id == ts && s.IsSensitive, ct)))
@@ -544,6 +544,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             var where = string.Join(", ", c.Additions.Select(a => a.Page).Distinct().Order().Select(i => $"\"{pages[i]["title"]!.GetValue<string>()}\""));
             warnings.Add($"{c.PluginName} added {c.Count} block{(c.Count == 1 ? "" : "s")} to {where}.");
         }
+        if (actor is not null) await ToolsAsync(item, actor, source, pages, contents, warnings, ct);
         return true;
     }
 

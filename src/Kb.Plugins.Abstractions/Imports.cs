@@ -195,3 +195,43 @@ public interface IDraftContributor
 }
 
 public sealed record DraftContributorReg(Type Contributor);
+
+/// <summary>
+/// 0.11.0 (draft). A tool a plugin offers the AI while an import is drafted: its <paramref name="Name"/>, a short
+/// <paramref name="Description"/> of when to use it, and the JSON schema of its input (<paramref name="InputSchema"/>). These three are
+/// the only text of a plugin that reaches the AI. The app checks them before it offers the tool (see the plugin guide for the rules) and
+/// does not offer a tool that breaks one; the Admin sees each tool on the plugin's page. <paramref name="Tool"/> answers the calls.
+/// </summary>
+public sealed record ImportToolReg(string Name, string Description, JsonElement InputSchema, Type Tool);
+
+/// <summary>
+/// 0.11.0 (draft). Answers the AI's calls of one tool during an import. It gets only the input of the call, checked against the tool's
+/// schema; never the document, the prompt or the rest of the conversation. It is made for each call, in its own scope, as its plugin
+/// (an actor of kind Plugin, source "import"). A call that throws, runs past 10 seconds, or answers more than the limits of
+/// <see cref="DraftContribution"/> adds nothing and counts as a failure of the plugin; the import goes on.
+/// </summary>
+public interface IImportTool
+{
+    /// <summary>Null (nothing to add), or the nodes to add to the draft for this call. The app places them where the AI said.</summary>
+    Task<ImportToolResult?> CallAsync(JsonElement input, CancellationToken ct);
+}
+
+/// <summary>0.11.0 (draft). Editor nodes to add to the draft, each the stored JSON of one block node. At most 50 nodes and 512 KB of JSON.</summary>
+public sealed record ImportToolResult(IReadOnlyList<JsonElement> Nodes);
+
+public static class ImportToolExtensions
+{
+    /// <summary>
+    /// 0.11.0 (draft). Registers a tool the AI may call while an import is drafted. <paramref name="inputSchema"/> is the JSON schema of
+    /// its input, as text. Throws when it is not JSON; the app checks the rest before it offers the tool.
+    /// </summary>
+    public static IPluginApp ImportTool<TTool>(this IPluginApp app, string name, string description, string inputSchema) where TTool : class, IImportTool
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(description);
+        ArgumentNullException.ThrowIfNull(inputSchema);
+        using var schema = JsonDocument.Parse(inputSchema);
+        return app.Add(new ImportToolReg(name, description, schema.RootElement.Clone(), typeof(TTool)));
+    }
+}

@@ -35,7 +35,23 @@ public sealed class ImportContributors(IServiceScopeFactory scopes, IRegistratio
     /// <summary>A test sets a shorter limit.</summary>
     internal TimeSpan? Limit { get; set; }
 
-    public bool Any => registrations.All<ImportContributorReg>().Count > 0 || registrations.All<DraftContributorReg>().Count > 0;
+    public bool Any => registrations.All<ImportContributorReg>().Count > 0 || registrations.All<DraftContributorReg>().Count > 0 || registrations.All<ImportToolReg>().Count > 0;
+
+    /// <summary>0.11.0 (draft). The tools the loaded plugins declared, in the order they registered them, unchecked.</summary>
+    public IReadOnlyList<(string PluginId, ImportToolReg Tool)> Tools => [.. registrations.All<ImportToolReg>().Select(r => (r.PluginId, r.Value))];
+
+    /// <summary>
+    /// 0.11.0 (draft). One call of a plugin's tool, as its other import calls are made: its own scope, as the plugin, within the time limit.
+    /// The nodes it answers, checked as a contribution's; null when it answered none or failed.
+    /// </summary>
+    public Task<IReadOnlyList<JsonNode>?> CallToolAsync(string pluginId, ImportToolReg tool, ImportItem item, JsonElement input, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(tool);
+        return CallAsync(pluginId, item, "import tool", tool.Name,
+            (sp, t) => ((IImportTool)ActivatorUtilities.CreateInstance(sp, tool.Tool)).CallAsync(input, t), r => Check(new ImportContribution(r.Nodes)), ct);
+    }
+
+    public string PluginName(string pluginId) => NameOf(pluginId);
 
     /// <summary>Some plugin reads drafts: only then are the pictures of an import read for diagrams.</summary>
     public bool AnyDraft => registrations.All<DraftContributorReg>().Count > 0;

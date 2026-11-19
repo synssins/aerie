@@ -7,9 +7,9 @@ namespace Kb.Core.Plugins;
 /// <summary>The versions this host offers to plugins.</summary>
 public static class KbHost
 {
-    public const string Version = "0.10.0";
+    public const string Version = "0.11.0";
     /// <summary>Raised one minor step per phase of the plugin model; 1.0.0 when the contracts are frozen.</summary>
-    public const string AbstractionsVersion = "0.10.0";
+    public const string AbstractionsVersion = "0.11.0";
     public const string UiApiVersion = "1.1.0";
 }
 

@@ -71,6 +71,7 @@ public void Configure(IPluginApp app, IPluginContext context) => app
     .DraftContributor<NoticeFromDraft>()                       // ... from the text the AI drafted
     .DraftContributor<DiagramOutline>()                        // ... from the diagrams the AI read in its pictures
     .ImportFileKinds(".notice")                                // a kind the app does not read: drafted by this plugin
+    .ImportTool<BoxesAndLines>(BoxesAndLines.Name, BoxesAndLines.Description, BoxesAndLines.Schema) // a tool the AI may call while drafting (0.11.0 draft)
     .SignInMethod<SampleSignIn>("example", "Sign in with Example ID") // a button on the sign-in screen
     .SignInProviders<SampleProviderCheck>() // providers an Admin adds on this plugin's page, each with its own button
     .Routes(SampleRoutes.Map);                                 // under /api/v1/plugins/kb.sample/
@@ -1166,6 +1167,92 @@ For both kinds of contributor:
 - **Time.** The limit is 10 seconds for each call. At the limit the core stops waiting, cancels the call's token, and goes on with the import; whatever the call answers later is dropped, and it counts as a failure. The call itself goes on running until it returns, so code that does not look at the token (a long parse) uses the processor until it ends. Check `ct` in long loops.
 
 
+### Tools for the AI during an import (0.11.0, draft)
+
+**This is a draft of the next contract, on the exploration branch `explore/plugin-tools` only.** It can change or be dropped.
+
+A plugin can offer the AI tools while an import is drafted. The plugin is the toolset; the app is the only path between the model and it. The app drafts the page as before, then, in a conversation of its own, offers the model the tools of the loaded plugins over the drafted page. When the model calls a tool, the app checks the call, passes its input to the plugin, and places the nodes the plugin answers in the draft.
+
+Register a tool with a name, a description and the JSON schema of its input:
+
+```csharp
+app.ImportTool<BoxesAndLines>(BoxesAndLines.Name, BoxesAndLines.Description, BoxesAndLines.Schema);
+```
+
+The tool class implements `IImportTool`. It gets the input of one call as a `JsonElement`, already checked against its schema, and answers `ImportToolResult(Nodes)`, or null to add nothing:
+
+<!-- sample:tool -->
+```csharp
+/// <summary>
+/// A tool the AI may call while it drafts an import (0.11.0 draft): a drawing of boxes, groups and lines in a document (a network map
+/// drawn in text) becomes an outline after the block that shows it. The app checks the input against <see cref="Schema"/> before the
+/// call, so the plugin gets only valid input; it never sees the document. A chart plugin would draw the same data instead.
+/// </summary>
+public sealed class BoxesAndLines : IImportTool
+{
+    public const string Name = "boxes_and_lines";
+    public const string Description = "Draw a diagram of boxes, groups of boxes and lines between them, from a drawing in the documents such as a network map drawn in text.";
+    public const string Schema = """
+        {"type": "object", "required": ["boxes", "lines"], "additionalProperties": false, "properties": {
+          "title": {"type": "string", "maxLength": 100},
+          "groups": {"type": "array", "maxItems": 40, "items": {"type": "object", "required": ["id", "label"], "additionalProperties": false, "properties": {
+            "id": {"type": "string", "maxLength": 32}, "label": {"type": "string", "maxLength": 100},
+            "group": {"type": "string", "maxLength": 32, "description": "The id of the group it sits in, if any."}}}},
+          "boxes": {"type": "array", "minItems": 1, "maxItems": 150, "items": {"type": "object", "required": ["id", "label"], "additionalProperties": false, "properties": {
+            "id": {"type": "string", "maxLength": 32}, "label": {"type": "string", "maxLength": 100},
+            "group": {"type": "string", "maxLength": 32, "description": "The id of the group it sits in, if any."}}}},
+          "lines": {"type": "array", "maxItems": 200, "items": {"type": "object", "required": ["from", "to"], "additionalProperties": false, "properties": {
+            "from": {"type": "string", "maxLength": 32}, "to": {"type": "string", "maxLength": 32}, "label": {"type": "string", "maxLength": 100}}}}}}
+        """;
+
+    public Task<ImportToolResult?> CallAsync(JsonElement input, CancellationToken ct)
+    {
+        static string Text(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
+        var groups = input.TryGetProperty("groups", out var g) ? g.EnumerateArray().ToList() : [];
+        var boxes = input.GetProperty("boxes").EnumerateArray().ToList();
+        var names = groups.Concat(boxes).GroupBy(x => Text(x, "id")).ToDictionary(x => x.Key, x => Text(x.First(), "label"));
+        object Item(string text, IEnumerable<object> children)
+        {
+            var list = children.ToList();
+            var para = new { type = "paragraph", content = new[] { new { type = "text", text } } };
+            return list.Count == 0 ? new { type = "listItem", content = new object[] { para } } : new { type = "listItem", content = new object[] { para, new { type = "bulletList", content = list } } };
+        }
+        // What sits in a group (or at the top), groups first. A group that names itself, or a loop, is shown once at the top.
+        var seen = new HashSet<string>();
+        IEnumerable<object> In(string group) =>
+            groups.Where(x => Text(x, "group") == group && seen.Add(Text(x, "id"))).Select(x => Item(Text(x, "label"), In(Text(x, "id"))))
+                .Concat(boxes.Where(x => Text(x, "group") == group).Select(x => Item(Text(x, "label"), [])));
+        var top = In("").ToList();
+        var lines = input.GetProperty("lines").EnumerateArray().Select(l => Item(
+            $"{names.GetValueOrDefault(Text(l, "from"), Text(l, "from"))} to {names.GetValueOrDefault(Text(l, "to"), Text(l, "to"))}{(Text(l, "label") is { Length: > 0 } x ? ": " + x : "")}", [])).ToList();
+        var nodes = new List<JsonElement>();
+        if (Text(input, "title") is { Length: > 0 } title)
+            nodes.Add(JsonSerializer.SerializeToElement(new { type = "paragraph", content = new[] { new { type = "text", text = title, marks = new[] { new { type = "bold" } } } } }));
+        nodes.Add(JsonSerializer.SerializeToElement(new { type = "bulletList", content = top }));
+        if (lines.Count > 0) nodes.Add(JsonSerializer.SerializeToElement(new { type = "bulletList", content = lines }));
+        return Task.FromResult<ImportToolResult?>(new ImportToolResult(nodes));
+    }
+}
+```
+
+**What the model sees of a plugin.** Only the tool's name, description and input schema, in the request's list of tools. They are fixed for the version the plugin registers them in, and the Admin sees each tool on the plugin's page in Administration > Plugins, with the reason when the app does not offer it. The app offers a tool only when:
+
+- its name is 3 to 40 lower-case letters, digits or underscores, starting with a letter, and no other loaded plugin's tool has it;
+- its description is plain text (letters, digits, spaces and ordinary punctuation: no line breaks, markup, braces or quotes) of at most 300 characters;
+- its schema is an object of at most 4,000 characters, nests at most 6 deep, and uses only `type` (object, array, string, integer, number, boolean), `properties`, `required`, `items`, `enum`, `minLength`, `maxLength`, `minItems`, `maxItems`, `additionalProperties` (false only) and `description`. Property names are 1 to 40 letters, digits or underscores; a property's description is plain text of at most 200 characters; a choice of an `enum` is plain text of at most 60 characters, or a number. All this text together is at most 1,500 characters;
+- none of that text is addressed to the AI (the check every source of the AI goes through);
+- the schema does not use the name `after_block`, which the app keeps for itself.
+
+**What the plugin sees.** Only the input of its own call, checked. Never the document, the draft, the prompt, the model's address or key, or the rest of the conversation. A call runs as the plugin (an actor of kind Plugin, source "import"), in its own scope, within 10 seconds, like a contributor's.
+
+**Where the result goes.** The app adds an input `after_block` to every tool: the number of the draft block, as the model was shown the draft, that holds the content the call is about. The app removes it before the plugin gets the input, and puts the plugin's nodes right after that block. The source stays: a map drawn in text stays its code block, and the drawing goes after it. The importer reviews it with the rest.
+
+**What the model gets back.** Never the plugin's text. Each call gets one reply the app writes: "Done: added after block 2.", or "Refused:" and the app's reason (no tool of that name, not a JSON object, over 16 KB, no such block, or which part of the schema the input breaks, or that the tool added nothing).
+
+**Limits, for each import item.** At most 8 tool calls are answered; then the conversation ends, and the draft says so. One call's input is at most 16 KB. The plugin's answer is checked as a contribution's (block nodes, at most 50 nodes and 512 KB). Each call is in the audit log as `import.tool`: the plugin, the tool, the importer, the size of the input, the outcome and the number of nodes. Each model call is in it as an AI call, as the drafting is.
+
+**When there are no tools.** With no plugin that offers a tool, or none the app accepts, no tool conversation is held, and the import is as it was. When the model server cannot call tools (it answers an error), the draft is as it would be without them, and its warnings say so. The tools are not offered for an item that holds a secret or that goes to a sensitive space, as contributors are not called for it.
+
 ### What a plugin sees of an import
 
 The import actions (`import.*`) are core-only: a plugin cannot hook them, send them or read their data.
@@ -1393,7 +1480,8 @@ The plugin stays disabled until an Admin selects Enable. Uploading a new version
 - `abstractionsVersion`: the version of `Kb.Plugins.Abstractions` the plugin was built against. The app refuses a plugin built for a newer one.
 - `minKbVersion`: the lowest app version the plugin runs on.
 
-The contract and the app are at 0.10.0, and can still change before 1.0.0.
+The contract and the app are at 0.11.0, and can still change before 1.0.0. On the branch `explore/plugin-tools`, 0.11.0 is a draft.
+0.11.0 (draft) adds [tools for the AI during an import](#tools-for-the-ai-during-an-import-0110-draft) (`app.ImportTool<T>(name, description, schema)`, `IImportTool`, `ImportToolResult`, `ImportToolReg`); a plugin that uses them says `"abstractionsVersion": "0.11.0"`. Nothing of 0.10.0 changed, and a plugin built for 0.10.0 or earlier loads as it did.
 0.10.0 added [diagrams in the pictures of an import](#diagrams-in-the-pictures-of-an-import) (`ImportDraft.Pictures`, `DraftPicture`, `PictureDiagram`, `DiagramBox`, `DiagramContainer`, `DiagramLine`, `DiagramText`, `DiagramArea`, `DiagramShape`, `DiagramArrow`, `DiagramLimits`, `DraftPlace.AfterPicture`, `DraftAddition.Picture`); a plugin that uses them says `"abstractionsVersion": "0.10.0"`. Nothing of 0.9.0 changed, and a plugin built for 0.9.0 or earlier loads as it did.
 0.9.0 added [sign-in providers an Admin adds](#sign-in-providers-an-admin-adds) (`app.SignInProviders()`, `app.SignInProviders<TCheck>()`, `ISignInProviderCheck`, `SignInProvidersReg`) and `OidcProvider.UserInfo`; a plugin that uses them says `"abstractionsVersion": "0.9.0"`. Nothing of 0.8.0 changed, and a plugin built for 0.8.0 or earlier loads as it did.
 0.8.0 added [sign-in methods](#sign-in-methods) (`ISignInMethod`, `OidcProvider`, `SignInClaims`, `SignInMethodReg`, `app.SignInMethod<T>(id, name)`) and the actor source `signin`; a plugin that uses them says `"abstractionsVersion": "0.8.0"`. One thing changed that an earlier plugin can see: a setting key starting with `signIn.` is the app's, so a manifest that declares one is refused at install. Nothing else of 0.7.0 changed, and a plugin built for 0.7.0 or earlier loads as it did.

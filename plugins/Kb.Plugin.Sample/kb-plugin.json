@@ -5,8 +5,8 @@
   "publisher": "Kb first-party",
   "description": "Readers acknowledge a page. The reference plugin of the developer guide.",
   "assembly": "Kb.Plugin.Sample.dll",
-  "minKbVersion": "0.10.0",
-  "abstractionsVersion": "0.10.0",
+  "minKbVersion": "0.11.0",
+  "abstractionsVersion": "0.11.0",
   "extensionPoints": [],
   "outboundHosts": ["id.example.com"],
   "settings": [
