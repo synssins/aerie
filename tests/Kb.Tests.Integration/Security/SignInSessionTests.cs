@@ -179,24 +179,115 @@ public sealed class SignInSessionTests
 
     // ---- L5 ----
 
-    [Fact]
-    public async Task ASession_EndsAFixedTimeAfterItWasOpened_HoweverMuchItIsUsed()
+    private const string CookieName = "__Host-kb";
+
+    /// <summary>The session cookie a response sets, as "name=value"; null when it sets none or clears it.</summary>
+    private static string? SessionCookie(HttpResponseMessage r) =>
+        r.Headers.TryGetValues("Set-Cookie", out var set)
+            ? set.Select(c => c.Split(';')[0]).LastOrDefault(c => c.StartsWith(CookieName + "=", StringComparison.Ordinal) && c.Length > CookieName.Length + 1)
+            : null;
+
+    /// <summary>A request that carries exactly this cookie, as a browser that kept it would.</summary>
+    private static async Task<HttpResponseMessage> WithAsync(HttpClient bare, string cookie, HttpMethod method, string path, object? body = null)
+    {
+        var req = new HttpRequestMessage(method, path) { Content = body is null ? null : JsonContent.Create(body) };
+        req.Headers.Add("Cookie", cookie);
+        return await bare.SendAsync(req, Ct);
+    }
+
+    private static (KbAppFactory F, Clock Clock, HttpClient Bare) HourLongSessions()
     {
         var clock = new Clock();
-        await using var f = new KbAppFactory(KbAppFactory.NewDbPath(), settings: new Dictionary<string, string> { ["Kb:Auth:SessionMaxAge"] = "01:00:00" },
+        var f = new KbAppFactory(KbAppFactory.NewDbPath(), settings: new Dictionary<string, string> { ["Kb:Auth:SessionMaxAge"] = "01:00:00" },
             services: s => s.Replace(ServiceDescriptor.Singleton<TimeProvider>(clock)));
+        // No cookie jar: each request says which cookie it carries.
+        return (f, clock, f.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), HandleCookies = false }));
+    }
+
+    /// <summary>
+    /// The start is fixed at sign-in. The cookie from sign-in and every cookie the app sets on the way are all refused once the most a
+    /// session lasts has passed since sign-in, however often the session was used.
+    /// </summary>
+    [Fact]
+    public async Task ASession_EndsAFixedTimeAfterSignIn_WhicheverOfItsCookiesIsUsed()
+    {
+        var (f, clock, bare) = HourLongSessions();
+        await using var _ = f;
         await UserAsync(f, "uma");
-        var c = f.NewClient();
-        Assert.Equal(HttpStatusCode.OK, (await SignInAsync(c, "uma")).StatusCode);
-        // Used every ten minutes: the sliding expiry alone would never end it.
-        for (var i = 0; i < 5; i++)
+        var first = SessionCookie(await SignInAsync(bare, "uma"))!;
+        var latest = first;
+        // Used every few minutes with the cookie from sign-in and with the newest one: the sliding expiry alone would never end it.
+        foreach (var minutes in new[] { 1, 4, 4, 4, 13, 13, 10, 9 }) // at 1, 5, 9, 13, 26, 39, 49 and 58 minutes
         {
-            Assert.Equal(HttpStatusCode.OK, (await c.GetAsync("/api/v1/me", Ct)).StatusCode);
-            clock.Ahead += TimeSpan.FromMinutes(10);
+            clock.Ahead += TimeSpan.FromMinutes(minutes);
+            Assert.Equal(HttpStatusCode.OK, (await WithAsync(bare, first, HttpMethod.Get, "/api/v1/me")).StatusCode);
+            var r = await WithAsync(bare, latest, HttpMethod.Get, "/api/v1/me");
+            Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+            latest = SessionCookie(r) ?? latest;
         }
-        Assert.Equal(HttpStatusCode.OK, (await c.GetAsync("/api/v1/me", Ct)).StatusCode); // 50 minutes
-        clock.Ahead += TimeSpan.FromMinutes(11);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await c.GetAsync("/api/v1/me", Ct)).StatusCode);
+        clock.Ahead += TimeSpan.FromMinutes(2).Add(TimeSpan.FromSeconds(45)); // 60 minutes 45 seconds after sign-in
+        Assert.Equal(HttpStatusCode.Unauthorized, (await WithAsync(bare, first, HttpMethod.Get, "/api/v1/me")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await WithAsync(bare, latest, HttpMethod.Get, "/api/v1/me")).StatusCode);
+    }
+
+    /// <summary>The app signs someone in again when they change their password. That continues the session: it does not start its time anew.</summary>
+    [Fact]
+    public async Task SigningInAgainFromInsideASession_DoesNotMakeItLastLonger()
+    {
+        var (f, clock, bare) = HourLongSessions();
+        await using var _ = f;
+        await UserAsync(f, "pia");
+        var first = SessionCookie(await SignInAsync(bare, "pia"))!;
+        clock.Ahead = TimeSpan.FromMinutes(50);
+        var changed = await WithAsync(bare, first, HttpMethod.Post, "/api/v1/me/password", new { current = Password, password = "a-much-better-passphrase-2026" });
+        Assert.Equal(HttpStatusCode.NoContent, changed.StatusCode);
+        var again = SessionCookie(changed)!;
+        Assert.Equal(HttpStatusCode.OK, (await WithAsync(bare, again, HttpMethod.Get, "/api/v1/me")).StatusCode);
+        clock.Ahead = TimeSpan.FromMinutes(61);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await WithAsync(bare, again, HttpMethod.Get, "/api/v1/me")).StatusCode);
+        // A sign-in of its own is a new session with its own hour.
+        var fresh = SessionCookie(await SignInAsync(bare, "pia", "a-much-better-passphrase-2026"))!;
+        clock.Ahead = TimeSpan.FromMinutes(110);
+        Assert.Equal(HttpStatusCode.OK, (await WithAsync(bare, fresh, HttpMethod.Get, "/api/v1/me")).StatusCode);
+        // So is a sign-in with the password from a browser that still holds a session's cookie: it is a new session, not the old one's time.
+        var over = SessionCookie(await WithAsync(bare, fresh, HttpMethod.Post, "/api/v1/auth/local/signin", new { userName = "pia", password = "a-much-better-passphrase-2026" }))!;
+        clock.Ahead = TimeSpan.FromMinutes(165);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await WithAsync(bare, fresh, HttpMethod.Get, "/api/v1/me")).StatusCode); // 104 minutes old
+        Assert.Equal(HttpStatusCode.OK, (await WithAsync(bare, over, HttpMethod.Get, "/api/v1/me")).StatusCode); // 55 minutes old
+    }
+
+    /// <summary>
+    /// A cookie from before the start was written into cookies (a session open when the site is updated) has none. Its start is the
+    /// time that cookie was issued: it is neither ended early nor made to last for ever by being used.
+    /// </summary>
+    [Fact]
+    public async Task ACookieWithoutAStart_EndsAFixedTimeAfterItWasIssued()
+    {
+        var (f, clock, bare) = HourLongSessions();
+        await using var _ = f;
+        var id = await UserAsync(f, "uma");
+        string old;
+        await using (var scope = f.Services.CreateAsyncScope())
+        {
+            var signIn = scope.ServiceProvider.GetRequiredService<SignInManager<KbUser>>();
+            var principal = await signIn.CreateUserPrincipalAsync((await signIn.UserManager.FindByIdAsync(id.ToString()))!);
+            var issued = clock.GetUtcNow().AddMinutes(-50);
+            var ticket = new Microsoft.AspNetCore.Authentication.AuthenticationTicket(principal,
+                new Microsoft.AspNetCore.Authentication.AuthenticationProperties { IssuedUtc = issued, ExpiresUtc = issued.AddHours(8) }, IdentityConstants.ApplicationScheme);
+            var options = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationOptions>>().Get(IdentityConstants.ApplicationScheme);
+            old = CookieName + "=" + options.TicketDataFormat.Protect(ticket);
+        }
+        // Issued 50 minutes ago: not signed out by the update.
+        var r = await WithAsync(bare, old, HttpMethod.Get, "/api/v1/me");
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var renewed = SessionCookie(r)!; // the start is written into the cookie the app hands back
+        clock.Ahead = TimeSpan.FromMinutes(9);
+        Assert.Equal(HttpStatusCode.OK, (await WithAsync(bare, old, HttpMethod.Get, "/api/v1/me")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await WithAsync(bare, renewed, HttpMethod.Get, "/api/v1/me")).StatusCode);
+        // An hour after it was issued, used or not, old cookie or new: over.
+        clock.Ahead = TimeSpan.FromMinutes(11);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await WithAsync(bare, old, HttpMethod.Get, "/api/v1/me")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await WithAsync(bare, renewed, HttpMethod.Get, "/api/v1/me")).StatusCode);
     }
 
     [Fact]
