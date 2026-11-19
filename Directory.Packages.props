@@ -7,6 +7,9 @@
     <PackageVersion Include="ExcelDataReader" Version="3.9.0" />
     <PackageVersion Include="MimeKit" Version="5.0.0" />
     <PackageVersion Include="PdfPig" Version="0.1.16" />
+    <!-- Cuts a picture into enlarged quarters for the diagram request. NoDependencies: the Linux native library needs no fontconfig in the image. -->
+    <PackageVersion Include="SkiaSharp" Version="4.156.2" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.156.2" />
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.14" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.14" />

@@ -324,6 +324,8 @@ await using (var scope = app.Services.CreateAsyncScope())
     await LogShipperService.EnsureFirstTargetAsync(db, kb.Logs.Folder, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow());
     await ActiveFileStore.EnsureFirstPlaceAsync(db, kb.Storage.Folder, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow());
 }
+// The image library's native part, once: if it cannot load here, that is logged and diagrams are read from the whole picture only.
+Kb.Web.Import.PictureQuarters.SelfTest(app.Logger);
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
