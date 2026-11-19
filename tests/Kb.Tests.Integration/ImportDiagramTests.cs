@@ -36,6 +36,9 @@ public sealed class ImportDiagramTests : IAsyncLifetime
         public volatile string? ItemsError;
         public volatile string Finish = "stop";
         public readonly ConcurrentQueue<string> Asked = new();
+        /// <summary>For each first diagram request: how many pictures it carried, and whether its task says the quarters follow.</summary>
+        public readonly ConcurrentQueue<(int Pictures, bool Note)> Shown = new();
+        private static int CountOf(string s, string part) => (s.Length - s.Replace(part, "", StringComparison.Ordinal).Length) / part.Length;
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -44,6 +47,7 @@ public sealed class ImportDiagramTests : IAsyncLifetime
             if (body.Contains("Is it a diagram", StringComparison.Ordinal) && body.Contains("in percent of the picture", StringComparison.Ordinal))
             {
                 Asked.Enqueue("items");
+                Shown.Enqueue((CountOf(body, "data:image/"), body.Contains("quarters, enlarged", StringComparison.Ordinal)));
                 if (ItemsError is { } error) return new HttpResponseMessage(HttpStatusCode.BadGateway) { Content = new StringContent(error, Encoding.UTF8, "application/json") };
                 content = Diagram;
             }
@@ -134,10 +138,10 @@ public sealed class ImportDiagramTests : IAsyncLifetime
     }
 
     /// <summary>Imports one picture and answers the draft's first page's blocks and its warnings.</summary>
-    private async Task<(JsonArray Blocks, List<string> Warnings)> ImportAsync()
+    private async Task<(JsonArray Blocks, List<string> Warnings)> ImportAsync(byte[]? picture = null)
     {
         var id = (await (await _cara.PostAsJsonAsync("/api/v1/imports", new { }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("id").GetGuid();
-        var body = new ByteArrayContent(Png);
+        var body = new ByteArrayContent(picture ?? Png);
         body.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
         body.Headers.Add("X-File-Name", "board.png");
         Assert.Equal(HttpStatusCode.OK, (await _cara.PostAsync($"/api/v1/imports/{id}/files", body, Ct)).StatusCode);
@@ -238,6 +242,27 @@ public sealed class ImportDiagramTests : IAsyncLifetime
         Assert.Equal(["items", "short", "lines"], _model.Asked);
         Assert.Equal(("DC01", (DiagramArea?)null), (d.Boxes.Single().Label, d.Boxes.Single().Area));
         Assert.Contains(warnings, w => w.Contains("without the places of its boxes", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ABigPicture_GoesToTheDiagramRequest_WithItsFourQuarters()
+    {
+        _model.Diagram = """{"diagram":true,"title":"","containers":[],"boxes":[{"id":"b1","label":"DC01","in":""}]}""";
+        await ImportAsync(PictureQuartersTests.Picture(800, 600, SkiaSharp.SKEncodedImageFormat.Png));
+        Assert.Equal((5, true), Assert.Single(_model.Shown));
+        Assert.Equal("DC01", Assert.Single(Assert.Single(_seen.Drafts).Pictures).Diagram!.Boxes.Single().Label);
+    }
+
+    [Fact]
+    public async Task ACorruptPicture_GoesToTheDiagramRequest_Whole_AndTheImportIsAsBefore()
+    {
+        var d = PictureQuartersTests.Picture(800, 600, SkiaSharp.SKEncodedImageFormat.Png);
+        new Random(7).NextBytes(d.AsSpan(40));
+        _model.Diagram = """{"diagram":true,"title":"","containers":[],"boxes":[{"id":"b1","label":"DC01","in":""}]}""";
+        var (_, warnings) = await ImportAsync(d);
+        Assert.Equal((1, false), Assert.Single(_model.Shown));
+        Assert.Equal("DC01", Assert.Single(Assert.Single(_seen.Drafts).Pictures).Diagram!.Boxes.Single().Label);
+        Assert.DoesNotContain(warnings, w => w.Contains("quarter", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

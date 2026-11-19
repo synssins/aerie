@@ -30,6 +30,12 @@ public static class DiagramReader
         "If it is: put its heading in \"title\" (else \"\"). List every frame that encloses boxes as a container and every box once, with the first line " +
         "of its text as \"label\", exactly as written. \"in\" is the id of the container it sits in, or \"\". Give ids c1, c2... to containers and b1, b2... to boxes.";
 
+    /// <summary>Added to each task when the picture's quarters go with it.</summary>
+    public const string QuartersNote =
+        "The first picture is the whole diagram. The four after it are its quarters, enlarged and overlapping a little (top left, top right, " +
+        "bottom left, bottom right), to read its text closer. Answer once, for the whole diagram: list each thing once even if it shows in two " +
+        "quarters, and give positions in percent of the whole picture.";
+
     public const string LinesTask =
         "The picture is a diagram. Its boxes and containers are listed under \"items\", one per line as id|label. " +
         "List every line drawn between them once: \"from\" and \"to\" are ids from items, \"label\" the text on the line (else \"\"), " +
