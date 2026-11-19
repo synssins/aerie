@@ -1,4 +1,5 @@
 # Builds a plugin project and packs it for upload on Administration > Plugins.
+# License: Apache-2.0 (this file; see LICENSING.md).
 #   tools\pack-plugin.ps1 plugins\Kb.Plugin.Sample
 # Writes artifacts\plugins\<id>-<version>.kbplugin: a zip of the published output with kb-plugin.json at the top.
 # The manifest is taken from the project folder, because a plugin may embed it and not copy it to its output.
