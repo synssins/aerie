@@ -16,6 +16,14 @@ namespace Kb.Web;
 public static class KeyProtection
 {
     public const string SecretName = "Kb--KeyProtectionSecret";
+    /// <summary>The setting that names the configuration key the secret is read from, for a host that does not allow <see cref="SecretName"/> as a name.</summary>
+    public const string SecretNameSetting = "Kb:KeyProtectionSecretName";
+
+    /// <summary>The configuration key the secret is read from on this installation.</summary>
+    public static string NameIn(IConfiguration config) => config[SecretNameSetting] is { Length: > 0 } name ? name : SecretName;
+
+    /// <summary>The secret, or null when none is set.</summary>
+    public static string? SecretIn(IConfiguration config) => config[NameIn(config)] is { Length: > 0 } secret ? secret : null;
     private static readonly XNamespace Dp = "http://schemas.asp.net/2015/03/dataProtection";
     private static readonly byte[] Salt = Encoding.UTF8.GetBytes("kb.keyring.v1");
 
@@ -43,8 +51,8 @@ public static class KeyProtection
         public XElement Decrypt(XElement encryptedElement)
         {
             ArgumentNullException.ThrowIfNull(encryptedElement);
-            var secret = services.GetRequiredService<IConfiguration>()[SecretName];
-            if (string.IsNullOrEmpty(secret)) throw new CryptographicException($"The keys are protected with {SecretName}, which is not set.");
+            var config = services.GetRequiredService<IConfiguration>();
+            var secret = SecretIn(config) ?? throw new CryptographicException($"The keys are protected with {NameIn(config)}, which is not set.");
             var all = Convert.FromBase64String(encryptedElement.Value);
             var plain = new byte[all.Length - 28];
             using (var aes = new AesGcm(KeyOf(secret), 16)) aes.Decrypt(all.AsSpan(0, 12), all.AsSpan(28), all.AsSpan(12, 16), plain);
@@ -57,17 +65,19 @@ public static class KeyProtection
     /// writes a new one. Without it: a database whose keys are wrapped stops the start with the reason, instead of running on a new key
     /// that reads none of the stored secrets.
     /// </summary>
-    public static async Task OnStartupAsync(KbDbContext db, string? secret, ILogger log)
+    public static async Task OnStartupAsync(KbDbContext db, IConfiguration config, ILogger log)
     {
         ArgumentNullException.ThrowIfNull(db);
+        ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(log);
+        var (secret, name) = (SecretIn(config), NameIn(config));
         var rows = await db.DataProtectionKeys.ToListAsync();
         var marker = typeof(Decryptor).FullName!;
-        if (string.IsNullOrEmpty(secret))
+        if (secret is null)
         {
             if (rows.Any(r => r.Xml?.Contains(marker, StringComparison.Ordinal) == true))
-                throw new InvalidOperationException($"The keys in the database are protected with {SecretName}, and it is not set. Set it to the value it had; without it no stored secret can be read.");
-            log.LogWarning("The keys that protect sessions and stored secrets are in the database unencrypted. Set {Secret} to store them encrypted.", SecretName);
+                throw new InvalidOperationException($"The keys in the database are protected with {name}, and it is not set. Set it to the value it had; without it no stored secret can be read.");
+            log.LogWarning("The keys that protect sessions and stored secrets are in the database unencrypted. Set {Secret} to store them encrypted.", name);
             return;
         }
         var encryptor = new Encryptor(secret);
@@ -88,6 +98,6 @@ public static class KeyProtection
         }
         if (wrapped == 0) return;
         await db.SaveChangesAsync();
-        log.LogInformation("{Count} keys that were stored unencrypted are now protected with {Secret}.", wrapped, SecretName);
+        log.LogInformation("{Count} keys that were stored unencrypted are now protected with {Secret}.", wrapped, name);
     }
 }
