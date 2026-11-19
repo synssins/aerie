@@ -27,7 +27,7 @@ internal sealed class BytesUpload(string name, byte[] data) : UploadContent
 /// </summary>
 public sealed partial class ImportService(KbDbContext db, IFileStore store, AiService ai, InventoryService inventory, IAccess access,
     Kb.Core.Search.ISearchProvider search, IEnumerable<IMalwareScanner> scanners, IAuditLog audit, TimeProvider time, DocRenderers renderers,
-    ImportContributors contributors)
+    ImportContributors contributors, ILogger<ImportService> log)
 {
     public const int MaxFilesPerBatch = 1000;
     public const long MaxFileBytes = 256L * 1024 * 1024;
@@ -426,7 +426,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         var added = outWords.Where(w => !inWords.Contains(w) && w.Length > 3).Distinct().ToList();
         if (source.Length > 0 && outWords.Count > 0 && added.Count > Math.Max(8, outWords.Distinct().Count() / 10))
             warnings.Add($"The draft uses words that are not in the source ({string.Join(", ", added.Take(12))}). Confirm the document is correct before saving.");
-        var given = await ContributeAsync(item, batch, files, findings.Count > 0, pages, warnings, ct);
+        var given = await ContributeAsync(item, batch, files, findings.Count > 0, pages, warnings, ct, byPlugins ? [] : [.. pictures.Zip(picData)], actor);
         if (byPlugins && pages[0]["doc"]!["content"]!.AsArray().Count == 0)
         {
             (item.Status, item.Error) = (ImportStatus.Failed, given
@@ -521,7 +521,8 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
     /// secret or that goes to a sensitive space. The pages are drafted anew on every retry, so nothing is added twice.
     /// </summary>
     /// <returns>False when the plugins were not given the files: they hold a secret, or go to a sensitive space.</returns>
-    private async Task<bool> ContributeAsync(ImportItem item, ImportBatch batch, IReadOnlyList<ImportFile> files, bool secret, List<JsonObject> pages, List<string> warnings, CancellationToken ct)
+    private async Task<bool> ContributeAsync(ImportItem item, ImportBatch batch, IReadOnlyList<ImportFile> files, bool secret, List<JsonObject> pages, List<string> warnings, CancellationToken ct,
+        IReadOnlyList<(ImportFile File, AiGuard.Picture Data)>? sent = null, Actor? actor = null)
     {
         if (!contributors.Any) return true;
         if (secret || (batch.TargetSpaceId is { } ts && await db.Spaces.AnyAsync(s => s.Id == ts && s.IsSensitive, ct)))
@@ -536,13 +537,72 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             foreach (var n in c.Nodes) contents[0].Add(n);
             warnings.Add($"{c.PluginName} added {c.Nodes.Count} block{(c.Nodes.Count == 1 ? "" : "s")} from {c.FileName} at the end of the first page.");
         }
+        var pictures = contributors.AnyDraft && actor is not null ? await DiagramsAsync(actor, sent ?? [], pages, warnings, ct) : [];
         foreach (var c in await contributors.RunDraftAsync(item, () => [.. pages.Select(p => new DraftPage(p["title"]!.GetValue<string>(), p["doc"]!.ToJsonString()))],
-            [.. read.Select(f => f.Path)], c => ImportContributors.Place(contents, c.Additions), ct))
+            [.. read.Select(f => f.Path)], c => ImportContributors.Place(contents, c.Additions), ct, pictures))
         {
             var where = string.Join(", ", c.Additions.Select(a => a.Page).Distinct().Order().Select(i => $"\"{pages[i]["title"]!.GetValue<string>()}\""));
             warnings.Add($"{c.PluginName} added {c.Count} block{(c.Count == 1 ? "" : "s")} to {where}.");
         }
         return true;
+    }
+
+    /// <summary>
+    /// The pictures sent to the AI, as the draft shows them, each with the diagram the AI reads from it (contract 0.10.0): one more request
+    /// per picture, for the first <see cref="DiagramReader.MaxPictures"/>. Not a diagram: none, and nothing is said. A request that fails,
+    /// or an answer that says diagram and holds nothing usable: none, and one warning. The draft is left as it is either way.
+    /// </summary>
+    private async Task<List<DraftPicture>> DiagramsAsync(Actor actor, IReadOnlyList<(ImportFile File, AiGuard.Picture Data)> sent, List<JsonObject> pages, List<string> warnings,
+        CancellationToken ct)
+    {
+        var found = new List<DraftPicture>();
+        for (var i = 0; i < sent.Count; i++)
+        {
+            var (file, data) = sent[i];
+            var src = FileUrl + file.Id.ToString("N");
+            var page = Math.Max(0, pages.FindIndex(p => p["doc"]!["content"]!.AsArray().Any(n => n is not null && ImportContributors.Shows(n, src))));
+            PictureDiagram? diagram = null;
+            if (i < DiagramReader.MaxPictures)
+            {
+                // The whole picture, and its enlarged quarters when it can be cut: the labels of a big diagram are read far better then.
+                var quarters = PictureQuarters.Cut(data, log);
+                AiGuard.Picture[] shown = quarters is null ? [data] : [data, .. quarters];
+                string Task(string task) => quarters is null ? task : task + " " + DiagramReader.QuartersNote;
+                // First the boxes, containers and texts; then, given their list, the lines between them. Each answer fits the Admin's token
+                // limit; one cut off at it keeps its complete lines.
+                var r = await ai.RunAsync(actor, AiFeatures.Import, Task(DiagramReader.ItemsTask), new Dictionary<string, string> { ["image"] = file.Name }, DiagramReader.ItemsSchema(), ct, shown,
+                    DiagramReader.Salvage);
+                if (r.Problem?.Message?.StartsWith(AiService.CutOff, StringComparison.Ordinal) == true)
+                {
+                    // Too big with positions for the token limit, and the server kept none of it: once more, without positions and second lines.
+                    r = await ai.RunAsync(actor, AiFeatures.Import, Task(DiagramReader.ShortItemsTask), new Dictionary<string, string> { ["image"] = file.Name }, DiagramReader.ShortItemsSchema(), ct, shown,
+                        DiagramReader.Salvage);
+                    if (r.Problem is null) warnings.Add($"The diagram in {file.Name} was read without the places of its boxes: with them it was larger than the AI's answer limit (Max tokens in Administration > AI).");
+                }
+                JsonNode? drawn = null;
+                if (r.Value is { } items && items.Output["diagram"] is JsonValue yes && yes.GetValueKind() == JsonValueKind.True)
+                {
+                    var l = await ai.RunAsync(actor, AiFeatures.Import, Task(DiagramReader.LinesTask),
+                        new Dictionary<string, string> { ["image"] = file.Name, ["items"] = DiagramReader.ItemList(items.Output) }, DiagramReader.LinesSchema(), ct, shown, DiagramReader.Salvage);
+                    drawn = l.Value?.Output;
+                    if (l.Problem is not null) warnings.Add($"The lines of the diagram in {file.Name} could not be read: {l.Problem.Message ?? "the AI did not answer"}");
+                    if (items.Cut || l.Value?.Cut == true) warnings.Add($"The diagram in {file.Name} was larger than the AI's answer limit (Max tokens in Administration > AI): only part of it was read.");
+                }
+                if (r.Problem is not null) warnings.Add($"The diagram in {file.Name} could not be read: {r.Problem.Message ?? "the AI did not answer"}");
+                else if ((diagram = DiagramReader.Read(r.Value!.Output, drawn)) is null)
+                {
+                    if (r.Value.Output["diagram"] is JsonValue said && said.GetValueKind() == JsonValueKind.True) warnings.Add($"The diagram in {file.Name} could not be read.");
+                }
+                else if (AiGuard.Tripwire(DiagramReader.Texts(diagram)) is not null)
+                {
+                    diagram = null;
+                    warnings.Add($"The diagram in {file.Name} holds text addressed to the AI, so it was not passed on to plugins.");
+                }
+            }
+            var size = Kb.Web.Exports.ImageSize(data.Data);
+            found.Add(new DraftPicture(src, file.Name, page) { Diagram = diagram, Width = size?.Width ?? 0, Height = size?.Height ?? 0 });
+        }
+        return found;
     }
 
     // ---------- accepting

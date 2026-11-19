@@ -60,9 +60,9 @@ public class SignInMethodRulesTests
     }
 
     [Fact]
-    public void ThisHost_Is0_9_0_AndStillLoadsPluginsBuiltFor0_7_0()
+    public void ThisHost_Is0_10_0_AndStillLoadsPluginsBuiltFor0_7_0()
     {
-        Assert.Equal(("0.9.0", "0.9.0"), (KbHost.Version, KbHost.AbstractionsVersion));
+        Assert.Equal(("0.10.0", "0.10.0"), (KbHost.Version, KbHost.AbstractionsVersion));
         var old = new PluginManifest { Id = "kb.x", Version = "1.0.0", Publisher = "test", MinKbVersion = "0.7.0", AbstractionsVersion = "0.7.0" };
         Assert.Null(PluginVersions.Refusal(old));
     }

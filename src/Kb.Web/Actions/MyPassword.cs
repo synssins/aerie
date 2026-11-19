@@ -53,7 +53,7 @@ internal sealed class SetMyPasswordHandler(UserManager<KbUser> users, SignInMana
         await users.ResetAccessFailedCountAsync(u);
         await audit.AppendAsync(new AuditEvent(AuditActions.PasswordSet, u.Id, "user", u.Id.ToString(), Data: new Dictionary<string, string> { ["method"] = "self", ["ip"] = ip }));
         // The new stamp ends every session of this account; this one stays open.
-        await signIn.SignInAsync(u, isPersistent: false);
+        await signIn.SignInAsync(u, SessionAge.Continued(signIn.Context));
         return new Unit();
     }
 }

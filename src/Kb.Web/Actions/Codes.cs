@@ -292,7 +292,7 @@ internal sealed class EnrollCodesHandler(CodeSignIn codes, UserManager<KbUser> u
             await codes.FinishAsync(u);
             await audit.AppendAsync(new AuditEvent(AuditActions.SignIn, u.Id, "user", u.Id.ToString(), Data: new Dictionary<string, string> { ["method"] = "local+code", ["ip"] = ip }));
         }
-        else await signIn.SignInAsync(u, isPersistent: false);
+        else await signIn.SignInAsync(u, SessionAge.Continued(signIn.Context));
         return new CodesEnrolled(recovery, await codes.MeAsync(u, ctx.Cancel));
     }
 }
@@ -334,7 +334,7 @@ internal sealed class TurnOffMyCodesHandler(CodeSignIn codes, UserManager<KbUser
         await codes.ClearAsync(u);
         ctx.Audit(AuditActions.CodesOff, "user", u.Id.ToString());
         // Clearing changed the stamp, which ends every session; this one stays open.
-        await signIn.SignInAsync(u, isPersistent: false);
+        await signIn.SignInAsync(u, SessionAge.Continued(signIn.Context));
         return new Unit();
     }
 }
