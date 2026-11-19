@@ -162,7 +162,7 @@ services.AddRateLimiter(o =>
 var dp = services.AddDataProtection().SetApplicationName("kb").PersistKeysToDbContext<KbDbContext>();
 _ = dp;
 // With the secret set, the keys are stored encrypted with it (KeyProtection). Without it they are stored as before.
-if (config[KeyProtection.SecretName] is { Length: > 0 } keySecret)
+if (KeyProtection.SecretIn(config) is { } keySecret)
     services.Configure<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>(o => o.XmlEncryptor = new KeyProtection.Encryptor(keySecret));
 
 // A browser that reached the site over https keeps to https for a year, its subdomains included (the framework's default is 30 days).
@@ -308,8 +308,8 @@ await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<KbDbContext>();
     var audit = scope.ServiceProvider.GetRequiredService<IAuditLog>();
-    await KeyProtection.OnStartupAsync(db, config[KeyProtection.SecretName], app.Logger); // before the first key is read
-    await KbUserStore.ProtectStraysAsync(db, app.Services.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>(), config[KeyProtection.SecretName]);
+    await KeyProtection.OnStartupAsync(db, config, app.Logger); // before the first key is read
+    await KbUserStore.ProtectStraysAsync(db, app.Services.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>(), KeyProtection.SecretIn(config));
     foreach (var e in boot.Events) await audit.AppendAsync(e);
     await app.Services.GetRequiredService<PluginSettingsStore>().ProtectStraysAsync(CancellationToken.None); // from here a plugin can read its secrets
 
