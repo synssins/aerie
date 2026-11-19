@@ -50,3 +50,36 @@ public sealed class NoticeFromDraft : IDraftContributor
     }
 }
 // #endregion
+
+// #region guide:diagram
+/// <summary>
+/// Reads the diagrams the AI found in an import's pictures (0.10.0) and puts an outline of each right after its picture: one bullet per
+/// container with what it holds, then one per line ("A to B: label"). A chart plugin would draw the same data instead.
+/// </summary>
+public sealed class DiagramOutline : IDraftContributor
+{
+    public Task<DraftContribution?> ContributeAsync(ImportDraft draft, CancellationToken ct)
+    {
+        var additions = new List<DraftAddition>();
+        foreach (var picture in draft.Pictures)
+        {
+            if (picture.Diagram is not { } d) continue;
+            var names = d.Boxes.ToDictionary(b => b.Id, b => b.Label);
+            foreach (var c in d.Containers) names[c.Id] = c.Label;
+            var items = new List<string>();
+            foreach (var c in d.Containers)
+                items.Add($"{c.Label}: {string.Join(", ", d.Boxes.Where(b => b.Container == c.Id).Select(b => b.Label).Concat(d.Containers.Where(x => x.Container == c.Id).Select(x => x.Label)))}");
+            foreach (var l in d.Lines)
+                items.Add($"{names[l.From]} to {names[l.To]}{(l.Label is { } label ? $": {label}" : "")}{(l.Dashed ? " (dashed)" : "")}");
+            if (items.Count == 0) continue;
+            var list = JsonSerializer.SerializeToElement(new
+            {
+                type = "bulletList",
+                content = items.Select(t => new { type = "listItem", content = new[] { new { type = "paragraph", content = new[] { new { type = "text", text = t } } } } }),
+            });
+            additions.Add(new DraftAddition(picture.Page, DraftPlace.AfterPicture, [list]) { Picture = picture.Src });
+        }
+        return Task.FromResult(additions.Count == 0 ? null : new DraftContribution(additions));
+    }
+}
+// #endregion
