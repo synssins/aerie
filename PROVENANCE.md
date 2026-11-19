@@ -14,7 +14,8 @@ Where every fixture, asset, bundled file and outside reference in this repositor
 | Path | What | Origin | License |
 |---|---|---|---|
 | `src/Kb.Web/Fonts/Liberation*.ttf` | Liberation Sans and Liberation Mono 2.1.5, used by PDF export | https://github.com/liberationfonts, unchanged | SIL Open Font License 1.1 (`src/Kb.Web/Fonts/OFL.txt`) |
-| `LICENSE` | Apache License 2.0 text | https://www.apache.org/licenses/LICENSE-2.0.txt, retrieved 2026-11-15, SHA-256 `cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30` | Apache-2.0 |
+| `LICENSE` | PolyForm Noncommercial License 1.0.0 text, unchanged, with Aerie's `Required Notice:` line after it | https://polyformproject.org/licenses/noncommercial/1.0.0.txt, retrieved 2026-11-19, SHA-256 `ffcca38841adb694b6f380647e15f17c446a4d1656fed51a1e2041d064c94cc8` | The license text itself |
+| `src/Kb.Plugins.Abstractions/LICENSE`, `src/Kb.Plugins.Data/LICENSE`, `plugins/Kb.Plugin.Sample/LICENSE`, `docs/plugins/LICENSE`, `contracts/LICENSE` | Apache License 2.0 text, for the folders that stay under it (see `LICENSING.md`) | https://www.apache.org/licenses/LICENSE-2.0.txt, retrieved 2026-11-15, SHA-256 `cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30` | Apache-2.0 |
 
 ## Original assets and fixtures
 

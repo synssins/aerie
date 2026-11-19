@@ -125,4 +125,6 @@ Aerie is being redeveloped under a clean-room method: contracts first, then code
 
 ## License
 
-Aerie is licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE) for attributions; the bundled fonts keep their own SIL Open Font License.
+Aerie is source-available software under the [PolyForm Noncommercial License 1.0.0](LICENSE): free for personal and noncommercial use. Commercial use needs a commercial license from the copyright holder. The plugin contract stays under the Apache License, Version 2.0. [LICENSING.md](LICENSING.md) says which license covers what and where to ask.
+
+See [NOTICE](NOTICE) for attributions; the bundled fonts and the other third-party components keep their own licenses.

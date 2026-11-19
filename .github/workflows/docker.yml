@@ -28,6 +28,9 @@ jobs:
           tags: |
             type=raw,value=latest
             type=sha,format=short
+          # Stated here, not left to what GitHub detects from LICENSE.
+          labels: |
+            org.opencontainers.image.licenses=PolyForm-Noncommercial-1.0.0
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
