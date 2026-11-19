@@ -564,9 +564,28 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             PictureDiagram? diagram = null;
             if (i < DiagramReader.MaxPictures)
             {
-                var r = await ai.RunAsync(actor, AiFeatures.Import, DiagramReader.Task, new Dictionary<string, string> { ["image"] = file.Name }, DiagramReader.Schema(), ct, [data]);
+                // First the boxes, containers and texts; then, given their list, the lines between them. Each answer fits the Admin's token
+                // limit; one cut off at it keeps its complete lines.
+                var r = await ai.RunAsync(actor, AiFeatures.Import, DiagramReader.ItemsTask, new Dictionary<string, string> { ["image"] = file.Name }, DiagramReader.ItemsSchema(), ct, [data],
+                    DiagramReader.Salvage);
+                if (r.Problem?.Message?.StartsWith(AiService.CutOff, StringComparison.Ordinal) == true)
+                {
+                    // Too big with positions for the token limit, and the server kept none of it: once more, without positions and second lines.
+                    r = await ai.RunAsync(actor, AiFeatures.Import, DiagramReader.ShortItemsTask, new Dictionary<string, string> { ["image"] = file.Name }, DiagramReader.ShortItemsSchema(), ct, [data],
+                        DiagramReader.Salvage);
+                    if (r.Problem is null) warnings.Add($"The diagram in {file.Name} was read without the places of its boxes: with them it was larger than the AI's answer limit (Max tokens in Administration > AI).");
+                }
+                JsonNode? drawn = null;
+                if (r.Value is { } items && items.Output["diagram"] is JsonValue yes && yes.GetValueKind() == JsonValueKind.True)
+                {
+                    var l = await ai.RunAsync(actor, AiFeatures.Import, DiagramReader.LinesTask,
+                        new Dictionary<string, string> { ["image"] = file.Name, ["items"] = DiagramReader.ItemList(items.Output) }, DiagramReader.LinesSchema(), ct, [data], DiagramReader.Salvage);
+                    drawn = l.Value?.Output;
+                    if (l.Problem is not null) warnings.Add($"The lines of the diagram in {file.Name} could not be read: {l.Problem.Message ?? "the AI did not answer"}");
+                    if (items.Cut || l.Value?.Cut == true) warnings.Add($"The diagram in {file.Name} was larger than the AI's answer limit (Max tokens in Administration > AI): only part of it was read.");
+                }
                 if (r.Problem is not null) warnings.Add($"The diagram in {file.Name} could not be read: {r.Problem.Message ?? "the AI did not answer"}");
-                else if ((diagram = DiagramReader.Read(r.Value!.Output)) is null)
+                else if ((diagram = DiagramReader.Read(r.Value!.Output, drawn)) is null)
                 {
                     if (r.Value.Output["diagram"] is JsonValue said && said.GetValueKind() == JsonValueKind.True) warnings.Add($"The diagram in {file.Name} could not be read.");
                 }

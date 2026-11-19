@@ -5,42 +5,127 @@ using Kb.Core.Ai;
 namespace Kb.Web.Import;
 
 /// <summary>
-/// Reads the structure of a diagram in a picture of an AI import (contract 0.10.0), for the draft contributors. One request per picture, apart
-/// from the drafting: a small model answers a short, single task more reliably than one more part of the drafting answer. Whatever the
-/// model answers is untrusted: it is read leniently and bounded (<see cref="DiagramLimits"/>) before a plugin sees it, and never fails the import.
+/// Reads the structure of a diagram in a picture of an AI import (contract 0.10.0), for the draft contributors, in requests of its own apart
+/// from the drafting: a small model answers a short, single task more reliably than one more part of the drafting answer. The answer is kept
+/// within the Admin's token limit by asking in two parts: the boxes and containers, then (given their list) the lines and the free texts.
+/// An answer cut off at the limit keeps its complete items (<see cref="Salvage"/>). Whatever the model answers is untrusted: it is read
+/// leniently and bounded (<see cref="DiagramLimits"/>) before a plugin sees it, and never fails the import.
 /// </summary>
 public static class DiagramReader
 {
-    /// <summary>At most this many pictures of one item are read for a diagram: each is a call to the model.</summary>
+    /// <summary>At most this many pictures of one item are read for a diagram: each is two calls to the model.</summary>
     public const int MaxPictures = 4;
 
-    public const string Task =
+    public const string ItemsTask =
         "Look at the picture. Is it a diagram: boxes, frames or shapes joined by lines, as drawn on a whiteboard, on paper or in a drawing tool? " +
-        "If not, answer \"diagram\": false and empty lists. If it is: list every box once, with its text exactly as written: \"label\" its first line, " +
-        "\"detail\" a second line if it has one (else \"\"), \"shape\" one of box, ellipse, cylinder, note (note for a sticky note or a written remark). " +
-        "List every frame that encloses boxes as a container, with its label. \"in\" is the id of the container a box or container sits in, or \"\". " +
-        "List every line once: \"from\" and \"to\" are ids of boxes or containers, \"label\" the text on the line (else \"\"), \"arrow\" none, forward " +
-        "(a head at \"to\") or both, \"dashed\" and \"thick\" true or false. List text that belongs to no box under \"texts\", with \"kind\" title (the diagram's heading), remark (a short comment written next to one box or container; " +
-        "\"beside\" is its id) or note (anything else, such as a to-do line), and put the title in \"title\" too (else \"\"). " +
-        "Give ids b1, b2... to boxes and c1, c2... to containers. Give each box's and container's position \"x\", \"y\" (top left) and size \"w\", \"h\" " +
-        "in percent of the picture, 0 to 100. Copy text exactly; do not guess what you cannot read.";
+        "If not, answer \"diagram\": false and empty lists. If it is: put its heading in \"title\" (else \"\"). " +
+        "List every frame that encloses boxes as a container. List every box once. Copy text exactly as written; do not guess what you cannot read. " +
+        "\"label\" is the first line of a box's text, \"detail\" a second line if it has one (else \"\"), \"shape\" one of box, ellipse, cylinder, note " +
+        "(note for a sticky note). \"in\" is the id of the container a box or container sits in, or \"\". Give ids c1, c2... to containers and b1, b2... to boxes. " +
+        "Give each one's position \"x\", \"y\" (top left) and size \"w\", \"h\" in percent of the picture, 0 to 100.";
 
-    public static JsonObject Schema()
+    /// <summary>The first part again, shorter, for a diagram too big for the token limit with positions: no positions, no second lines.</summary>
+    public const string ShortItemsTask =
+        "Look at the picture. Is it a diagram: boxes, frames or shapes joined by lines? If not, answer \"diagram\": false and empty lists. " +
+        "If it is: put its heading in \"title\" (else \"\"). List every frame that encloses boxes as a container and every box once, with the first line " +
+        "of its text as \"label\", exactly as written. \"in\" is the id of the container it sits in, or \"\". Give ids c1, c2... to containers and b1, b2... to boxes.";
+
+    public const string LinesTask =
+        "The picture is a diagram. Its boxes and containers are listed under \"items\", one per line as id|label. " +
+        "List every line drawn between them once: \"from\" and \"to\" are ids from items, \"label\" the text on the line (else \"\"), " +
+        "\"arrow\" none, forward (a head at \"to\") or both, \"dashed\" and \"thick\" true or false. " +
+        "Under \"texts\" list the text that belongs to no box: \"kind\" title (the heading), remark (a short comment written next to one box or container; " +
+        "\"beside\" is its id) or note (anything else, such as a to-do line), and \"in\" the id of the container it is written in, or \"\". " +
+        "Copy text exactly as written; do not guess what you cannot read.";
+
+    private static JsonObject Str() => new() { ["type"] = "string" };
+    private static JsonObject Num() => new() { ["type"] = "number" };
+    private static JsonObject Bool() => new() { ["type"] = "boolean" };
+    private static JsonObject List(JsonObject item) => new() { ["type"] = "array", ["items"] = item };
+    private static JsonObject Obj(JsonObject props, params string[] required) => new() { ["type"] = "object", ["properties"] = props, ["required"] = new JsonArray([.. required.Select(r => (JsonNode)r)]) };
+
+    public static JsonObject ItemsSchema() => Obj(new JsonObject
     {
-        static JsonObject Str() => new() { ["type"] = "string" };
-        static JsonObject Num() => new() { ["type"] = "number" };
-        static JsonObject Bool() => new() { ["type"] = "boolean" };
-        static JsonObject List(JsonObject item) => new() { ["type"] = "array", ["items"] = item };
-        static JsonObject Obj(JsonObject props, params string[] required) => new() { ["type"] = "object", ["properties"] = props, ["required"] = new JsonArray([.. required.Select(r => (JsonNode)r)]) };
-        return Obj(new JsonObject
+        ["diagram"] = Bool(),
+        ["title"] = Str(),
+        ["containers"] = List(Obj(new JsonObject { ["id"] = Str(), ["label"] = Str(), ["in"] = Str(), ["x"] = Num(), ["y"] = Num(), ["w"] = Num(), ["h"] = Num() }, "id", "label")),
+        ["boxes"] = List(Obj(new JsonObject { ["id"] = Str(), ["label"] = Str(), ["detail"] = Str(), ["shape"] = Str(), ["in"] = Str(), ["x"] = Num(), ["y"] = Num(), ["w"] = Num(), ["h"] = Num() }, "id", "label")),
+    }, "diagram", "containers", "boxes");
+
+    public static JsonObject ShortItemsSchema() => Obj(new JsonObject
+    {
+        ["diagram"] = Bool(),
+        ["title"] = Str(),
+        ["containers"] = List(Obj(new JsonObject { ["id"] = Str(), ["label"] = Str(), ["in"] = Str() }, "id", "label")),
+        ["boxes"] = List(Obj(new JsonObject { ["id"] = Str(), ["label"] = Str(), ["in"] = Str() }, "id", "label")),
+    }, "diagram", "containers", "boxes");
+
+    public static JsonObject LinesSchema() => Obj(new JsonObject
+    {
+        ["lines"] = List(Obj(new JsonObject { ["from"] = Str(), ["to"] = Str(), ["label"] = Str(), ["arrow"] = Str(), ["dashed"] = Bool(), ["thick"] = Bool() }, "from", "to")),
+        ["texts"] = List(Obj(new JsonObject { ["text"] = Str(), ["kind"] = Str(), ["in"] = Str(), ["beside"] = Str() }, "text")),
+    }, "lines");
+
+    private static readonly string[] Listed = ["containers", "boxes"];
+
+    /// <summary>The boxes and containers of the first answer, as the second request gets them: id|label, one per line.</summary>
+    public static string ItemList(JsonNode? items) =>
+        string.Join("\n", Listed.SelectMany(k => Items(items?[k]))
+            .Select(i => (Id: Text(i["id"], DiagramLimits.Id), Label: Text(i["label"], DiagramLimits.Label))).Where(i => i.Id is not null && i.Label is not null).Select(i => $"{i.Id}|{i.Label}"));
+
+    /// <summary>
+    /// The diagram from the two answers (<paramref name="lines"/> may be null: the lines and texts could not be read), bounded; null when the
+    /// first says it is not a diagram or holds nothing usable.
+    /// </summary>
+    public static PictureDiagram? Read(JsonNode? items, JsonNode? lines)
+    {
+        if (items is not JsonObject first) return null;
+        var whole = (JsonObject)first.DeepClone();
+        whole["lines"] = lines?["lines"]?.DeepClone();
+        whole["texts"] = lines?["texts"]?.DeepClone();
+        return Read(whole);
+    }
+
+    /// <summary>
+    /// What can be kept of an answer that is not whole JSON (cut off at the token limit): everything up to its last complete item of a list,
+    /// with the lists and objects it was in closed. Null when nothing whole can be had.
+    /// </summary>
+    public static JsonNode? Salvage(string content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        var text = content.Trim();
+        if (text.StartsWith("```", StringComparison.Ordinal)) text = text.IndexOf('\n', StringComparison.Ordinal) is > 0 and var nl ? text[(nl + 1)..] : ""; // a fence the server left on
+        var open = new List<char>();
+        var (inString, escaped) = (false, false);
+        // The last place where an item of a list ended, and what was open there.
+        var (cut, stack) = (-1, "");
+        for (var i = 0; i < text.Length; i++)
         {
-            ["diagram"] = Bool(),
-            ["title"] = Str(),
-            ["boxes"] = List(Obj(new JsonObject { ["id"] = Str(), ["label"] = Str(), ["detail"] = Str(), ["shape"] = Str(), ["in"] = Str(), ["x"] = Num(), ["y"] = Num(), ["w"] = Num(), ["h"] = Num() }, "id", "label")),
-            ["containers"] = List(Obj(new JsonObject { ["id"] = Str(), ["label"] = Str(), ["in"] = Str(), ["x"] = Num(), ["y"] = Num(), ["w"] = Num(), ["h"] = Num() }, "id", "label")),
-            ["lines"] = List(Obj(new JsonObject { ["from"] = Str(), ["to"] = Str(), ["label"] = Str(), ["arrow"] = Str(), ["dashed"] = Bool(), ["thick"] = Bool() }, "from", "to")),
-            ["texts"] = List(Obj(new JsonObject { ["text"] = Str(), ["kind"] = Str(), ["in"] = Str(), ["beside"] = Str() }, "text")),
-        }, "diagram", "boxes", "containers", "lines");
+            var c = text[i];
+            if (inString)
+            {
+                if (escaped) escaped = false;
+                else if (c == '\\') escaped = true;
+                else if (c == '"') inString = false;
+                continue;
+            }
+            switch (c)
+            {
+                case '"': inString = true; break;
+                case '{': open.Add('}'); break;
+                case '[': open.Add(']'); break;
+                case '}' or ']':
+                    if (open.Count == 0 || open[^1] != c) return null;
+                    open.RemoveAt(open.Count - 1);
+                    // An item of a list ends here: what follows may be cut, so this is a place to stop.
+                    if (open.Count > 0 && open[^1] == ']') (cut, stack) = (i + 1, new string([.. open]));
+                    break;
+            }
+        }
+        if (cut < 0) return null;
+        var closed = text[..cut] + new string([.. stack.Reverse()]);
+        try { return JsonNode.Parse(closed); }
+        catch (System.Text.Json.JsonException) { return null; }
     }
 
     /// <summary>
@@ -102,13 +187,15 @@ public static class DiagramReader
         {
             if (lines.Count == DiagramLimits.Lines) break;
             if (Resolve(Text(l["from"], DiagramLimits.Label), false) is not { } from || Resolve(Text(l["to"], DiagramLimits.Label), false) is not { } to) continue;
-            lines.Add(new DiagramLine(from, to, Text(l["label"], DiagramLimits.Label), Arrow(Text(l["arrow"], 20)), Flag(l["dashed"]), Flag(l["thick"])));
+            var line = new DiagramLine(from, to, Text(l["label"], DiagramLimits.Label), Arrow(Text(l["arrow"], 20)), Flag(l["dashed"]), Flag(l["thick"]));
+            // A weak model sometimes repeats its list: a line already listed is not listed again.
+            if (!lines.Contains(line)) lines.Add(line);
         }
         var texts = new List<DiagramText>();
         var title = Text(root["title"], DiagramLimits.Label);
         foreach (var t in Items(root["texts"]).Take(DiagramLimits.Texts))
         {
-            if (Text(t["text"], DiagramLimits.Text) is not { } text) continue;
+            if (Text(t["text"], DiagramLimits.Text) is not { } text || texts.Any(x => x.Text == text)) continue;
             var kind = Kind(Text(t["kind"], 20));
             var beside = kind == DiagramTextKind.Remark ? Resolve(Text(t["beside"], DiagramLimits.Label), containerOnly: false) : null;
             texts.Add(new DiagramText(text, Resolve(Text(t["in"], DiagramLimits.Id), containerOnly: true), Area(t)) { Kind = kind, Beside = beside });
