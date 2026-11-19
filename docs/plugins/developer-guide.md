@@ -69,6 +69,7 @@ public void Configure(IPluginApp app, IPluginContext context) => app
     .EditorNode(Notice.Renderer)                               // how the server reads its editor block
     .ImportContributor<NoticeFromFile>()                       // add to the drafts of AI imports
     .DraftContributor<NoticeFromDraft>()                       // ... from the text the AI drafted
+    .DraftContributor<DiagramOutline>()                        // ... from the diagrams the AI read in its pictures
     .ImportFileKinds(".notice")                                // a kind the app does not read: drafted by this plugin
     .SignInMethod<SampleSignIn>("example", "Sign in with Example ID") // a button on the sign-in screen
     .SignInProviders<SampleProviderCheck>() // providers an Admin adds on this plugin's page, each with its own button
@@ -1080,12 +1081,80 @@ public sealed class NoticeFromDraft : IDraftContributor
   | `End` | After the page's last block. |
   | `Start` | Before the page's first block. |
   | `AfterIntroduction` | Before the first `heading` that has a block before it: after an opening paragraph, or, on a page that starts with a heading, after that first section. At the end when the page has no such heading. |
+  | `AfterPicture` | 0.10.0. Right after the picture whose image node has `DraftAddition.Picture` as its `attrs.src` ([diagrams](#diagrams-in-the-pictures-of-an-import)). At the end when the page does not show it. |
 
   Additions to one place keep the order of the answer. The places are found on the page as it was before this contributor's additions. The nodes are checked as an import contributor's are, with the limits counted over all the additions of one answer together ([below](#how-the-limits-are-counted)).
 - **What the importer sees.** The nodes in the draft where they were put, and a warning naming the plugin and the pages ("Charts added 1 block to "Restart the cluster"."). They review, change or delete them with the rest; accepting saves what they kept.
-- **How it runs, sensitive content, failures, audit.** As for an import contributor: in its own scope, as its plugin (source `import`, `ImportItemId` set), within 10 seconds; never for an item with a secret or bound for a sensitive space. An answer that names a page the draft does not have, or a place that is not one of the three, is a failure like any other: nothing of it is added. Each contribution writes `import.contribute` with the plugin's id, the pages (`pages`, their indexes) and the number of nodes.
+- **How it runs, sensitive content, failures, audit.** As for an import contributor: in its own scope, as its plugin (source `import`, `ImportItemId` set), within 10 seconds; never for an item with a secret or bound for a sensitive space. An answer that names a page the draft does not have, or a place that is not one of the four, is a failure like any other: nothing of it is added. Each contribution writes `import.contribute` with the plugin's id, the pages (`pages`, their indexes) and the number of nodes.
 - **Retry.** Retry on an import item drafts it again from the files: the AI drafts new pages, and every contributor runs again on them. Nothing is kept from the earlier draft, so nothing is added twice.
 - **After the draft is accepted.** The `page.create` or `page.save` that accepting sends has `ctx.Actor.Source` `import` and `ctx.Actor.ImportItemId` set ([where the call comes from](#where-the-call-comes-from)). A plugin that also builds its content in a before hook on those actions (for pages made by hand) skips a page that already holds it: look for its own node type in `ContentJson`, as the sample's contributor does on the draft. The importer may have deleted the node in review; a plugin that should not add it back then checks `Source` first, and leaves a page from an import as the importer accepted it.
+
+### Diagrams in the pictures of an import
+
+From 0.10.0 the app reads diagrams for draft contributors. When an import sends a picture to the AI (a picture imported on its own, or one inside a document), the app also asks the AI whether the picture is a diagram, and if so for its structure. A draft contributor gets it in `ImportDraft.Pictures`, one `DraftPicture` per picture sent, in that order:
+
+- `Src`: the picture's image node's `attrs.src` in the draft. `Page`: the page that shows it (0 is the first). `FileName`.
+- `Width` and `Height`: the picture's size in pixels, read from its file (0 when the app cannot tell). Areas are fractions of these sides, so a layout keeps the picture's proportions.
+- `Diagram`: a `PictureDiagram`, or null when the picture is not a diagram or the AI could not read one.
+
+A `PictureDiagram` holds:
+
+| List | Each | |
+|---|---|---|
+| `Boxes` | `DiagramBox(Id, Label, Detail, Shape, Container, Area)` | `Detail` is a short second line, or null. `Shape` is `Box`, `Ellipse`, `Cylinder` or `Note` (`Box` when the AI named none of these). `Container` is the id of the container it sits in, or null. |
+| `Containers` | `DiagramContainer(Id, Label, Container, Area)` | A frame around boxes and other containers. `Container` is the one it sits in, or null. |
+| `Lines` | `DiagramLine(From, To, Label, Arrow, Dashed, Thick)` | `From` and `To` are ids of boxes or containers. `Arrow` is `None`, `Forward` (a head at `To`) or `Both`. |
+| `Texts` | `DiagramText(Text, Container, Area)` with `Kind` and `Beside` | Text that belongs to no box. `Kind` is `Title`, `Remark` (a short comment written next to one box or container; `Beside` is that one's id, or null) or `Note` (anything else, such as a to-do line; also when the AI named no kind it knows). |
+
+`PictureDiagram.Title` is the diagram's title as written on it, or null; it is also among `Texts`, as a text of kind `Title`.
+
+`Area` is `DiagramArea(X, Y, Width, Height)` as fractions of the picture's width and height (0 to 1, from the top left), or null when the AI gave no position. A plugin can use it to lay a chart out like the original.
+
+What the app guarantees, because the AI's answer is untrusted:
+
+- Every id a box, container or line names resolves. Ids are unique. Containers nest without loops, at most `DiagramLimits.Depth` (5) deep. A line whose end does not resolve is dropped, as is a container or box that names a container that is not there (its `Container` becomes null).
+- At most `DiagramLimits.Boxes` (150) boxes, `Containers` (40), `Lines` (200) and `Texts` (40). Labels and details are cut to 100 characters, texts to 300. What is over a count is dropped.
+- An area inside the picture: values outside 0 to 1 are dropped (the area becomes null).
+- A diagram whose text holds words addressed to an AI is not passed on, as for any source.
+- The AI's reading is not the truth. A small model misreads handwriting; a plugin shows what it draws to the importer, who reviews it.
+
+The app asks in two parts, each kept within the answer limit an Admin set (Max tokens in Administration > AI): the boxes and containers, then the lines and texts between them. When the first part does not fit, it is asked once more without positions and second lines, and the draft says so; an answer cut off at the limit keeps its complete items. When the picture is not a diagram, `Diagram` is null and nothing is said. When it looks like one but the answer cannot be used (the AI failed, timed out or answered nothing readable), `Diagram` is null and the draft's warnings say the diagram could not be read. The draft itself is as it would be without this step.
+
+To place a node right after the picture, use `DraftPlace.AfterPicture` with the picture's `Src` in `DraftAddition.Picture`. On a page that does not show that picture, the node goes at the end. The sample puts an outline of each diagram after its picture:
+
+<!-- sample:diagram -->
+```csharp
+/// <summary>
+/// Reads the diagrams the AI found in an import's pictures (0.10.0) and puts an outline of each right after its picture: one bullet per
+/// container with what it holds, then one per line ("A to B: label"). A chart plugin would draw the same data instead.
+/// </summary>
+public sealed class DiagramOutline : IDraftContributor
+{
+    public Task<DraftContribution?> ContributeAsync(ImportDraft draft, CancellationToken ct)
+    {
+        var additions = new List<DraftAddition>();
+        foreach (var picture in draft.Pictures)
+        {
+            if (picture.Diagram is not { } d) continue;
+            var names = d.Boxes.ToDictionary(b => b.Id, b => b.Label);
+            foreach (var c in d.Containers) names[c.Id] = c.Label;
+            var items = new List<string>();
+            foreach (var c in d.Containers)
+                items.Add($"{c.Label}: {string.Join(", ", d.Boxes.Where(b => b.Container == c.Id).Select(b => b.Label).Concat(d.Containers.Where(x => x.Container == c.Id).Select(x => x.Label)))}");
+            foreach (var l in d.Lines)
+                items.Add($"{names[l.From]} to {names[l.To]}{(l.Label is { } label ? $": {label}" : "")}{(l.Dashed ? " (dashed)" : "")}");
+            if (items.Count == 0) continue;
+            var list = JsonSerializer.SerializeToElement(new
+            {
+                type = "bulletList",
+                content = items.Select(t => new { type = "listItem", content = new[] { new { type = "paragraph", content = new[] { new { type = "text", text = t } } } } }),
+            });
+            additions.Add(new DraftAddition(picture.Page, DraftPlace.AfterPicture, [list]) { Picture = picture.Src });
+        }
+        return Task.FromResult(additions.Count == 0 ? null : new DraftContribution(additions));
+    }
+}
+```
 
 ### How the limits are counted
 
@@ -1324,7 +1393,8 @@ The plugin stays disabled until an Admin selects Enable. Uploading a new version
 - `abstractionsVersion`: the version of `Kb.Plugins.Abstractions` the plugin was built against. The app refuses a plugin built for a newer one.
 - `minKbVersion`: the lowest app version the plugin runs on.
 
-The contract and the app are at 0.9.0, and can still change before 1.0.0.
+The contract and the app are at 0.10.0, and can still change before 1.0.0.
+0.10.0 added [diagrams in the pictures of an import](#diagrams-in-the-pictures-of-an-import) (`ImportDraft.Pictures`, `DraftPicture`, `PictureDiagram`, `DiagramBox`, `DiagramContainer`, `DiagramLine`, `DiagramText`, `DiagramArea`, `DiagramShape`, `DiagramArrow`, `DiagramLimits`, `DraftPlace.AfterPicture`, `DraftAddition.Picture`); a plugin that uses them says `"abstractionsVersion": "0.10.0"`. Nothing of 0.9.0 changed, and a plugin built for 0.9.0 or earlier loads as it did.
 0.9.0 added [sign-in providers an Admin adds](#sign-in-providers-an-admin-adds) (`app.SignInProviders()`, `app.SignInProviders<TCheck>()`, `ISignInProviderCheck`, `SignInProvidersReg`) and `OidcProvider.UserInfo`; a plugin that uses them says `"abstractionsVersion": "0.9.0"`. Nothing of 0.8.0 changed, and a plugin built for 0.8.0 or earlier loads as it did.
 0.8.0 added [sign-in methods](#sign-in-methods) (`ISignInMethod`, `OidcProvider`, `SignInClaims`, `SignInMethodReg`, `app.SignInMethod<T>(id, name)`) and the actor source `signin`; a plugin that uses them says `"abstractionsVersion": "0.8.0"`. One thing changed that an earlier plugin can see: a setting key starting with `signIn.` is the app's, so a manifest that declares one is refused at install. Nothing else of 0.7.0 changed, and a plugin built for 0.7.0 or earlier loads as it did.
 0.7.0 added a setting's `help`, `default`, `unit`, `min`, `max` and `optionLabels` ([settings](#settings-and-secrets)), and `GetSetting` returns the default while nothing is saved; a plugin that uses them says `"abstractionsVersion": "0.7.0"`. Its browser script API is 1.1.0: the slot `plugin.settings` ([panels](#panels-on-the-plugins-own-page)) and `kb.api.upload` ([uploading](#uploading-a-file-from-a-panel)); a script that uses them says `"uiApiVersion": "1.1.0"`. Nothing of 0.6.0 changed: a plugin built for 0.6.0 or earlier loads as it did, and its settings read and save as they did.

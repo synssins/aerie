@@ -74,7 +74,80 @@ public sealed record DraftPage(string Title, string ContentJson);
 /// The draft of one AI import item, as the importer is about to see it: the pages the AI drafted, with what the import contributors
 /// added already in them. <paramref name="Files"/> are the paths of the item's files that were read (as <see cref="ImportedFile.Path"/>).
 /// </summary>
-public sealed record ImportDraft(Guid ImportItemId, IReadOnlyList<DraftPage> Pages, IReadOnlyList<string> Files);
+public sealed record ImportDraft(Guid ImportItemId, IReadOnlyList<DraftPage> Pages, IReadOnlyList<string> Files)
+{
+    /// <summary>
+    /// 0.10.0. The pictures of the item that were sent to the AI (a picture imported on its own, or one inside a document), in the order
+    /// they were sent, with the diagram the AI read from each when it is one. Empty before 0.10.0, and for an item with no picture.
+    /// </summary>
+    public IReadOnlyList<DraftPicture> Pictures { get; init; } = [];
+}
+
+/// <summary>
+/// 0.10.0. A picture of the draft. <paramref name="Src"/> is its image node's <c>attrs.src</c> in the draft (a node placed
+/// <see cref="DraftPlace.AfterPicture"/> names it); <paramref name="Page"/> is the page (0 is the first) that shows it.
+/// <see cref="Diagram"/> is null when the picture is not a diagram, or the AI could not read one from it.
+/// </summary>
+public sealed record DraftPicture(string Src, string FileName, int Page)
+{
+    public PictureDiagram? Diagram { get; init; }
+
+    /// <summary>The picture's size in pixels, read from its file (0 when the app cannot tell): areas are fractions of these sides.</summary>
+    public int Width { get; init; }
+
+    public int Height { get; init; }
+}
+
+/// <summary>
+/// 0.10.0. What the AI read from a picture of a diagram (a whiteboard, a sketch, a drawing). It is the AI's reading, not the truth: labels
+/// may be misread. The app has bounded it (<see cref="DiagramLimits"/>): every id an item names resolves, nesting has no loops, and what
+/// did not fit was dropped. Boxes and containers have ids unique in the diagram; a line's ends are boxes or containers.
+/// </summary>
+public sealed record PictureDiagram(IReadOnlyList<DiagramBox> Boxes, IReadOnlyList<DiagramContainer> Containers, IReadOnlyList<DiagramLine> Lines, IReadOnlyList<DiagramText> Texts)
+{
+    /// <summary>The diagram's title as written on it, or null. It is also among <see cref="Texts"/>, as a text of kind <see cref="DiagramTextKind.Title"/>.</summary>
+    public string? Title { get; init; }
+}
+
+/// <summary>The shape a box was drawn as; <see cref="Box"/> when the AI named another or none.</summary>
+public enum DiagramShape { Box, Ellipse, Cylinder, Note }
+
+/// <summary>A line's arrow heads: none, at <see cref="DiagramLine.To"/> only, or at both ends.</summary>
+public enum DiagramArrow { None, Forward, Both }
+
+/// <summary>Where on the picture, as fractions of its width and height (0 to 1, from the top left). Inside the picture.</summary>
+public sealed record DiagramArea(double X, double Y, double Width, double Height);
+
+/// <summary>
+/// A box: its label, a short second line when it has one (<paramref name="Detail"/>), its shape, the container it sits in (an id of
+/// <see cref="PictureDiagram.Containers"/>, or null), and where it is when the AI gave it.
+/// </summary>
+public sealed record DiagramBox(string Id, string Label, string? Detail, DiagramShape Shape, string? Container, DiagramArea? Area);
+
+/// <summary>A container that encloses boxes or other containers: its label, the container it sits in (or null), and where it is.</summary>
+public sealed record DiagramContainer(string Id, string Label, string? Container, DiagramArea? Area);
+
+/// <summary>A line between two boxes or containers (ids), with its label, arrow heads, and whether it is dashed or drawn thick.</summary>
+public sealed record DiagramLine(string From, string To, string? Label, DiagramArrow Arrow, bool Dashed, bool Thick);
+
+/// <summary>Text on the picture that belongs to no box: a title, a note, a to-do line, a remark beside something. It may sit in a container.</summary>
+public sealed record DiagramText(string Text, string? Container, DiagramArea? Area)
+{
+    /// <summary>What the text is; <see cref="DiagramTextKind.Note"/> when the AI said nothing it knows.</summary>
+    public DiagramTextKind Kind { get; init; }
+
+    /// <summary>For a remark: the id of the box or container it is written beside, or null.</summary>
+    public string? Beside { get; init; }
+}
+
+/// <summary>A title of the diagram, a note on it (a to-do line, a legend), or a remark written beside one box or container.</summary>
+public enum DiagramTextKind { Note, Title, Remark }
+
+/// <summary>0.10.0. What a <see cref="PictureDiagram"/> holds at most. Longer labels are cut; items over the counts are dropped.</summary>
+public static class DiagramLimits
+{
+    public const int Boxes = 150, Containers = 40, Lines = 200, Texts = 40, Depth = 5, Label = 100, Detail = 100, Text = 300, Id = 32;
+}
 
 /// <summary>Where on a page of the draft a <see cref="DraftAddition"/> goes.</summary>
 public enum DraftPlace
@@ -88,13 +161,22 @@ public enum DraftPlace
     /// heading. At the end when the page has no such heading.
     /// </summary>
     AfterIntroduction,
+    /// <summary>
+    /// 0.10.0. Right after the picture whose image node has <see cref="DraftAddition.Picture"/> as its <c>attrs.src</c>
+    /// (<see cref="DraftPicture.Src"/>). At the end when the page does not show that picture.
+    /// </summary>
+    AfterPicture,
 }
 
 /// <summary>
 /// Editor nodes to add to page <paramref name="Page"/> (0 is the first) of the draft, at <paramref name="Place"/>, in this order.
 /// Each is the stored JSON of one block node, as a page holds it.
 /// </summary>
-public sealed record DraftAddition(int Page, DraftPlace Place, IReadOnlyList<JsonElement> Nodes);
+public sealed record DraftAddition(int Page, DraftPlace Place, IReadOnlyList<JsonElement> Nodes)
+{
+    /// <summary>0.10.0. For <see cref="DraftPlace.AfterPicture"/>: the picture's <see cref="DraftPicture.Src"/>.</summary>
+    public string? Picture { get; init; }
+}
 
 /// <summary>What a draft contributor adds. All the additions together: at most 50 nodes and 512 KB of JSON.</summary>
 public sealed record DraftContribution(IReadOnlyList<DraftAddition> Additions);
