@@ -135,13 +135,11 @@ public static partial class ImportTools
     /// <summary>Text as the source check compares it: lower case, every run of white space one space, trimmed.</summary>
     public static string Normalize(string text) => Space().Replace(AiGuard.Normalize(text ?? "").ToLowerInvariant(), " ").Trim();
 
-    /// <summary>
-    /// The source check: the first string of the input that is neither in the documents nor in the draft (<paramref name="source"/>,
-    /// normalized), or null when all are. A string the schema limits to choices (enum) is the schema's, not the model's, and is not
-    /// checked; nor is a string shorter than <see cref="MinGrounded"/>. A string marked <c>"format": "identifier"</c> is not checked
-    /// against the source, but must be 1 to 32 letters, digits, dots, hyphens or underscores; one that is not is returned.
-    /// </summary>
-    public static string? Ungrounded(JsonNode? input, JsonObject schema, string source)
+    /// <summary>What a string of a tool's input is, for the source check: a choice of the schema, an id the model made up, or text.</summary>
+    public enum StringKind { Choice, Identifier, Text }
+
+    /// <summary>Every string of the input, with what its place in the schema makes it.</summary>
+    public static IEnumerable<(string Text, StringKind Kind)> Strings(JsonNode? input, JsonObject schema)
     {
         ArgumentNullException.ThrowIfNull(schema);
         switch (input)
@@ -149,21 +147,51 @@ public static partial class ImportTools
             case JsonObject o:
                 var props = schema["properties"] as JsonObject;
                 foreach (var (key, child) in o)
-                    if (Ungrounded(child, props?[key] as JsonObject ?? [], source) is { } bad) return bad;
-                return null;
+                    foreach (var s in Strings(child, props?[key] as JsonObject ?? [])) yield return s;
+                break;
             case JsonArray a:
                 foreach (var child in a)
-                    if (Ungrounded(child, schema["items"] as JsonObject ?? [], source) is { } bad) return bad;
-                return null;
+                    foreach (var s in Strings(child, schema["items"] as JsonObject ?? [])) yield return s;
+                break;
             case JsonValue v when v.GetValueKind() == JsonValueKind.String:
-                var text = v.GetValue<string>();
-                if (schema["enum"] is not null) return null;
-                if (schema["format"]?.GetValue<string>() == "identifier") return Identifier().IsMatch(text) ? null : text;
-                var n = Normalize(text);
-                return n.Length < MinGrounded || source.Contains(n, StringComparison.Ordinal) ? null : text;
-            default:
-                return null;
+                yield return (v.GetValue<string>(), schema["enum"] is not null ? StringKind.Choice
+                    : schema["format"]?.GetValue<string>() == "identifier" ? StringKind.Identifier : StringKind.Text);
+                break;
         }
+    }
+
+    /// <summary>
+    /// The source check: the first string of the input that is neither in the documents nor in the draft (<paramref name="source"/>,
+    /// normalized) nor written in one of the <paramref name="drawings"/> (<see cref="Drawings.Locate"/>: on one line, or stacked inside one
+    /// box), or null when all are. A string the schema limits to choices (enum) is the schema's, not the model's, and is not checked; nor
+    /// is a string shorter than <see cref="MinGrounded"/>. A string marked <c>"format": "identifier"</c> is not checked against the source,
+    /// but must be 1 to 32 letters, digits, dots, hyphens or underscores; one that is not is returned.
+    /// </summary>
+    public static string? Ungrounded(JsonNode? input, JsonObject schema, string source, IReadOnlyList<Drawings.Drawing>? drawings = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        foreach (var (text, kind) in Strings(input, schema))
+        {
+            if (kind == StringKind.Choice) continue;
+            if (kind == StringKind.Identifier) { if (!Identifier().IsMatch(text)) return text; continue; }
+            var n = Normalize(text);
+            if (n.Length < MinGrounded || source.Contains(n, StringComparison.Ordinal)) continue;
+            if (drawings is { Count: > 0 } && Drawings.Locate(text, drawings) is not null) continue;
+            return text;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The drawing a call of a drawing tool draws: the one in which most of its text strings (of <see cref="MinGrounded"/> characters or
+    /// more) are written, the first on a tie; null when none of them is in any drawing.
+    /// </summary>
+    public static Drawings.Drawing? DrawingOf(JsonNode? input, JsonObject schema, IReadOnlyList<Drawings.Drawing> drawings)
+    {
+        ArgumentNullException.ThrowIfNull(drawings);
+        return Strings(input, schema).Where(s => s.Kind == StringKind.Text && Normalize(s.Text).Length >= MinGrounded)
+            .Select(s => Drawings.Locate(s.Text, drawings)).OfType<Drawings.Drawing>()
+            .GroupBy(d => d.Number).OrderByDescending(g => g.Count()).ThenBy(g => g.Key).Select(g => g.First()).FirstOrDefault();
     }
 
     /// <summary>The input as one string with its keys in order, so two calls with the same input compare equal however the model ordered them.</summary>
@@ -240,6 +268,9 @@ public sealed partial class ImportService
             if (tools.Any(t => t.Tool.Name == tool.Name)) { log.LogWarning("The import tool {Tool} of {Plugin} is not offered: another plugin has that name.", tool.Name, pluginId); continue; }
             tools.Add((pluginId, tool));
         }
+        // A drawing tool is offered only for documents that hold a drawing, as the app finds it in the source; any other tool as before.
+        var drawings = Drawings.Find(source);
+        if (drawings.Count == 0) tools.RemoveAll(t => t.Tool.Drawing);
         if (tools.Count == 0 || source.Length == 0) return;
         var (blocks, at) = ImportTools.Blocks(contents);
         if (at.Count == 0) return;
@@ -248,6 +279,8 @@ public sealed partial class ImportService
         // The repeat check: what each tool was given, and after which block, by the calls that added something.
         var made = new HashSet<(string, string)>();
         var places = new HashSet<(string, int)>();
+        // A drawing tool: one call that added something for each drawing.
+        var drawn = new HashSet<(string, int)>();
         // The source check: the documents and the draft as the model was given them, normalized.
         var grounds = ImportTools.Normalize(source + " " + string.Join(" ", contents.Select(c => Kb.Core.Content.DocText.Plain(new JsonObject { ["type"] = "doc", ["content"] = c.DeepClone() }.ToJsonString()))));
         var outcomes = new List<ImportTools.Outcome>();
@@ -277,17 +310,24 @@ public sealed partial class ImportService
             if (AiGuard.SchemaError(input, schema) is { } bad)
                 return await Done(found.PluginId, "invalid", $"Refused: the input does not match the tool's schema ({(bad.Length > 120 ? bad[..120] : bad)}).");
             var same = ImportTools.Canonical(input);
-            if (made.Contains((call.Name, same)) || places.Contains((call.Name, after)))
+            // A drawing tool is held to one call for each drawing instead of one for each block: two drawings drafted into one block get two.
+            if (made.Contains((call.Name, same)) || (!found.Tool.Drawing && places.Contains((call.Name, after))))
                 return await Done(found.PluginId, "repeat", "Refused as a repeat: this tool was already called with this input, or after this block.");
-            if (ImportTools.Ungrounded(input, schema, grounds) is { } loose)
+            if (ImportTools.Ungrounded(input, schema, grounds, drawings) is { } loose)
                 return await Done(found.PluginId, "not-in-source",
                     $"Refused: the input holds text that is not in the documents or the draft: \"{(loose.Length > 60 ? loose[..60] + "..." : loose)}\". Use only text as the documents write it.");
+            var drawing = found.Tool.Drawing ? ImportTools.DrawingOf(input, schema, drawings) : null;
+            if (found.Tool.Drawing && drawing is null)
+                return await Done(found.PluginId, "no-drawing", "Refused: the input draws none of the drawings in the documents. Use the labels the drawing shows.");
+            if (drawing is not null && drawn.Contains((call.Name, drawing.Number)))
+                return await Done(found.PluginId, "drawing-done", $"Refused: drawing {drawing.Number + 1} of the documents already has a result from this tool.");
             using var doc = JsonDocument.Parse(input.ToJsonString());
             var nodes = await contributors.CallToolAsync(found.PluginId, found.Tool, item, doc.RootElement.Clone(), ct);
             if (nodes is not { Count: > 0 }) return await Done(found.PluginId, "nothing", "Refused: the tool added nothing.");
             placed.Add((at[after - 1].Page, at[after - 1].Index, nodes));
             made.Add((call.Name, same));
             places.Add((call.Name, after));
+            if (drawing is not null) drawn.Add((call.Name, drawing.Number));
             return await Done(found.PluginId, "done", $"Done: added after block {after}.", nodes.Count);
         }
 

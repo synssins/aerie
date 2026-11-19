@@ -32,7 +32,7 @@ public sealed class SamplePlugin : IKbPlugin
         .DraftContributor<NoticeFromDraft>()                       // ... from the text the AI drafted
         .DraftContributor<DiagramOutline>()                        // ... from the diagrams the AI read in its pictures
         .ImportFileKinds(".notice")                                // a kind the app does not read: drafted by this plugin
-        .ImportTool<BoxesAndLines>(BoxesAndLines.Name, BoxesAndLines.Description, BoxesAndLines.Schema) // a tool the AI may call while drafting (0.11.0 draft)
+        .ImportDrawingTool<BoxesAndLines>(BoxesAndLines.Name, BoxesAndLines.Description, BoxesAndLines.Schema) // a tool the AI may call for a drawing (0.11.0 draft)
         .SignInMethod<SampleSignIn>("example", "Sign in with Example ID") // a button on the sign-in screen
         .SignInProviders<SampleProviderCheck>() // providers an Admin adds on this plugin's page, each with its own button
         .Routes(SampleRoutes.Map);                                 // under /api/v1/plugins/kb.sample/

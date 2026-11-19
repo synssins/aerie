@@ -202,7 +202,14 @@ public sealed record DraftContributorReg(Type Contributor);
 /// the only text of a plugin that reaches the AI. The app checks them before it offers the tool (see the plugin guide for the rules) and
 /// does not offer a tool that breaks one; the Admin sees each tool on the plugin's page. <paramref name="Tool"/> answers the calls.
 /// </summary>
-public sealed record ImportToolReg(string Name, string Description, JsonElement InputSchema, Type Tool);
+public sealed record ImportToolReg(string Name, string Description, JsonElement InputSchema, Type Tool)
+{
+    /// <summary>
+    /// 0.11.0 (draft). A tool that draws a drawing made of text characters (<see cref="ImportToolExtensions.ImportDrawingTool{TTool}"/>):
+    /// the app offers it only for documents that hold such a drawing, and takes one result of it for each drawing.
+    /// </summary>
+    public bool Drawing { get; init; }
+}
 
 /// <summary>
 /// 0.11.0 (draft). Answers the AI's calls of one tool during an import. It gets only the input of the call, checked against the tool's
@@ -233,5 +240,20 @@ public static class ImportToolExtensions
         ArgumentNullException.ThrowIfNull(inputSchema);
         using var schema = JsonDocument.Parse(inputSchema);
         return app.Add(new ImportToolReg(name, description, schema.RootElement.Clone(), typeof(TTool)));
+    }
+
+    /// <summary>
+    /// 0.11.0 (draft). Registers a tool, as <see cref="ImportTool{TTool}"/>, that draws a drawing made of text characters in a document (a
+    /// network map of boxes and lines). The app offers it only when the documents hold such a drawing, as the app finds it, and takes one
+    /// result of it for each drawing; a second result for the same drawing is refused.
+    /// </summary>
+    public static IPluginApp ImportDrawingTool<TTool>(this IPluginApp app, string name, string description, string inputSchema) where TTool : class, IImportTool
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(description);
+        ArgumentNullException.ThrowIfNull(inputSchema);
+        using var schema = JsonDocument.Parse(inputSchema);
+        return app.Add(new ImportToolReg(name, description, schema.RootElement.Clone(), typeof(TTool)) { Drawing = true });
     }
 }

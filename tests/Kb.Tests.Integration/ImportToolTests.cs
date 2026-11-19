@@ -116,6 +116,8 @@ public sealed class ImportToolTests : IAsyncLifetime
             regs.Add("kb.test.tools", new ImportToolReg("draw_boxes", "Draw the boxes of a drawing in the documents.", schema.RootElement.Clone(), typeof(Boxes)));
         using (var schema = JsonDocument.Parse(Boxes.LinesSchema))
             regs.Add("kb.test.tools", new ImportToolReg("draw_lines", "Draw the lines of a drawing in the documents.", schema.RootElement.Clone(), typeof(Boxes)));
+        using (var schema = JsonDocument.Parse(Boxes.Schema))
+            regs.Add("kb.test.tools", new ImportToolReg("draw_map", "Draw a map drawn in text characters.", schema.RootElement.Clone(), typeof(Boxes)) { Drawing = true });
         var (model, seen) = (_model, _seen);
         _f = new KbAppFactory(KbAppFactory.NewDbPath(), services: s =>
         {
@@ -155,11 +157,11 @@ public sealed class ImportToolTests : IAsyncLifetime
     }
 
     /// <summary>Imports a text file holding the map; answers the draft's first page's blocks and its warnings.</summary>
-    private async Task<(JsonArray Blocks, List<string> Warnings)> ImportAsync(KbAppFactory? f = null, HttpClient? client = null)
+    private async Task<(JsonArray Blocks, List<string> Warnings)> ImportAsync(KbAppFactory? f = null, HttpClient? client = null, string? text = null)
     {
         var (app, cara) = (f ?? _f, client ?? _cara);
         var id = (await (await cara.PostAsJsonAsync("/api/v1/imports", new { }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("id").GetGuid();
-        var body = new ByteArrayContent(Encoding.UTF8.GetBytes("The map:\n\n" + Map + "\n\nAfter.\n"));
+        var body = new ByteArrayContent(Encoding.UTF8.GetBytes(text ?? "The map:\n\n" + Map + "\n\nAfter.\n"));
         body.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
         body.Headers.Add("X-File-Name", "map.txt");
         Assert.Equal(HttpStatusCode.OK, (await cara.PostAsync($"/api/v1/imports/{id}/files", body, Ct)).StatusCode);
@@ -311,6 +313,54 @@ public sealed class ImportToolTests : IAsyncLifetime
         _model.Turns.Enqueue(Call("draw_lines", arguments));
         await ImportAsync();
         Assert.Equal(done ? 1 : 0, _seen.Inputs.Count);
+    }
+
+    private static List<string> Offered(JsonObject request) => [.. request["tools"]!.AsArray().Select(t => t!["function"]!["name"]!.GetValue<string>())];
+
+    [Fact]
+    public async Task ADrawingTool_IsOfferedOnlyForDocumentsThatHoldADrawing()
+    {
+        await ImportAsync();
+        Assert.Contains("draw_map", Offered(ToolRequests[0]));
+        await ImportAsync(text: "Printer notes.\n1. Check the printer is on.\n2. Restart the spooler on print01.\n");
+        Assert.Equal(["draw_boxes", "draw_lines"], Offered(ToolRequests[^1])); // a tool without the mark is offered as before
+    }
+
+    private const string TwoMaps = "First site:\n\n[ alpha-sw ] ---- [ alpha-fw ]\n     |\n[ alpha-hv ]\n\nSecond site:\n\n[ beta-sw ] ---- [ beta-fw ]\n     |\n[ beta-hv ]\n";
+
+    [Fact]
+    public async Task ADrawingTool_GetsOneResultForEachDrawing()
+    {
+        _model.Turns.Enqueue(Call("draw_map", """{"boxes": ["alpha-sw", "alpha-fw"], "after_block": 2}""", "c1"));
+        _model.Turns.Enqueue(Call("draw_map", """{"boxes": ["alpha-sw", "alpha-fw", "alpha-hv"], "after_block": 3}""", "c2")); // the same drawing again
+        _model.Turns.Enqueue(Call("draw_map", """{"boxes": ["beta-sw", "beta-fw", "beta-hv"], "after_block": 2}""", "c3")); // the second, after the same block
+        _model.Turns.Enqueue(Call("draw_map", """{"boxes": ["Second site:"], "after_block": 3}""", "c4")); // text of the documents, but of no drawing
+        var (blocks, _) = await ImportAsync(text: TwoMaps);
+        Assert.Equal(2, _seen.Inputs.Count);
+        Assert.Equal(["paragraph", "codeBlock", "paragraph", "paragraph", "paragraph"], blocks.Select(TypeOf));
+        Assert.Equal(["Done: added after block 2.", "Refused: drawing 1 of the documents already has a result from this tool.", "Done: added after block 2.",
+            "Refused: the input draws none of the drawings in the documents. Use the labels the drawing shows."], Replies);
+    }
+
+    private const string Stacked = "Hub:\n\n+-------------+     +--------------+\n| vnet-prod   |     | vnet-avd     |\n| 10.50.8.0/22|     | 10.50.16.0/22|\n+-------------+     +--------------+\n";
+
+    [Theory]
+    [InlineData("vnet-prod 10.50.8.0/22", true)]
+    [InlineData("vnet-prod 10.50.16.0/22", false)]
+    public async Task ALabelStackedInOneBox_ComesFromTheSource(string label, bool done)
+    {
+        _model.Turns.Enqueue(Call("draw_map", $$"""{"boxes": ["{{label}}"], "after_block": 2}"""));
+        await ImportAsync(text: Stacked);
+        Assert.Equal(done ? 1 : 0, _seen.Inputs.Count);
+    }
+
+    [Fact]
+    public async Task TheDraftingTask_KeepsATextDrawingAsOneCodeBlock()
+    {
+        await ImportAsync();
+        var drafting = _model.Requests.First(r => r["tools"] is null);
+        Assert.Contains("A drawing made of text characters (boxes, lines, arrows) goes in one code block, exactly as written.",
+            drafting["messages"]![0]!["content"]!.GetValue<string>(), StringComparison.Ordinal);
     }
 
     [Fact]

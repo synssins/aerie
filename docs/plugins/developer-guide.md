@@ -71,7 +71,7 @@ public void Configure(IPluginApp app, IPluginContext context) => app
     .DraftContributor<NoticeFromDraft>()                       // ... from the text the AI drafted
     .DraftContributor<DiagramOutline>()                        // ... from the diagrams the AI read in its pictures
     .ImportFileKinds(".notice")                                // a kind the app does not read: drafted by this plugin
-    .ImportTool<BoxesAndLines>(BoxesAndLines.Name, BoxesAndLines.Description, BoxesAndLines.Schema) // a tool the AI may call while drafting (0.11.0 draft)
+    .ImportDrawingTool<BoxesAndLines>(BoxesAndLines.Name, BoxesAndLines.Description, BoxesAndLines.Schema) // a tool the AI may call for a drawing (0.11.0 draft)
     .SignInMethod<SampleSignIn>("example", "Sign in with Example ID") // a button on the sign-in screen
     .SignInProviders<SampleProviderCheck>() // providers an Admin adds on this plugin's page, each with its own button
     .Routes(SampleRoutes.Map);                                 // under /api/v1/plugins/kb.sample/
@@ -1176,8 +1176,20 @@ A plugin can offer the AI tools while an import is drafted. The plugin is the to
 Register a tool with a name, a description and the JSON schema of its input:
 
 ```csharp
-app.ImportTool<BoxesAndLines>(BoxesAndLines.Name, BoxesAndLines.Description, BoxesAndLines.Schema);
+app.ImportTool<MyTool>(MyTool.Name, MyTool.Description, MyTool.Schema);
 ```
+
+A tool that draws a drawing made of text characters (a network map of boxes and lines drawn with dashes and bars) registers with `ImportDrawingTool` instead, the same arguments:
+
+```csharp
+app.ImportDrawingTool<BoxesAndLines>(BoxesAndLines.Name, BoxesAndLines.Description, BoxesAndLines.Schema);
+```
+
+It sets `ImportToolReg.Drawing`. A drawing tool differs from other tools in three ways, all decided by the app from the source, never by the model:
+
+- **It is offered only for documents that hold a drawing.** A tool without the mark is offered for every document, as before.
+- **It gets one result for each drawing.** A second call that would add something for the same drawing is refused, so a document with two drawings can get two results, even when both were drafted into one block. Which drawing a call draws is the drawing in which most of its labels are written. A call whose labels are in no drawing is refused.
+- **Its labels may be stacked.** A label counts as text of the source when it is written over several lines of one box. The exact rule is in the source check below.
 
 The tool class implements `IImportTool`. It gets the input of one call as a `JsonElement`, already checked against its schema, and answers `ImportToolResult(Nodes)`, or null to add nothing:
 
@@ -1185,7 +1197,8 @@ The tool class implements `IImportTool`. It gets the input of one call as a `Jso
 ```csharp
 /// <summary>
 /// A tool the AI may call while it drafts an import (0.11.0 draft): a drawing of boxes, groups and lines in a document (a network map
-/// drawn in text) becomes an outline after the block that shows it. The app checks the input against <see cref="Schema"/> before the
+/// drawn in text) becomes an outline after the block that shows it. It is registered as a drawing tool (<c>ImportDrawingTool</c>): offered
+/// only for documents that hold a drawing, one result for each drawing. The app checks the input against <see cref="Schema"/> before the
 /// call, so the plugin gets only valid input; it never sees the document. Labels must be text of the document; ids, which the AI makes
 /// up to tie boxes to groups and lines, are marked <c>"format": "identifier"</c>. A chart plugin would draw the same data instead.
 /// </summary>
@@ -1256,9 +1269,26 @@ public sealed class BoxesAndLines : IImportTool
   - a string the schema limits to an `enum`: the choices are the plugin's, fixed and checked when the tool is offered;
   - a string marked `"format": "identifier"`. This is for the ids the model makes up to tie items together, such as a box's id and the ends of a line. An identifier is not compared with the source, but it must be 1 to 32 letters, digits, dots, hyphens or underscores, so it cannot carry a sentence.
 
+  - **Stacked labels.** A label also counts as text of the source when it is written in one drawing over 2 to 4 lines that follow each other, such as a name above an address in one box, or a line's label written over two lines. Each part must be on one line, with only spaces between its words. Each part must start within 2 columns of the part above it, and one blank or drawing-only line may come between parts. Words further apart, side by side, or out of order are not joined.
+
   A label that the model reworded, joined from two places, or made up is refused: "Refused: the input holds text that is not in the documents or the draft: "..."". Mark only real ids as identifiers. A label marked as one is still limited to 32 characters of that kind.
 
-**What the model gets back.** Never the plugin's text. Each call gets one reply the app writes: "Done: added after block 2.", or "Refused:" and the app's reason (no tool of that name, not a JSON object, over 16 KB, no such block, which part of the schema the input breaks, a repeat, text that is not in the source, or that the tool added nothing). A reply may quote, cut short, the model's own string that was not found; never anything of the plugin's.
+**What counts as a drawing.** The app finds drawings in the documents line by line:
+
+- A drawing starts at a **drawn line**: a rule of three dashes, equals, tildes or underscores (or box-drawing characters); a plus where a rule meets it; two bars or more; or a thing in brackets with spaces inside, such as `[ HV01 ]`.
+- It goes on over drawn lines and over lines that **touch** it, that is, lines holding a bar, a plus, a slash or a box-drawing character. At most 2 other lines may come in a row, such as blank lines or labels.
+- It must have at least 3 of those lines.
+- At least 2 of them must be drawn lines that are not a rule alone. A Markdown section break (`---`) does not make a drawing.
+- A Markdown table (rows between bars, with a rule row) is not a drawing.
+
+Known misses:
+- A drawing of one or two lines, such as `A ---> B`.
+- Arrows alone, without boxes or rules.
+- Mermaid or other diagram code, which is not a drawing. A drawing tool is not offered for it, as intended.
+
+Known false finds: two or more lines with two bars each that are not a table, such as shell commands with two pipes on each line.
+
+**What the model gets back.** Never the plugin's text. Each call gets one reply the app writes: "Done: added after block 2.", or "Refused:" and the app's reason (no tool of that name, not a JSON object, over 16 KB, no such block, which part of the schema the input breaks, a repeat, text that is not in the source, a drawing that already has its result, an input that draws no drawing of the documents, or that the tool added nothing). A reply may quote, cut short, the model's own string that was not found; never anything of the plugin's.
 
 **Limits, for each import item.** At most 8 tool calls are answered; then the conversation ends, and the draft says so. One call's input is at most 16 KB. The plugin's answer is checked as a contribution's (block nodes, at most 50 nodes and 512 KB). Each call is in the audit log as `import.tool`: the plugin, the tool, the importer, the size of the input, the outcome and the number of nodes. Each model call is in it as an AI call, as the drafting is.
 
@@ -1492,7 +1522,7 @@ The plugin stays disabled until an Admin selects Enable. Uploading a new version
 - `minKbVersion`: the lowest app version the plugin runs on.
 
 The contract and the app are at 0.11.0, and can still change before 1.0.0. On the branch `explore/plugin-tools`, 0.11.0 is a draft.
-0.11.0 (draft) adds [tools for the AI during an import](#tools-for-the-ai-during-an-import-0110-draft) (`app.ImportTool<T>(name, description, schema)`, `IImportTool`, `ImportToolResult`, `ImportToolReg`); a plugin that uses them says `"abstractionsVersion": "0.11.0"`. Nothing of 0.10.0 changed, and a plugin built for 0.10.0 or earlier loads as it did.
+0.11.0 (draft) adds [tools for the AI during an import](#tools-for-the-ai-during-an-import-0110-draft) (`app.ImportTool<T>(name, description, schema)`, `app.ImportDrawingTool<T>(name, description, schema)`, `IImportTool`, `ImportToolResult`, `ImportToolReg` with `Drawing`); a plugin that uses them says `"abstractionsVersion": "0.11.0"`. Nothing of 0.10.0 changed, and a plugin built for 0.10.0 or earlier loads as it did.
 0.10.0 added [diagrams in the pictures of an import](#diagrams-in-the-pictures-of-an-import) (`ImportDraft.Pictures`, `DraftPicture`, `PictureDiagram`, `DiagramBox`, `DiagramContainer`, `DiagramLine`, `DiagramText`, `DiagramArea`, `DiagramShape`, `DiagramArrow`, `DiagramLimits`, `DraftPlace.AfterPicture`, `DraftAddition.Picture`); a plugin that uses them says `"abstractionsVersion": "0.10.0"`. Nothing of 0.9.0 changed, and a plugin built for 0.9.0 or earlier loads as it did.
 0.9.0 added [sign-in providers an Admin adds](#sign-in-providers-an-admin-adds) (`app.SignInProviders()`, `app.SignInProviders<TCheck>()`, `ISignInProviderCheck`, `SignInProvidersReg`) and `OidcProvider.UserInfo`; a plugin that uses them says `"abstractionsVersion": "0.9.0"`. Nothing of 0.8.0 changed, and a plugin built for 0.8.0 or earlier loads as it did.
 0.8.0 added [sign-in methods](#sign-in-methods) (`ISignInMethod`, `OidcProvider`, `SignInClaims`, `SignInMethodReg`, `app.SignInMethod<T>(id, name)`) and the actor source `signin`; a plugin that uses them says `"abstractionsVersion": "0.8.0"`. One thing changed that an earlier plugin can see: a setting key starting with `signIn.` is the app's, so a manifest that declares one is refused at install. Nothing else of 0.7.0 changed, and a plugin built for 0.7.0 or earlier loads as it did.

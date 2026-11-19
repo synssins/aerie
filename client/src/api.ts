@@ -135,7 +135,7 @@ export type PluginInfo = {
   permissions: { key: string; label: string; scope: string; defaultRole: string }[]; enforcing: boolean; settings: PluginSetting[]; replaces: string[]; removed: boolean;
   importFileKinds: string[];
   /** 0.11.0 (draft): the tools it offers the AI during imports. */
-  importTools?: { name: string; description: string; inputSchema: string; notOffered: string | null }[];
+  importTools?: { name: string; description: string; inputSchema: string; notOffered: string | null; drawing?: boolean }[];
   /**
    * The sign-in methods it adds (contract 0.8.0): id "{plugin}/{id}", button text, and the redirect address to register with the provider.
    * byAdmin: a provider an Admin added (0.9.0); linked: the accounts linked to its issuer.
