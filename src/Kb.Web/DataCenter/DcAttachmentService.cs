@@ -27,10 +27,13 @@ internal sealed class DcAttachmentService(KbDbContext db, IAccess access, IFileS
         var rows = await db.DcAttachmentVersions.Where(v => v.AttachmentId == a.Id).OrderBy(v => v.Number).ToListAsync(ct);
         if (rows.Count == 0)
         {
-            var first = new DcAttachmentVersion { AttachmentId = a.Id, Number = 1, BlobId = a.Id, Size = a.Size, MediaType = MediaType(null, a.FileName), CreatedBy = a.CreatedBy, CreatedAt = a.CreatedAt };
-            db.DcAttachmentVersions.Add(first);
-            try { await db.SaveChangesAsync(ct); }
-            catch (DbUpdateException) { db.Entry(first).State = EntityState.Detached; }
+            await DcFirstUse.AddAsync(db, async () =>
+            {
+                if (await db.DcAttachmentVersions.AnyAsync(v => v.AttachmentId == a.Id, ct)) return [];
+                var first = new DcAttachmentVersion { AttachmentId = a.Id, Number = 1, BlobId = a.Id, Size = a.Size, MediaType = MediaType(null, a.FileName), CreatedBy = a.CreatedBy, CreatedAt = a.CreatedAt };
+                db.DcAttachmentVersions.Add(first);
+                return [first];
+            }, ct);
             rows = await db.DcAttachmentVersions.Where(v => v.AttachmentId == a.Id).OrderBy(v => v.Number).ToListAsync(ct);
         }
         return [.. rows.Where(v => !v.Removed)];

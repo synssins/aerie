@@ -31,14 +31,19 @@ internal sealed class DcContentService(KbDbContext db, IAccess access, IHttpCont
     /// <summary>Gives every page, folder and attachment without one its compatible id, in creation order (as DcSpaceData does for spaces).</summary>
     public async Task EnsureIdsAsync(CancellationToken ct)
     {
-        var pages = await db.Pages.IgnoreQueryFilters().Where(p => !db.DcContents.Any(d => d.AerieId == p.Id)).Select(p => new { p.Id, p.CreatedAt, Kind = "page" }).ToListAsync(ct); // system: ids for every page, shown to no one
-        var files = await db.Attachments.Where(a => !db.DcContents.Any(d => d.AerieId == a.Id)).Select(a => new { a.Id, a.CreatedAt, Kind = "attachment" }).ToListAsync(ct);
-        var missing = pages.Concat(files).OrderBy(x => x.CreatedAt).ThenBy(x => x.Id).ToList();
-        if (missing.Count == 0) return;
-        var rows = missing.Select(x => new DcContent { AerieId = x.Id, Kind = x.Kind }).ToList();
-        db.DcContents.AddRange(rows);
-        try { await db.SaveChangesAsync(ct); }
-        catch (DbUpdateException) { foreach (var r in rows) db.Entry(r).State = EntityState.Detached; }
+        async Task<List<DcContent>> MissingAsync()
+        {
+            var pages = await db.Pages.IgnoreQueryFilters().Where(p => !db.DcContents.Any(d => d.AerieId == p.Id)).Select(p => new { p.Id, p.CreatedAt, Kind = "page" }).ToListAsync(ct); // system: ids for every page, shown to no one
+            var files = await db.Attachments.Where(a => !db.DcContents.Any(d => d.AerieId == a.Id)).Select(a => new { a.Id, a.CreatedAt, Kind = "attachment" }).ToListAsync(ct);
+            return [.. pages.Concat(files).OrderBy(x => x.CreatedAt).ThenBy(x => x.Id).Select(x => new DcContent { AerieId = x.Id, Kind = x.Kind })];
+        }
+        if ((await MissingAsync()).Count == 0) return;
+        await DcFirstUse.AddAsync(db, async () =>
+        {
+            var rows = await MissingAsync();
+            db.DcContents.AddRange(rows);
+            return rows;
+        }, ct);
     }
 
     public async Task<long> IdOfAsync(Guid aerieId, CancellationToken ct)
@@ -109,14 +114,17 @@ internal sealed class DcContentService(KbDbContext db, IAccess access, IHttpCont
     {
         var rows = await db.PageVersions.AsNoTracking().Where(v => v.PageId == pageId).OrderBy(v => v.Major).ThenBy(v => v.Minor).ThenBy(v => v.Id).ToListAsync(ct);
         var numbers = await db.DcVersions.Where(n => n.PageId == pageId).ToDictionaryAsync(n => n.PageVersionId, ct);
-        var missing = rows.Where(v => !numbers.ContainsKey(v.Id)).ToList();
-        if (missing.Count > 0)
+        if (rows.Any(v => !numbers.ContainsKey(v.Id)))
         {
-            var next = numbers.Count == 0 ? 0 : numbers.Values.Max(n => n.Number);
-            var added = missing.Select(v => new DcVersion { PageVersionId = v.Id, PageId = pageId, Number = ++next }).ToList();
-            db.DcVersions.AddRange(added);
-            try { await db.SaveChangesAsync(ct); }
-            catch (DbUpdateException) { foreach (var a in added) db.Entry(a).State = EntityState.Detached; }
+            await DcFirstUse.AddAsync(db, async () =>
+            {
+                // Read again inside: another request may have numbered them since.
+                var have = await db.DcVersions.AsNoTracking().Where(n => n.PageId == pageId).ToDictionaryAsync(n => n.PageVersionId, ct);
+                var next = have.Count == 0 ? 0 : have.Values.Max(n => n.Number);
+                var added = rows.Where(v => !have.ContainsKey(v.Id)).Select(v => new DcVersion { PageVersionId = v.Id, PageId = pageId, Number = ++next }).ToList();
+                db.DcVersions.AddRange(added);
+                return added;
+            }, ct);
             numbers = await db.DcVersions.Where(n => n.PageId == pageId).ToDictionaryAsync(n => n.PageVersionId, ct);
         }
         return [.. rows.Where(v => numbers.TryGetValue(v.Id, out var n) && !n.Removed)
@@ -333,14 +341,14 @@ internal sealed class DcContentService(KbDbContext db, IAccess access, IHttpCont
         var id = await db.DcLabels.Where(l => l.Prefix == prefix && l.Name == name).Select(l => (long?)l.Id).FirstOrDefaultAsync(ct);
         if (id is null)
         {
-            var row = new DcLabel { Prefix = prefix, Name = name };
-            db.DcLabels.Add(row);
-            try { await db.SaveChangesAsync(ct); id = row.Id; }
-            catch (DbUpdateException)
+            await DcFirstUse.AddAsync(db, async () =>
             {
-                db.Entry(row).State = EntityState.Detached;
-                id = await db.DcLabels.Where(l => l.Prefix == prefix && l.Name == name).Select(l => l.Id).FirstAsync(ct);
-            }
+                if (await db.DcLabels.AnyAsync(l => l.Prefix == prefix && l.Name == name, ct)) return [];
+                var row = new DcLabel { Prefix = prefix, Name = name };
+                db.DcLabels.Add(row);
+                return [row];
+            }, ct);
+            id = await db.DcLabels.Where(l => l.Prefix == prefix && l.Name == name).Select(l => l.Id).FirstAsync(ct);
         }
         return new JsonObject { ["prefix"] = prefix, ["name"] = name, ["id"] = id.Value.ToString(CultureInfo.InvariantCulture), ["label"] = prefix == "global" ? name : prefix + ":" + name };
     }
