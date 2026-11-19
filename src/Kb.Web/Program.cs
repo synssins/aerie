@@ -70,10 +70,12 @@ services.ConfigureApplicationCookie(o =>
             ? await ctx.HttpContext.RequestServices.GetRequiredService<KbDbContext>().Users.AsNoTracking()
                 .Where(u => u.Id == id && u.DeactivatedAt == null).Select(u => u.SecurityStamp).FirstOrDefaultAsync(ctx.HttpContext.RequestAborted)
             : null;
-        // A session also ends a fixed time after it was opened, however much it is used: its start travels in the cookie. A session
-        // from before this rule gets its start now, so nobody is signed out by the update.
+        // A session also ends a fixed time after it was opened, however much it is used. Its start is written into the cookie at
+        // sign-in (OnSigningIn, below) and travels with every renewal. A cookie from before that was done has none: its start is
+        // then the time that cookie was issued, which is in the cookie too and cannot be moved by using it.
         var now = ctx.HttpContext.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow();
-        var start = ctx.Properties.Items.TryGetValue(SessionAge.Key, out var text) && long.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out var s) ? DateTimeOffset.FromUnixTimeSeconds(s) : (DateTimeOffset?)null;
+        var written = SessionAge.Read(ctx.Properties);
+        var start = written ?? ctx.Properties.IssuedUtc;
         if (stamp is null || stamp != ctx.Principal!.FindFirst(ctx.HttpContext.RequestServices.GetRequiredService<IOptions<IdentityOptions>>().Value.ClaimsIdentity.SecurityStampClaimType)?.Value
             || now - start > kb.Auth.SessionMaxAge)
         {
@@ -81,12 +83,22 @@ services.ConfigureApplicationCookie(o =>
             await Microsoft.AspNetCore.Authentication.AuthenticationHttpContextExtensions.SignOutAsync(ctx.HttpContext, IdentityConstants.ApplicationScheme);
             return;
         }
-        if (start is null)
+        if (written is null)
         {
-            ctx.Properties.Items[SessionAge.Key] = now.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+            // Kept from here on, so that a renewal (which gives the cookie a new issue time) does not move the start.
+            SessionAge.Write(ctx.Properties, start ?? now);
             ctx.ShouldRenew = true;
         }
         ctx.HttpContext.Items[SessionAge.Key] = start ?? now;
+    };
+    // Every way a session cookie is made comes through here: a password, the code after it, a sign-in method. Each opens a session,
+    // so its start is now. The one exception brings its start with it: the sign-in the app does again for someone already signed
+    // in, after they change their password or turn codes off (SessionAge.Continued). That continues a session, and must not be a
+    // way to make it last longer.
+    o.Events.OnSigningIn = ctx =>
+    {
+        if (SessionAge.Read(ctx.Properties) is null) SessionAge.Write(ctx.Properties, ctx.HttpContext.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow());
+        return Task.CompletedTask;
     };
 });
 
@@ -210,7 +222,8 @@ services.AddScoped<IAccess, Kb.Web.DataCenter.DcAccess>();
 services.AddSingleton<ActionCatalog>();
 services.AddScoped<ActorAccessor>();
 services.AddScoped<IActorAccessor>(sp => sp.GetRequiredService<ActorAccessor>());
-services.AddScoped<IActionBus, ActionBus>();
+services.AddScoped<ActionBus>();
+services.AddScoped<IActionBus>(sp => sp.GetRequiredService<ActionBus>());
 services.AddSingleton<ActionQueueWorker>();
 services.AddHostedService(sp => sp.GetRequiredService<ActionQueueWorker>());
 services.AddSingleton<UiErrorLimit>();
@@ -311,6 +324,8 @@ await using (var scope = app.Services.CreateAsyncScope())
     await LogShipperService.EnsureFirstTargetAsync(db, kb.Logs.Folder, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow());
     await ActiveFileStore.EnsureFirstPlaceAsync(db, kb.Storage.Folder, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow());
 }
+// The image library's native part, once: if it cannot load here, that is logged and diagrams are read from the whole picture only.
+Kb.Web.Import.PictureQuarters.SelfTest(app.Logger);
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();

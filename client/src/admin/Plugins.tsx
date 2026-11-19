@@ -216,17 +216,35 @@ const pluginOwn = (p: PluginInfo): PluginInfo => {
   return keys.size === 0 ? p : { ...p, settings: p.settings.filter((s) => ![...keys].some((k) => s.key.startsWith(k))) };
 };
 
+/** The provider's keys, by their last part: "signIn.<id>.issuer" is "issuer". */
+const keyOf = (m: Provider, part: string) => `signIn.${providerId(m)}.${part}`;
+/** Shown first, in this order; the rest is under Advanced. New accounts stays in view: it is a real decision. */
+const MAIN = ["issuer", "clientId", "clientSecret", "newAccounts"];
+const REQUIRED = ["issuer", "clientId"];
+
+/** Why a provider has no button on the sign-in screen, from its saved values; null when it has one. */
+function missingText(values: Record<string, string | null | undefined>, m: Provider): string | null {
+  const missing = [!values[keyOf(m, "issuer")]?.trim() && "issuer", !values[keyOf(m, "clientId")]?.trim() && "client ID"].filter(Boolean);
+  return missing.length === 0 ? null : `Not shown on the sign-in screen: ${missing.join(" and ")} missing.`;
+}
+
 /**
  * Sign-in providers an Admin adds (contract 0.9.0): a list with Add new; each has its own gear that opens its title, its redirect address,
- * and its settings. Each is a button on the sign-in screen once its issuer and client ID are set.
+ * and its settings. Each is a button on the sign-in screen once its issuer and client ID are set; the list says when one is not.
  */
 function SignInProviders({ plugin, onChanged, onRestart }: { plugin: PluginInfo; onChanged: () => Promise<void>; onRestart: () => void }) {
   const { ask, confirm } = useDialogs();
   const [open, setOpen] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<Record<string, string | null>>({});
   const providers = (plugin.signInMethods ?? []).filter((m) => m.byAdmin);
   const shown = providers.find((m) => m.id === open) ?? null;
   const validate = (v: string) => v.trim().length === 0 || v.trim().length > 60 ? "A title is 1 to 60 characters." : null;
+
+  const loadSaved = useCallback(async () => {
+    setSaved((await api.get<SettingsData>(`/admin/plugins/${plugin.id}/settings`).catch(() => null))?.values ?? {});
+  }, [plugin.id]);
+  useEffect(() => { void loadSaved(); }, [loadSaved, plugin]);
 
   async function run(work: () => Promise<unknown>, failed: string) {
     setError(null);
@@ -253,8 +271,6 @@ function SignInProviders({ plugin, onChanged, onRestart }: { plugin: PluginInfo;
     await run(async () => { await api.del(`/admin/plugins/${plugin.id}/signin-providers/${providerId(m)}`); setOpen(null); }, "Not removed.");
   }
 
-  const shownSettings = useMemo(() => shown && { ...plugin, settings: plugin.settings.filter((s) => s.key.startsWith(`signIn.${providerId(shown)}.`)) }, [plugin, shown]);
-
   return (
     <section className="plugin-panel" aria-label="Sign-in providers">
       <h2>Sign-in providers</h2>
@@ -273,6 +289,7 @@ function SignInProviders({ plugin, onChanged, onRestart }: { plugin: PluginInfo;
                     </button>
                     {m.name}
                   </span>
+                  {missingText(saved, m) && <div className="form-error">{missingText(saved, m)}</div>}
                 </td>
                 <td className="mono">{m.redirectAddress}</td>
               </tr>
@@ -282,19 +299,79 @@ function SignInProviders({ plugin, onChanged, onRestart }: { plugin: PluginInfo;
       )}
       <div className="ptools row"><button type="button" className="tb" onClick={() => void add()}><Plus className="ic" aria-hidden />Add new</button></div>
       {shown && (
-        <dialog ref={(d) => { if (d && !d.open) d.showModal(); }} className="dlg wide" onCancel={(e) => { e.preventDefault(); setOpen(null); }} aria-labelledby="sp-title">
-          <h2 id="sp-title">{shown.name}</h2>
-          <p>Register this app at the provider with this redirect address. It stays the same when you rename the provider.</p>
-          <input className="mono wide" readOnly value={shown.redirectAddress} aria-label={`Redirect address of ${shown.name}`} onFocus={(e) => e.currentTarget.select()} />
-          {shownSettings && <SettingsForm key={shown.id} plugin={shownSettings} onRestart={onRestart} />}
-          <div className="dlg-actions">
-            <button type="button" className="tb danger" onClick={() => void remove(shown)}>Remove</button>
-            <button type="button" className="tb" onClick={() => void rename(shown)}>Rename</button>
-            <button type="button" className="tb primary" onClick={() => setOpen(null)}>Done</button>
-          </div>
-        </dialog>
+        <ProviderDialog key={shown.id} plugin={plugin} provider={shown} onClose={() => setOpen(null)} onRename={() => void rename(shown)} onRemove={() => void remove(shown)}
+          onSaved={() => void loadSaved()} onRestart={onRestart} />
       )}
     </section>
+  );
+}
+
+/**
+ * One provider's gear: its redirect address (with Copy), the settings it cannot do without, then the rest under Advanced, closed.
+ * Save and Close stay at the foot while the body scrolls; Close asks before it drops changed fields.
+ */
+function ProviderDialog({ plugin, provider: m, onClose, onRename, onRemove, onSaved, onRestart }: {
+  plugin: PluginInfo; provider: Provider; onClose: () => void; onRename: () => void; onRemove: () => void; onSaved: () => void; onRestart: () => void;
+}) {
+  const { confirm } = useDialogs();
+  const defs = useMemo(() => plugin.settings.filter((d) => d.key.startsWith(keyOf(m, ""))), [plugin, m]);
+  const s = useSettings(defs, plugin.id, onRestart);
+  const [advanced, setAdvanced] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const part = (d: PluginSetting) => d.key.slice(keyOf(m, "").length);
+  const main = MAIN.map((k) => defs.find((d) => part(d) === k)).filter((d): d is PluginSetting => !!d);
+  const rest = defs.filter((d) => !MAIN.includes(part(d)));
+  const missing = s.saved && missingText(s.saved, m);
+
+  // An address in Discovery address with Issuer empty is nearly always the issuer pasted in the wrong field.
+  const check = (v: Record<string, string>) => v[keyOf(m, "discovery")]?.trim() && !v[keyOf(m, "issuer")]?.trim()
+    ? { [keyOf(m, "discovery")]: ["Put the provider's address in Issuer. Discovery address is only for a provider whose document is not at the issuer's /.well-known/openid-configuration."] }
+    : null;
+
+  async function save() {
+    const ok = await s.save(check);
+    if (!ok && check(s.values ?? {})) setAdvanced(true);
+    if (ok) onSaved();
+  }
+
+  async function close() {
+    if (s.dirty && !await confirm({ title: "Discard unsaved changes?", ok: "Discard", danger: true })) return;
+    onClose();
+  }
+
+  const field = (d: PluginSetting) => <SettingField key={d.key} d={d} s={s} required={REQUIRED.includes(part(d))} />;
+
+  return (
+    <dialog ref={(d) => { if (d && !d.open) d.showModal(); }} className="dlg wide sheet" onCancel={(e) => { e.preventDefault(); void close(); }} aria-labelledby="sp-title">
+      <div className="dlg-body">
+        <h2 id="sp-title">{m.name}</h2>
+        {missing && <p className="form-error" role="status">{missing}</p>}
+        <p>Register this app at the provider with this redirect address. It stays the same when you rename the provider.</p>
+        <div className="copy-row">
+          <input className="mono" readOnly value={m.redirectAddress} aria-label={`Redirect address of ${m.name}`} onFocus={(e) => e.currentTarget.select()} />
+          <button type="button" className="tb" onClick={() => void navigator.clipboard?.writeText(m.redirectAddress).then(() => setCopied(true))}>Copy</button>
+          {copied && <span className="muted small" role="status">Copied</span>}
+        </div>
+        {s.values && (
+          <form className="form stacked" noValidate onSubmit={(e) => { e.preventDefault(); void save(); }}>
+            {main.map(field)}
+            <details className="advanced" open={advanced} onToggle={(e) => setAdvanced(e.currentTarget.open)}>
+              <summary>Advanced</summary>
+              <div className="form stacked">{rest.map(field)}</div>
+            </details>
+            <button type="submit" hidden />
+          </form>
+        )}
+      </div>
+      <div className="dlg-foot">
+        <button type="button" className="tb danger" onClick={onRemove}>Remove</button>
+        <button type="button" className="tb" onClick={onRename}>Rename</button>
+        <span className="grow" />
+        {s.status && <span className="muted" role="status">{s.status}</span>}
+        <button type="button" className="tb" onClick={() => void close()}>Close</button>
+        <button type="button" className="tb primary" disabled={s.busy || !s.values} onClick={() => void save()}>Save</button>
+      </div>
+    </dialog>
   );
 }
 
@@ -359,91 +436,119 @@ function PermissionsForm({ plugin }: { plugin: PluginInfo }) {
   );
 }
 
-/** A plugin's settings, drawn from its definitions. A secret that is set shows as dots; its value is never loaded. */
-function SettingsForm({ plugin, onRestart }: { plugin: PluginInfo; onRestart: () => void }) {
+type Settings = ReturnType<typeof useSettings>;
+
+/**
+ * The values of some of a plugin's settings, as saved and as edited. A secret that is set is null (shown as dots); its value is never loaded.
+ * Save sends these settings only, so others of the plugin are left as they are.
+ */
+function useSettings(defs: PluginSetting[], pluginId: string, onRestart: () => void) {
+  const [saved, setSaved] = useState<Record<string, string | null> | null>(null);
   const [values, setValues] = useState<Record<string, string> | null>(null);
   // null: the secret is set and stays as it is. A text: what to store instead (empty clears it).
   const [secrets, setSecrets] = useState<Record<string, string | null>>({});
+  const [first, setFirst] = useState<{ values: Record<string, string>; secrets: Record<string, string | null> } | null>(null);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    void api.get<SettingsData>(`/admin/plugins/${plugin.id}/settings`).then((s) => {
-      setValues(Object.fromEntries(plugin.settings.filter((d) => !isSecret(d)).map((d) => [d.key, s.values[d.key] ?? ""])));
-      setSecrets(Object.fromEntries(plugin.settings.filter(isSecret).map((d) => [d.key, s.secretsSet.includes(d.key) ? null : ""])));
+    void api.get<SettingsData>(`/admin/plugins/${pluginId}/settings`).then((r) => {
+      const v = Object.fromEntries(defs.filter((d) => !isSecret(d)).map((d) => [d.key, r.values[d.key] ?? ""]));
+      const sc = Object.fromEntries(defs.filter(isSecret).map((d) => [d.key, r.secretsSet.includes(d.key) ? null : ""]));
+      setSaved(r.values); setValues(v); setSecrets(sc); setFirst({ values: v, secrets: sc });
     });
-  }, [plugin]);
+  }, [defs, pluginId]);
 
-  if (!values) return null;
+  const dirty = !!first && !!values && (defs.some((d) => isSecret(d) ? (secrets[d.key] ?? null) !== (first.secrets[d.key] ?? null) : values[d.key] !== first.values[d.key]));
   const set = (key: string, v: string) => { setValues((all) => ({ ...all, [key]: v })); setStatus(null); };
+  const setSecret = (key: string, v: string) => { setSecrets((all) => ({ ...all, [key]: v })); setStatus(null); };
 
-  async function save(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
+  /** True when saved. <paramref name="check"/> may refuse first, with messages under the fields, as the server's own are shown. */
+  async function save(check?: (values: Record<string, string>) => Record<string, string[]> | null): Promise<boolean> {
+    if (!values) return false;
     setErrors({});
     setStatus(null);
+    const refused = check?.(values);
+    if (refused) { setErrors(refused); return false; }
+    setBusy(true);
     try {
-      const r = await api.put<{ restart: boolean }>(`/admin/plugins/${plugin.id}/settings`, { values: Object.fromEntries(plugin.settings.map((d) => [d.key, isSecret(d) ? secrets[d.key] : values![d.key]])) });
-      setSecrets((all) => Object.fromEntries(Object.entries(all).map(([k, v]) => [k, v ? null : v])));
+      const r = await api.put<{ restart: boolean }>(`/admin/plugins/${pluginId}/settings`, { values: Object.fromEntries(defs.map((d) => [d.key, isSecret(d) ? secrets[d.key] : values[d.key]])) });
+      const kept = Object.fromEntries(Object.entries(secrets).map(([k, v]) => [k, v ? null : v]));
+      setSecrets(kept);
+      setFirst({ values, secrets: kept });
+      setSaved((all) => ({ ...all, ...values }));
       setStatus("Saved.");
       if (r.restart) onRestart();
+      return true;
     } catch (err) {
       if (err instanceof ApiError && err.body?.errors) setErrors(err.body.errors); else setStatus(problem(err, "Not saved."));
+      return false;
     } finally { setBusy(false); }
   }
 
-  const control = (d: PluginSetting): ReactNode => {
-    const id = `ps-${d.key}`;
+  return { saved, values, secrets, errors, status, busy, dirty, set, setSecret, setSecrets, save };
+}
+
+/** One setting: its label, its control, its help, and what the server said about it. */
+function SettingField({ d, s, required = false }: { d: PluginSetting; s: Settings; required?: boolean }) {
+  const id = `ps-${d.key}`;
+  const values = s.values ?? {};
+  const dots = isSecret(d) && s.secrets[d.key] === null;
+  const help = d.help ? `${id}-h` : undefined;
+  const label = required ? `${d.label} (required)` : d.label;
+  const control = (): ReactNode => {
     if (isSecret(d)) {
-      return secrets[d.key] === null
-        ? <span className="unit"><span>••••••••</span><button type="button" className="tb" onClick={() => setSecrets((all) => ({ ...all, [d.key]: "" }))}>Change</button></span>
-        : <input id={id} type="password" autoComplete="new-password" value={secrets[d.key] ?? ""} onChange={(e) => { setSecrets((all) => ({ ...all, [d.key]: e.target.value })); setStatus(null); }} />;
+      return dots
+        ? <span className="unit"><span>••••••••</span><button type="button" className="tb" onClick={() => s.setSecrets((all) => ({ ...all, [d.key]: "" }))}>Change</button></span>
+        : <input id={id} type="password" autoComplete="new-password" aria-required={required || undefined} value={s.secrets[d.key] ?? ""} onChange={(e) => s.setSecret(d.key, e.target.value)} />;
     }
     const v = values[d.key] ?? "";
     // Nothing saved: the plugin gets the default, so the field shows it (as the placeholder of a text, the state of a toggle).
     const shown = d.default ?? "";
-    const help = d.help ? `${id}-h` : undefined;
     const optionLabel = (o: string) => d.optionLabels?.[o] ?? o;
     const withUnit = (field: ReactNode) => d.unit ? <div className="unit">{field}<span>{d.unit}</span></div> : field;
     switch (d.type) {
       case "toggle": {
         const on = (v || shown) === "true";
-        return <button id={id} type="button" role="switch" aria-checked={on} aria-labelledby={`${id}-l`} aria-describedby={help} className={`sw ${on ? "on" : ""}`} onClick={() => set(d.key, on ? "false" : "true")} />;
+        return <button id={id} type="button" role="switch" aria-checked={on} aria-labelledby={`${id}-l`} aria-describedby={help} className={`sw ${on ? "on" : ""}`} onClick={() => s.set(d.key, on ? "false" : "true")} />;
       }
       case "select": return withUnit(
-        <select id={id} className="sel" value={v} aria-describedby={help} onChange={(e) => set(d.key, e.target.value)}>
+        <select id={id} className="sel" value={v} aria-describedby={help} onChange={(e) => s.set(d.key, e.target.value)}>
           {!(d.options ?? []).includes("") && <option value="">{d.default ? `Default (${optionLabel(d.default)})` : ""}</option>}
           {(d.options ?? []).map((o) => <option key={o} value={o}>{optionLabel(o)}</option>)}
         </select>,
       );
-      case "multiline": return <textarea id={id} value={v} placeholder={shown || undefined} aria-describedby={help} onChange={(e) => set(d.key, e.target.value)} />;
+      case "multiline": return <textarea id={id} value={v} placeholder={shown || undefined} aria-describedby={help} onChange={(e) => s.set(d.key, e.target.value)} />;
       case "number": return (
         <div className="unit">
-          <input id={id} type="number" value={v} placeholder={shown || undefined} min={d.min ?? undefined} max={d.max ?? undefined} aria-describedby={help} onChange={(e) => set(d.key, e.target.value)} />
+          <input id={id} type="number" value={v} placeholder={shown || undefined} min={d.min ?? undefined} max={d.max ?? undefined} aria-describedby={help} onChange={(e) => s.set(d.key, e.target.value)} />
           {d.unit && <span>{d.unit}</span>}
         </div>
       );
-      default: return withUnit(<input id={id} type="text" value={v} placeholder={shown || undefined} spellCheck={false} aria-describedby={help} onChange={(e) => set(d.key, e.target.value)} />);
+      default: return withUnit(<input id={id} type="text" value={v} placeholder={shown || undefined} spellCheck={false} aria-required={required || undefined} aria-describedby={help} onChange={(e) => s.set(d.key, e.target.value)} />);
     }
   };
+  return (
+    <FieldRow label={label} id={dots ? undefined : id} labelId={d.type === "toggle" ? `${id}-l` : undefined} top={d.type === "multiline"}
+      error={s.errors[d.key] && <p className="form-error wide" role="alert">{s.errors[d.key][0]}</p>}>
+      {control()}
+      {d.help && <p className="hint" id={help}>{d.help}</p>}
+    </FieldRow>
+  );
+}
 
+/** A plugin's settings, drawn from its definitions. */
+function SettingsForm({ plugin, onRestart }: { plugin: PluginInfo; onRestart: () => void }) {
+  const s = useSettings(plugin.settings, plugin.id, onRestart);
+  if (!s.values) return null;
   // noValidate: the app checks the bounds and says so in its own words, under the field.
   return (
-    <form className="form" noValidate onSubmit={save}>
-      {plugin.settings.map((d) => {
-        const dots = isSecret(d) && secrets[d.key] === null;
-        return (
-          <FieldRow key={d.key} label={d.label} id={dots ? undefined : `ps-${d.key}`} labelId={d.type === "toggle" ? `ps-${d.key}-l` : undefined} top={d.type === "multiline"}
-            error={errors[d.key] && <p className="form-error wide" role="alert">{errors[d.key][0]}</p>}>
-            {control(d)}
-            {d.help && <p className="hint" id={`ps-${d.key}-h`}>{d.help}</p>}
-          </FieldRow>
-        );
-      })}
+    <form className="form" noValidate onSubmit={(e) => { e.preventDefault(); void s.save(); }}>
+      {plugin.settings.map((d) => <SettingField key={d.key} d={d} s={s} />)}
       <div className="actions">
-        <button type="submit" className="tb primary" disabled={busy}>Save</button>
-        {status && <span className="muted" role="status">{status}</span>}
+        <button type="submit" className="tb primary" disabled={s.busy}>Save</button>
+        {s.status && <span className="muted" role="status">{s.status}</span>}
       </div>
     </form>
   );

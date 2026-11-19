@@ -86,7 +86,9 @@ internal sealed class SavePageHandler(KbDbContext db, IAccess access, TimeProvid
         var (req, page) = (ctx.Action, _page!);
         if (TitleError(req.Title) is { } title) return title;
         if (CleanTags(req.Tags) is not { } tags) return TagError();
-        if (page.Kind == PageKind.Page && !IsEditorDoc(req.ContentJson)) return Problem.Invalid("contentJson", "Not an editor document.");
+        // A folder's body is saved when it is sent changed (the compatible API writes one); a rename that sends it as it was leaves it.
+        var body = page.Kind == PageKind.Page || req.ContentJson != page.ContentJson;
+        if (body && !IsEditorDoc(req.ContentJson)) return Problem.Invalid("contentJson", "Not an editor document.");
         if (req.Note is { Length: > MaxNote }) return Problem.Invalid("note", $"{MaxNote} characters at most.");
         // Someone else saved since this editor loaded: refuse rather than overwrite.
         if (req.BaseVersion != page.Version) return Problem.Conflict(body: new { current = page.Version });
@@ -99,7 +101,7 @@ internal sealed class SavePageHandler(KbDbContext db, IAccess access, TimeProvid
         }
         else tags = await db.PageTags.Where(t => t.PageId == page.Id).Select(t => t.Tag).ToListAsync(ctx.Cancel);
         var flagBefore = page.AiFlag;
-        var saved = await PublishAsync(db, access, renderers, ctx.Actor, page, req.ContentJson, req.Major, req.Note, tags, time.GetUtcNow());
+        var saved = await PublishAsync(db, access, renderers, ctx.Actor, page, req.ContentJson, req.Major, req.Note, tags, time.GetUtcNow(), folderBody: body && page.Kind == PageKind.Folder);
         if (saved.Problem is null && page.AiFlag != flagBefore) AuditAiFlag(ctx, page);
         return saved;
     }

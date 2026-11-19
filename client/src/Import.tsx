@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { ChevronDown, ChevronRight, FileUp, FolderUp, House, X } from "lucide-react";
 import { Link, to } from "./Link";
 import { api, ApiError, type ImportFile, type ImportItem, type ImportItemRow, type ImportList, type ImportSpace, type ImportStatus, type TreeNode } from "./api";
 import { useDialogs } from "./Dialogs";
-import { fromEditor, makeExtensions, toEditor } from "./editor/extensions";
+import { editorExtensions, fromEditor, makeExtensions, toEditor } from "./editor/extensions";
 import { Toolbar } from "./PageView";
 import { REVIEW_CHOICES } from "./PageDetails";
 import { TagInput } from "./TagInput";
@@ -250,12 +250,18 @@ const warning = (w: string) => w.replace("Check it says nothing new.", "Confirm 
 
 /** One proposed page, editable as in the page editor. */
 function DraftEditor({ draft, onChange }: { draft: Draft; onChange: (json: string) => void }) {
-  const extensions = useMemo(() => makeExtensions("plaintext"), []);
+  // A plugin's script may add to the editor after this draft was drawn (its block shows as unknown until then). The editor is made
+  // again from the draft as it stands, but never under someone's hands: while it has the focus, that waits until it loses it.
+  const added = useSyncExternalStore(editorExtensions.subscribe, editorExtensions.version);
+  const [made, setMade] = useState(added);
+  const extensions = useMemo(() => makeExtensions("plaintext"), [made]);
   const editor = useEditor({
     extensions, content: toEditor(draft.json, extensions), editable: true,
     editorProps: { attributes: { class: "prose", "aria-label": `Content of ${draft.title}` } },
     onUpdate: ({ editor: e }) => onChange(fromEditor(e)),
-  });
+    onBlur: () => setMade(editorExtensions.version()),
+  }, [extensions]);
+  useEffect(() => { if (added !== made && !editor?.isFocused) setMade(added); }, [added, made, editor]);
   if (!editor) return null;
   return <div className="draft-editor"><Toolbar editor={editor} onImages={() => {}} /><EditorContent editor={editor} className="editing" /></div>;
 }

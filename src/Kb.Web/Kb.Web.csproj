@@ -7,6 +7,8 @@
     <PackageReference Include="MimeKit" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
     <PackageReference Include="PdfPig" />
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
     <ProjectReference Include="..\Kb.Core\Kb.Core.csproj" />
     <ProjectReference Include="..\Kb.Data\Kb.Data.csproj" />
     <ProjectReference Include="..\Kb.Data.Sqlite\Kb.Data.Sqlite.csproj" />
@@ -29,5 +31,19 @@
     <!-- The pinned compatible contract: the scope of each operation is read from it (DcScopes), so the table is never written by hand. -->
     <EmbeddedResource Include="..\..\contracts\datacenter\openapi.yaml" LogicalName="Kb.Contracts.datacenter-openapi.yaml" Link="Contracts\datacenter-openapi.yaml" />
     <None Include="Fonts\OFL.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="Fonts\OFL.txt" />
+    <!-- The image library's license and the notices of what its native part is built from, next to it. -->
+    <None Include="ThirdParty\SkiaSharp\*.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <!--
+    The image library ships its native part for some twenty platforms, with debug symbols (about 500 MB). The app is published with
+    the ones it runs on: Linux x64 and arm64 (the image), Windows x64, x86 and arm64 (IIS); no symbols.
+  -->
+  <Target Name="TrimSkiaSharpNative" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <_SkiaNative Include="@(ResolvedFileToPublish)" Condition="'%(Filename)' == 'libSkiaSharp'" />
+      <_SkiaDrop Include="@(_SkiaNative)" Condition="'%(Extension)' == '.pdb' or !$([System.Text.RegularExpressions.Regex]::IsMatch('%(RelativePath)', '^runtimes.(linux-x64|linux-arm64|win-x64|win-x86|win-arm64).native.'))" />
+      <ResolvedFileToPublish Remove="@(_SkiaDrop)" />
+    </ItemGroup>
+  </Target>
 </Project>

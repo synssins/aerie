@@ -12,8 +12,8 @@ namespace Kb.Web.Import;
 /// <summary>What one plugin added to a draft from one file.</summary>
 public sealed record ImportContributed(string PluginId, string PluginName, string FileName, IReadOnlyList<JsonNode> Nodes);
 
-/// <summary>Checked nodes for one place on one page of the draft.</summary>
-public sealed record DraftNodes(int Page, DraftPlace Place, IReadOnlyList<JsonNode> Nodes);
+/// <summary>Checked nodes for one place on one page of the draft; <paramref name="Picture"/> for <see cref="DraftPlace.AfterPicture"/>.</summary>
+public sealed record DraftNodes(int Page, DraftPlace Place, IReadOnlyList<JsonNode> Nodes, string? Picture = null);
 
 /// <summary>What one plugin added to a draft from the draft itself.</summary>
 public sealed record DraftContributed(string PluginId, string PluginName, IReadOnlyList<DraftNodes> Additions)
@@ -36,6 +36,9 @@ public sealed class ImportContributors(IServiceScopeFactory scopes, IRegistratio
     internal TimeSpan? Limit { get; set; }
 
     public bool Any => registrations.All<ImportContributorReg>().Count > 0 || registrations.All<DraftContributorReg>().Count > 0;
+
+    /// <summary>Some plugin reads drafts: only then are the pictures of an import read for diagrams.</summary>
+    public bool AnyDraft => registrations.All<DraftContributorReg>().Count > 0;
 
     public async Task<IReadOnlyList<ImportContributed>> RunAsync(ImportItem item, IReadOnlyList<ImportFile> files, Func<Guid, CancellationToken, Task<byte[]>> read,
         CancellationToken ct)
@@ -67,12 +70,12 @@ public sealed class ImportContributors(IServiceScopeFactory scopes, IRegistratio
     /// ones before it left them (<paramref name="pages"/> is asked again for each); what it answers is checked and then placed.
     /// </summary>
     public async Task<IReadOnlyList<DraftContributed>> RunDraftAsync(ImportItem item, Func<IReadOnlyList<DraftPage>> pages, IReadOnlyList<string> files,
-        Action<DraftContributed> place, CancellationToken ct)
+        Action<DraftContributed> place, CancellationToken ct, IReadOnlyList<DraftPicture>? pictures = null)
     {
         var found = new List<DraftContributed>();
         foreach (var c in registrations.All<DraftContributorReg>())
         {
-            var draft = new ImportDraft(item.Id, pages(), files);
+            var draft = new ImportDraft(item.Id, pages(), files) { Pictures = pictures ?? [] };
             var additions = await CallAsync(c.PluginId, item, "draft contributor", "the draft",
                 (sp, t) => ((IDraftContributor)ActivatorUtilities.CreateInstance(sp, c.Value.Contributor)).ContributeAsync(draft, t), a => Check(a, draft.Pages.Count), ct);
             if (additions is null) continue;
@@ -156,7 +159,7 @@ public sealed class ImportContributors(IServiceScopeFactory scopes, IRegistratio
             if (a?.Nodes is null) throw new InvalidDataException("An addition has no node list.");
             if (a.Page < 0 || a.Page >= pages) throw new InvalidDataException($"The draft has no page {a.Page}.");
             if (!Enum.IsDefined(a.Place)) throw new InvalidDataException("An addition has no known place.");
-            found.Add(new DraftNodes(a.Page, a.Place, Copy(a.Nodes, ref count, ref size)));
+            found.Add(new DraftNodes(a.Page, a.Place, Copy(a.Nodes, ref count, ref size), a.Place == DraftPlace.AfterPicture ? a.Picture : null));
         }
         return found;
     }
@@ -179,7 +182,8 @@ public sealed class ImportContributors(IServiceScopeFactory scopes, IRegistratio
 
     /// <summary>
     /// Puts each addition on its page (<paramref name="pages"/> are the pages' content arrays): at the start, before the first heading that
-    /// has a block before it (the end when there is none), or at the end. Additions to one place keep their order.
+    /// has a block before it (the end when there is none), right after a picture (the end when the page does not show it), or at the end.
+    /// Additions to one place keep their order.
     /// </summary>
     public static void Place(IReadOnlyList<JsonArray> pages, IReadOnlyList<DraftNodes> additions)
     {
@@ -190,9 +194,24 @@ public sealed class ImportContributors(IServiceScopeFactory scopes, IRegistratio
             content.Clear();
             var intro = old.Count < 2 ? -1 : old.FindIndex(1, n => n?["type"]?.GetValue<string>() == "heading");
             if (intro < 0) intro = old.Count;
+            // The picture's block: the top-level block that is the image, or holds it (an image inside a list item).
+            int PictureAt(string? src) => src is null ? -1 : old.FindIndex(n => n is not null && Shows(n, src));
+            var after = page.Where(a => a.Place == DraftPlace.AfterPicture).Select(a => (At: PictureAt(a.Picture), a.Nodes)).ToList();
             IEnumerable<JsonNode?> At(DraftPlace p) => page.Where(a => a.Place == p).SelectMany(a => a.Nodes);
-            foreach (var n in At(DraftPlace.Start).Concat(old.Take(intro)).Concat(At(DraftPlace.AfterIntroduction)).Concat(old.Skip(intro)).Concat(At(DraftPlace.End)))
+            IEnumerable<JsonNode?> AfterBlock(int i) => after.Where(a => a.At == i).SelectMany(a => a.Nodes);
+            IEnumerable<JsonNode?> Blocks(IEnumerable<(JsonNode? Node, int Index)> from) => from.SelectMany(b => new[] { b.Node }.Concat(AfterBlock(b.Index)));
+            var indexed = old.Select((n, i) => (n, i)).ToList();
+            foreach (var n in At(DraftPlace.Start).Concat(Blocks(indexed.Take(intro))).Concat(At(DraftPlace.AfterIntroduction)).Concat(Blocks(indexed.Skip(intro)))
+                .Concat(At(DraftPlace.End)).Concat(AfterBlock(-1)))
                 content.Add(n);
         }
+    }
+
+    /// <summary>Whether the node is, or holds, an image with this src.</summary>
+    public static bool Shows(JsonNode node, string src)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        if (node["type"]?.GetValue<string>() == "image" && node["attrs"]?["src"]?.GetValue<string>() == src) return true;
+        return node["content"] is JsonArray children && children.Any(c => c is not null && Shows(c, src));
     }
 }

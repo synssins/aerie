@@ -30,6 +30,7 @@ public sealed class SamplePlugin : IKbPlugin
         .EditorNode(Notice.Renderer)                               // how the server reads its editor block
         .ImportContributor<NoticeFromFile>()                       // add to the drafts of AI imports
         .DraftContributor<NoticeFromDraft>()                       // ... from the text the AI drafted
+        .DraftContributor<DiagramOutline>()                        // ... from the diagrams the AI read in its pictures
         .ImportFileKinds(".notice")                                // a kind the app does not read: drafted by this plugin
         .SignInMethod<SampleSignIn>("example", "Sign in with Example ID") // a button on the sign-in screen
         .SignInProviders<SampleProviderCheck>() // providers an Admin adds on this plugin's page, each with its own button

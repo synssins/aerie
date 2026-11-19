@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { Node as TiptapNode } from "@tiptap/react";
 import userEvent from "@testing-library/user-event";
 import type { ImportItem } from "./api";
 import { DialogProvider } from "./Dialogs";
+import { editorExtensions } from "./editor/extensions";
 import { folderPaths, ImportView, mergeDrafts, resolveFolder, splitAtHeadings, statusText } from "./Import";
 import { PageView } from "./PageView";
 
@@ -25,7 +27,7 @@ function server(routes: Record<string, (body: unknown) => unknown>) {
   return calls;
 }
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); editorExtensions.clear(); });
 
 const row = (o: Record<string, unknown>) => ({ batchId: "b1", error: null, files: 1, createdAt: "2026-11-14T10:00:00Z", pageId: null, source: null, suggestedSpace: null, updatedAt: null, draftMs: null, ...o });
 
@@ -121,6 +123,28 @@ describe("import review", () => {
     const body = calls.find((c) => c.key === "POST /imports/items/i1/accept")!.body as Record<string, unknown>;
     expect(body).toMatchObject({ spaceId: "s1", parentId: "f9", newFolder: "MFA", updatePageId: null, attachOriginals: false, details: { reviewMonths: 12, ownerType: "Group", appliesTo: [{ applicationId: "a1" }] } });
     expect(JSON.stringify(body.pages)).not.toContain("Hunter2");
+  });
+
+  it("a plugin's block in a draft shows as the plugin's once its plugin adds it, and not while someone is in the editor", async () => {
+    const box = { type: "probeBox", attrs: { label: "" }, content: [{ type: "paragraph", content: [{ type: "text", text: "inside the box" }] }] };
+    const json = JSON.stringify({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Before" }] }, box] });
+    const calls = server({ "GET /imports/items/i1": () => ({ ...item, proposal: { ...item.proposal!, pages: [{ title: "Reset MFA", contentJson: json, redactedJson: json }] } }), "GET /spaces/s1/tree": () => [], "POST /imports/items/i1/accept": () => ["p1"] });
+    render(<DialogProvider><ImportView itemId="i1" onOpenItem={() => {}} onOpenPage={() => {}} onHome={() => {}} /></DialogProvider>);
+    await waitFor(() => expect(document.querySelector(".draft-editor [data-kb-unknown]")?.textContent).toBe("probeBox"));
+    const editor = document.querySelector(".draft-editor .ProseMirror") as HTMLElement;
+    act(() => editor.focus());
+    act(() => editorExtensions.add("kb.test.probe", TiptapNode.create({
+      name: "probeBox", group: "block", content: "block*", addAttributes: () => ({ label: { default: "" } }),
+      parseHTML: () => [{ tag: "div[data-probe-box]" }], renderHTML: () => ["div", { "data-probe-box": "" }, 0],
+    })));
+    expect(document.querySelector(".draft-editor [data-probe-box]")).toBeNull(); // not under someone's hands
+    act(() => editor.blur());
+    await waitFor(() => expect(document.querySelector(".draft-editor [data-probe-box]")?.textContent).toBe("inside the box"));
+    expect(document.querySelector(".draft-editor [data-kb-unknown]")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Suggested: IAM" }));
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(calls.some((c) => c.key === "POST /imports/items/i1/accept")).toBe(true));
+    expect(JSON.stringify((calls.find((c) => c.key === "POST /imports/items/i1/accept")!.body as { pages: unknown }).pages)).toContain("probeBox");
   });
 
   it("Reject keeps the draft for Draft again; Discard asks first, with Cancel as the default", async () => {

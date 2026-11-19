@@ -12,7 +12,8 @@ using Microsoft.AspNetCore.DataProtection;
 namespace Kb.Web;
 
 /// <summary>What one AI call gave back. ReasoningEmpty: the model returned no reasoning text (thinking was off).</summary>
-public sealed record AiResult(JsonNode Output, string Model, int PromptTokens, int CompletionTokens, long Milliseconds, bool ReasoningEmpty);
+/// <summary>Cut: the model stopped at the token limit and <see cref="Output"/> is what a caller's salvage kept of the answer.</summary>
+public sealed record AiResult(JsonNode Output, string Model, int PromptTokens, int CompletionTokens, long Milliseconds, bool ReasoningEmpty, bool Cut = false);
 
 /// <summary>Calls in the last minute, per person and per API token, on this server.</summary>
 public sealed class AiRateLimiter(TimeProvider time)
@@ -46,9 +47,11 @@ public sealed class AiRateLimiter(TimeProvider time)
 /// <see cref="RunAsync"/>; nothing it returns is run or saved by it. Every call, refused or not, is audited (ai.call).
 /// </summary>
 public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory http, IHttpContextAccessor web, IAuditLog audit,
-    IDataProtectionProvider protection, AiRateLimiter limiter, IEnumerable<IOutboundRequestDecorator> decorators, TimeProvider time)
+    IDataProtectionProvider protection, AiRateLimiter limiter, IEnumerable<IOutboundRequestDecorator> decorators, TimeProvider time, ILogger<AiService> log)
 {
     public const string SettingsKey = "Ai.Settings", KeyKey = "Ai.ApiKey", ClientName = "kb.ai", TestFeature = "test";
+    /// <summary>How the message of a refusal starts when the model stopped at the token limit, whether the server said so in its answer or in an error.</summary>
+    public const string CutOff = "The model's reply was cut off at the limit";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
     private readonly IDataProtector _key = protection.CreateProtector("kb.ai.key");
 
@@ -132,8 +135,12 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
     /// schema: what the answer must be. Refused before the call: AI off, the feature not open to the caller, too much data, a
     /// tripwire pattern in the data, too many calls. Refused after: an answer that is not JSON matching the schema.
     /// </summary>
+    /// <param name="salvage">
+    /// For an answer that is not JSON matching the schema (one cut off at the token limit): what of it the caller can still use, or null.
+    /// What it keeps is returned, marked <see cref="AiResult.Cut"/> when the model stopped at the limit.
+    /// </param>
     public async Task<Outcome<AiResult>> RunAsync(Actor actor, string feature, string task, IReadOnlyDictionary<string, string> data, JsonObject schema, CancellationToken ct,
-        IReadOnlyList<AiGuard.Picture>? pictures = null)
+        IReadOnlyList<AiGuard.Picture>? pictures = null, Func<string, JsonNode?>? salvage = null)
     {
         ArgumentNullException.ThrowIfNull(actor);
         var s = await SettingsAsync(ct);
@@ -178,7 +185,16 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
             if (Redirect(response) is { } moved) return await RefuseAsync("error", new Problem(502, moved), moved);
             var text = await response.Content.ReadAsStringAsync(timeout.Token);
             if (!response.IsSuccessStatusCode)
-                return await RefuseAsync("error", new Problem(502, $"The model server answered {(int)response.StatusCode} ({response.ReasonPhrase}): it may be overloaded, or the content too large for it."), text.Length > 200 ? text[..200] : text);
+            {
+                // What the server said, shortened, so the next failure names its cause. It is the server's own error text: no key and no data of ours.
+                var said = text.ReplaceLineEndings(" ");
+                log.LogWarning("The model server answered {Status} for {Feature} after {Ms} ms: {Said}", (int)response.StatusCode, feature, clock.ElapsedMilliseconds, said.Length > 300 ? said[..300] : said);
+                // Some servers answer an error when the reply reached the token limit before the structure was complete.
+                if (text.Contains("finish_reason=length", StringComparison.Ordinal) || text.Contains("\"finish_reason\": \"length\"", StringComparison.Ordinal))
+                    return await RefuseAsync("error", new Problem(502, $"{CutOff} of {s.MaxTokens} tokens (Max tokens in Administration > AI)."), text.Length > 200 ? text[..200] : text);
+                return await RefuseAsync("error", new Problem(502, $"The model server answered {(int)response.StatusCode} ({response.ReasonPhrase}): {ServerReason(text) ?? "it may be overloaded, or the content too large for it."}"),
+                    text.Length > 200 ? text[..200] : text);
+            }
             answer = JsonNode.Parse(text);
         }
         catch (Exception e) when (e is HttpRequestException or OperationCanceledException or JsonException or InvalidOperationException && !ct.IsCancellationRequested)
@@ -195,11 +211,17 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
         JsonNode? output;
         try { output = JsonNode.Parse(StripFence(content)); }
         catch (JsonException) { output = null; }
+        var cutOff = answer?["choices"]?[0]?["finish_reason"]?.GetValue<string>() == "length";
+        if ((output is null || AiGuard.SchemaError(output, schema) is not null) && salvage?.Invoke(content) is { } kept)
+        {
+            await AuditAsync(actor, feature, "partial", inTokens, outTokens, ms, cutOff ? "cut at the token limit; complete items kept" : "not the schema; complete items kept");
+            return new AiResult(kept, model, inTokens, outTokens, ms, string.IsNullOrWhiteSpace(reasoning), cutOff);
+        }
         if (output is null || AiGuard.SchemaError(output, schema) is { } bad)
         {
             await AuditAsync(actor, feature, "invalid-output", inTokens, outTokens, ms, output is null ? "not JSON" : AiGuard.SchemaError(output, schema));
             var cut = answer?["choices"]?[0]?["finish_reason"]?.GetValue<string>() == "length";
-            return new Problem(502, cut ? $"The model's reply was cut off at the limit of {s.MaxTokens} tokens (Max tokens in Administration > AI)."
+            return new Problem(502, cut ? $"{CutOff} of {s.MaxTokens} tokens (Max tokens in Administration > AI)."
                 : output is null ? "The model's reply was not JSON." : "The model's reply didn't match the required structure.");
         }
         await AuditAsync(actor, feature, "ok", inTokens, outTokens, ms, null);
@@ -214,6 +236,16 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
         (int)response.StatusCode is >= 300 and < 400
             ? $"The model server answered a redirect ({(int)response.StatusCode}){(response.Headers.Location is { } to ? $" to {(to.IsAbsoluteUri ? to.GetLeftPart(UriPartial.Path) : to.OriginalString)}" : "")}. Redirects are not followed: set the final address in Administration > AI."
             : null;
+
+    /// <summary>The message of an OpenAI-style error answer ({"error": {"message": ...}}), shortened; null when it has none.</summary>
+    private static string? ServerReason(string text)
+    {
+        try
+        {
+            return JsonNode.Parse(text)?["error"]?["message"]?.GetValue<string>() is { Length: > 0 } m ? (m.Length > 160 ? m[..160] : m).ReplaceLineEndings(" ") : null;
+        }
+        catch (Exception e) when (e is JsonException or InvalidOperationException) { return null; }
+    }
 
     // Some servers wrap JSON in a ``` fence even when asked not to.
     private static string StripFence(string text)

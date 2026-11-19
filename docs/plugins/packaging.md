@@ -1,7 +1,7 @@
 # Building and packaging a plugin
 
 How to build a plugin outside this repository, what goes in the package, and what the app checks when an Admin uploads it.
-Every step here was run as written, against app version 0.3.0; 0.4.0 to 0.9.0 changed none of them.
+Every step here was run as written, against app version 0.3.0; 0.4.0 to 0.10.0 changed none of them.
 
 Related: [developer guide](developer-guide.md), [manifest reference](manifest-reference.md), [example: an outbound-headers plugin](example-outbound-headers.md), [admin guide](admin-guide.md).
 
@@ -107,8 +107,8 @@ The complete manifest of this package:
   "publisher": "Example Ltd",
   "description": "Adds two secret headers to the AI service's calls to one host.",
   "assembly": "Example.GatewayHeaders.dll",
-  "minKbVersion": "0.9.0",
-  "abstractionsVersion": "0.9.0",
+  "minKbVersion": "0.10.0",
+  "abstractionsVersion": "0.10.0",
   "extensionPoints": ["outbound-request-decorator"],
   "settings": [
     { "key": "Host", "label": "Host the headers are sent to", "type": "text", "required": true },
@@ -205,10 +205,11 @@ The [manifest reference](manifest-reference.md#what-refuses-an-install) lists ev
 | Field | Meaning |
 |---|---|
 | `version` | Your plugin's version. An update must be higher than the installed one. To go back, remove the plugin (keep its data) and upload the older package. |
-| `abstractionsVersion` | The contract version you built against. The app's is **0.9.0**. Before 1.0.0 a plugin fits when its major number is the app's and it is not higher: a plugin built for 0.1.0 to 0.9.0 runs on 0.9.0. |
-| `minKbVersion` | The lowest app version you run on. The app is **0.9.0**. |
+| `abstractionsVersion` | The contract version you built against. The app's is **0.10.0**. Before 1.0.0 a plugin fits when its major number is the app's and it is not higher: a plugin built for 0.1.0 to 0.10.0 runs on 0.10.0. |
+| `minKbVersion` | The lowest app version you run on. The app is **0.10.0**. |
 | `uiApiVersion` | The browser script API, **1.1.0** (1.0.0 scripts run as they did). Needed when the plugin has a script. |
 
+What came with 0.10.0: diagrams the AI reads in an import's pictures, handed to draft contributors as data, and a place right after a picture ([developer guide](developer-guide.md#diagrams-in-the-pictures-of-an-import)). A plugin that uses them says `"abstractionsVersion": "0.10.0"`.
 What came with 0.9.0: sign-in providers an Admin adds on the plugin's page, each its own button, read from settings at the time of use ([developer guide](developer-guide.md#sign-in-providers-an-admin-adds)). Their hosts come from what the Admin entered and the provider's discovery document, not from `outboundHosts`. A plugin that offers them says `"abstractionsVersion": "0.9.0"`.
 What came with 0.8.0: sign-in methods, a button on the sign-in screen for an OpenID Connect provider, with the sign-in run by the app ([developer guide](developer-guide.md#sign-in-methods)). The provider's hosts go in `outboundHosts`. A plugin that uses them says `"abstractionsVersion": "0.8.0"`. Setting keys starting with `signIn.` are the app's from 0.8.0 on, and a manifest that declares one is refused.
 What came with 0.7.0: a setting's help, default, unit, bounds and option labels, and the plugin's own page in Administration > Plugins, where its script adds panels and uploads files to its routes ([developer guide](developer-guide.md#panels-on-the-plugins-own-page)). A plugin that uses them says `"abstractionsVersion": "0.7.0"`, and `"uiApiVersion": "1.1.0"` for the script.
@@ -221,7 +222,7 @@ Editor blocks and the browser script came while the contract was still numbered 
 The contract can still change before 1.0.0, and the app checks only the number: two builds of the app at 0.3.0 may differ in what the contract has. In practice:
 
 1. Compile against the `Kb.Plugins.Abstractions.dll` taken from the installation you will install on ([above](#what-you-need)). A member your plugin uses that the app does not have is then a compile error, not a failure at start.
-2. Set `abstractionsVersion` and `minKbVersion` to that app's version, **0.9.0** today.
+2. Set `abstractionsVersion` and `minKbVersion` to that app's version, **0.10.0** today.
 3. After the app is updated, build again against the new DLL. A plugin that no longer fits is "Disabled by core" at start, with the reason on the Plugins screen.
 
 ## Check a package with the app's tests
