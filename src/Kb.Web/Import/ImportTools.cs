@@ -37,7 +37,7 @@ public static partial class ImportTools
     private static partial Regex Plain();
 
     private static readonly HashSet<string> Keywords = new(StringComparer.Ordinal)
-        { "type", "properties", "required", "items", "enum", "minLength", "maxLength", "minItems", "maxItems", "additionalProperties", "description" };
+        { "type", "properties", "required", "items", "enum", "minLength", "maxLength", "minItems", "maxItems", "additionalProperties", "description", "format" };
 
     private static readonly HashSet<string> Types = new(StringComparer.Ordinal) { "object", "array", "string", "integer", "number", "boolean" };
 
@@ -102,6 +102,11 @@ public static partial class ImportTools
                         texts.Add(s);
                     }
                     break;
+                case "format":
+                    // A string the model makes up to tie items together (a box's id, the ends of a line): not text of the documents.
+                    if (v.ValueKind != JsonValueKind.String || v.GetString() != "identifier") return "format may only be identifier.";
+                    if (!e.TryGetProperty("type", out var ft) || ft.GetString() != "string") return "format identifier is only for a string.";
+                    break;
                 case "additionalProperties":
                     if (v.ValueKind != JsonValueKind.False) return "additionalProperties may only be false.";
                     break;
@@ -117,6 +122,58 @@ public static partial class ImportTools
         }
         return null;
     }
+
+    /// <summary>The shortest string the source check applies to, after spaces are collapsed. Shorter ones carry no text of their own.</summary>
+    public const int MinGrounded = 3;
+
+    [GeneratedRegex(@"^[A-Za-z0-9_.\-]{1,32}\z")]
+    private static partial Regex Identifier();
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex Space();
+
+    /// <summary>Text as the source check compares it: lower case, every run of white space one space, trimmed.</summary>
+    public static string Normalize(string text) => Space().Replace(AiGuard.Normalize(text ?? "").ToLowerInvariant(), " ").Trim();
+
+    /// <summary>
+    /// The source check: the first string of the input that is neither in the documents nor in the draft (<paramref name="source"/>,
+    /// normalized), or null when all are. A string the schema limits to choices (enum) is the schema's, not the model's, and is not
+    /// checked; nor is a string shorter than <see cref="MinGrounded"/>. A string marked <c>"format": "identifier"</c> is not checked
+    /// against the source, but must be 1 to 32 letters, digits, dots, hyphens or underscores; one that is not is returned.
+    /// </summary>
+    public static string? Ungrounded(JsonNode? input, JsonObject schema, string source)
+    {
+        ArgumentNullException.ThrowIfNull(schema);
+        switch (input)
+        {
+            case JsonObject o:
+                var props = schema["properties"] as JsonObject;
+                foreach (var (key, child) in o)
+                    if (Ungrounded(child, props?[key] as JsonObject ?? [], source) is { } bad) return bad;
+                return null;
+            case JsonArray a:
+                foreach (var child in a)
+                    if (Ungrounded(child, schema["items"] as JsonObject ?? [], source) is { } bad) return bad;
+                return null;
+            case JsonValue v when v.GetValueKind() == JsonValueKind.String:
+                var text = v.GetValue<string>();
+                if (schema["enum"] is not null) return null;
+                if (schema["format"]?.GetValue<string>() == "identifier") return Identifier().IsMatch(text) ? null : text;
+                var n = Normalize(text);
+                return n.Length < MinGrounded || source.Contains(n, StringComparison.Ordinal) ? null : text;
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>The input as one string with its keys in order, so two calls with the same input compare equal however the model ordered them.</summary>
+    public static string Canonical(JsonNode? node) => node switch
+    {
+        JsonObject o => "{" + string.Join(",", o.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => JsonValue.Create(p.Key).ToJsonString() + ":" + Canonical(p.Value))) + "}",
+        JsonArray a => "[" + string.Join(",", a.Select(Canonical)) + "]",
+        null => "null",
+        _ => node.ToJsonString(),
+    };
 
     /// <summary>The tool as the chat API offers it: its name, description and schema, with <see cref="Place"/> added and required.</summary>
     public static JsonObject Offer(ImportToolReg tool, int blocks)
@@ -188,6 +245,11 @@ public sealed partial class ImportService
         if (at.Count == 0) return;
 
         var placed = new List<(int Page, int Index, IReadOnlyList<JsonNode> Nodes)>();
+        // The repeat check: what each tool was given, and after which block, by the calls that added something.
+        var made = new HashSet<(string, string)>();
+        var places = new HashSet<(string, int)>();
+        // The source check: the documents and the draft as the model was given them, normalized.
+        var grounds = ImportTools.Normalize(source + " " + string.Join(" ", contents.Select(c => Kb.Core.Content.DocText.Plain(new JsonObject { ["type"] = "doc", ["content"] = c.DeepClone() }.ToJsonString()))));
         var outcomes = new List<ImportTools.Outcome>();
         async Task<string> AnswerAsync(AiService.ToolCall call)
         {
@@ -214,10 +276,18 @@ public sealed partial class ImportService
             var schema = JsonNode.Parse(found.Tool.InputSchema.GetRawText())!.AsObject();
             if (AiGuard.SchemaError(input, schema) is { } bad)
                 return await Done(found.PluginId, "invalid", $"Refused: the input does not match the tool's schema ({(bad.Length > 120 ? bad[..120] : bad)}).");
+            var same = ImportTools.Canonical(input);
+            if (made.Contains((call.Name, same)) || places.Contains((call.Name, after)))
+                return await Done(found.PluginId, "repeat", "Refused as a repeat: this tool was already called with this input, or after this block.");
+            if (ImportTools.Ungrounded(input, schema, grounds) is { } loose)
+                return await Done(found.PluginId, "not-in-source",
+                    $"Refused: the input holds text that is not in the documents or the draft: \"{(loose.Length > 60 ? loose[..60] + "..." : loose)}\". Use only text as the documents write it.");
             using var doc = JsonDocument.Parse(input.ToJsonString());
             var nodes = await contributors.CallToolAsync(found.PluginId, found.Tool, item, doc.RootElement.Clone(), ct);
             if (nodes is not { Count: > 0 }) return await Done(found.PluginId, "nothing", "Refused: the tool added nothing.");
             placed.Add((at[after - 1].Page, at[after - 1].Index, nodes));
+            made.Add((call.Name, same));
+            places.Add((call.Name, after));
             return await Done(found.PluginId, "done", $"Done: added after block {after}.", nodes.Count);
         }
 

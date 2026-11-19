@@ -1186,7 +1186,8 @@ The tool class implements `IImportTool`. It gets the input of one call as a `Jso
 /// <summary>
 /// A tool the AI may call while it drafts an import (0.11.0 draft): a drawing of boxes, groups and lines in a document (a network map
 /// drawn in text) becomes an outline after the block that shows it. The app checks the input against <see cref="Schema"/> before the
-/// call, so the plugin gets only valid input; it never sees the document. A chart plugin would draw the same data instead.
+/// call, so the plugin gets only valid input; it never sees the document. Labels must be text of the document; ids, which the AI makes
+/// up to tie boxes to groups and lines, are marked <c>"format": "identifier"</c>. A chart plugin would draw the same data instead.
 /// </summary>
 public sealed class BoxesAndLines : IImportTool
 {
@@ -1196,13 +1197,13 @@ public sealed class BoxesAndLines : IImportTool
         {"type": "object", "required": ["boxes", "lines"], "additionalProperties": false, "properties": {
           "title": {"type": "string", "maxLength": 100},
           "groups": {"type": "array", "maxItems": 40, "items": {"type": "object", "required": ["id", "label"], "additionalProperties": false, "properties": {
-            "id": {"type": "string", "maxLength": 32}, "label": {"type": "string", "maxLength": 100},
-            "group": {"type": "string", "maxLength": 32, "description": "The id of the group it sits in, if any."}}}},
+            "id": {"type": "string", "format": "identifier"}, "label": {"type": "string", "maxLength": 100},
+            "group": {"type": "string", "format": "identifier", "description": "The id of the group it sits in, if any."}}}},
           "boxes": {"type": "array", "minItems": 1, "maxItems": 150, "items": {"type": "object", "required": ["id", "label"], "additionalProperties": false, "properties": {
-            "id": {"type": "string", "maxLength": 32}, "label": {"type": "string", "maxLength": 100},
-            "group": {"type": "string", "maxLength": 32, "description": "The id of the group it sits in, if any."}}}},
+            "id": {"type": "string", "format": "identifier"}, "label": {"type": "string", "maxLength": 100},
+            "group": {"type": "string", "format": "identifier", "description": "The id of the group it sits in, if any."}}}},
           "lines": {"type": "array", "maxItems": 200, "items": {"type": "object", "required": ["from", "to"], "additionalProperties": false, "properties": {
-            "from": {"type": "string", "maxLength": 32}, "to": {"type": "string", "maxLength": 32}, "label": {"type": "string", "maxLength": 100}}}}}}
+            "from": {"type": "string", "format": "identifier"}, "to": {"type": "string", "format": "identifier"}, "label": {"type": "string", "maxLength": 100}}}}}}
         """;
 
     public Task<ImportToolResult?> CallAsync(JsonElement input, CancellationToken ct)
@@ -1239,7 +1240,7 @@ public sealed class BoxesAndLines : IImportTool
 
 - its name is 3 to 40 lower-case letters, digits or underscores, starting with a letter, and no other loaded plugin's tool has it;
 - its description is plain text (letters, digits, spaces and ordinary punctuation: no line breaks, markup, braces or quotes) of at most 300 characters;
-- its schema is an object of at most 4,000 characters, nests at most 6 deep, and uses only `type` (object, array, string, integer, number, boolean), `properties`, `required`, `items`, `enum`, `minLength`, `maxLength`, `minItems`, `maxItems`, `additionalProperties` (false only) and `description`. Property names are 1 to 40 letters, digits or underscores; a property's description is plain text of at most 200 characters; a choice of an `enum` is plain text of at most 60 characters, or a number. All this text together is at most 1,500 characters;
+- its schema is an object of at most 4,000 characters, nests at most 6 deep, and uses only `type` (object, array, string, integer, number, boolean), `properties`, `required`, `items`, `enum`, `minLength`, `maxLength`, `minItems`, `maxItems`, `additionalProperties` (false only), `description` and `format` (only `"identifier"`, on a string; see below). Property names are 1 to 40 letters, digits or underscores; a property's description is plain text of at most 200 characters; a choice of an `enum` is plain text of at most 60 characters, or a number. All this text together is at most 1,500 characters;
 - none of that text is addressed to the AI (the check every source of the AI goes through);
 - the schema does not use the name `after_block`, which the app keeps for itself.
 
@@ -1247,7 +1248,17 @@ public sealed class BoxesAndLines : IImportTool
 
 **Where the result goes.** The app adds an input `after_block` to every tool: the number of the draft block, as the model was shown the draft, that holds the content the call is about. The app removes it before the plugin gets the input, and puts the plugin's nodes right after that block. The source stays: a map drawn in text stays its code block, and the drawing goes after it. The importer reviews it with the rest.
 
-**What the model gets back.** Never the plugin's text. Each call gets one reply the app writes: "Done: added after block 2.", or "Refused:" and the app's reason (no tool of that name, not a JSON object, over 16 KB, no such block, or which part of the schema the input breaks, or that the tool added nothing).
+**Two guards on what the model sends.** After the schema, the app checks each call twice more:
+
+- **No repeats.** In one import item, a tool is not called again with the same input (its keys in any order), nor again after the same block. Only calls that added something count. A refused call may be made again, corrected. The reply is "Refused as a repeat: ...".
+- **Only text of the source.** Every string in the input must appear in the item's documents or in its drafted page. The comparison ignores case, and every run of white space counts as one space. Three kinds of string are not checked:
+  - a string shorter than 3 characters: it carries no text of its own;
+  - a string the schema limits to an `enum`: the choices are the plugin's, fixed and checked when the tool is offered;
+  - a string marked `"format": "identifier"`. This is for the ids the model makes up to tie items together, such as a box's id and the ends of a line. An identifier is not compared with the source, but it must be 1 to 32 letters, digits, dots, hyphens or underscores, so it cannot carry a sentence.
+
+  A label that the model reworded, joined from two places, or made up is refused: "Refused: the input holds text that is not in the documents or the draft: "..."". Mark only real ids as identifiers. A label marked as one is still limited to 32 characters of that kind.
+
+**What the model gets back.** Never the plugin's text. Each call gets one reply the app writes: "Done: added after block 2.", or "Refused:" and the app's reason (no tool of that name, not a JSON object, over 16 KB, no such block, which part of the schema the input breaks, a repeat, text that is not in the source, or that the tool added nothing). A reply may quote, cut short, the model's own string that was not found; never anything of the plugin's.
 
 **Limits, for each import item.** At most 8 tool calls are answered; then the conversation ends, and the draft says so. One call's input is at most 16 KB. The plugin's answer is checked as a contribution's (block nodes, at most 50 nodes and 512 KB). Each call is in the audit log as `import.tool`: the plugin, the tool, the importer, the size of the input, the outcome and the number of nodes. Each model call is in it as an AI call, as the drafting is.
 

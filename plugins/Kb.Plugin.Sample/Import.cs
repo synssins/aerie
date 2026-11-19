@@ -88,7 +88,8 @@ public sealed class DiagramOutline : IDraftContributor
 /// <summary>
 /// A tool the AI may call while it drafts an import (0.11.0 draft): a drawing of boxes, groups and lines in a document (a network map
 /// drawn in text) becomes an outline after the block that shows it. The app checks the input against <see cref="Schema"/> before the
-/// call, so the plugin gets only valid input; it never sees the document. A chart plugin would draw the same data instead.
+/// call, so the plugin gets only valid input; it never sees the document. Labels must be text of the document; ids, which the AI makes
+/// up to tie boxes to groups and lines, are marked <c>"format": "identifier"</c>. A chart plugin would draw the same data instead.
 /// </summary>
 public sealed class BoxesAndLines : IImportTool
 {
@@ -98,13 +99,13 @@ public sealed class BoxesAndLines : IImportTool
         {"type": "object", "required": ["boxes", "lines"], "additionalProperties": false, "properties": {
           "title": {"type": "string", "maxLength": 100},
           "groups": {"type": "array", "maxItems": 40, "items": {"type": "object", "required": ["id", "label"], "additionalProperties": false, "properties": {
-            "id": {"type": "string", "maxLength": 32}, "label": {"type": "string", "maxLength": 100},
-            "group": {"type": "string", "maxLength": 32, "description": "The id of the group it sits in, if any."}}}},
+            "id": {"type": "string", "format": "identifier"}, "label": {"type": "string", "maxLength": 100},
+            "group": {"type": "string", "format": "identifier", "description": "The id of the group it sits in, if any."}}}},
           "boxes": {"type": "array", "minItems": 1, "maxItems": 150, "items": {"type": "object", "required": ["id", "label"], "additionalProperties": false, "properties": {
-            "id": {"type": "string", "maxLength": 32}, "label": {"type": "string", "maxLength": 100},
-            "group": {"type": "string", "maxLength": 32, "description": "The id of the group it sits in, if any."}}}},
+            "id": {"type": "string", "format": "identifier"}, "label": {"type": "string", "maxLength": 100},
+            "group": {"type": "string", "format": "identifier", "description": "The id of the group it sits in, if any."}}}},
           "lines": {"type": "array", "maxItems": 200, "items": {"type": "object", "required": ["from", "to"], "additionalProperties": false, "properties": {
-            "from": {"type": "string", "maxLength": 32}, "to": {"type": "string", "maxLength": 32}, "label": {"type": "string", "maxLength": 100}}}}}}
+            "from": {"type": "string", "format": "identifier"}, "to": {"type": "string", "format": "identifier"}, "label": {"type": "string", "maxLength": 100}}}}}}
         """;
 
     public Task<ImportToolResult?> CallAsync(JsonElement input, CancellationToken ct)

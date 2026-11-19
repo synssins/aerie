@@ -83,10 +83,18 @@ public sealed class ImportToolTests : IAsyncLifetime
               "boxes": {"type": "array", "minItems": 1, "items": {"type": "string", "maxLength": 50}}}}
             """;
 
+        /// <summary>Lines between boxes named by ids the model makes up, each with a style from a fixed choice.</summary>
+        public const string LinesSchema = """
+            {"type": "object", "required": ["lines"], "additionalProperties": false, "properties": {
+              "lines": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["from", "to"], "additionalProperties": false, "properties": {
+                "from": {"type": "string", "format": "identifier"}, "to": {"type": "string", "format": "identifier"},
+                "style": {"type": "string", "enum": ["dashed line", "solid line"]}, "label": {"type": "string", "maxLength": 50}}}}}}
+            """;
+
         public Task<ImportToolResult?> CallAsync(JsonElement input, CancellationToken ct)
         {
             seen.Inputs.Enqueue(input.GetRawText());
-            var n = input.GetProperty("boxes").GetArrayLength();
+            var n = input.TryGetProperty("boxes", out var b) ? b.GetArrayLength() : input.GetProperty("lines").GetArrayLength();
             return Task.FromResult<ImportToolResult?>(new ImportToolResult([JsonSerializer.SerializeToElement(new
             {
                 type = "paragraph", content = new[] { new { type = "text", text = $"{n} boxes. {Secret}" } },
@@ -106,6 +114,8 @@ public sealed class ImportToolTests : IAsyncLifetime
         var regs = new PluginRegistrations();
         using (var schema = JsonDocument.Parse(Boxes.Schema))
             regs.Add("kb.test.tools", new ImportToolReg("draw_boxes", "Draw the boxes of a drawing in the documents.", schema.RootElement.Clone(), typeof(Boxes)));
+        using (var schema = JsonDocument.Parse(Boxes.LinesSchema))
+            regs.Add("kb.test.tools", new ImportToolReg("draw_lines", "Draw the lines of a drawing in the documents.", schema.RootElement.Clone(), typeof(Boxes)));
         var (model, seen) = (_model, _seen);
         _f = new KbAppFactory(KbAppFactory.NewDbPath(), services: s =>
         {
@@ -183,7 +193,7 @@ public sealed class ImportToolTests : IAsyncLifetime
 
         // Offered: the tool's name, description and schema, with the block number the app adds; the draft's blocks are numbered.
         var first = ToolRequests[0];
-        var offered = Assert.Single(first["tools"]!.AsArray())!["function"]!;
+        var offered = first["tools"]!.AsArray().Select(t => t!["function"]!).Single(f => f["name"]!.GetValue<string>() == "draw_boxes");
         Assert.Equal(("draw_boxes", "Draw the boxes of a drawing in the documents."), (offered["name"]!.GetValue<string>(), offered["description"]!.GetValue<string>()));
         Assert.Equal(["boxes", "after_block"], offered["parameters"]!["required"]!.AsArray().Select(r => r!.GetValue<string>()));
         var data = JsonNode.Parse(first["messages"]![1]!["content"]!.GetValue<string>())!["data"]!;
@@ -245,13 +255,62 @@ public sealed class ImportToolTests : IAsyncLifetime
     [Fact]
     public async Task TheLimits_Hold()
     {
-        // More calls than the limit, one each turn: the app answers the limit's worth and stops.
+        // More calls than the limit, one each turn: the app answers the limit's worth (the repeats refused) and stops.
         for (var i = 0; i < ImportTools.MaxToolCalls + 3; i++) _model.Turns.Enqueue(Call("draw_boxes", """{"boxes": ["A"], "after_block": 1}""", $"c{i}"));
         var (blocks, warnings) = await ImportAsync();
-        Assert.Equal(ImportTools.MaxToolCalls, _seen.Inputs.Count);
+        Assert.Single(_seen.Inputs);
         Assert.Equal(ImportTools.MaxToolCalls, ToolRequests.Count);
-        Assert.Equal(3 + ImportTools.MaxToolCalls, blocks.Count);
+        Assert.Equal(4, blocks.Count);
         Assert.Contains(warnings, w => w.Contains($"limit of {ImportTools.MaxToolCalls} tool calls", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ARepeat_IsRefused_TheSameInput_OrTheSameBlock()
+    {
+        _model.Turns.Enqueue(Call("draw_boxes", """{"boxes": ["CORE-SW1"], "after_block": 2}""", "c1"));
+        _model.Turns.Enqueue(Call("draw_boxes", """{"after_block": 3, "boxes": ["CORE-SW1"]}""", "c2")); // the same input, its keys in another order
+        _model.Turns.Enqueue(Call("draw_boxes", """{"boxes": ["laptops VLAN30"], "after_block": 2}""", "c3")); // the same block
+        _model.Turns.Enqueue(Call("draw_lines", """{"lines": [{"from": "a", "to": "b"}], "after_block": 2}""", "c4")); // another tool may go there
+        var (blocks, _) = await ImportAsync();
+        Assert.Equal(2, _seen.Inputs.Count);
+        Assert.Equal(["paragraph", "codeBlock", "paragraph", "paragraph", "paragraph"], blocks.Select(TypeOf));
+        const string repeat = "Refused as a repeat: this tool was already called with this input, or after this block.";
+        Assert.Equal(["Done: added after block 2.", repeat, repeat, "Done: added after block 2."], Replies);
+    }
+
+    [Fact]
+    public async Task ACallThatWasRefused_MayBeMadeAgain_Corrected()
+    {
+        _model.Turns.Enqueue(Call("draw_boxes", """{"boxes": ["edge router"], "after_block": 2}""", "c1"));
+        _model.Turns.Enqueue(Call("draw_boxes", """{"boxes": ["CORE-SW1"], "after_block": 2}""", "c2"));
+        await ImportAsync();
+        Assert.Equal(["""{"boxes":["CORE-SW1"]}"""], _seen.Inputs);
+    }
+
+    [Theory]
+    [InlineData("""{"boxes": ["edge router"], "after_block": 2}""", false)] // not in the map
+    [InlineData("""{"boxes": ["CORE-SW1 and the firewall"], "after_block": 2}""", false)] // more than the map says
+    [InlineData("""{"boxes": ["core-sw1"], "after_block": 2}""", true)] // case does not count
+    [InlineData("""{"boxes": ["laptops   VLAN30"], "after_block": 2}""", true)] // nor runs of spaces
+    [InlineData("""{"boxes": ["The map:"], "after_block": 2}""", true)] // in the documents and the draft
+    [InlineData("""{"boxes": ["xy"], "after_block": 2}""", true)] // too short to check
+    public async Task EveryString_MustComeFromTheSource(string arguments, bool done)
+    {
+        _model.Turns.Enqueue(Call("draw_boxes", arguments));
+        await ImportAsync();
+        Assert.Equal(done ? 1 : 0, _seen.Inputs.Count);
+        if (!done) Assert.StartsWith("Refused: the input holds text that is not in the documents or the draft: \"", Assert.Single(Replies), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("""{"lines": [{"from": "sw1", "to": "fw_01", "style": "dashed line"}], "after_block": 2}""", true)] // made-up ids, a choice of the schema
+    [InlineData("""{"lines": [{"from": "sw1", "to": "fw 01"}], "after_block": 2}""", false)] // an id with a space is not an id
+    [InlineData("""{"lines": [{"from": "sw1", "to": "fw1", "label": "uplink to the cloud"}], "after_block": 2}""", false)] // a label is checked
+    public async Task IdsAndChoices_AreNotCheckedAgainstTheSource_ButIdsMustLookLikeIds(string arguments, bool done)
+    {
+        _model.Turns.Enqueue(Call("draw_lines", arguments));
+        await ImportAsync();
+        Assert.Equal(done ? 1 : 0, _seen.Inputs.Count);
     }
 
     [Fact]
@@ -305,6 +364,9 @@ public sealed class ImportToolTests : IAsyncLifetime
         Assert.NotNull(ImportTools.Problem(Tool(schema: """{"type": "object", "properties": {"x": {"type": "string", "enum": ["a\nb"]}}}""")));
         Assert.NotNull(ImportTools.Problem(Tool(schema: """{"type": "object", "properties": {"after_block": {"type": "integer"}}}""")));
         Assert.NotNull(ImportTools.Problem(Tool(schema: """{"type": "array"}""")));
+        Assert.Null(ImportTools.Problem(Tool(schema: Boxes.LinesSchema)));
+        Assert.NotNull(ImportTools.Problem(Tool(schema: """{"type": "object", "properties": {"x": {"type": "string", "format": "uri"}}}""")));
+        Assert.NotNull(ImportTools.Problem(Tool(schema: """{"type": "object", "properties": {"x": {"type": "integer", "format": "identifier"}}}""")));
         Assert.NotNull(ImportTools.Problem(Tool(schema: "{\"type\": \"object\", \"properties\": {" + string.Join(",", Enumerable.Range(0, 300).Select(i => $"\"p{i}\": {{\"type\": \"string\"}}")) + "}}")));
     }
 
