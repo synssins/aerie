@@ -109,17 +109,16 @@ internal static class DcSpaceData
     /// </summary>
     public static async Task EnsureIdsAsync(KbDbContext db, CancellationToken ct)
     {
-        var missing = await db.Spaces.IgnoreQueryFilters().Where(s => !db.DcSpaces.Any(d => d.SpaceId == s.Id))
+        Task<List<Guid>> MissingAsync() => db.Spaces.IgnoreQueryFilters().Where(s => !db.DcSpaces.Any(d => d.SpaceId == s.Id))
             .OrderBy(s => s.CreatedAt).ThenBy(s => s.Id).Select(s => s.Id).ToListAsync(ct);
-        if (missing.Count == 0) return;
-        var rows = missing.Select(id => new DcSpace { SpaceId = id }).ToList();
-        db.DcSpaces.AddRange(rows);
-        try { await db.SaveChangesAsync(ct); }
-        catch (DbUpdateException)
+        if ((await MissingAsync()).Count == 0) return;
+        // One request at a time gives them ids, and each looks again once it is its turn: the ids another request gave stand.
+        await DcFirstUse.AddAsync(db, async () =>
         {
-            // Another request gave them ids first: theirs stand.
-            foreach (var row in rows) db.Entry(row).State = EntityState.Detached;
-        }
+            var rows = (await MissingAsync()).Select(id => new DcSpace { SpaceId = id }).ToList();
+            db.DcSpaces.AddRange(rows);
+            return rows;
+        }, ct);
     }
 
     /// <summary>The space under this key when the actor has a role in it, else null (404: a space's existence is not disclosed).</summary>
