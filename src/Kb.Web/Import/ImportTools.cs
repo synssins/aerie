@@ -312,7 +312,9 @@ public static partial class ImportTools
             if (mine.Count == 0 || mine.Any(p => p.Box is null)) continue;
             foreach (var (otherId, other, _, _) in objects)
             {
-                if (otherId is null || other is null || Normalize(other) == Normalize(member) || within.Contains(otherId)) continue;
+                // Naming the object, or another one of the same label (a frame declared both as a box and as a group), is right.
+                if (otherId is null || other is null || Normalize(other) == Normalize(member) || within.Contains(otherId)
+                    || within.Any(w => labels.TryGetValue(w, out var named) && Normalize(named) == Normalize(other))) continue;
                 var holds = Regions.Starts(other, regions).Where(p => p.Box is not null).ToList();
                 if (holds.Count > 0 && mine.All(m => holds.Any(h => h.Region.Number == m.Region.Number && h.Box == m.Box && h.Line < m.Line)))
                     return (member, other);
@@ -342,6 +344,30 @@ public static partial class ImportTools
 
     [GeneratedRegex(@"\+[-=~_]|[-=~_]\+|[┌-╋]")]
     private static partial Regex Corner();
+
+    [GeneratedRegex(@"\[([^\[\]]+)\]")]
+    private static partial Regex BracketItem();
+
+    /// <summary>
+    /// For a string marked <c>"format": "enclosed"</c> (a box's label): the first one that joins items the regions write each in its own
+    /// brackets (two or more of them, or one with words of its own), or null. Each such item is a box of its own.
+    /// </summary>
+    public static string? Joins(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> regions)
+    {
+        ArgumentNullException.ThrowIfNull(regions);
+        var items = regions.SelectMany(r => r.Lines).SelectMany(l => BracketItem().Matches(l).Select(m => Normalize(m.Groups[1].Value)))
+            .Where(i => i.Length > 0).Distinct().ToList();
+        if (items.Count == 0) return null;
+        foreach (var text in Marked(input, schema, "enclosed"))
+        {
+            var label = Normalize(text.Replace('[', ' ').Replace(']', ' '));
+            var hits = items.Where(i => $" {label} ".Contains($" {i} ", StringComparison.Ordinal)).ToList();
+            // An item that is part of a longer one ("SQL MI" in "SQL MI replica") counts once, as the longer one.
+            hits = [.. hits.Where(i => !hits.Any(o => o != i && $" {o} ".Contains($" {i} ", StringComparison.Ordinal)))];
+            if (hits.Count >= 2 || (hits.Count == 1 && hits[0] != label)) return text;
+        }
+        return null;
+    }
 
     // Whether the text that starts at a column is an end of a line drawn across: a run of two or more dashes, equals or tildes (with or
     // without an arrow head) right before it, or right after it ("|---- Entra ID / M365 / Intune"). A line's label stands beside a line
@@ -593,6 +619,9 @@ public sealed partial class ImportService
             if (apart.Count > 0)
                 return await Done(found.PluginId, "not-in-box",
                     $"Refused: {string.Join("; ", apart.Select(m => $"\"{Cut(m.Text)}\" is not written in the same box as \"{Cut(m.Label)}\""))} in the documents. Give each item only the text written with it.");
+            if (regional && ImportTools.Joins(input, schema, regions) is { } joined)
+                return await Done(found.PluginId, "joins-items",
+                    $"Refused: \"{Cut(joined)}\" joins items the documents write each in its own brackets. Give each item a box of its own.");
             if (regional && ImportTools.NotEnclosed(input, schema, regions) is { } free)
                 return await Done(found.PluginId, "not-enclosed",
                     $"Refused: \"{Cut(free)}\" is written in no box in the documents, so it is not a box; text beside a line is that line's label.");

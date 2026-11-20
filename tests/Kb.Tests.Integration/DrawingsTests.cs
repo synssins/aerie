@@ -164,6 +164,7 @@ public sealed class DrawingsTests
     [InlineData("""{"groups":[{"id":"prod","label":"vnet-prod"}],"boxes":[{"id":"m","label":"SQL MI","group":"prod"}]}""", null)] // in its frame's group
     [InlineData("""{"groups":[],"boxes":[{"id":"v","label":"vnet-prod"},{"id":"m","label":"SQL MI"}]}""", "SQL MI")] // seen in round 10: beside its frame
     [InlineData("""{"groups":[],"boxes":[{"id":"h","label":"HV01"},{"id":"f","label":"FS01 SQL01"}]}""", null)] // below a box, not in it
+    [InlineData("""{"groups":[{"id":"g","label":"vnet-prod"}],"boxes":[{"id":"v","label":"vnet-prod"},{"id":"m","label":"SQL MI","group":"g"}]}""", null)] // seen in round 10: the frame declared as a box and as a group
     public void AnItemDrawnInAFrame_IsInThatFramesGroup(string json, string? refused) =>
         Assert.Equal(refused, ImportTools.NotInside(System.Text.Json.Nodes.JsonNode.Parse(json), GroupSchema, Regions.Find(Wiki, TestRegions.Drawing))?.Member);
 
@@ -225,6 +226,16 @@ public sealed class DrawingsTests
     public void ALinesLabel_BesideALine_IsNoBox() =>
         Assert.Equal("ExpressRoute", ImportTools.NotEnclosed(System.Text.Json.Nodes.JsonNode.Parse("""{"boxes":[{"label":"ExpressRoute"}]}"""), EnclosedSchema,
             Regions.Find(Hub, TestRegions.Drawing)));
+
+    [Theory]
+    [InlineData("vnet-prod 10.50.8.0/22 SQL MI KV", "vnet-prod 10.50.8.0/22 SQL MI KV")] // seen in round 10: a frame's label with its items
+    [InlineData("FS01 SQL01 BKP01", "FS01 SQL01 BKP01")] // two items in one
+    [InlineData("[SQL MI]", null)] // one item, as written
+    [InlineData("SQL MI", null)] // one item, its brackets left out
+    [InlineData("vnet-prod", null)] // no item at all
+    public void ABoxsLabel_DoesNotJoinBracketedItems(string label, string? refused) =>
+        Assert.Equal(refused, ImportTools.Joins(System.Text.Json.Nodes.JsonNode.Parse($$"""{"boxes":[{"label":"{{label}}"}]}"""), EnclosedSchema,
+            Regions.Find(Wiki, TestRegions.Drawing)));
 
     [Fact]
     public void ABoxsLabel_InAChainOfBareNames_IsNotChecked() =>
