@@ -177,6 +177,25 @@ public sealed class DrawingsTests
         Assert.Null(ImportTools.NotInside(input, GroupSchema, Regions.Find(map, TestRegions.Drawing)));
     }
 
+    private static readonly System.Text.Json.Nodes.JsonObject EnclosedSchema = System.Text.Json.Nodes.JsonNode.Parse("""
+        {"type":"object","properties":{"boxes":{"type":"array","items":{"type":"object","properties":{"label":{"type":"string","format":"enclosed"}}}}}}
+        """)!.AsObject();
+
+    [Theory]
+    [InlineData("HV01", null)] // in its box
+    [InlineData("FS01 SQL01", null)] // between brackets
+    [InlineData("Entra ID / M365 / Intune", "Entra ID / M365 / Intune")] // beside a line, in no box
+    public void ABoxsLabel_StandsInABox(string label, string? refused)
+    {
+        var input = System.Text.Json.Nodes.JsonNode.Parse($$"""{"boxes":[{"label":"{{label}}"}]}""");
+        Assert.Equal(refused, ImportTools.NotEnclosed(input, EnclosedSchema, Regions.Find(Wiki, TestRegions.Drawing)));
+    }
+
+    [Fact]
+    public void ABoxsLabel_InAChainOfBareNames_IsNotChecked() =>
+        Assert.Null(ImportTools.NotEnclosed(System.Text.Json.Nodes.JsonNode.Parse("""{"boxes":[{"label":"FW01"}]}"""), EnclosedSchema,
+            Regions.Find("printer --587--> FW01 --> Exchange Online", TestRegions.Drawing)));
+
     [Fact]
     public void AStack_HasItsBound()
     {

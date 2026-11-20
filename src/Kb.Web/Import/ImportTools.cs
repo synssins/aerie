@@ -106,7 +106,7 @@ public static partial class ImportTools
                     break;
                 case "format":
                     // A string the model makes up to tie items together (a box's id, the ends of a line): not text of the documents.
-                    if (v.ValueKind != JsonValueKind.String || v.GetString() is not ("identifier" or "within")) return "format may only be identifier or within.";
+                    if (v.ValueKind != JsonValueKind.String || v.GetString() is not ("identifier" or "within" or "enclosed")) return "format may only be identifier, within or enclosed.";
                     if (!e.TryGetProperty("type", out var ft) || ft.GetString() != "string") return "format identifier is only for a string.";
                     break;
                 case "additionalProperties":
@@ -302,6 +302,55 @@ public static partial class ImportTools
                     return (member, outer);
             }
         return null;
+    }
+
+    /// <summary>
+    /// The enclosed check, for a region tool: a string marked <c>"format": "enclosed"</c> (a box's label) must stand, in the region it is
+    /// written in, inside a box or between brackets on its line, when that region draws boxes at all (a chain of bare names does not). So
+    /// a line's label beside the line is not taken for a box. Returns the first such string that stands free, or null.
+    /// </summary>
+    public static string? NotEnclosed(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> regions)
+    {
+        ArgumentNullException.ThrowIfNull(regions);
+        foreach (var text in Marked(input, schema, "enclosed"))
+        {
+            if (Normalize(text).Length < MinGrounded) continue;
+            var at = Regions.Starts(text, regions).ToList();
+            if (at.Count == 0) continue;
+            if (at.Any(p => p.Box is not null || Bracketed(p.Region.Lines[p.Line], p.Column))) continue;
+            if (at.Any(p => p.Region.Lines.Any(l => Corner().IsMatch(l)))) return text;
+        }
+        return null;
+    }
+
+    [GeneratedRegex(@"\+[-=~_]|[-=~_]\+|[┌-╋]")]
+    private static partial Regex Corner();
+
+    // Whether the text that starts at a column stands between a "[" before it and a "]" after it, on its line.
+    private static bool Bracketed(string line, int column)
+    {
+        var open = line.LastIndexOf('[', Math.Max(0, column - 1));
+        return open >= 0 && line.IndexOf(']', column) is var close and >= 0 && line.IndexOf(']', open) >= column && line.IndexOf('[', open + 1) is var next && (next < 0 || next > close);
+    }
+
+    // The strings of the input in places the schema marks with the given format.
+    private static IEnumerable<string> Marked(JsonNode? input, JsonObject schema, string format)
+    {
+        switch (input)
+        {
+            case JsonObject o:
+                var props = schema["properties"] as JsonObject;
+                foreach (var (key, child) in o)
+                {
+                    var s = props?[key] as JsonObject ?? [];
+                    if (child is JsonValue v && v.GetValueKind() == JsonValueKind.String && s["format"]?.GetValue<string>() == format) yield return v.GetValue<string>();
+                    else foreach (var x in Marked(child, s, format)) yield return x;
+                }
+                break;
+            case JsonArray a:
+                foreach (var child in a) foreach (var x in Marked(child, schema["items"] as JsonObject ?? [], format)) yield return x;
+                break;
+        }
     }
 
     private static bool WithLabel(string label, string text, IReadOnlyList<Regions.Region> drawings)
@@ -511,6 +560,9 @@ public sealed partial class ImportService
             if (apart.Count > 0)
                 return await Done(found.PluginId, "not-in-box",
                     $"Refused: {string.Join("; ", apart.Select(m => $"\"{Cut(m.Text)}\" is not written in the same box as \"{Cut(m.Label)}\""))} in the documents. Give each item only the text written with it.");
+            if (regional && ImportTools.NotEnclosed(input, schema, regions) is { } free)
+                return await Done(found.PluginId, "not-enclosed",
+                    $"Refused: \"{Cut(free)}\" is written in no box in the documents, so it is not a box; text beside a line is that line's label.");
             if (regional && ImportTools.NotInside(input, schema, regions) is { } outside)
                 return await Done(found.PluginId, "not-inside",
                     $"Refused: \"{Cut(outside.Member)}\" is not drawn inside \"{Cut(outside.Container)}\" in the documents. Put an item in a group only when it is drawn inside it.");
