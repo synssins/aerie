@@ -307,8 +307,9 @@ public static partial class ImportTools
         foreach (var (_, member, within, canBeWithin) in objects)
         {
             if (!canBeWithin || member is null || Normalize(member).Length < MinGrounded) continue;
-            var mine = Regions.Starts(member, regions).Where(p => p.Box is not null).ToList();
-            if (mine.Count == 0) continue;
+            // A label written anywhere outside a box (a heading at a rule, or a word that also starts another box's text) is not checked.
+            var mine = Regions.Starts(member, regions).ToList();
+            if (mine.Count == 0 || mine.Any(p => p.Box is null)) continue;
             foreach (var (otherId, other, _, _) in objects)
             {
                 if (otherId is null || other is null || Normalize(other) == Normalize(member) || within.Contains(otherId)) continue;

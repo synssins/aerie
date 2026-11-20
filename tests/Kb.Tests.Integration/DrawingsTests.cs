@@ -168,6 +168,28 @@ public sealed class DrawingsTests
         Assert.Equal(refused, ImportTools.NotInside(System.Text.Json.Nodes.JsonNode.Parse(json), GroupSchema, Regions.Find(Wiki, TestRegions.Drawing))?.Member);
 
     [Fact]
+    public void AHeading_ThatAlsoStartsTextInAFrame_IsNotPutInThatFrame()
+    {
+        // Seen in round 10: "AZURE" also starts "[Azure Firewall]" in vnet-x's frame, and was told to sit in vnet-x.
+        const string map = """
+            ~~~~~~~~~~~~~~~~~~~~~~~~ AZURE
+            +----------------------+
+            | vnet-x               |
+            | [Azure Firewall]     |
+            +----------------------+
+            """;
+        var schema = System.Text.Json.Nodes.JsonNode.Parse("""
+            {"type":"object","properties":{
+              "groups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","format":"identifier"},"label":{"type":"string"},"group":{"type":"string","format":"within"}}}},
+              "boxes":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","format":"identifier"},"label":{"type":"string"},"group":{"type":"string","format":"within"}}}}}}
+            """)!.AsObject();
+        var input = System.Text.Json.Nodes.JsonNode.Parse("""
+            {"groups":[{"id":"az","label":"AZURE"},{"id":"vx","label":"vnet-x","group":"az"}],"boxes":[{"id":"f","label":"Azure Firewall","group":"vx"}]}
+            """);
+        Assert.Null(ImportTools.NotInside(input, schema, Regions.Find(map, TestRegions.Drawing)));
+    }
+
+    [Fact]
     public void AGroup_WrittenAlsoWhereNoBoxHoldsIt_IsNotChecked()
     {
         // Seen in round 9: "AZURE" heads a line of tildes, and also starts "[Azure Firewall]" in a box; its members are not refused.
@@ -180,7 +202,8 @@ public sealed class DrawingsTests
             | vnet-a   |
             +----------+
             """;
-        var input = System.Text.Json.Nodes.JsonNode.Parse("""{"groups":[{"id":"az","label":"AZURE"}],"boxes":[{"id":"a","label":"vnet-a","group":"az"}]}""");
+        // And "AZURE" itself is not taken to be drawn inside the box of "[Azure Firewall]" (seen in round 10).
+        var input = System.Text.Json.Nodes.JsonNode.Parse("""{"groups":[{"id":"az","label":"AZURE"}],"boxes":[{"id":"a","label":"vnet-a","group":"az"},{"id":"f","label":"Azure Firewall"}]}""");
         Assert.Null(ImportTools.NotInside(input, GroupSchema, Regions.Find(map, TestRegions.Drawing)));
     }
 
