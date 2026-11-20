@@ -323,24 +323,54 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         ["additionalProperties"] = false,
     };
 
+    /// <summary>
+    /// A draft whose answer-wide fields (tags, apps, owner, ...) the model wrote inside its first page instead of beside the pages: the
+    /// same reply with those fields moved up, if it then matches <paramref name="schema"/>; otherwise null. Nothing is added or dropped.
+    /// </summary>
+    internal static JsonNode? Lifted(string content, JsonObject schema)
+    {
+        JsonObject? root;
+        var (from, to) = (content.IndexOf('{', StringComparison.Ordinal), content.LastIndexOf('}'));
+        if (from < 0 || to < from) return null;
+        try { root = JsonNode.Parse(content[from..(to + 1)]) as JsonObject; }
+        catch (JsonException) { return null; }
+        if (root?["pages"] is not JsonArray { Count: > 0 } pages || pages[0] is not JsonObject first || schema["properties"] is not JsonObject top) return null;
+        var moved = false;
+        foreach (var key in top.Select(p => p.Key).Where(k => k != "pages" && !root.ContainsKey(k) && first.ContainsKey(k)).ToList())
+        {
+            var value = first[key];
+            first.Remove(key);
+            root[key] = value;
+            moved = true;
+        }
+        return moved && AiGuard.SchemaError(root, schema) is null ? root : null;
+    }
+
     private static JsonObject Strings(int items, int length) =>
         new() { ["type"] = "array", ["maxItems"] = items, ["items"] = new JsonObject { ["type"] = "string", ["maxLength"] = length } };
 
-    // Where the task says how to draft a drawing made of text characters: the sentence goes there only for documents in which the app
-    // finds such a drawing (Drawings.Find), so documents without one (markup, diagram code) get the task exactly as before.
-    private const string DrawingMark = "{drawing}";
+    // Where the task says to keep the regions a plugin's tool is for (Regions.Find) as written: the sentence, and the regions as data under
+    // KeepField, go in only for documents that hold one, so documents without one (markup, diagram code) get the task exactly as before.
+    private const string KeepMark = "{keep}";
 
-    internal const string DrawingSentence =
-        "A picture drawn with text characters (boxes and lines made of dashes, bars and pluses, meant to be read by eye) goes in one code block, exactly as written. ";
+    internal const string KeepField = "keep";
 
-    /// <summary>The drafting task, with the drawing sentence where the documents hold a drawing.</summary>
-    internal static string DraftingTask(bool drawing) => ProposalTask.Replace(DrawingMark, drawing ? DrawingSentence : "", StringComparison.Ordinal);
+    internal const string KeepSentence =
+        "The passages under \"keep\" are laid out by the position of their characters; copy each of them into one code block, exactly as written, where it stands in the documents. ";
+
+    /// <summary>The drafting task, with the keep sentence where the documents hold a region a tool is for.</summary>
+    internal static string DraftingTask(bool keep) => ProposalTask.Replace(KeepMark, keep ? KeepSentence : "", StringComparison.Ordinal);
+
+    /// <summary>The regions of the source that the loaded plugins' tools are for, as each declares them, in the order they stand; empty for none.</summary>
+    private List<string> KeptRegions(string source) =>
+        [.. contributors.Tools.Where(t => t.Tool.For is { } f && ImportTools.Problem(t.Tool) is null)
+            .SelectMany(t => Regions.Find(source, t.Tool.For!)).Select(r => string.Join("\n", r.Lines)).Distinct()];
 
     private const string ProposalTask =
         "Bring the documents in the data into this knowledge base as standardized page(s). Keep every fact, value, command and step exactly; " +
         "do not add, invent or drop information. Use headings for sections, \"steps\" blocks for numbered procedures, \"bullets\" for lists, " +
         "\"code\" for commands, scripts and configuration, \"table\" for tabular data (first row is the header), \"note\" for warnings. " +
-        DrawingMark +
+        KeepMark +
         "Place each picture listed under \"images\" as an \"image\" block (its file name in \"image\") at the step it belongs to; write in its \"text\" a short description of what the picture shows. " +
         "Use one page unless the documents clearly cover separate topics. " +
         "Suggest up to 8 short lower-case topic tags. In \"apps\" name the applications the content is about, using the exact names from \"inventory\" when one matches, " +
@@ -391,6 +421,8 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             ["inventory"] = string.Join("\n", apps.Select(a => a.Name)),
             ["destinations"] = string.Join("\n", destinations.Select(d => $"{d.Item1} = {d.Item2}")),
         };
+        var kept = KeptRegions(source);
+        if (kept.Count > 0) data[KeepField] = string.Join("\n\n", kept);
         JsonNode output;
         string drafter;
         long? ms = null;
@@ -407,7 +439,8 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         }
         else
         {
-            var r = await ai.RunAsync(actor, AiFeatures.Import, DraftingTask(Drawings.Find(source).Count > 0), data, ProposalSchema(), ct, picData);
+            var r = await ai.RunAsync(actor, AiFeatures.Import, DraftingTask(kept.Count > 0), data, ProposalSchema(), ct, picData,
+                salvage: content => Lifted(content, ProposalSchema()));
             if (r.Problem is { } p0)
             {
                 (item.Status, item.Error) = p0.Status == 422 ? (ImportStatus.Blocked, "It holds text addressed to the AI, so it was not sent.") : (ImportStatus.Failed, p0.Message ?? "The AI could not draft it.");

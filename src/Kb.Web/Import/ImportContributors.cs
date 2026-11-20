@@ -42,13 +42,20 @@ public sealed class ImportContributors(IServiceScopeFactory scopes, IRegistratio
 
     /// <summary>
     /// 0.11.0 (draft). One call of a plugin's tool, as its other import calls are made: its own scope, as the plugin, within the time limit.
-    /// The nodes it answers, checked as a contribution's; null when it answered none or failed.
+    /// The nodes it answers, checked as a contribution's; null when it answered none or failed. With no nodes, the refusal it chose from
+    /// the app's list (<see cref="ImportToolRefusal"/>) and the path it names, which the app words and checks itself.
     /// </summary>
-    public Task<IReadOnlyList<JsonNode>?> CallToolAsync(string pluginId, ImportToolReg tool, ImportItem item, JsonElement input, CancellationToken ct)
+    public async Task<(IReadOnlyList<JsonNode>? Nodes, ImportToolRefusal Refusal, string? At)> CallToolAsync(string pluginId, ImportToolReg tool, ImportItem item,
+        JsonElement input, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(tool);
-        return CallAsync(pluginId, item, "import tool", tool.Name,
-            (sp, t) => ((IImportTool)ActivatorUtilities.CreateInstance(sp, tool.Tool)).CallAsync(input, t), r => Check(new ImportContribution(r.Nodes)), ct);
+        ImportToolResult? got = null;
+        var nodes = await CallAsync(pluginId, item, "import tool", tool.Name,
+            (sp, t) => ((IImportTool)ActivatorUtilities.CreateInstance(sp, tool.Tool)).CallAsync(input, t),
+            r => { got = r; return Check(new ImportContribution(r.Nodes)); }, ct);
+        var why = got?.Refusal ?? ImportToolRefusal.None;
+        if (nodes is { Count: > 0 } || !Enum.IsDefined(why)) why = ImportToolRefusal.None;
+        return (nodes, why, why == ImportToolRefusal.None ? null : got?.At);
     }
 
     public string PluginName(string pluginId) => NameOf(pluginId);

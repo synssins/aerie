@@ -205,10 +205,52 @@ public sealed record DraftContributorReg(Type Contributor);
 public sealed record ImportToolReg(string Name, string Description, JsonElement InputSchema, Type Tool)
 {
     /// <summary>
-    /// 0.11.0 (draft). A tool that draws a drawing made of text characters (<see cref="ImportToolExtensions.ImportDrawingTool{TTool}"/>):
-    /// the app offers it only for documents that hold such a drawing, and takes one result of it for each drawing.
+    /// 0.11.0 (draft). What in a document the tool is for, as line patterns the app checks, caps and runs on the source itself (see
+    /// <see cref="ToolRegions"/>). A tool with regions is offered only for documents that hold one, takes one result for each region, and
+    /// its input is held to the layout of the region (labels stacked in one enclosure, text given together written together). Null: the
+    /// tool is for any document.
     /// </summary>
-    public bool Drawing { get; init; }
+    public ToolRegions? For { get; init; }
+
+    /// <summary>0.11.0 (draft). Shorthand kept from earlier drafts: true sets <see cref="For"/> to <see cref="ToolRegions.TextDrawing"/>.</summary>
+    public bool Drawing
+    {
+        get => For is not null;
+        init => For = value ? ToolRegions.TextDrawing : null;
+    }
+}
+
+/// <summary>
+/// 0.11.0 (draft). The regions of a document a tool is for: runs of lines found by the app from the source alone, never by the model or
+/// the plugin. A region starts at a line that matches one of <paramref name="Starts"/> and goes on over lines that match
+/// <paramref name="Starts"/> or <paramref name="Joins"/>, with at most <paramref name="MaxGap"/> other lines in a row. It counts when it has
+/// at least <paramref name="MinLines"/> such lines and <paramref name="MinStarts"/> of them match <paramref name="Starts"/> but none of
+/// <paramref name="Weak"/>, or when one of its lines matches <paramref name="Alone"/>. Markdown table rows are never part of a region.
+/// Each pattern is a .NET regular expression, run without backtracking and with a time limit; at most 16 in each list and 300 characters
+/// each; <paramref name="MinLines"/> 1 to 20, <paramref name="MinStarts"/> 0 to 20, <paramref name="MaxGap"/> 0 to 5. A tool whose regions
+/// break a rule is not offered.
+/// </summary>
+public sealed record ToolRegions(IReadOnlyList<string> Starts, IReadOnlyList<string> Joins, IReadOnlyList<string> Weak, IReadOnlyList<string> Alone,
+    int MinLines = 3, int MinStarts = 2, int MaxGap = 2)
+{
+    /// <summary>
+    /// A preset for drawings made of text characters (a network map of boxes and lines): a rule of three dashes, equals, tildes or
+    /// underscores, a corner, two bars, or a thing in brackets with spaces inside starts one; a bar, plus, slash or box-drawing character
+    /// joins one; a rule alone (a Markdown section break) is weak; two things in brackets joined by a connector, or two arrows, make one
+    /// line a drawing. A plugin may pass it, or declare its own.
+    /// </summary>
+    public static ToolRegions TextDrawing { get; } = new(
+        Starts:
+        [
+            @"[-=~_─━═]{3,}", @"\+[-=~_]|[-=~_]\+|[┌-╋]", @"[|│║].*[|│║]", @"\[\s+[^\]\[]+?\s+\]",
+        ],
+        Joins: [@"[|+/\\]|[─-╿]"],
+        Weak: [@"^\s*[-=~_*─━═]{3,}\s*$"],
+        Alone:
+        [
+            @"\[\s+[^\]\[]+?\s+\]\s*<?(?:[-=~.]{2,}|-+[^\s\[\]]+-+)>?\s*\[\s+[^\]\[]+?\s+\]",
+            @"(?:-{2,}|={2,})(?:[^\s<>\-=][^<>]*?-+)?>.*(?:-{2,}|={2,})(?:[^\s<>\-=][^<>]*?-+)?>",
+        ]);
 }
 
 /// <summary>
@@ -223,8 +265,41 @@ public interface IImportTool
     Task<ImportToolResult?> CallAsync(JsonElement input, CancellationToken ct);
 }
 
-/// <summary>0.11.0 (draft). Editor nodes to add to the draft, each the stored JSON of one block node. At most 50 nodes and 512 KB of JSON.</summary>
-public sealed record ImportToolResult(IReadOnlyList<JsonElement> Nodes);
+/// <summary>
+/// 0.11.0 (draft). Editor nodes to add to the draft, each the stored JSON of one block node. At most 50 nodes and 512 KB of JSON. Or a
+/// refusal (<see cref="Refuse"/>): no nodes, a <see cref="Refusal"/> from the app's fixed list and, for some, <see cref="At"/>, the path in
+/// the input it is about. The app words the reply to the model itself; no text of the plugin reaches the model.
+/// </summary>
+public sealed record ImportToolResult(IReadOnlyList<JsonElement> Nodes)
+{
+    /// <summary>Why the tool added nothing, from the app's list; <see cref="ImportToolRefusal.None"/> for a result.</summary>
+    public ImportToolRefusal Refusal { get; init; }
+
+    /// <summary>
+    /// The place in the input the refusal is about, as a JSON path into the call's input ("$.boxes[3].group"): a dollar sign, then names
+    /// of letters, digits and underscores after dots and numbers in brackets, at most 12 steps. A path that is not of that form, or that
+    /// names nothing in the input, is left out of the reply.
+    /// </summary>
+    public string? At { get; init; }
+
+    /// <summary>A refusal: nothing is added, and the model is told why in the app's words.</summary>
+    public static ImportToolResult Refuse(ImportToolRefusal why, string? at = null) => new([]) { Refusal = why, At = at };
+}
+
+/// <summary>0.11.0 (draft). Why a tool added nothing. The app owns and words each one.</summary>
+public enum ImportToolRefusal
+{
+    /// <summary>Not a refusal.</summary>
+    None,
+    /// <summary>The input names an id it does not declare (a line to a box that is not there, a box in a group that is not there).</summary>
+    UnknownId,
+    /// <summary>The input declares the same id twice.</summary>
+    DuplicateId,
+    /// <summary>The input holds too little to make anything of.</summary>
+    TooLittle,
+    /// <summary>The input holds more than the tool can make.</summary>
+    TooMuch,
+}
 
 public static class ImportToolExtensions
 {
@@ -243,17 +318,24 @@ public static class ImportToolExtensions
     }
 
     /// <summary>
-    /// 0.11.0 (draft). Registers a tool, as <see cref="ImportTool{TTool}"/>, that draws a drawing made of text characters in a document (a
-    /// network map of boxes and lines). The app offers it only when the documents hold such a drawing, as the app finds it, and takes one
-    /// result of it for each drawing; a second result for the same drawing is refused.
+    /// 0.11.0 (draft). Registers a tool, as <see cref="ImportTool{TTool}"/>, for the regions of a document that <paramref name="regions"/>
+    /// describes. The app offers it only when the documents hold such a region, as the app finds it, and takes one result of it for each.
     /// </summary>
-    public static IPluginApp ImportDrawingTool<TTool>(this IPluginApp app, string name, string description, string inputSchema) where TTool : class, IImportTool
+    public static IPluginApp ImportRegionTool<TTool>(this IPluginApp app, string name, string description, string inputSchema, ToolRegions regions)
+        where TTool : class, IImportTool
     {
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(name);
         ArgumentNullException.ThrowIfNull(description);
         ArgumentNullException.ThrowIfNull(inputSchema);
+        ArgumentNullException.ThrowIfNull(regions);
         using var schema = JsonDocument.Parse(inputSchema);
-        return app.Add(new ImportToolReg(name, description, schema.RootElement.Clone(), typeof(TTool)) { Drawing = true });
+        return app.Add(new ImportToolReg(name, description, schema.RootElement.Clone(), typeof(TTool)) { For = regions });
     }
+
+    /// <summary>
+    /// 0.11.0 (draft). Shorthand kept from earlier drafts: <see cref="ImportRegionTool{TTool}"/> with <see cref="ToolRegions.TextDrawing"/>.
+    /// </summary>
+    public static IPluginApp ImportDrawingTool<TTool>(this IPluginApp app, string name, string description, string inputSchema) where TTool : class, IImportTool =>
+        app.ImportRegionTool<TTool>(name, description, inputSchema, ToolRegions.TextDrawing);
 }

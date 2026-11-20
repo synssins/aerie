@@ -160,18 +160,37 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
 
         if (pictures?.Sum(p => (long)p.Data.Length) > 32L * 1024 * 1024) return await RefuseAsync("too-large", Problem.Invalid("pictures", "32 MB of pictures at most."));
         var body = AiGuard.Request(s, AiGuard.SystemMessage(s.Ruleset, task, schema), AiGuard.UserMessage(data), schema, pictures);
-        var (answer, failed, ms) = await SendAsync(s, body, feature, RefuseAsync, ct);
-        if (failed is not null) return failed;
-        var message = answer?["choices"]?[0]?["message"];
-        var content = message?["content"]?.GetValue<string>() ?? "";
-        var reasoning = message?["reasoning_content"]?.GetValue<string>() ?? message?["reasoning"]?.GetValue<string>() ?? "";
-        var (inTokens, outTokens) = (answer?["usage"]?["prompt_tokens"]?.GetValue<int>() ?? 0, answer?["usage"]?["completion_tokens"]?.GetValue<int>() ?? 0);
-        var model = answer?["model"]?.GetValue<string>() ?? s.Model;
-
-        JsonNode? output;
-        try { output = JsonNode.Parse(StripFence(content)); }
-        catch (JsonException) { output = null; }
-        var cutOff = answer?["choices"]?[0]?["finish_reason"]?.GetValue<string>() == "length";
+        JsonNode? answer = null, output = null;
+        string content = "", reasoning = "", model = s.Model;
+        int inTokens = 0, outTokens = 0;
+        long ms = 0;
+        var cutOff = false;
+        // A reply in JSON that misses the structure (not cut off, and nothing a caller's salvage keeps) is answered once with where it
+        // misses, in the app's words, and asked again: some servers do not hold the model to the schema.
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var (sent, failed, took) = await SendAsync(s, body, feature, RefuseAsync, ct);
+            if (failed is not null) return failed;
+            answer = sent;
+            ms += took;
+            var message = answer?["choices"]?[0]?["message"];
+            content = message?["content"]?.GetValue<string>() ?? "";
+            reasoning = message?["reasoning_content"]?.GetValue<string>() ?? message?["reasoning"]?.GetValue<string>() ?? "";
+            inTokens += answer?["usage"]?["prompt_tokens"]?.GetValue<int>() ?? 0;
+            outTokens += answer?["usage"]?["completion_tokens"]?.GetValue<int>() ?? 0;
+            model = answer?["model"]?.GetValue<string>() ?? s.Model;
+            try { output = JsonNode.Parse(StripFence(content)); }
+            catch (JsonException) { output = null; }
+            cutOff = answer?["choices"]?[0]?["finish_reason"]?.GetValue<string>() == "length";
+            if (attempt > 0 || output is null || cutOff || AiGuard.SchemaError(output, schema) is not { } miss || salvage?.Invoke(content) is not null) break;
+            await AuditAsync(actor, feature, "retry", inTokens, outTokens, took, miss);
+            body["messages"]!.AsArray().Add(new JsonObject { ["role"] = "assistant", ["content"] = content });
+            body["messages"]!.AsArray().Add(new JsonObject
+            {
+                ["role"] = "user",
+                ["content"] = $"That reply does not match the required structure ({miss}). Answer again with the whole reply in the required structure.",
+            });
+        }
         if ((output is null || AiGuard.SchemaError(output, schema) is not null) && salvage?.Invoke(content) is { } kept)
         {
             await AuditAsync(actor, feature, "partial", inTokens, outTokens, ms, cutOff ? "cut at the token limit; complete items kept" : "not the schema; complete items kept");
@@ -243,15 +262,21 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
     /// <summary>What a tool conversation did: the model calls, their tokens and time, the tool calls answered, and whether a limit ended it.</summary>
     public sealed record ToolRun(int ModelCalls, int PromptTokens, int CompletionTokens, long Milliseconds, int ToolCalls, bool LimitReached);
 
+    /// <summary>The app's reply to one tool call, and whether the call reached the tool (counted against the calls a plugin answers) or was refused before.</summary>
+    public sealed record ToolAnswer(string Reply, bool Reached);
+
     /// <summary>
     /// 0.11.0 (draft). A conversation in which the model may call the given tools (function tools of the chat API). The checks of
     /// <see cref="RunAsync"/> come first. Each tool call goes to <paramref name="answer"/>, whose reply is what the model gets back: server
-    /// text, never a plugin's. It ends when the model calls no tool, or after <paramref name="maxToolCalls"/> tool calls. A server or model
-    /// that cannot call tools gives a problem at the first call; the caller goes on without tools.
+    /// text, never a plugin's. <paramref name="tools"/> is asked before each model call, so a tool that is done is no longer offered. It
+    /// ends when the model calls no tool, when no tool is left to offer, after <paramref name="maxToolCalls"/> calls that reached a tool, or
+    /// after <paramref name="maxRefused"/> calls refused before that. A server or model that cannot call tools gives a problem at the first
+    /// call; the caller goes on without tools.
     /// </summary>
-    public async Task<Outcome<ToolRun>> RunToolsAsync(Actor actor, string feature, string task, IReadOnlyDictionary<string, string> data, JsonArray tools,
-        Func<ToolCall, Task<string>> answer, int maxToolCalls, CancellationToken ct)
+    public async Task<Outcome<ToolRun>> RunToolsAsync(Actor actor, string feature, string task, IReadOnlyDictionary<string, string> data, Func<JsonArray> tools,
+        Func<ToolCall, Task<ToolAnswer>> answer, int maxToolCalls, int maxRefused, CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(tools);
         ArgumentNullException.ThrowIfNull(actor);
         ArgumentNullException.ThrowIfNull(answer);
         var s = await SettingsAsync(ct);
@@ -270,12 +295,14 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
         var messages = new JsonArray(
             new JsonObject { ["role"] = "system", ["content"] = $"{s.Ruleset.Trim()}\n\nTask:\n{task.Trim()}" },
             new JsonObject { ["role"] = "user", ["content"] = AiGuard.UserMessage(data) });
-        var (calls, inTokens, outTokens, ms, answered) = (0, 0, 0, 0L, 0);
+        var (calls, inTokens, outTokens, ms, answered, reached, refused) = (0, 0, 0, 0L, 0, 0, 0);
         while (true)
         {
+            var offered = tools();
+            if (offered.Count == 0) return new ToolRun(calls, inTokens, outTokens, ms, answered, false);
             if (!limiter.Allow($"u:{actor.UserId}", s.UserPerMinute) || (actor.TokenId is { } token && !limiter.Allow($"t:{token}", s.TokenPerMinute)))
                 return calls == 0 ? await RefuseAsync("limited", new Problem(429, "Too many AI calls. Wait a minute.")) : new ToolRun(calls, inTokens, outTokens, ms, answered, true);
-            var (reply, failed, took) = await SendAsync(s, AiGuard.ToolRequest(s, messages, tools), feature, RefuseAsync, ct);
+            var (reply, failed, took) = await SendAsync(s, AiGuard.ToolRequest(s, messages, offered), feature, RefuseAsync, ct);
             if (failed is not null) return calls == 0 ? failed : new ToolRun(calls, inTokens, outTokens, ms, answered, false);
             calls++;
             ms += took;
@@ -293,11 +320,18 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
                 var name = c["function"]?["name"]?.GetValue<string>() ?? "";
                 var args = c["function"]?["arguments"] is JsonValue v && v.GetValueKind() == JsonValueKind.String ? v.GetValue<string>() : c["function"]?["arguments"]?.ToJsonString() ?? "";
                 made.Add(new JsonObject { ["id"] = id, ["type"] = "function", ["function"] = new JsonObject { ["name"] = name, ["arguments"] = args } });
-                var said = answered < maxToolCalls ? await answer(new ToolCall(name, args)) : "Refused: the limit of tool calls for this import is reached.";
+                var said = "Refused: the limit of tool calls for this import is reached.";
+                if (reached < maxToolCalls && refused < maxRefused)
+                {
+                    var got = await answer(new ToolCall(name, args));
+                    said = got.Reply;
+                    if (got.Reached) reached++;
+                    else refused++;
+                }
                 answered++;
                 replies.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = id, ["content"] = said });
             }
-            if (answered >= maxToolCalls) return new ToolRun(calls, inTokens, outTokens, ms, answered, true);
+            if (reached >= maxToolCalls || refused >= maxRefused) return new ToolRun(calls, inTokens, outTokens, ms, answered, true);
             messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = "", ["tool_calls"] = made });
             foreach (var r in replies) messages.Add(r);
         }

@@ -17,10 +17,11 @@ namespace Kb.Web.Import;
 public static partial class ImportTools
 {
     /// <summary>
-    /// Per import item: tool calls answered, the bytes of one call's input, the length of a tool's description and of its schema, the text
+    /// Per import item: tool calls that reached a plugin, and calls the app refused before that (the schema, the source, the layout,
+    /// repeats); the bytes of one call's input, the length of a tool's description and of its schema, the text
     /// inside its schema (property names, descriptions, choices) and how deep the schema nests.
     /// </summary>
-    public const int MaxToolCalls = 8, MaxInputBytes = 16 * 1024, MaxDescription = 300, MaxSchemaChars = 4000, MaxSchemaText = 1500, MaxDepth = 6,
+    public const int MaxToolCalls = 8, MaxRefused = 6, MaxInputBytes = 16 * 1024, MaxDescription = 300, MaxSchemaChars = 4000, MaxSchemaText = 1500, MaxDepth = 6,
         MaxPropertyDescription = 200, MaxChoice = 60;
 
     /// <summary>The input the app adds to every tool: the number of the draft's block the content goes after. The plugin never sees it.</summary>
@@ -59,6 +60,7 @@ public static partial class ImportTools
         if (Walk(schema, 1, texts) is { } bad) return $"Its input schema: {bad}";
         if (texts.Skip(2).Sum(x => x.Length) > MaxSchemaText) return $"Its input schema holds more than {MaxSchemaText} characters of names, descriptions and choices.";
         if (AiGuard.Tripwire(new Dictionary<string, string> { ["tool"] = string.Join("\n", texts) }) is not null) return "Its text is addressed to the AI.";
+        if (tool.For is { } regions && Regions.Problem(regions) is { } why) return $"Its declaration of what it is for: {why}.";
         return null;
     }
 
@@ -162,27 +164,33 @@ public static partial class ImportTools
 
     /// <summary>
     /// The source check: the first string of the input that is neither in the documents nor in the draft (<paramref name="source"/>,
-    /// normalized) nor written in one of the <paramref name="drawings"/> (<see cref="Drawings.Locate"/>: on one line, or stacked inside one
+    /// normalized) nor written in one of the <paramref name="drawings"/> (<see cref="Regions.Locate"/>: on one line, or stacked inside one
     /// box), or null when all are. A string the schema limits to choices (enum) is the schema's, not the model's, and is not checked; nor
     /// is a string shorter than <see cref="MinGrounded"/>. A string marked <c>"format": "identifier"</c> is not checked against the source,
     /// but must be 1 to 32 letters, digits, dots, hyphens or underscores; one that is not is returned. A string found stacked outside any
-    /// box (the fallback of <see cref="Drawings.Locate(string, IReadOnlyList{Drawings.Drawing}, out bool)"/>) is added to
+    /// box (the fallback of <see cref="Regions.Locate(string, IReadOnlyList{Regions.Region}, out bool)"/>) is added to
     /// <paramref name="fallbacks"/>.
     /// </summary>
-    public static string? Ungrounded(JsonNode? input, JsonObject schema, string source, IReadOnlyList<Drawings.Drawing>? drawings = null,
-        ICollection<string>? fallbacks = null)
+    public static string? Ungrounded(JsonNode? input, JsonObject schema, string source, IReadOnlyList<Regions.Region>? drawings = null,
+        ICollection<string>? fallbacks = null) => UngroundedAll(input, schema, source, drawings, fallbacks, 1).FirstOrDefault();
+
+    /// <summary>As <see cref="Ungrounded"/>, every such string, up to <paramref name="most"/>, so one reply can name them all.</summary>
+    public static List<string> UngroundedAll(JsonNode? input, JsonObject schema, string source, IReadOnlyList<Regions.Region>? drawings = null,
+        ICollection<string>? fallbacks = null, int most = 5)
     {
         ArgumentNullException.ThrowIfNull(source);
+        var found = new List<string>();
         foreach (var (text, kind) in Strings(input, schema))
         {
+            if (found.Count >= most) break;
             if (kind == StringKind.Choice) continue;
-            if (kind == StringKind.Identifier) { if (!Identifier().IsMatch(text)) return text; continue; }
+            if (kind == StringKind.Identifier) { if (!Identifier().IsMatch(text)) found.Add(text); continue; }
             var n = Normalize(text);
             if (n.Length < MinGrounded || source.Contains(n, StringComparison.Ordinal)) continue;
-            if (drawings is { Count: > 0 } && Drawings.Locate(text, drawings, out var fallback) is not null) { if (fallback) fallbacks?.Add(text); continue; }
-            return text;
+            if (drawings is { Count: > 0 } && Regions.Locate(text, drawings, out var fallback) is not null) { if (fallback) fallbacks?.Add(text); continue; }
+            if (!found.Contains(text)) found.Add(text);
         }
-        return null;
+        return found;
     }
 
     /// <summary>
@@ -190,13 +198,28 @@ public static partial class ImportTools
     /// a label (the first, in the schema's order) and what is written with it (the others, and the second and further lines of the label).
     /// Where the label is written in a box of a drawing, each of those must be written in the same box. Where it is written in a drawing
     /// but in no box (a thing in brackets, a bare name), each must be written stacked under it, as one label would be
-    /// (<see cref="Drawings.Locate(string, IReadOnlyList{Drawings.Drawing}, out bool)"/>). A label in no drawing is left to the source check.
+    /// (<see cref="Regions.Locate(string, IReadOnlyList{Regions.Region}, out bool)"/>). A label in no drawing is left to the source check.
     /// Returns the first string that is not where it belongs, with its label, or null.
     /// </summary>
-    public static (string Text, string Label)? Misplaced(JsonNode? input, JsonObject schema, IReadOnlyList<Drawings.Drawing> drawings)
+    public static (string Text, string Label)? Misplaced(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> drawings)
+    {
+        var all = MisplacedAll(input, schema, drawings, 1);
+        return all.Count > 0 ? all[0] : null;
+    }
+
+    /// <summary>As <see cref="Misplaced"/>, every such string with its label, up to <paramref name="most"/>, so one reply can name them all.</summary>
+    public static List<(string Text, string Label)> MisplacedAll(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> drawings, int most = 5)
+    {
+        var found = new List<(string, string)>();
+        Collect(input, schema, drawings, found, most);
+        return found;
+    }
+
+    private static void Collect(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> drawings, List<(string, string)> found, int most)
     {
         ArgumentNullException.ThrowIfNull(schema);
         ArgumentNullException.ThrowIfNull(drawings);
+        if (found.Count >= most) return;
         switch (input)
         {
             case JsonObject o:
@@ -209,38 +232,72 @@ public static partial class ImportTools
                     var lines = texts[0].Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                     var label = lines.Length > 0 ? lines[0] : "";
                     foreach (var text in lines.Skip(1).Concat(texts.Skip(1)))
-                        if (Normalize(text).Length >= MinGrounded && Normalize(label).Length >= MinGrounded && !WithLabel(label, text, drawings))
-                            return (text, label);
+                        if (found.Count < most && Normalize(text).Length >= MinGrounded && Normalize(label).Length >= MinGrounded && !WithLabel(label, text, drawings))
+                            found.Add((text, label));
                 }
                 foreach (var (key, child) in o)
-                    if (child is JsonObject or JsonArray && Misplaced(child, props[key] as JsonObject ?? [], drawings) is { } bad) return bad;
+                    if (child is JsonObject or JsonArray) Collect(child, props[key] as JsonObject ?? [], drawings, found, most);
                 break;
             case JsonArray a:
-                foreach (var child in a)
-                    if (Misplaced(child, schema["items"] as JsonObject ?? [], drawings) is { } bad) return bad;
+                foreach (var child in a) Collect(child, schema["items"] as JsonObject ?? [], drawings, found, most);
                 break;
         }
-        return null;
     }
 
-    private static bool WithLabel(string label, string text, IReadOnlyList<Drawings.Drawing> drawings)
+    private static bool WithLabel(string label, string text, IReadOnlyList<Regions.Region> drawings)
     {
-        var at = Drawings.Places(label, drawings).ToList();
+        var at = Regions.Places(label, drawings).ToList();
         if (at.Count == 0) return true;
-        var boxes = at.Where(p => p.Box is not null).Select(p => (p.Drawing.Number, p.Box)).ToHashSet();
-        if (boxes.Count > 0 && Drawings.Places(text, drawings).Any(p => boxes.Contains((p.Drawing.Number, p.Box)))) return true;
-        return at.Any(p => p.Box is null) && Drawings.Locate(label + " " + text, drawings) is not null;
+        var boxes = at.Where(p => p.Box is not null).Select(p => (p.Region.Number, p.Box)).ToHashSet();
+        if (boxes.Count > 0 && Regions.Places(text, drawings).Any(p => boxes.Contains((p.Region.Number, p.Box)))) return true;
+        return at.Any(p => p.Box is null) && Regions.Locate(label + " " + text, drawings) is not null;
+    }
+
+    [GeneratedRegex(@"^\$(?:\.[A-Za-z_][A-Za-z0-9_]{0,39}|\[[0-9]{1,4}\]){1,12}\z")]
+    private static partial Regex JsonPath();
+
+    [GeneratedRegex(@"\.([A-Za-z_][A-Za-z0-9_]*)|\[([0-9]+)\]")]
+    private static partial Regex PathStep();
+
+    /// <summary>The node <paramref name="path"/> names in <paramref name="input"/>, or null: a path of the form a tool's refusal may give.</summary>
+    public static JsonNode? At(JsonNode? input, string? path)
+    {
+        if (path is null || !JsonPath().IsMatch(path)) return null;
+        var node = input;
+        foreach (Match step in PathStep().Matches(path))
+            node = step.Groups[1].Success ? (node as JsonObject)?[step.Groups[1].Value]
+                : node is JsonArray a && int.TryParse(step.Groups[2].Value, CultureInfo.InvariantCulture, out var i) && i < a.Count ? a[i] : null;
+        return node;
     }
 
     /// <summary>
-    /// The drawing a call of a drawing tool draws: the one in which most of its text strings (of <see cref="MinGrounded"/> characters or
-    /// more) are written, the first on a tie; null when none of them is in any drawing.
+    /// The app's reply to a tool's refusal (<see cref="ImportToolRefusal"/>), in its own words. The path the tool gave is named only when it
+    /// is of the allowed form and names a part of the input; an id there of the identifier form is quoted, being the model's own text.
     /// </summary>
-    public static Drawings.Drawing? DrawingOf(JsonNode? input, JsonObject schema, IReadOnlyList<Drawings.Drawing> drawings)
+    public static string Refused(ImportToolRefusal why, string? path, JsonNode? input)
+    {
+        var node = At(input, path);
+        var place = node is null ? "the input"
+            : node is JsonValue v && v.GetValueKind() == JsonValueKind.String && v.GetValue<string>() is var s && Identifier().IsMatch(s) ? $"{path} (\"{s}\")" : path!;
+        return why switch
+        {
+            ImportToolRefusal.UnknownId => $"Refused by the tool: {place} names an id that the input does not declare. Declare it, or leave it out.",
+            ImportToolRefusal.DuplicateId => $"Refused by the tool: {place} declares an id that is declared before. Give each its own id.",
+            ImportToolRefusal.TooLittle => "Refused by the tool: the input holds too little to make anything of.",
+            ImportToolRefusal.TooMuch => "Refused by the tool: the input holds more than the tool can make.",
+            _ => "Refused: the tool added nothing.",
+        };
+    }
+
+    /// <summary>
+    /// The region a call of a region tool is about: the one in which most of its text strings (of <see cref="MinGrounded"/> characters or
+    /// more) are written, the first on a tie; null when none of them is in any region.
+    /// </summary>
+    public static Regions.Region? RegionOf(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> drawings)
     {
         ArgumentNullException.ThrowIfNull(drawings);
         return Strings(input, schema).Where(s => s.Kind == StringKind.Text && Normalize(s.Text).Length >= MinGrounded)
-            .Select(s => Drawings.Locate(s.Text, drawings)).OfType<Drawings.Drawing>()
+            .Select(s => Regions.Locate(s.Text, drawings)).OfType<Regions.Region>()
             .GroupBy(d => d.Number).OrderByDescending(g => g.Count()).ThenBy(g => g.Key).Select(g => g.First()).FirstOrDefault();
     }
 
@@ -319,8 +376,9 @@ public sealed partial class ImportService
             tools.Add((pluginId, tool));
         }
         // A drawing tool is offered only for documents that hold a drawing, as the app finds it in the source; any other tool as before.
-        var drawings = Drawings.Find(source);
-        if (drawings.Count == 0) tools.RemoveAll(t => t.Tool.Drawing);
+        // A tool with regions is offered only for documents that hold one, as the app finds it in the source; any other tool as before.
+        var regionsOf = tools.Where(t => t.Tool.For is not null).ToDictionary(t => t.Tool.Name, t => Regions.Find(source, t.Tool.For!));
+        tools.RemoveAll(t => t.Tool.For is not null && regionsOf[t.Tool.Name].Count == 0);
         if (tools.Count == 0 || source.Length == 0) return;
         var (blocks, at) = ImportTools.Blocks(contents);
         if (at.Count == 0) return;
@@ -335,10 +393,11 @@ public sealed partial class ImportService
         var grounds = ImportTools.Normalize(source + " " + string.Join(" ", contents.Select(c => Kb.Core.Content.DocText.Plain(new JsonObject { ["type"] = "doc", ["content"] = c.DeepClone() }.ToJsonString()))));
         var outcomes = new List<ImportTools.Outcome>();
         static string Cut(string s) => s.Length > 60 ? s[..60] + "..." : s;
-        async Task<string> AnswerAsync(AiService.ToolCall call)
+        async Task<AiService.ToolAnswer> AnswerAsync(AiService.ToolCall call)
         {
             var bytes = Encoding.UTF8.GetByteCount(call.Arguments);
-            async Task<string> Done(string pluginId, string result, string reply, int nodes = 0)
+            var reached = false;
+            async Task<AiService.ToolAnswer> Done(string pluginId, string result, string reply, int nodes = 0)
             {
                 outcomes.Add(new ImportTools.Outcome(pluginId, call.Name.Length > 40 ? call.Name[..40] : call.Name, bytes, result, nodes));
                 await audit.AppendAsync(new AuditEvent(AuditActions.ImportTool, item.UserId, "importItem", item.Id.ToString(), Data: new Dictionary<string, string>
@@ -346,7 +405,7 @@ public sealed partial class ImportService
                     ["plugin"] = pluginId, ["tool"] = call.Name.Length > 40 ? call.Name[..40] : call.Name, ["bytes"] = bytes.ToString(CultureInfo.InvariantCulture),
                     ["outcome"] = result, ["nodes"] = nodes.ToString(CultureInfo.InvariantCulture),
                 }), ct);
-                return reply;
+                return new AiService.ToolAnswer(reply, reached);
             }
             if (tools.FirstOrDefault(t => t.Tool.Name == call.Name) is not { Tool: not null } found) return await Done("", "unknown-tool", "Refused: there is no tool of that name.");
             if (bytes > ImportTools.MaxInputBytes) return await Done(found.PluginId, "too-large", $"Refused: the input is larger than {ImportTools.MaxInputBytes / 1024} KB.");
@@ -361,36 +420,45 @@ public sealed partial class ImportService
             if (AiGuard.SchemaError(input, schema) is { } bad)
                 return await Done(found.PluginId, "invalid", $"Refused: the input does not match the tool's schema ({(bad.Length > 120 ? bad[..120] : bad)}).");
             var same = ImportTools.Canonical(input);
-            // A drawing tool is held to one call for each drawing instead of one for each block: two drawings drafted into one block get two.
-            if (made.Contains((call.Name, same)) || (!found.Tool.Drawing && places.Contains((call.Name, after))))
+            var regional = found.Tool.For is not null;
+            var regions = regionsOf.GetValueOrDefault(call.Name) ?? [];
+            // A region tool is held to one call for each region instead of one for each block: two regions drafted into one block get two.
+            if (made.Contains((call.Name, same)) || (!regional && places.Contains((call.Name, after))))
                 return await Done(found.PluginId, "repeat", "Refused as a repeat: this tool was already called with this input, or after this block.");
             var fallbacks = new List<string>();
-            var loose = ImportTools.Ungrounded(input, schema, grounds, drawings, fallbacks);
+            var loose = ImportTools.UngroundedAll(input, schema, grounds, regions, fallbacks);
             foreach (var f in fallbacks) log.LogInformation("Import tools for {Item}: a stacked label was found outside any box (the 4-line fallback): {Text}", item.Id, f);
-            if (loose is not null)
+            // Every text the source and layout checks refuse goes in one reply, so the model can correct them all in one turn.
+            var apart = regional ? ImportTools.MisplacedAll(input, schema, regions) : [];
+            if (loose.Count > 0)
                 return await Done(found.PluginId, "not-in-source",
-                    $"Refused: the input holds text that is not in the documents or the draft: \"{(loose.Length > 60 ? loose[..60] + "..." : loose)}\". Use only text as the documents write it.");
-            var drawing = found.Tool.Drawing ? ImportTools.DrawingOf(input, schema, drawings) : null;
-            if (found.Tool.Drawing && drawing is null)
-                return await Done(found.PluginId, "no-drawing", "Refused: the input draws none of the drawings in the documents. Use the labels the drawing shows.");
-            if (found.Tool.Drawing && ImportTools.Misplaced(input, schema, drawings) is { } misplaced)
+                    $"Refused: the input holds text that is not in the documents or the draft: {string.Join(", ", loose.Select(l => $"\"{Cut(l)}\""))}. Use only text as the documents write it." +
+                    string.Concat(apart.Select(m => $" Also, \"{Cut(m.Text)}\" is not written in the same box as \"{Cut(m.Label)}\".")));
+            var region = regional ? ImportTools.RegionOf(input, schema, regions) : null;
+            if (regional && region is null)
+                return await Done(found.PluginId, "no-region", "Refused: the input is about none of the parts of the documents this tool is for. Use the text as they write it.");
+            if (apart.Count > 0)
                 return await Done(found.PluginId, "not-in-box",
-                    $"Refused: \"{Cut(misplaced.Text)}\" is not written in the box of \"{Cut(misplaced.Label)}\" in the drawing. Give a box only the text written inside it.");
-            if (drawing is not null && drawn.Contains((call.Name, drawing.Number)))
-                return await Done(found.PluginId, "drawing-done", $"Refused: drawing {drawing.Number + 1} of the documents already has a result from this tool.");
+                    $"Refused: {string.Join("; ", apart.Select(m => $"\"{Cut(m.Text)}\" is not written in the same box as \"{Cut(m.Label)}\""))} in the documents. Give each item only the text written with it.");
+            if (region is not null && drawn.Contains((call.Name, region.Number)))
+                return await Done(found.PluginId, "region-done", $"Refused: part {region.Number + 1} of the documents this tool is for already has a result from it.");
             using var doc = JsonDocument.Parse(input.ToJsonString());
-            var nodes = await contributors.CallToolAsync(found.PluginId, found.Tool, item, doc.RootElement.Clone(), ct);
-            if (nodes is not { Count: > 0 }) return await Done(found.PluginId, "nothing", "Refused: the tool added nothing.");
+            reached = true;
+            var (nodes, why, path) = await contributors.CallToolAsync(found.PluginId, found.Tool, item, doc.RootElement.Clone(), ct);
+            if (nodes is not { Count: > 0 })
+                return await Done(found.PluginId, why == ImportToolRefusal.None ? "nothing" : $"tool-{why.ToString().ToLowerInvariant()}", ImportTools.Refused(why, path, input));
             placed.Add((at[after - 1].Page, at[after - 1].Index, nodes));
             made.Add((call.Name, same));
             places.Add((call.Name, after));
-            if (drawing is not null) drawn.Add((call.Name, drawing.Number));
+            if (region is not null) drawn.Add((call.Name, region.Number));
             return await Done(found.PluginId, "done", $"Done: added after block {after}.", nodes.Count);
         }
 
+        // A region tool that has a result for each of its regions is no longer offered; when no tool is left, the conversation ends.
+        JsonArray Offered() => new([.. tools.Where(t => t.Tool.For is null || regionsOf[t.Tool.Name].Any(r => !drawn.Contains((t.Tool.Name, r.Number))))
+            .Select(t => (JsonNode)ImportTools.Offer(t.Tool, at.Count))]);
         var data = new Dictionary<string, string> { ["files"] = source, ["blocks"] = blocks };
-        var run = await ai.RunToolsAsync(actor, AiFeatures.Import, ImportTools.Task, data, new JsonArray([.. tools.Select(t => (JsonNode)ImportTools.Offer(t.Tool, at.Count))]),
-            AnswerAsync, ImportTools.MaxToolCalls, ct);
+        var run = await ai.RunToolsAsync(actor, AiFeatures.Import, ImportTools.Task, data, Offered, AnswerAsync, ImportTools.MaxToolCalls, ImportTools.MaxRefused, ct);
         if (run.Problem is { } p)
         {
             warnings.Add($"The plugins' tools could not be offered to the AI, so the draft is as it would be without them: {p.Message ?? "the AI did not answer"}");
@@ -407,7 +475,8 @@ public sealed partial class ImportService
             warnings.Add($"{contributors.PluginName(o.PluginId)} added {o.Nodes} block{(o.Nodes == 1 ? "" : "s")} through its tool {o.Tool}.");
         if (outcomes.Count(o => o.Result != "done") is > 0 and var refused)
             warnings.Add($"The AI's tool calls were refused {refused} time{(refused == 1 ? "" : "s")}: {string.Join(", ", outcomes.Where(o => o.Result != "done").Select(o => o.Result).Distinct())}.");
-        if (run.Value!.LimitReached) warnings.Add($"The AI reached the limit of {ImportTools.MaxToolCalls} tool calls for this item.");
+        if (run.Value!.LimitReached)
+            warnings.Add($"The AI reached the limit of tool calls for this item ({ImportTools.MaxToolCalls} answered by a plugin, {ImportTools.MaxRefused} refused by the app).");
         log.LogInformation("Import tools for {Item}: {Calls} model call(s), {Tools} tool call(s), {In}+{Out} tokens, {Ms} ms.", item.Id, run.Value.ModelCalls, run.Value.ToolCalls,
             run.Value.PromptTokens, run.Value.CompletionTokens, run.Value.Milliseconds);
     }
