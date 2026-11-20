@@ -369,6 +369,35 @@ public static partial class ImportTools
         return [.. named.Where(n => !ids.Contains(n))];
     }
 
+    /// <summary>
+    /// For a region tool: the first label of an object with an id (a box, a group) that is written in none of the regions (the prose
+    /// around a drawing, such as its heading), with whether that object's schema lets the label be left out; or null. Only what the
+    /// drawing shows is an item of it.
+    /// </summary>
+    public static (string Label, bool Optional)? NotDrawn(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> regions)
+    {
+        ArgumentNullException.ThrowIfNull(schema);
+        ArgumentNullException.ThrowIfNull(regions);
+        switch (input)
+        {
+            case JsonObject o:
+                var props = schema["properties"] as JsonObject ?? [];
+                var labelKey = LabelKey(props);
+                var hasId = props.Any(p => o[p.Key] is JsonValue && p.Value is JsonObject ps && ps["format"]?.GetValue<string>() == "identifier");
+                if (hasId && labelKey is not null && o[labelKey] is JsonValue lv && lv.GetValueKind() == JsonValueKind.String
+                    && lv.GetValue<string>() is var label && Normalize(label).Length >= MinGrounded && !Regions.Starts(label, regions).Any())
+                    return (label, (schema["required"] as JsonArray)?.Any(r => r?.GetValue<string>() == labelKey) != true);
+                foreach (var (key, child) in o)
+                    if (child is JsonObject or JsonArray && NotDrawn(child, props[key] as JsonObject ?? [], regions) is { } found) return found;
+                break;
+            case JsonArray a:
+                foreach (var child in a)
+                    if (NotDrawn(child, schema["items"] as JsonObject ?? [], regions) is { } found) return found;
+                break;
+        }
+        return null;
+    }
+
     /// <summary>Whether a text stands, everywhere the regions write it outside a box, at the end of a line drawn across (joined to it).</summary>
     public static bool AtLineEnd(string text, IReadOnlyList<Regions.Region> regions)
     {
@@ -736,6 +765,10 @@ public sealed partial class ImportService
                 return await Done(found.PluginId, "not-in-box",
                     $"Refused: {string.Join("; ", apart.Select(m => Apart(m, regions)))} in the documents. Give each item only the text written with it." +
                     (apart.Any(m => !m.Beside && ImportTools.CouldBeTitle(m.Label, m.Text, regions)) ? Beside(" Text written beside an item, outside it, is that item's {0}.") : ""));
+            if (regional && ImportTools.NotDrawn(input, schema, regions) is { } prose)
+                return await Done(found.PluginId, "not-drawn",
+                    $"Refused: \"{Cut(prose.Label)}\" is not written in the drawing, so it is not an item of it. Draw only what the drawing shows." +
+                    (prose.Optional ? " Leave out the label of an item that has no words in the drawing, such as an empty frame." : ""));
             if (regional && ImportTools.Undeclared(input, schema) is { Count: > 0 } undeclared)
                 return await Done(found.PluginId, "undeclared",
                     $"Refused: the input names {string.Join(", ", undeclared.Select(u => $"\"{Cut(u)}\""))} as what an item is drawn inside, but declares no object with that id. Declare each one, or leave it out.");

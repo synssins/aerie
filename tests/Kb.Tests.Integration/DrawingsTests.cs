@@ -193,6 +193,17 @@ public sealed class DrawingsTests
         Assert.Empty(ImportTools.Undeclared(input, GroupSchema));
     }
 
+    [Theory]
+    [InlineData("""{"groups":[{"id":"g","label":"vnet-prod"}],"boxes":[{"id":"m","label":"SQL MI","group":"g"}]}""", null)]
+    [InlineData("""{"groups":[{"id":"g"}],"boxes":[{"id":"m","label":"SQL MI","group":"g"}]}""", null)] // a frame with no words
+    [InlineData("""{"groups":[{"id":"g","label":"Lab notes, second floor"}],"boxes":[{"id":"m","label":"SQL MI","group":"g"}]}""", "Lab notes, second floor")] // seen in round 11: the page's heading
+    public void AnItemsLabel_IsWrittenInTheDrawing(string json, string? refused)
+    {
+        var found = ImportTools.NotDrawn(System.Text.Json.Nodes.JsonNode.Parse(json), GroupSchema, Regions.Find(Wiki, TestRegions.Drawing));
+        Assert.Equal(refused, found?.Label);
+        if (found is not null) Assert.True(found.Value.Optional); // GroupSchema requires no label
+    }
+
     [Fact]
     public void TheFieldForATitle_IsNamedByItsFormat()
     {
