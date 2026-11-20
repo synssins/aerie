@@ -594,14 +594,17 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             foreach (var n in c.Nodes) contents[0].Add(n);
             warnings.Add($"{c.PluginName} added {c.Nodes.Count} block{(c.Nodes.Count == 1 ? "" : "s")} from {c.FileName} at the end of the first page.");
         }
+        // 0.11.0 (draft): the tools first, so the draft contributors see what the tools added (ImportDraft.ToolBlocks) and need not make it again.
+        var tooled = actor is not null ? await ToolsAsync(item, actor, source, pages, contents, warnings, ct) : [];
+        IReadOnlyList<DraftToolBlock> ToolBlocks() => [.. tooled.SelectMany(t => contents.Select((c, page) => (page, index: c.IndexOf(t.Node)))
+            .Where(x => x.index >= 0).Select(x => new DraftToolBlock(x.page, x.index, t.PluginId, t.Tool)))];
         var pictures = contributors.AnyDraft && actor is not null ? await DiagramsAsync(actor, sent ?? [], pages, warnings, ct) : [];
         foreach (var c in await contributors.RunDraftAsync(item, () => [.. pages.Select(p => new DraftPage(p["title"]!.GetValue<string>(), p["doc"]!.ToJsonString()))],
-            [.. read.Select(f => f.Path)], c => ImportContributors.Place(contents, c.Additions), ct, pictures))
+            [.. read.Select(f => f.Path)], c => ImportContributors.Place(contents, c.Additions), ct, pictures, ToolBlocks))
         {
             var where = string.Join(", ", c.Additions.Select(a => a.Page).Distinct().Order().Select(i => $"\"{pages[i]["title"]!.GetValue<string>()}\""));
             warnings.Add($"{c.PluginName} added {c.Count} block{(c.Count == 1 ? "" : "s")} to {where}.");
         }
-        if (actor is not null) await ToolsAsync(item, actor, source, pages, contents, warnings, ct);
         return true;
     }
 

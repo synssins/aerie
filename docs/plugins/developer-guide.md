@@ -71,7 +71,7 @@ public void Configure(IPluginApp app, IPluginContext context) => app
     .DraftContributor<NoticeFromDraft>()                       // ... from the text the AI drafted
     .DraftContributor<DiagramOutline>()                        // ... from the diagrams the AI read in its pictures
     .ImportFileKinds(".notice")                                // a kind the app does not read: drafted by this plugin
-    .ImportDrawingTool<BoxesAndLines>(BoxesAndLines.Name, BoxesAndLines.Description, BoxesAndLines.Schema) // a tool the AI may call for a drawing (0.11.0 draft)
+    .ImportRegionTool<BoxesAndLines>(BoxesAndLines.Name, BoxesAndLines.Description, BoxesAndLines.Schema, BoxesAndLines.Regions) // a tool the AI may call for a drawing (0.11.0 draft)
     .SignInMethod<SampleSignIn>("example", "Sign in with Example ID") // a button on the sign-in screen
     .SignInProviders<SampleProviderCheck>() // providers an Admin adds on this plugin's page, each with its own button
     .Routes(SampleRoutes.Map);                                 // under /api/v1/plugins/kb.sample/
@@ -1073,7 +1073,7 @@ public sealed class NoticeFromDraft : IDraftContributor
 }
 ```
 
-- **When.** Once for each item the AI drafted, after every [import contributor](#adding-to-the-draft-import-contributors) has added its nodes, before the importer sees the draft. Draft contributors run one after another, in the order the plugins were loaded; each sees what the ones before it added. Not for an item the AI could not draft.
+- **When.** Once for each item the AI drafted, after every [import contributor](#adding-to-the-draft-import-contributors) has added its nodes, before the importer sees the draft. Draft contributors run one after another, in the order the plugins were loaded; each sees what the ones before it added. Not for an item the AI could not draft. 0.11.0 (draft): the [tools for the AI](#tools-for-the-ai-during-an-import-0110-draft) run before them, and `ImportDraft.ToolBlocks` lists the blocks they added (page, block, plugin and tool), so a contributor can leave out what a tool already made, such as a second chart of a drawing the tool has drawn.
 - **What it gets.** `ImportDraft(ImportItemId, Pages, Files)`. `Pages` are the draft's pages in order, each a `DraftPage(Title, ContentJson)`: the page's content as a page stores it ([page content](#page-content)), the AI's blocks with the import contributors' nodes already in them. The draft's pictures point to the import's own copies (`/api/v1/imports/files/<id>`) until the draft is accepted. `Files` are the paths of the item's files that were read. It is a copy: changing it changes nothing. It is not the text the app read from the files.
 - **What it answers.** Null, or `DraftContribution(Additions)`: each a `DraftAddition(Page, Place, Nodes)`. `Page` is the page's index in `Pages` (0 is the first). `Place` is one of:
 
@@ -1171,7 +1171,7 @@ For both kinds of contributor:
 
 **This is a draft of the next contract, on the exploration branch `explore/plugin-tools` only.** It can change or be dropped.
 
-A plugin can offer the AI tools while an import is drafted. The plugin is the toolset; the app is the only path between the model and it. The app drafts the page as before, then, in a conversation of its own, offers the model the tools of the loaded plugins over the drafted page. When the model calls a tool, the app checks the call, passes its input to the plugin, and places the nodes the plugin answers in the draft.
+A plugin can offer the AI tools while an import is drafted. The plugin is the toolset; the app is the only path between the model and it. The app drafts the page as before, then, in a conversation of its own and before the draft contributors, offers the model the tools of the loaded plugins over the drafted page. When the model calls a tool, the app checks the call, passes its input to the plugin, and places the nodes the plugin answers in the draft.
 
 Register a tool with a name, a description and the JSON schema of its input:
 
@@ -1182,10 +1182,10 @@ app.ImportTool<MyTool>(MyTool.Name, MyTool.Description, MyTool.Schema);
 A tool that is for certain parts of a document, such as a drawing made of text characters, says which parts as data: a `ToolRegions`, line patterns the app checks, caps and runs on the source itself (see "What counts as a region" below). Register it with `ImportRegionTool`:
 
 ```csharp
-app.ImportRegionTool<BoxesAndLines>(BoxesAndLines.Name, BoxesAndLines.Description, BoxesAndLines.Schema, ToolRegions.TextDrawing);
+app.ImportRegionTool<BoxesAndLines>(BoxesAndLines.Name, BoxesAndLines.Description, BoxesAndLines.Schema, BoxesAndLines.Regions);
 ```
 
-It sets `ImportToolReg.For`. `ToolRegions.TextDrawing` is a ready preset for drawings of boxes and lines; a plugin may pass it, or declare its own patterns. `ImportDrawingTool(...)` is kept as shorthand for the preset, and `ImportToolReg.Drawing` reads true when `For` is set. A region tool differs from other tools in these ways, all decided by the app from the source, never by the model or the plugin:
+It sets `ImportToolReg.For`. The app ships no drawing rule of its own: what a drawing is, is the plugin's declaration. The sample's `BoxesAndLines.Regions` (below) is one for drawings of boxes and lines made of text characters; a plugin may copy it, or declare its own patterns. A region tool differs from other tools in these ways, all decided by the app from the source, never by the model or the plugin:
 
 - **It is offered only for documents that hold one of its regions.** A tool without regions is offered for every document, as before.
 - **It gets one result for each region.** A second call that would add something for the same region is refused, so a document with two drawings can get two results, even when both were drafted into one block. Which region a call is about is the one in which most of its text is written. A call whose text is in none of its regions is refused.
@@ -1199,8 +1199,8 @@ The tool class implements `IImportTool`. It gets the input of one call as a `Jso
 ```csharp
 /// <summary>
 /// A tool the AI may call while it drafts an import (0.11.0 draft): a drawing of boxes, groups and lines in a document (a network map
-/// drawn in text) becomes an outline after the block that shows it. It is registered as a drawing tool (<c>ImportDrawingTool</c>): offered
-/// only for documents that hold a drawing, one result for each drawing. The app checks the input against <see cref="Schema"/> before the
+/// drawn in text) becomes an outline after the block that shows it. It is registered with the regions it is for (<c>ImportRegionTool</c>,
+/// <see cref="Regions"/>): offered only for documents that hold such a drawing, one result for each. The app checks the input against <see cref="Schema"/> before the
 /// call, so the plugin gets only valid input; it never sees the document. Labels must be text of the document; ids, which the AI makes
 /// up to tie boxes to groups and lines, are marked <c>"format": "identifier"</c>. A chart plugin would draw the same data instead.
 /// </summary>
@@ -1220,6 +1220,20 @@ public sealed class BoxesAndLines : IImportTool
           "lines": {"type": "array", "maxItems": 200, "items": {"type": "object", "required": ["from", "to"], "additionalProperties": false, "properties": {
             "from": {"type": "string", "format": "identifier"}, "to": {"type": "string", "format": "identifier"}, "label": {"type": "string", "maxLength": 100}}}}}}
         """;
+
+    /// <summary>
+    /// What a drawing is, for this tool: a rule, a corner or a thing in brackets starts one; a bar, a plus, a slash or a box-drawing
+    /// character joins one; a rule alone is weak; two things in brackets joined by a connector, or two arrows, make one line a drawing.
+    /// </summary>
+    public static readonly ToolRegions Regions = new(
+        Starts: [@"[-=~_─━═]{3,}", @"\+[-=~_]|[-=~_]\+|[┌-╋]", @"\[\s+[^\]\[]+?\s+\]"],
+        Joins: [@"[|+/\\]|[─-╿]"],
+        Weak: [@"^\s*[-=~_*─━═]{3,}\s*$"],
+        Alone:
+        [
+            @"\[\s+[^\]\[]+?\s+\]\s*<?(?:[-=~.]{2,}|-+[^\s\[\]]+-+)>?\s*\[\s+[^\]\[]+?\s+\]",
+            @"(?:-{2,}|={2,})(?:[^\s<>\-=][^<>]*?-+)?>.*(?:-{2,}|={2,})(?:[^\s<>\-=][^<>]*?-+)?>",
+        ]);
 
     public Task<ImportToolResult?> CallAsync(JsonElement input, CancellationToken ct)
     {
@@ -1295,7 +1309,7 @@ public sealed class BoxesAndLines : IImportTool
 
 The app checks a declaration before it offers the tool: at most 16 patterns in each list, each at most 300 characters and a pattern the app can run without backtracking (no back-references or look-arounds); `MinLines` 1 to 20, `MinStarts` 0 to 20, `MaxGap` 0 to 5. Each pattern runs with a time limit. A tool whose declaration breaks a rule is not offered, and the Admin sees why.
 
-**The preset `ToolRegions.TextDrawing`** is for drawings made of text characters:
+**The sample's declaration, `BoxesAndLines.Regions`,** is for drawings made of text characters:
 - starts: a rule of three dashes, equals, tildes or underscores (or box-drawing characters); a plus where a rule meets it; or a thing in brackets with spaces inside, such as `[ HV01 ]`;
 - joins: a line holding a bar, a plus, a slash or a box-drawing character;
 - weak: a rule alone, such as a Markdown section break (`---`);
@@ -1316,6 +1330,7 @@ With it, not drawings: one arrow in a sentence (`printer -> relay01`), a task li
 | `DuplicateId` | Refused by the tool: `<at>` declares an id that is declared before. Give each its own id. |
 | `TooLittle` | Refused by the tool: the input holds too little to make anything of. |
 | `TooMuch` | Refused by the tool: the input holds more than the tool can make. |
+| `SelfReference` | Refused by the tool: `<at>` refers to the item it belongs to. Leave it out, or name another. |
 
 `at` is optional: a JSON path into the call's input, such as `$.boxes[3].group` (a dollar sign, then names after dots and numbers in brackets, at most 12 steps). The app names it only when it is of that form and names a part of the input; when it names a string of the identifier form, the reply quotes it, being the model's own text. Otherwise the reply says "the input". Nothing else of the plugin reaches the model. A null answer, or nodes that fail the checks, get "Refused: the tool added nothing."
 
@@ -1551,7 +1566,7 @@ The plugin stays disabled until an Admin selects Enable. Uploading a new version
 - `minKbVersion`: the lowest app version the plugin runs on.
 
 The contract and the app are at 0.11.0, and can still change before 1.0.0. On the branch `explore/plugin-tools`, 0.11.0 is a draft.
-0.11.0 (draft) adds [tools for the AI during an import](#tools-for-the-ai-during-an-import-0110-draft) (`app.ImportTool<T>(name, description, schema)`, `app.ImportRegionTool<T>(name, description, schema, regions)` with `ToolRegions` and its preset `ToolRegions.TextDrawing`, the shorthand `app.ImportDrawingTool<T>(name, description, schema)`, `IImportTool`, `ImportToolResult` with `ImportToolResult.Refuse(ImportToolRefusal, at)`, `ImportToolReg` with `For` and `Drawing`); a plugin that uses them says `"abstractionsVersion": "0.11.0"`. Nothing of 0.10.0 changed, and a plugin built for 0.10.0 or earlier loads as it did.
+0.11.0 (draft) adds [tools for the AI during an import](#tools-for-the-ai-during-an-import-0110-draft) (`app.ImportTool<T>(name, description, schema)`, `app.ImportRegionTool<T>(name, description, schema, regions)` with `ToolRegions`, `IImportTool`, `ImportToolResult` with `ImportToolResult.Refuse(ImportToolRefusal, at)`, `ImportToolReg` with `For`, and `ImportDraft.ToolBlocks`); a plugin that uses them says `"abstractionsVersion": "0.11.0"`. Nothing of 0.10.0 changed, and a plugin built for 0.10.0 or earlier loads as it did.
 0.10.0 added [diagrams in the pictures of an import](#diagrams-in-the-pictures-of-an-import) (`ImportDraft.Pictures`, `DraftPicture`, `PictureDiagram`, `DiagramBox`, `DiagramContainer`, `DiagramLine`, `DiagramText`, `DiagramArea`, `DiagramShape`, `DiagramArrow`, `DiagramLimits`, `DraftPlace.AfterPicture`, `DraftAddition.Picture`); a plugin that uses them says `"abstractionsVersion": "0.10.0"`. Nothing of 0.9.0 changed, and a plugin built for 0.9.0 or earlier loads as it did.
 0.9.0 added [sign-in providers an Admin adds](#sign-in-providers-an-admin-adds) (`app.SignInProviders()`, `app.SignInProviders<TCheck>()`, `ISignInProviderCheck`, `SignInProvidersReg`) and `OidcProvider.UserInfo`; a plugin that uses them says `"abstractionsVersion": "0.9.0"`. Nothing of 0.8.0 changed, and a plugin built for 0.8.0 or earlier loads as it did.
 0.8.0 added [sign-in methods](#sign-in-methods) (`ISignInMethod`, `OidcProvider`, `SignInClaims`, `SignInMethodReg`, `app.SignInMethod<T>(id, name)`) and the actor source `signin`; a plugin that uses them says `"abstractionsVersion": "0.8.0"`. One thing changed that an earlier plugin can see: a setting key starting with `signIn.` is the app's, so a manifest that declares one is refused at install. Nothing else of 0.7.0 changed, and a plugin built for 0.7.0 or earlier loads as it did.

@@ -34,28 +34,28 @@ public sealed class DrawingsTests
     [InlineData("- a list item", false)]
     [InlineData("see [the guide](https://example.test) and [x] done", false)]
     public void ALine_StartsADrawing_ByItsRulesBarsCornersOrBrackets(string line, bool drawn) =>
-        Assert.Equal(drawn, ToolRegions.TextDrawing.Starts.Any(p => System.Text.RegularExpressions.Regex.IsMatch(line, p)));
+        Assert.Equal(drawn, TestRegions.Drawing.Starts.Any(p => System.Text.RegularExpressions.Regex.IsMatch(line, p)));
 
     [Fact]
     public void ATableOfBarsWithoutRules_IsNoDrawing() =>
-        Assert.Empty(Regions.Find("Step | System | How |\n1 | BKP01 | normal shutdown |\n2 | PRT01 | normal shutdown |\n3 | AADC01 | normal shutdown |", ToolRegions.TextDrawing));
+        Assert.Empty(Regions.Find("Step | System | How |\n1 | BKP01 | normal shutdown |\n2 | PRT01 | normal shutdown |\n3 | AADC01 | normal shutdown |", TestRegions.Drawing));
 
     [Fact]
     public void TheAppsFileHeaders_AreNeverARegion() =>
-        Assert.Empty(Regions.Find("=== notes/map.txt ===\n=== more.txt ===\n=== last.txt ===", ToolRegions.TextDrawing));
+        Assert.Empty(Regions.Find("=== notes/map.txt ===\n=== more.txt ===\n=== last.txt ===", TestRegions.Drawing));
 
     [Fact]
     public void Drawings_AreFound_ApartFromTextAndTables()
     {
         var text = Hub + "\n\n| Port | Use |\n|------|-----|\n| 443  | web |\n| 22   | ssh |\n\nAnd a second one:\n\n[ a ] --- [ b ]\n  |\n[ c ] --- [ d ]\n";
-        var found = Regions.Find(text, ToolRegions.TextDrawing);
+        var found = Regions.Find(text, TestRegions.Drawing);
         Assert.Equal(2, found.Count); // the table is not one
         Assert.Contains(found[0].Lines, l => l.Contains("vnet-hub", StringComparison.Ordinal));
         Assert.Contains(found[1].Lines, l => l.Contains("[ c ]", StringComparison.Ordinal));
-        Assert.Empty(Regions.Find("Plain notes.\n1. Check the printer.\n2. Restart the spooler.", ToolRegions.TextDrawing));
-        Assert.Empty(Regions.Find("| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |", ToolRegions.TextDrawing));
+        Assert.Empty(Regions.Find("Plain notes.\n1. Check the printer.\n2. Restart the spooler.", TestRegions.Drawing));
+        Assert.Empty(Regions.Find("| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |", TestRegions.Drawing));
         // A section break among lines with slashes and pluses (addresses, "1812 + 1813") is not a drawing.
-        Assert.Empty(Regions.Find("AADC01 -> internet: 443 tcp\n\n---\n\nWiFi -> DC02 on 1812 udp + 1813 udp.\n- app (10.50.8.0/22) -> SQL01 1433\n- SQL01 <-> SQL MI 5022", ToolRegions.TextDrawing));
+        Assert.Empty(Regions.Find("AADC01 -> internet: 443 tcp\n\n---\n\nWiFi -> DC02 on 1812 udp + 1813 udp.\n- app (10.50.8.0/22) -> SQL01 1433\n- SQL01 <-> SQL MI 5022", TestRegions.Drawing));
     }
 
     [Theory]
@@ -73,7 +73,7 @@ public sealed class DrawingsTests
     [InlineData("vnet-hub peering", false)] // from lines far apart
     [InlineData("vnet-prod 10.50.8 0/22", false)] // not as written
     public void ALabel_IsFoundOnOneLine_OrStackedInOneBox(string label, bool found) =>
-        Assert.Equal(found, Regions.Locate(label, Regions.Find(Hub, ToolRegions.TextDrawing)) is not null);
+        Assert.Equal(found, Regions.Locate(label, Regions.Find(Hub, TestRegions.Drawing)) is not null);
 
     [Theory]
     [InlineData("[ A ] --- [ B ] --> [ C ]", 1)] // one line
@@ -86,7 +86,7 @@ public sealed class DrawingsTests
     [InlineData("See [the guide](https://example.test) -- or [the wiki](https://wiki.test).", 0)] // links
     [InlineData("| a | b |\n|---|---|\n| [ x ] -- [ y ] | 2 |", 0)] // a table
     [InlineData("Ask [ IT ] first.", 0)] // one thing in brackets
-    public void AShortDrawing_IsFound_AndProseIsNot(string text, int count) => Assert.Equal(count, Regions.Find(text, ToolRegions.TextDrawing).Count);
+    public void AShortDrawing_IsFound_AndProseIsNot(string text, int count) => Assert.Equal(count, Regions.Find(text, TestRegions.Drawing).Count);
 
     private const string Wiki = """
            +--+--------+-------+--+
@@ -132,7 +132,7 @@ public sealed class DrawingsTests
                 ["id"] = "b1", ["label"] = label, ["detail"] = detail, ["shape"] = "box",
             }),
         };
-        Assert.Equal(refused, ImportTools.Misplaced(input, BoxSchema, Regions.Find(Wiki, ToolRegions.TextDrawing))?.Text);
+        Assert.Equal(refused, ImportTools.Misplaced(input, BoxSchema, Regions.Find(Wiki, TestRegions.Drawing))?.Text);
     }
 
     private static readonly System.Text.Json.Nodes.JsonObject GroupSchema = System.Text.Json.Nodes.JsonNode.Parse("""
@@ -155,28 +155,28 @@ public sealed class DrawingsTests
             {"groups":[{"id":"prod","label":"vnet-prod"}],
              "boxes":[{"id":"hv01","label":"HV01"},{"id":"bkp","label":"BKP01"},{"id":"m","label":"{{member}}","group":"{{group}}"}]}
             """);
-        Assert.Equal(refused, ImportTools.NotInside(input, GroupSchema, Regions.Find(Wiki, ToolRegions.TextDrawing))?.Member);
+        Assert.Equal(refused, ImportTools.NotInside(input, GroupSchema, Regions.Find(Wiki, TestRegions.Drawing))?.Member);
     }
 
     [Fact]
     public void AStack_HasItsBound()
     {
         // Inside a box, the box is the bound: all its lines, and no line across its rule.
-        var tall = Regions.Find("+----+\n| a1 |\n| b2 |\n| c3 |\n| d4 |\n| e5 |\n+----+\n| f6 |\n+----+", ToolRegions.TextDrawing);
+        var tall = Regions.Find("+----+\n| a1 |\n| b2 |\n| c3 |\n| d4 |\n| e5 |\n+----+\n| f6 |\n+----+", TestRegions.Drawing);
         Assert.NotNull(Regions.Locate("a1 b2 c3 d4 e5", tall, out var fallback)); // five parts in one box
         Assert.False(fallback);
         Assert.Null(Regions.Locate("d4 e5 f6", tall)); // across the rule between two boxes
         // Outside any box (a line's label), at most four lines, and the fallback says so.
-        var loose = Regions.Find("+--+\n|  |\n+--+\n |  a1\n |  b2\n |  c3\n |  d4\n |  e5\n+--+\n|  |\n+--+", ToolRegions.TextDrawing);
+        var loose = Regions.Find("+--+\n|  |\n+--+\n |  a1\n |  b2\n |  c3\n |  d4\n |  e5\n+--+\n|  |\n+--+", TestRegions.Drawing);
         Assert.NotNull(Regions.Locate("a1 b2 c3 d4", loose, out fallback)); // four parts
         Assert.True(fallback);
         Assert.Null(Regions.Locate("a1 b2 c3 d4 e5", loose)); // five are too many
-        Assert.NotNull(Regions.Locate("ExpressRoute (primary, BGP)", Regions.Find(Hub, ToolRegions.TextDrawing), out fallback));
+        Assert.NotNull(Regions.Locate("ExpressRoute (primary, BGP)", Regions.Find(Hub, TestRegions.Drawing), out fallback));
         Assert.True(fallback);
-        Assert.NotNull(Regions.Locate("vnet-prod 10.50.8.0/22", Regions.Find(Hub, ToolRegions.TextDrawing), out fallback));
+        Assert.NotNull(Regions.Locate("vnet-prod 10.50.8.0/22", Regions.Find(Hub, TestRegions.Drawing), out fallback));
         Assert.False(fallback);
-        var apart = Regions.Find("+--------------+\n| alpha        |\n|        beta  |\n+--------------+", ToolRegions.TextDrawing);
+        var apart = Regions.Find("+--------------+\n| alpha        |\n|        beta  |\n+--------------+", TestRegions.Drawing);
         Assert.Null(Regions.Locate("alpha beta", apart)); // not under one another
-        Assert.Null(Regions.Locate("vm", Regions.Find("+------+\n| vmware |\n+------+", ToolRegions.TextDrawing))); // not inside a longer word
+        Assert.Null(Regions.Locate("vm", Regions.Find("+------+\n| vmware |\n+------+", TestRegions.Drawing))); // not inside a longer word
     }
 }

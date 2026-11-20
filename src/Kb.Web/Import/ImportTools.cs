@@ -336,6 +336,7 @@ public static partial class ImportTools
             ImportToolRefusal.DuplicateId => $"Refused by the tool: {place} declares an id that is declared before. Give each its own id.",
             ImportToolRefusal.TooLittle => "Refused by the tool: the input holds too little to make anything of.",
             ImportToolRefusal.TooMuch => "Refused by the tool: the input holds more than the tool can make.",
+            ImportToolRefusal.SelfReference => $"Refused by the tool: {place} refers to the item it belongs to. Leave it out, or name another.",
             _ => "Refused: the tool added nothing.",
         };
     }
@@ -417,8 +418,11 @@ public sealed partial class ImportService
     /// passed to the plugin with only its input, and audited; what the plugin answers is checked as a contribution and placed after the
     /// block the model named. The model gets only the app's own reply. A model or server that cannot call tools leaves the draft as it is.
     /// </summary>
-    private async Task ToolsAsync(ImportItem item, Actor actor, string source, List<JsonObject> pages, List<JsonArray> contents, List<string> warnings, CancellationToken ct)
+    /// <returns>The nodes the tools added, each with the plugin and tool that added it; empty when none.</returns>
+    private async Task<List<(JsonNode Node, string PluginId, string Tool)>> ToolsAsync(ImportItem item, Actor actor, string source, List<JsonObject> pages,
+        List<JsonArray> contents, List<string> warnings, CancellationToken ct)
     {
+        var added = new List<(JsonNode Node, string PluginId, string Tool)>();
         var tools = new List<(string PluginId, ImportToolReg Tool)>();
         foreach (var (pluginId, tool) in contributors.Tools)
         {
@@ -430,11 +434,12 @@ public sealed partial class ImportService
         // A tool with regions is offered only for documents that hold one, as the app finds it in the source; any other tool as before.
         var regionsOf = tools.Where(t => t.Tool.For is not null).ToDictionary(t => t.Tool.Name, t => Regions.Find(source, t.Tool.For!));
         tools.RemoveAll(t => t.Tool.For is not null && regionsOf[t.Tool.Name].Count == 0);
-        if (tools.Count == 0 || source.Length == 0) return;
+        if (tools.Count == 0 || source.Length == 0) return added;
         var (blocks, at) = ImportTools.Blocks(contents);
-        if (at.Count == 0) return;
+        if (at.Count == 0) return added;
 
         var placed = new List<(int Page, int Index, IReadOnlyList<JsonNode> Nodes)>();
+        var by = new Dictionary<JsonNode, (string PluginId, string Tool)>(ReferenceEqualityComparer.Instance);
         // The repeat check: what each tool was given, and after which block, by the calls that added something.
         var made = new HashSet<(string, string)>();
         var places = new HashSet<(string, int)>();
@@ -502,6 +507,7 @@ public sealed partial class ImportService
             if (nodes is not { Count: > 0 })
                 return await Done(found.PluginId, why == ImportToolRefusal.None ? "nothing" : $"tool-{why.ToString().ToLowerInvariant()}", ImportTools.Refused(why, path, input));
             placed.Add((at[after - 1].Page, at[after - 1].Index, nodes));
+            foreach (var n in nodes) by[n] = (found.PluginId, found.Tool.Name);
             made.Add((call.Name, same));
             places.Add((call.Name, after));
             if (region is not null) drawn.Add((call.Name, region.Number));
@@ -516,14 +522,14 @@ public sealed partial class ImportService
         if (run.Problem is { } p)
         {
             warnings.Add($"The plugins' tools could not be offered to the AI, so the draft is as it would be without them: {p.Message ?? "the AI did not answer"}");
-            return;
+            return added;
         }
         // Last block first, so the numbers the model saw still hold; calls after the same block keep their order.
         foreach (var g in placed.Select((x, order) => (x, order)).GroupBy(x => (x.x.Page, x.x.Index)).OrderByDescending(g => g.Key.Page).ThenByDescending(g => g.Key.Index))
         {
             var content = contents[g.Key.Page];
             var at2 = g.Key.Index + 1;
-            foreach (var n in g.OrderBy(x => x.order).SelectMany(x => x.x.Nodes)) content.Insert(at2++, n);
+            foreach (var n in g.OrderBy(x => x.order).SelectMany(x => x.x.Nodes)) { content.Insert(at2++, n); added.Add((n, by[n].PluginId, by[n].Tool)); }
         }
         foreach (var o in outcomes.Where(o => o.Result == "done"))
             warnings.Add($"{contributors.PluginName(o.PluginId)} added {o.Nodes} block{(o.Nodes == 1 ? "" : "s")} through its tool {o.Tool}.");
@@ -533,5 +539,6 @@ public sealed partial class ImportService
             warnings.Add($"The AI reached the limit of tool calls for this item ({ImportTools.MaxToolCalls} answered by a plugin, {ImportTools.MaxRefused} refused by the app).");
         log.LogInformation("Import tools for {Item}: {Calls} model call(s), {Tools} tool call(s), {In}+{Out} tokens, {Ms} ms.", item.Id, run.Value.ModelCalls, run.Value.ToolCalls,
             run.Value.PromptTokens, run.Value.CompletionTokens, run.Value.Milliseconds);
+        return added;
     }
 }

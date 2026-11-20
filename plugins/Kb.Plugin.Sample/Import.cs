@@ -87,8 +87,8 @@ public sealed class DiagramOutline : IDraftContributor
 // #region guide:tool
 /// <summary>
 /// A tool the AI may call while it drafts an import (0.11.0 draft): a drawing of boxes, groups and lines in a document (a network map
-/// drawn in text) becomes an outline after the block that shows it. It is registered as a drawing tool (<c>ImportDrawingTool</c>): offered
-/// only for documents that hold a drawing, one result for each drawing. The app checks the input against <see cref="Schema"/> before the
+/// drawn in text) becomes an outline after the block that shows it. It is registered with the regions it is for (<c>ImportRegionTool</c>,
+/// <see cref="Regions"/>): offered only for documents that hold such a drawing, one result for each. The app checks the input against <see cref="Schema"/> before the
 /// call, so the plugin gets only valid input; it never sees the document. Labels must be text of the document; ids, which the AI makes
 /// up to tie boxes to groups and lines, are marked <c>"format": "identifier"</c>. A chart plugin would draw the same data instead.
 /// </summary>
@@ -108,6 +108,20 @@ public sealed class BoxesAndLines : IImportTool
           "lines": {"type": "array", "maxItems": 200, "items": {"type": "object", "required": ["from", "to"], "additionalProperties": false, "properties": {
             "from": {"type": "string", "format": "identifier"}, "to": {"type": "string", "format": "identifier"}, "label": {"type": "string", "maxLength": 100}}}}}}
         """;
+
+    /// <summary>
+    /// What a drawing is, for this tool: a rule, a corner or a thing in brackets starts one; a bar, a plus, a slash or a box-drawing
+    /// character joins one; a rule alone is weak; two things in brackets joined by a connector, or two arrows, make one line a drawing.
+    /// </summary>
+    public static readonly ToolRegions Regions = new(
+        Starts: [@"[-=~_─━═]{3,}", @"\+[-=~_]|[-=~_]\+|[┌-╋]", @"\[\s+[^\]\[]+?\s+\]"],
+        Joins: [@"[|+/\\]|[─-╿]"],
+        Weak: [@"^\s*[-=~_*─━═]{3,}\s*$"],
+        Alone:
+        [
+            @"\[\s+[^\]\[]+?\s+\]\s*<?(?:[-=~.]{2,}|-+[^\s\[\]]+-+)>?\s*\[\s+[^\]\[]+?\s+\]",
+            @"(?:-{2,}|={2,})(?:[^\s<>\-=][^<>]*?-+)?>.*(?:-{2,}|={2,})(?:[^\s<>\-=][^<>]*?-+)?>",
+        ]);
 
     public Task<ImportToolResult?> CallAsync(JsonElement input, CancellationToken ct)
     {

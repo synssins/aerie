@@ -164,7 +164,7 @@ export function Plugins({ area, onHome }: { area: string; onHome: () => void }) 
                 <h3>Tools for the AI in imports</h3>
                 {(selected.importTools ?? []).map((t) => (
                   <details key={t.name}>
-                    <summary><span className="mono">{t.name}</span>{t.drawing ? " (for drawings)" : ""}{t.notOffered ? " (not offered)" : ""}</summary>
+                    <summary><span className="mono">{t.name}</span>{t.regions ? " (for parts of a document)" : ""}{t.notOffered ? " (not offered)" : ""}</summary>
                     <div>{t.description}</div>
                     {t.notOffered && <div className="muted">Not offered: {t.notOffered}</div>}
                     <pre className="mono">{t.inputSchema}</pre>

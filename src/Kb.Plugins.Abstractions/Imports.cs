@@ -81,7 +81,20 @@ public sealed record ImportDraft(Guid ImportItemId, IReadOnlyList<DraftPage> Pag
     /// they were sent, with the diagram the AI read from each when it is one. Empty before 0.10.0, and for an item with no picture.
     /// </summary>
     public IReadOnlyList<DraftPicture> Pictures { get; init; } = [];
+
+    /// <summary>
+    /// 0.11.0 (draft). The blocks of <see cref="Pages"/> that import tools added (the tool conversation runs before the draft
+    /// contributors): where each stands and which plugin's tool added it, so a contributor can tell what a tool already made. Empty when
+    /// no tool added anything.
+    /// </summary>
+    public IReadOnlyList<DraftToolBlock> ToolBlocks { get; init; } = [];
 }
+
+/// <summary>
+/// 0.11.0 (draft). One block an import tool added: <paramref name="Page"/> (0 is the first) and <paramref name="Block"/> (its index among
+/// the page's top-level blocks, as <see cref="ImportDraft.Pages"/> gives them), the plugin and the name of the tool.
+/// </summary>
+public sealed record DraftToolBlock(int Page, int Block, string PluginId, string Tool);
 
 /// <summary>
 /// 0.10.0. A picture of the draft. <paramref name="Src"/> is its image node's <c>attrs.src</c> in the draft (a node placed
@@ -212,12 +225,6 @@ public sealed record ImportToolReg(string Name, string Description, JsonElement 
     /// </summary>
     public ToolRegions? For { get; init; }
 
-    /// <summary>0.11.0 (draft). Shorthand kept from earlier drafts: true sets <see cref="For"/> to <see cref="ToolRegions.TextDrawing"/>.</summary>
-    public bool Drawing
-    {
-        get => For is not null;
-        init => For = value ? ToolRegions.TextDrawing : null;
-    }
 }
 
 /// <summary>
@@ -233,25 +240,6 @@ public sealed record ImportToolReg(string Name, string Description, JsonElement 
 public sealed record ToolRegions(IReadOnlyList<string> Starts, IReadOnlyList<string> Joins, IReadOnlyList<string> Weak, IReadOnlyList<string> Alone,
     int MinLines = 3, int MinStarts = 2, int MaxGap = 2)
 {
-    /// <summary>
-    /// A preset for drawings made of text characters (a network map of boxes and lines): a rule of three dashes, equals, tildes or
-    /// underscores, a corner, or a thing in brackets with spaces inside starts one; a bar, plus, slash or box-drawing character joins one
-    /// (so rows of a table set with bars and no rules, as an HTML table reads as text, are no drawing); a rule alone (a Markdown section
-    /// break) is weak; two things in brackets joined by a connector, or two arrows, make one line a drawing. A plugin may pass it, or
-    /// declare its own.
-    /// </summary>
-    public static ToolRegions TextDrawing { get; } = new(
-        Starts:
-        [
-            @"[-=~_─━═]{3,}", @"\+[-=~_]|[-=~_]\+|[┌-╋]", @"\[\s+[^\]\[]+?\s+\]",
-        ],
-        Joins: [@"[|+/\\]|[─-╿]"],
-        Weak: [@"^\s*[-=~_*─━═]{3,}\s*$"],
-        Alone:
-        [
-            @"\[\s+[^\]\[]+?\s+\]\s*<?(?:[-=~.]{2,}|-+[^\s\[\]]+-+)>?\s*\[\s+[^\]\[]+?\s+\]",
-            @"(?:-{2,}|={2,})(?:[^\s<>\-=][^<>]*?-+)?>.*(?:-{2,}|={2,})(?:[^\s<>\-=][^<>]*?-+)?>",
-        ]);
 }
 
 /// <summary>
@@ -300,6 +288,8 @@ public enum ImportToolRefusal
     TooLittle,
     /// <summary>The input holds more than the tool can make.</summary>
     TooMuch,
+    /// <summary>An item of the input refers to itself (a line from a box to the same box).</summary>
+    SelfReference,
 }
 
 public static class ImportToolExtensions
@@ -334,9 +324,4 @@ public static class ImportToolExtensions
         return app.Add(new ImportToolReg(name, description, schema.RootElement.Clone(), typeof(TTool)) { For = regions });
     }
 
-    /// <summary>
-    /// 0.11.0 (draft). Shorthand kept from earlier drafts: <see cref="ImportRegionTool{TTool}"/> with <see cref="ToolRegions.TextDrawing"/>.
-    /// </summary>
-    public static IPluginApp ImportDrawingTool<TTool>(this IPluginApp app, string name, string description, string inputSchema) where TTool : class, IImportTool =>
-        app.ImportRegionTool<TTool>(name, description, inputSchema, ToolRegions.TextDrawing);
 }

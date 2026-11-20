@@ -77,7 +77,22 @@ public sealed class ImportToolTests : IAsyncLifetime
         }
     }
 
-    private sealed class Seen { public readonly ConcurrentQueue<string> Inputs = new(); }
+    private sealed class Seen
+    {
+        public readonly ConcurrentQueue<string> Inputs = new();
+        /// <summary>The tool blocks each draft contributor was shown.</summary>
+        public readonly ConcurrentQueue<IReadOnlyList<DraftToolBlock>> ToolBlocks = new();
+    }
+
+    /// <summary>A draft contributor that notes which blocks the tools added, and adds nothing.</summary>
+    private sealed class Recorder(Seen seen) : IDraftContributor
+    {
+        public Task<DraftContribution?> ContributeAsync(ImportDraft draft, CancellationToken ct)
+        {
+            seen.ToolBlocks.Enqueue(draft.ToolBlocks);
+            return Task.FromResult<DraftContribution?>(null);
+        }
+    }
 
     /// <summary>A test tool that refuses: an id at the path it is given, then a path that is not of the allowed form, then too little.</summary>
     private sealed class Refuser : IImportTool
@@ -140,11 +155,12 @@ public sealed class ImportToolTests : IAsyncLifetime
         using (var schema = JsonDocument.Parse(Boxes.LinesSchema))
             regs.Add("kb.test.tools", new ImportToolReg("draw_lines", "Draw the lines of a drawing in the documents.", schema.RootElement.Clone(), typeof(Boxes)));
         using (var schema = JsonDocument.Parse(Boxes.Schema))
-            regs.Add("kb.test.tools", new ImportToolReg("draw_map", "Draw a map drawn in text characters.", schema.RootElement.Clone(), typeof(Boxes)) { Drawing = true });
+            regs.Add("kb.test.tools", new ImportToolReg("draw_map", "Draw a map drawn in text characters.", schema.RootElement.Clone(), typeof(Boxes)) { For = TestRegions.Drawing });
+        regs.Add("kb.test.tools", new DraftContributorReg(typeof(Recorder)));
         using (var schema = JsonDocument.Parse(Boxes.Schema))
             regs.Add("kb.test.tools", new ImportToolReg("check_ids", "Check the ids of a list.", schema.RootElement.Clone(), typeof(Refuser)));
         using (var schema = JsonDocument.Parse(Boxes.CardsSchema))
-            regs.Add("kb.test.tools", new ImportToolReg("draw_cards", "Draw the boxes of a map, each with its detail.", schema.RootElement.Clone(), typeof(Boxes)) { Drawing = true });
+            regs.Add("kb.test.tools", new ImportToolReg("draw_cards", "Draw the boxes of a map, each with its detail.", schema.RootElement.Clone(), typeof(Boxes)) { For = TestRegions.Drawing });
         var (model, seen) = (_model, _seen);
         _f = new KbAppFactory(KbAppFactory.NewDbPath(), services: s =>
         {
@@ -400,6 +416,20 @@ public sealed class ImportToolTests : IAsyncLifetime
         Assert.Equal(["Refused: the input holds text that is not in the documents or the draft: \"made-up switch\", \"made-up router\". Use only text as the documents write it."],
             Replies);
     }
+
+    [Fact]
+    public async Task TheDraftContributors_RunAfterTheTools_AndSeeWhatTheyAdded()
+    {
+        _model.Turns.Enqueue(Call("draw_map", """{"boxes": ["CORE-SW1"], "after_block": 2}"""));
+        await ImportAsync();
+        // The draft is: paragraph, the map's code block, paragraph; the tool's block goes right after the code block.
+        Assert.Equal([new DraftToolBlock(0, 2, "kb.test.tools", "draw_map")], Assert.Single(_seen.ToolBlocks));
+    }
+
+    [Fact]
+    public void ASelfReference_IsWordedByTheApp() =>
+        Assert.Equal("Refused by the tool: $.lines[0].to (\"sw1\") refers to the item it belongs to. Leave it out, or name another.",
+            ImportTools.Refused(ImportToolRefusal.SelfReference, "$.lines[0].to", JsonNode.Parse("""{"lines": [{"from": "sw1", "to": "sw1"}]}""")));
 
     [Fact]
     public async Task AToolsRefusal_IsWordedByTheApp()
