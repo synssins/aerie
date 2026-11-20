@@ -41,6 +41,21 @@ public static partial class Drawings
     [GeneratedRegex(@"^=== .* ===$")]
     private static partial Regex FileHeader();
 
+    // Two things in brackets with spaces inside ("[ web01 ]"), joined by a connector of two or more dashes, equals, tildes or dots, with
+    // or without arrow heads and a label inside it ("--587-->"): a drawing on one line.
+    [GeneratedRegex(@"\[\s+[^\]\[]+?\s+\]\s*<?(?:[-=~.]{2,}|-+[^\s\[\]]+-+)>?\s*\[\s+[^\]\[]+?\s+\]")]
+    private static partial Regex Chain();
+
+    // An arrow of two or more dashes or equals with its head, with or without a label inside it: "-->", "==>", "--587-->".
+    [GeneratedRegex(@"(?:-{2,}|={2,})(?:[^\s<>\-=][^<>]*?-+)?>")]
+    private static partial Regex Arrow();
+
+    /// <summary>
+    /// Whether a line is a drawing on its own: two things in brackets with spaces inside, joined by a connector ("[ A ] --- [ B ] --> [ C ]"),
+    /// or a chain of two arrows or more ("printer --587--> FW01 --> Exchange Online").
+    /// </summary>
+    public static bool IsChain(string line) => Chain().IsMatch(line ?? "") || Arrow().Count(line ?? "") >= 2;
+
     /// <summary>
     /// Whether a line is drawn: a rule of three dashes, equals, tildes or underscores (or box-drawing ones); a corner where a rule meets a
     /// plus; two bars or more; or a thing in brackets with spaces inside ("[ HV01 ]"). A Markdown table row is not.
@@ -50,7 +65,7 @@ public static partial class Drawings
         ArgumentNullException.ThrowIfNull(line);
         if (FileHeader().IsMatch(line.Trim())) return false;
         var bars = line.Count(c => c is '|' or '│' or '║');
-        return Rule().IsMatch(line) || Corner().IsMatch(line) || bars >= 2 || Bracketed().IsMatch(line);
+        return Rule().IsMatch(line) || Corner().IsMatch(line) || bars >= 2 || Bracketed().IsMatch(line) || IsChain(line);
     }
 
     /// <summary>
@@ -66,7 +81,8 @@ public static partial class Drawings
     /// <summary>
     /// The drawings in the documents, in order: each starts at a drawn line (<see cref="IsDrawn"/>), goes on over drawn lines and lines
     /// that touch it (<see cref="Touches"/>), with at most <see cref="MaxGap"/> other lines in a row, and holds at least
-    /// <see cref="MinLines"/> of those, <see cref="MinDrawn"/> of them drawn lines that are not a rule alone (a Markdown section break).
+    /// <see cref="MinLines"/> of those, <see cref="MinDrawn"/> of them drawn lines that are not a rule alone (a Markdown section break),
+    /// or holds a line that is a drawing on its own (<see cref="IsChain"/>), so a drawing of one or two lines is found too.
     /// Markdown tables are left out.
     /// </summary>
     public static IReadOnlyList<Drawing> Find(string source)
@@ -88,14 +104,14 @@ public static partial class Drawings
         for (var i = 0; i < lines.Length;)
         {
             if (table[i] || !IsDrawn(lines[i])) { i++; continue; }
-            var (end, drawn, strong, gap) = (i, 0, 0, 0);
+            var (end, drawn, strong, gap, chain) = (i, 0, 0, 0, false);
             for (var k = i; k < lines.Length; k++)
             {
-                if (!table[k] && IsDrawn(lines[k])) { drawn++; end = k; gap = 0; if (!RuleAlone().IsMatch(lines[k])) strong++; }
+                if (!table[k] && IsDrawn(lines[k])) { drawn++; end = k; gap = 0; if (!RuleAlone().IsMatch(lines[k])) strong++; chain |= IsChain(lines[k]); }
                 else if (!table[k] && Touches(lines[k])) { drawn++; end = k; gap = 0; }
                 else if (++gap > MaxGap) break;
             }
-            if (drawn >= MinLines && strong >= MinDrawn) found.Add(new Drawing(found.Count, lines[i..(end + 1)]));
+            if ((drawn >= MinLines && strong >= MinDrawn) || chain) found.Add(new Drawing(found.Count, lines[i..(end + 1)]));
             i = end + 1;
         }
         return found;
@@ -116,17 +132,39 @@ public static partial class Drawings
         fallback = false;
         var words = ImportTools.Normalize(text ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (words.Length == 0) return null;
+        Frame? first = null;
         foreach (var d in drawings)
             for (var i = 0; i < d.Lines.Count; i++)
-                if (Stack(d.Lines, i, words, 0, null, null, 0, ref fallback)) return d;
+                if (Stack(d.Lines, i, words, 0, null, null, 0, ref fallback, ref first)) return d;
         return null;
     }
 
     /// <inheritdoc cref="Locate(string, IReadOnlyList{Drawing}, out bool)"/>
     public static Drawing? Locate(string text, IReadOnlyList<Drawing> drawings) => Locate(text, drawings, out _);
 
-    private static bool Stack(IReadOnlyList<string> lines, int line, string[] words, int from, (int Start, int End)? above, (int Top, int Bottom)? box,
-        int parts, ref bool fallback)
+    /// <summary>
+    /// Where <paramref name="text"/> is written, as <see cref="Locate(string, IReadOnlyList{Drawing}, out bool)"/> finds it: each drawing and
+    /// line it starts on, with the box its first part sits in, or null for none.
+    /// </summary>
+    public static IEnumerable<(Drawing Drawing, Frame? Box)> Places(string text, IReadOnlyList<Drawing> drawings)
+    {
+        ArgumentNullException.ThrowIfNull(drawings);
+        var words = ImportTools.Normalize(text ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0) yield break;
+        foreach (var d in drawings)
+            for (var i = 0; i < d.Lines.Count; i++)
+            {
+                // shortcut: one place for each line it starts on; a text written twice on one line counts once there.
+                var (fallback, first) = (false, (Frame?)null);
+                if (Stack(d.Lines, i, words, 0, null, null, 0, ref fallback, ref first)) yield return (d, first);
+            }
+    }
+
+    /// <summary>A box of a drawing: the numbers of its top and bottom rule lines, and the columns of its sides.</summary>
+    public readonly record struct Frame(int Top, int Bottom, int Left, int Right);
+
+    private static bool Stack(IReadOnlyList<string> lines, int line, string[] words, int from, (int Start, int End)? above, Frame? box,
+        int parts, ref bool fallback, ref Frame? first)
     {
         if (from == words.Length) return true;
         if (line >= lines.Count || (box is null && parts == MaxParts) || (box is { } b && line >= b.Bottom)) return false;
@@ -140,11 +178,11 @@ public static partial class Drawings
                 var here = Box(lines, line, m.Index, m.Index + m.Length);
                 // Every part in the box of the first part, or, where the first is in none, no part in a box.
                 if (parts > 0 && here != box) continue;
-                if (to == words.Length) { fallback = parts > 0 && box is null; return true; }
+                if (to == words.Length) { fallback = parts > 0 && box is null; if (parts == 0) first = here; return true; }
                 // The next part: on the next line, or one further when the next holds nothing but drawing.
                 for (var next = line + 1; next <= line + 2 && next < lines.Count; next++)
                 {
-                    if (Stack(lines, next, words, to, (m.Index, m.Index + m.Length), here, parts + 1, ref fallback)) return true;
+                    if (Stack(lines, next, words, to, (m.Index, m.Index + m.Length), here, parts + 1, ref fallback, ref first)) { if (parts == 0) first = here; return true; }
                     if (lines[next].Any(char.IsLetterOrDigit)) break;
                 }
             }
@@ -153,12 +191,12 @@ public static partial class Drawings
     }
 
     /// <summary>
-    /// The box that columns <paramref name="start"/> to <paramref name="end"/> of a line sit in, as the numbers of its top and bottom rule
-    /// lines, or null: the nearest line above whose rule (dashes, equals, tildes, underscores, pluses or box-drawing ones) runs over those
-    /// columns, with a side of the box (a bar, a plus or a box-drawing corner) on this line where that rule starts and where it ends, and
-    /// the nearest line below whose rule runs over the same columns.
+    /// The box that columns <paramref name="start"/> to <paramref name="end"/> of a line sit in, or null: the nearest line above whose
+    /// rule (dashes, equals, tildes, underscores, pluses or box-drawing ones) runs over those columns, with a side of the box (a bar, a
+    /// plus or a box-drawing corner) on this line where that rule starts and where it ends, and the nearest line below whose rule runs
+    /// over the same columns.
     /// </summary>
-    public static (int Top, int Bottom)? Box(IReadOnlyList<string> lines, int line, int start, int end)
+    public static Frame? Box(IReadOnlyList<string> lines, int line, int start, int end)
     {
         ArgumentNullException.ThrowIfNull(lines);
         var top = -1;
@@ -168,7 +206,7 @@ public static partial class Drawings
         while (left > 0 && IsRule(lines[top][left - 1])) left--;
         while (right + 1 < lines[top].Length && IsRule(lines[top][right + 1])) right++;
         if (!IsSide(lines[line], left) || !IsSide(lines[line], right)) return null;
-        for (var u = line + 1; u < lines.Count; u++) if (Covers(lines[u], start, end)) return (top, u);
+        for (var u = line + 1; u < lines.Count; u++) if (Covers(lines[u], start, end)) return new Frame(top, u, left, right);
         return null;
     }
 

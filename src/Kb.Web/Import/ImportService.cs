@@ -326,12 +326,21 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
     private static JsonObject Strings(int items, int length) =>
         new() { ["type"] = "array", ["maxItems"] = items, ["items"] = new JsonObject { ["type"] = "string", ["maxLength"] = length } };
 
+    // Where the task says how to draft a drawing made of text characters: the sentence goes there only for documents in which the app
+    // finds such a drawing (Drawings.Find), so documents without one (markup, diagram code) get the task exactly as before.
+    private const string DrawingMark = "{drawing}";
+
+    internal const string DrawingSentence =
+        "A picture drawn with text characters (boxes and lines made of dashes, bars and pluses, meant to be read by eye) goes in one code block, exactly as written. ";
+
+    /// <summary>The drafting task, with the drawing sentence where the documents hold a drawing.</summary>
+    internal static string DraftingTask(bool drawing) => ProposalTask.Replace(DrawingMark, drawing ? DrawingSentence : "", StringComparison.Ordinal);
+
     private const string ProposalTask =
         "Bring the documents in the data into this knowledge base as standardized page(s). Keep every fact, value, command and step exactly; " +
         "do not add, invent or drop information. Use headings for sections, \"steps\" blocks for numbered procedures, \"bullets\" for lists, " +
         "\"code\" for commands, scripts and configuration, \"table\" for tabular data (first row is the header), \"note\" for warnings. " +
-        "A picture drawn with text characters (boxes and lines made of dashes, bars and pluses, meant to be read by eye) goes in one code block, exactly as written. " +
-        "This is only for such pictures: markup, XML, HTML and diagram code (such as draw.io or Mermaid) are not pictures and are drafted as before. " +
+        DrawingMark +
         "Place each picture listed under \"images\" as an \"image\" block (its file name in \"image\") at the step it belongs to; write in its \"text\" a short description of what the picture shows. " +
         "Use one page unless the documents clearly cover separate topics. " +
         "Suggest up to 8 short lower-case topic tags. In \"apps\" name the applications the content is about, using the exact names from \"inventory\" when one matches, " +
@@ -398,7 +407,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         }
         else
         {
-            var r = await ai.RunAsync(actor, AiFeatures.Import, ProposalTask, data, ProposalSchema(), ct, picData);
+            var r = await ai.RunAsync(actor, AiFeatures.Import, DraftingTask(Drawings.Find(source).Count > 0), data, ProposalSchema(), ct, picData);
             if (r.Problem is { } p0)
             {
                 (item.Status, item.Error) = p0.Status == 422 ? (ImportStatus.Blocked, "It holds text addressed to the AI, so it was not sent.") : (ImportStatus.Failed, p0.Message ?? "The AI could not draft it.");

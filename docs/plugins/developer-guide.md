@@ -1261,7 +1261,7 @@ public sealed class BoxesAndLines : IImportTool
 
 **Where the result goes.** The app adds an input `after_block` to every tool: the number of the draft block, as the model was shown the draft, that holds the content the call is about. The app removes it before the plugin gets the input, and puts the plugin's nodes right after that block. The source stays: a map drawn in text stays its code block, and the drawing goes after it. The importer reviews it with the rest.
 
-**Two guards on what the model sends.** After the schema, the app checks each call twice more:
+**Guards on what the model sends.** After the schema, the app checks each call:
 
 - **No repeats.** In one import item, a tool is not called again with the same input (its keys in any order), nor again after the same block. Only calls that added something count. A refused call may be made again, corrected. The reply is "Refused as a repeat: ...".
 - **Only text of the source.** Every string in the input must appear in the item's documents or in its drafted page. The comparison ignores case, and every run of white space counts as one space. Three kinds of string are not checked:
@@ -1275,18 +1275,30 @@ public sealed class BoxesAndLines : IImportTool
 
   A label that the model reworded, joined from two places, or made up is refused: "Refused: the input holds text that is not in the documents or the draft: "..."". Mark only real ids as identifiers. A label marked as one is still limited to 32 characters of that kind.
 
+- **For a drawing tool, text in its own box.** In each object of the input, the first text string in the schema's order is read as the label (such as a box's `label`), and the other text strings of that object as written with it (such as its `detail`), with the label's second and further lines. Choices and identifiers do not count.
+  - Where the label is written in a box of a drawing, each of the others must be written in that same box. A detail taken from beside the box, from another box, or from the prose is refused: "Refused: "..." is not written in the box of "..." in the drawing. Give a box only the text written inside it."
+  - Where the label is written in the drawing but in no box, such as a thing in brackets or a bare name, each of the others must be written stacked right under it, as one label would be (within 2 columns, at most 4 lines).
+  - A label that is in no drawing is left to the source check.
+
+  So put the label first in the schema of each object, and give the text a box holds in fields of that object.
+
 **What counts as a drawing.** The app finds drawings in the documents line by line:
 
 - A drawing starts at a **drawn line**: a rule of three dashes, equals, tildes or underscores (or box-drawing characters); a plus where a rule meets it; two bars or more; or a thing in brackets with spaces inside, such as `[ HV01 ]`.
 - It goes on over drawn lines and over lines that **touch** it, that is, lines holding a bar, a plus, a slash or a box-drawing character. At most 2 other lines may come in a row, such as blank lines or labels.
-- It must have at least 3 of those lines.
-- At least 2 of them must be drawn lines that are not a rule alone. A Markdown section break (`---`) does not make a drawing.
+- It must have at least 3 of those lines, and at least 2 of them must be drawn lines that are not a rule alone. A Markdown section break (`---`) does not make a drawing.
+- Or it holds a line that is a **drawing on its own**, so a drawing of one or two lines is found too:
+  - two things in brackets with spaces inside, joined by a connector of two or more dashes, equals, tildes or dots, with or without arrow heads or a label inside: `[ A ] --- [ B ] --> [ C ]`, `[ printer ] --smtp--> [ relay01 ]`;
+  - or two arrows or more on one line: `printer --587--> FW01 --> Exchange Online`.
 - A Markdown table (rows between bars, with a rule row) is not a drawing.
 
+Not drawings: one arrow in a sentence (`printer -> relay01`), a task list (`- [ ] check`), links (`[the guide](https://...)`), one thing in brackets in a sentence.
+
 Known misses:
-- A drawing of one or two lines, such as `A ---> B`.
-- Arrows alone, without boxes or rules.
+- One arrow between two bare names, such as `A ---> B`.
 - Mermaid or other diagram code, which is not a drawing. A drawing tool is not offered for it, as intended.
+
+**The drafting keeps the drawing.** Where the app finds a drawing in the documents, the drafting task also says that a picture drawn with text characters goes in one code block, exactly as written. Documents without one are drafted exactly as before.
 
 Known false finds: two or more lines with two bars each that are not a table, such as shell commands with two pipes on each line.
 

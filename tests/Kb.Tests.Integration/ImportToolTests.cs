@@ -91,6 +91,13 @@ public sealed class ImportToolTests : IAsyncLifetime
                 "style": {"type": "string", "enum": ["dashed line", "solid line"]}, "label": {"type": "string", "maxLength": 50}}}}}}
             """;
 
+        /// <summary>Boxes with a label and a detail, as a drawing tool draws them.</summary>
+        public const string CardsSchema = """
+            {"type": "object", "required": ["boxes"], "additionalProperties": false, "properties": {
+              "boxes": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["label"], "additionalProperties": false, "properties": {
+                "label": {"type": "string", "maxLength": 50}, "detail": {"type": "string", "maxLength": 50}}}}}}
+            """;
+
         public Task<ImportToolResult?> CallAsync(JsonElement input, CancellationToken ct)
         {
             seen.Inputs.Enqueue(input.GetRawText());
@@ -118,6 +125,8 @@ public sealed class ImportToolTests : IAsyncLifetime
             regs.Add("kb.test.tools", new ImportToolReg("draw_lines", "Draw the lines of a drawing in the documents.", schema.RootElement.Clone(), typeof(Boxes)));
         using (var schema = JsonDocument.Parse(Boxes.Schema))
             regs.Add("kb.test.tools", new ImportToolReg("draw_map", "Draw a map drawn in text characters.", schema.RootElement.Clone(), typeof(Boxes)) { Drawing = true });
+        using (var schema = JsonDocument.Parse(Boxes.CardsSchema))
+            regs.Add("kb.test.tools", new ImportToolReg("draw_cards", "Draw the boxes of a map, each with its detail.", schema.RootElement.Clone(), typeof(Boxes)) { Drawing = true });
         var (model, seen) = (_model, _seen);
         _f = new KbAppFactory(KbAppFactory.NewDbPath(), services: s =>
         {
@@ -355,14 +364,35 @@ public sealed class ImportToolTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ABoxsDetail_WrittenInAnotherBox_IsRefused()
+    {
+        _model.Turns.Enqueue(Call("draw_cards", """{"boxes": [{"label": "vnet-prod", "detail": "10.50.16.0/22"}], "after_block": 2}""", "c1"));
+        _model.Turns.Enqueue(Call("draw_cards", """{"boxes": [{"label": "vnet-prod", "detail": "10.50.8.0/22"}], "after_block": 2}""", "c2"));
+        await ImportAsync(text: Stacked);
+        Assert.Equal(["Refused: \"10.50.16.0/22\" is not written in the box of \"vnet-prod\" in the drawing. Give a box only the text written inside it.",
+            "Done: added after block 2."], Replies);
+        Assert.Single(_seen.Inputs);
+    }
+
+    [Fact]
     public async Task TheDraftingTask_KeepsATextDrawingAsOneCodeBlock()
     {
         await ImportAsync();
         var drafting = _model.Requests.First(r => r["tools"] is null);
         var task = drafting["messages"]![0]!["content"]!.GetValue<string>();
-        Assert.Contains("A picture drawn with text characters (boxes and lines made of dashes, bars and pluses, meant to be read by eye) goes in one code block, exactly as written.",
-            task, StringComparison.Ordinal);
-        Assert.Contains("markup, XML, HTML and diagram code (such as draw.io or Mermaid) are not pictures", task, StringComparison.Ordinal);
+        Assert.Contains(ImportService.DrawingSentence, task, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("flowchart TD\n    A[HR sends form] --> B{Leaving today?}\n    B -- yes --> C[Disable the account]\n")] // diagram code
+    [InlineData("<mxGraphModel><root><mxCell id=\"0\"/><mxCell id=\"2\" value=\"Printer\" vertex=\"1\"/></root></mxGraphModel>\n")] // markup
+    [InlineData("Plain notes.\n1. Check the printer.\n2. Restart the spooler.\n")]
+    public async Task TheDraftingTask_IsAsBefore_WithoutADrawing(string text)
+    {
+        await ImportAsync(text: text);
+        var task = _model.Requests.First(r => r["tools"] is null)["messages"]![0]!["content"]!.GetValue<string>();
+        Assert.DoesNotContain("picture drawn", task, StringComparison.Ordinal);
+        Assert.Contains(ImportService.DraftingTask(false), task, StringComparison.Ordinal);
     }
 
     [Fact]

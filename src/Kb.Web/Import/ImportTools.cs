@@ -186,6 +186,53 @@ public static partial class ImportTools
     }
 
     /// <summary>
+    /// The box check, for a drawing tool: the text strings of one object of the input (such as a box's label and its detail) are read as
+    /// a label (the first, in the schema's order) and what is written with it (the others, and the second and further lines of the label).
+    /// Where the label is written in a box of a drawing, each of those must be written in the same box. Where it is written in a drawing
+    /// but in no box (a thing in brackets, a bare name), each must be written stacked under it, as one label would be
+    /// (<see cref="Drawings.Locate(string, IReadOnlyList{Drawings.Drawing}, out bool)"/>). A label in no drawing is left to the source check.
+    /// Returns the first string that is not where it belongs, with its label, or null.
+    /// </summary>
+    public static (string Text, string Label)? Misplaced(JsonNode? input, JsonObject schema, IReadOnlyList<Drawings.Drawing> drawings)
+    {
+        ArgumentNullException.ThrowIfNull(schema);
+        ArgumentNullException.ThrowIfNull(drawings);
+        switch (input)
+        {
+            case JsonObject o:
+                var props = schema["properties"] as JsonObject ?? [];
+                var texts = props.Select(p => o[p.Key] is JsonValue v && v.GetValueKind() == JsonValueKind.String
+                        && Strings(v, p.Value as JsonObject ?? []).First().Kind == StringKind.Text ? v.GetValue<string>() : null)
+                    .OfType<string>().ToList();
+                if (texts.Count > 0)
+                {
+                    var lines = texts[0].Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    var label = lines.Length > 0 ? lines[0] : "";
+                    foreach (var text in lines.Skip(1).Concat(texts.Skip(1)))
+                        if (Normalize(text).Length >= MinGrounded && Normalize(label).Length >= MinGrounded && !WithLabel(label, text, drawings))
+                            return (text, label);
+                }
+                foreach (var (key, child) in o)
+                    if (child is JsonObject or JsonArray && Misplaced(child, props[key] as JsonObject ?? [], drawings) is { } bad) return bad;
+                break;
+            case JsonArray a:
+                foreach (var child in a)
+                    if (Misplaced(child, schema["items"] as JsonObject ?? [], drawings) is { } bad) return bad;
+                break;
+        }
+        return null;
+    }
+
+    private static bool WithLabel(string label, string text, IReadOnlyList<Drawings.Drawing> drawings)
+    {
+        var at = Drawings.Places(label, drawings).ToList();
+        if (at.Count == 0) return true;
+        var boxes = at.Where(p => p.Box is not null).Select(p => (p.Drawing.Number, p.Box)).ToHashSet();
+        if (boxes.Count > 0 && Drawings.Places(text, drawings).Any(p => boxes.Contains((p.Drawing.Number, p.Box)))) return true;
+        return at.Any(p => p.Box is null) && Drawings.Locate(label + " " + text, drawings) is not null;
+    }
+
+    /// <summary>
     /// The drawing a call of a drawing tool draws: the one in which most of its text strings (of <see cref="MinGrounded"/> characters or
     /// more) are written, the first on a tie; null when none of them is in any drawing.
     /// </summary>
@@ -287,6 +334,7 @@ public sealed partial class ImportService
         // The source check: the documents and the draft as the model was given them, normalized.
         var grounds = ImportTools.Normalize(source + " " + string.Join(" ", contents.Select(c => Kb.Core.Content.DocText.Plain(new JsonObject { ["type"] = "doc", ["content"] = c.DeepClone() }.ToJsonString()))));
         var outcomes = new List<ImportTools.Outcome>();
+        static string Cut(string s) => s.Length > 60 ? s[..60] + "..." : s;
         async Task<string> AnswerAsync(AiService.ToolCall call)
         {
             var bytes = Encoding.UTF8.GetByteCount(call.Arguments);
@@ -325,6 +373,9 @@ public sealed partial class ImportService
             var drawing = found.Tool.Drawing ? ImportTools.DrawingOf(input, schema, drawings) : null;
             if (found.Tool.Drawing && drawing is null)
                 return await Done(found.PluginId, "no-drawing", "Refused: the input draws none of the drawings in the documents. Use the labels the drawing shows.");
+            if (found.Tool.Drawing && ImportTools.Misplaced(input, schema, drawings) is { } misplaced)
+                return await Done(found.PluginId, "not-in-box",
+                    $"Refused: \"{Cut(misplaced.Text)}\" is not written in the box of \"{Cut(misplaced.Label)}\" in the drawing. Give a box only the text written inside it.");
             if (drawing is not null && drawn.Contains((call.Name, drawing.Number)))
                 return await Done(found.PluginId, "drawing-done", $"Refused: drawing {drawing.Number + 1} of the documents already has a result from this tool.");
             using var doc = JsonDocument.Parse(input.ToJsonString());

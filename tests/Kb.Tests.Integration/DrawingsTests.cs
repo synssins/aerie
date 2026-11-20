@@ -63,6 +63,65 @@ public sealed class DrawingsTests
     public void ALabel_IsFoundOnOneLine_OrStackedInOneBox(string label, bool found) =>
         Assert.Equal(found, Drawings.Locate(label, Drawings.Find(Hub)) is not null);
 
+    [Theory]
+    [InlineData("[ A ] --- [ B ] --> [ C ]", 1)] // one line
+    [InlineData("Lab notes\n\n   [ web01 ] --- [ db01 ]\n\nNotes after.", 1)]
+    [InlineData("[ printer ] --587--> [ FW01 ]\n                (smtp relay)", 1)] // two lines, a label in the connector
+    [InlineData("[ web ] <==> [ app ]", 1)]
+    [InlineData("Use A --> B, then restart.", 0)] // prose with an arrow
+    [InlineData("AADC01 -> internet: 443 tcp\nWiFi -> DC02 on 1812 udp", 0)]
+    [InlineData("- [ ] check the printer\n- [x] restart the spooler -- done", 0)] // a task list
+    [InlineData("See [the guide](https://example.test) -- or [the wiki](https://wiki.test).", 0)] // links
+    [InlineData("| a | b |\n|---|---|\n| [ x ] -- [ y ] | 2 |", 0)] // a table
+    [InlineData("Ask [ IT ] first.", 0)] // one thing in brackets
+    public void AShortDrawing_IsFound_AndProseIsNot(string text, int count) => Assert.Equal(count, Drawings.Find(text).Count);
+
+    private const string Wiki = """
+           +--+--------+-------+--+
+              |        |       |
+        +-----+--+  +--+---+  +---+----------+
+        | HV01   |  | HV02 |  |  FW01 (edge) |
+        +--+-----+  +--+---+  +---+------+---+
+           |                      |      |
+         [ FS01 SQL01 ]           |      |
+         [ BKP01      ]           |      |
+                              +---+----+ +---+--------+
+                              | ER     | |  INTERNET  |---- Entra ID / M365 / Intune
+                              +--------+ +---+--------+
+        +--------------------+
+        |  vnet-prod         |
+        |  10.50.8.0/22      |
+        |  [SQL MI] [KV]     |
+        +--------------------+
+        """;
+
+    private static readonly System.Text.Json.Nodes.JsonObject BoxSchema = System.Text.Json.Nodes.JsonNode.Parse("""
+        {"type":"object","properties":{"boxes":{"type":"array","items":{"type":"object","properties":{
+          "id":{"type":"string","format":"identifier"},"label":{"type":"string"},"detail":{"type":"string"},
+          "shape":{"type":"string","enum":["box","note"]}}}}}}
+        """)!.AsObject();
+
+    [Theory]
+    [InlineData("INTERNET", "Entra ID / M365 / Intune", "Entra ID / M365 / Intune")] // round 6: written outside the box, beside a line from it
+    [InlineData("FW01 (edge)", "BKP01", "BKP01")] // round 6: written elsewhere in the drawing
+    [InlineData("HV01", "FS01 SQL01", "FS01 SQL01")] // a thing in brackets below the box, not in it
+    [InlineData("vnet-prod", "10.50.8.0/22 [SQL MI] [KV]", null)] // in the same box
+    [InlineData("vnet-prod\n10.50.8.0/22", "", null)] // the label's second line, in the same box
+    [InlineData("FS01 SQL01", "BKP01", null)] // in no box: stacked under it
+    [InlineData("FS01 SQL01", "Entra ID / M365 / Intune", "Entra ID / M365 / Intune")] // in no box, and not under it
+    [InlineData("Lab notes", "anything at all", null)] // a label in no drawing is left to the source check
+    public void ABoxsDetail_IsWrittenInThatBox(string label, string detail, string? refused)
+    {
+        var input = new System.Text.Json.Nodes.JsonObject
+        {
+            ["boxes"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject
+            {
+                ["id"] = "b1", ["label"] = label, ["detail"] = detail, ["shape"] = "box",
+            }),
+        };
+        Assert.Equal(refused, ImportTools.Misplaced(input, BoxSchema, Drawings.Find(Wiki))?.Text);
+    }
+
     [Fact]
     public void AStack_HasItsBound()
     {
