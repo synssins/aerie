@@ -584,6 +584,7 @@ public sealed class ImportToolTests : IAsyncLifetime
         Assert.NotNull(ImportTools.Problem(Tool(schema: """{"type": "array"}""")));
         Assert.Null(ImportTools.Problem(Tool(schema: Boxes.LinesSchema)));
         Assert.NotNull(ImportTools.Problem(Tool(schema: """{"type": "object", "properties": {"x": {"type": "string", "format": "uri"}}}""")));
+        Assert.Null(ImportTools.Problem(Tool(schema: """{"type": "object", "properties": {"x": {"type": "string", "format": "beside"}}}""")));
         Assert.NotNull(ImportTools.Problem(Tool(schema: """{"type": "object", "properties": {"x": {"type": "integer", "format": "identifier"}}}""")));
         Assert.NotNull(ImportTools.Problem(Tool(schema: "{\"type\": \"object\", \"properties\": {" + string.Join(",", Enumerable.Range(0, 300).Select(i => $"\"p{i}\": {{\"type\": \"string\"}}")) + "}}")));
     }

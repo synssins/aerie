@@ -106,7 +106,7 @@ public static partial class ImportTools
                     break;
                 case "format":
                     // A string the model makes up to tie items together (a box's id, the ends of a line): not text of the documents.
-                    if (v.ValueKind != JsonValueKind.String || v.GetString() is not ("identifier" or "within" or "enclosed")) return "format may only be identifier, within or enclosed.";
+                    if (v.ValueKind != JsonValueKind.String || v.GetString() is not ("identifier" or "within" or "enclosed" or "beside")) return "format may only be identifier, within, enclosed or beside.";
                     if (!e.TryGetProperty("type", out var ft) || ft.GetString() != "string") return "format identifier is only for a string.";
                     break;
                 case "additionalProperties":
@@ -201,21 +201,21 @@ public static partial class ImportTools
     /// (<see cref="Regions.Locate(string, IReadOnlyList{Regions.Region}, out bool)"/>). A label in no drawing is left to the source check.
     /// Returns the first string that is not where it belongs, with its label, or null.
     /// </summary>
-    public static (string Text, string Label)? Misplaced(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> drawings)
+    public static (string Text, string Label, bool Beside)? Misplaced(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> drawings)
     {
         var all = MisplacedAll(input, schema, drawings, 1);
         return all.Count > 0 ? all[0] : null;
     }
 
     /// <summary>As <see cref="Misplaced"/>, every such string with its label, up to <paramref name="most"/>, so one reply can name them all.</summary>
-    public static List<(string Text, string Label)> MisplacedAll(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> drawings, int most = 5)
+    public static List<(string Text, string Label, bool Beside)> MisplacedAll(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> drawings, int most = 5)
     {
-        var found = new List<(string, string)>();
+        var found = new List<(string, string, bool)>();
         Collect(input, schema, drawings, found, most);
         return found;
     }
 
-    private static void Collect(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> drawings, List<(string, string)> found, int most)
+    private static void Collect(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> drawings, List<(string, string, bool)> found, int most)
     {
         ArgumentNullException.ThrowIfNull(schema);
         ArgumentNullException.ThrowIfNull(drawings);
@@ -224,16 +224,22 @@ public static partial class ImportTools
         {
             case JsonObject o:
                 var props = schema["properties"] as JsonObject ?? [];
-                var texts = props.Select(p => o[p.Key] is JsonValue v && v.GetValueKind() == JsonValueKind.String
-                        && Strings(v, p.Value as JsonObject ?? []).First().Kind == StringKind.Text ? v.GetValue<string>() : null)
-                    .OfType<string>().ToList();
+                var all = props.Select(p => o[p.Key] is JsonValue v && v.GetValueKind() == JsonValueKind.String
+                        && Strings(v, p.Value as JsonObject ?? []).First().Kind == StringKind.Text
+                        ? (Text: v.GetValue<string>(), Beside: (p.Value as JsonObject)?["format"]?.GetValue<string>() == "beside") : default)
+                    .Where(t => t.Text is not null).ToList();
+                var texts = all.Where(t => !t.Beside).Select(t => t.Text).ToList();
                 if (texts.Count > 0)
                 {
                     var lines = texts[0].Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                     var label = lines.Length > 0 ? lines[0] : "";
                     foreach (var text in lines.Skip(1).Concat(texts.Skip(1)))
                         if (found.Count < most && Normalize(text).Length >= MinGrounded && Normalize(label).Length >= MinGrounded && !WithLabel(label, text, drawings))
-                            found.Add((text, label));
+                            found.Add((text, label, false));
+                    // A title (format beside) is written outside the label's box, near it: not with the label, but not anywhere either.
+                    foreach (var (text, _) in all.Where(t => t.Beside))
+                        if (found.Count < most && Normalize(text).Length >= MinGrounded && Normalize(label).Length >= MinGrounded && !Near(label, text, drawings))
+                            found.Add((text, label, true));
                 }
                 foreach (var (key, child) in o)
                     if (child is JsonObject or JsonArray) Collect(child, props[key] as JsonObject ?? [], drawings, found, most);
@@ -393,6 +399,16 @@ public static partial class ImportTools
         return open >= 0 && line.IndexOf(']', column) is var close and >= 0 && line.IndexOf(']', open) >= column && line.IndexOf('[', open + 1) is var next && (next < 0 || next > close);
     }
 
+    /// <summary>The name of the first property of the schema (depth first) whose string is marked with the given format, or null.</summary>
+    public static string? FormatKey(JsonObject schema, string format)
+    {
+        ArgumentNullException.ThrowIfNull(schema);
+        foreach (var (key, value) in schema["properties"] as JsonObject ?? [])
+            if (value is JsonObject s && (s["format"] is JsonValue f && f.GetValueKind() == JsonValueKind.String && f.GetValue<string>() == format ? key : FormatKey(s, format)) is { } k)
+                return k;
+        return schema["items"] is JsonObject i ? FormatKey(i, format) : null;
+    }
+
     // The strings of the input in places the schema marks with the given format.
     private static IEnumerable<string> Marked(JsonNode? input, JsonObject schema, string format)
     {
@@ -422,6 +438,19 @@ public static partial class ImportTools
             for (var c = f.Left + 1; c < f.Right && c < s.Length; c++) if (char.IsLetterOrDigit(s[c])) return l;
         }
         return -1;
+    }
+
+    /// <summary>How many lines above or below its object's box (or its label, where no box holds it) a title may be written.</summary>
+    public const int BesideLines = 3;
+
+    // A title stands near its label: in the same region, on a line from BesideLines above the label's box to BesideLines below it.
+    private static bool Near(string label, string text, IReadOnlyList<Regions.Region> drawings)
+    {
+        var at = Regions.Starts(label, drawings).ToList();
+        if (at.Count == 0) return true; // a label in no drawing is left to the source check
+        var titles = Regions.Starts(text, drawings).ToList();
+        return at.Any(p => titles.Any(q => q.Region.Number == p.Region.Number
+            && q.Line >= (p.Box?.Top ?? p.Line) - BesideLines && q.Line <= (p.Box?.Bottom ?? p.Line) + BesideLines));
     }
 
     private static bool WithLabel(string label, string text, IReadOnlyList<Regions.Region> drawings)
@@ -584,6 +613,9 @@ public sealed partial class ImportService
         var grounds = ImportTools.Normalize(source + " " + string.Join(" ", contents.Select(c => Kb.Core.Content.DocText.Plain(new JsonObject { ["type"] = "doc", ["content"] = c.DeepClone() }.ToJsonString()))));
         var outcomes = new List<ImportTools.Outcome>();
         static string Cut(string s) => s.Length > 60 ? s[..60] + "..." : s;
+        static string Apart((string Text, string Label, bool Beside) m) => m.Beside
+            ? $"\"{Cut(m.Text)}\" is not written beside \"{Cut(m.Label)}\""
+            : $"\"{Cut(m.Text)}\" is not written in the same box as \"{Cut(m.Label)}\"";
         async Task<AiService.ToolAnswer> AnswerAsync(AiService.ToolCall call)
         {
             var bytes = Encoding.UTF8.GetByteCount(call.Arguments);
@@ -616,27 +648,30 @@ public sealed partial class ImportService
             // A region tool is held to one call for each region instead of one for each block: two regions drafted into one block get two.
             if (made.Contains((call.Name, same)) || (!regional && places.Contains((call.Name, after))))
                 return await Done(found.PluginId, "repeat", "Refused as a repeat: this tool was already called with this input, or after this block.");
+            // Where the schema has a field for text beside an object (format beside), the replies say so, naming that field.
+            var besideKey = ImportTools.FormatKey(schema, "beside");
+            string Beside(string text) => besideKey is null ? "" : string.Format(CultureInfo.InvariantCulture, text, besideKey);
             var fallbacks = new List<string>();
-            var loose = ImportTools.UngroundedAll(input, schema, regional ? documents : grounds, regions, fallbacks);
+            var loose =ImportTools.UngroundedAll(input, schema, regional ? documents : grounds, regions, fallbacks);
             foreach (var f in fallbacks) log.LogInformation("Import tools for {Item}: a stacked label was found outside any box (the 4-line fallback): {Text}", item.Id, f);
             // Every text the source and layout checks refuse goes in one reply, so the model can correct them all in one turn.
             var apart = regional ? ImportTools.MisplacedAll(input, schema, regions) : [];
             if (loose.Count > 0)
                 return await Done(found.PluginId, "not-in-source",
                     $"Refused: the input holds text that is not in the documents or the draft: {string.Join(", ", loose.Select(l => $"\"{Cut(l)}\""))}. Use only text as the documents write it." +
-                    string.Concat(apart.Select(m => $" Also, \"{Cut(m.Text)}\" is not written in the same box as \"{Cut(m.Label)}\".")));
+                    string.Concat(apart.Select(m => $" Also, {Apart(m)}.")));
             var region = regional ? ImportTools.RegionOf(input, schema, regions) : null;
             if (regional && region is null)
                 return await Done(found.PluginId, "no-region", "Refused: the input is about none of the parts of the documents this tool is for. Use the text as they write it.");
             if (apart.Count > 0)
                 return await Done(found.PluginId, "not-in-box",
-                    $"Refused: {string.Join("; ", apart.Select(m => $"\"{Cut(m.Text)}\" is not written in the same box as \"{Cut(m.Label)}\""))} in the documents. Give each item only the text written with it.");
+                    $"Refused: {string.Join("; ", apart.Select(Apart))} in the documents. Give each item only the text written with it." + Beside(" Text written beside an item, outside it, is that item's {0}."));
             if (regional && ImportTools.Joins(input, schema, regions) is { } joined)
                 return await Done(found.PluginId, "joins-items",
                     $"Refused: \"{Cut(joined)}\" joins items the documents write each in its own brackets. Give each item a box of its own.");
             if (regional && ImportTools.NotEnclosed(input, schema, regions) is { } free)
                 return await Done(found.PluginId, "not-enclosed",
-                    $"Refused: \"{Cut(free)}\" is written in no box in the documents, so it is not a box; text beside a line is that line's label.");
+                    $"Refused: \"{Cut(free)}\" is written in no box in the documents, so it is not a box; text beside a line is that line's label" + Beside(", and text beside a box is that box's {0}") + ".");
             if (regional && ImportTools.NotInside(input, schema, regions) is { } outside)
                 return await Done(found.PluginId, outside.Frame ? "in-frame" : "not-inside", outside.Frame
                     ? $"Refused: \"{Cut(outside.Member)}\" is drawn inside the box headed \"{Cut(outside.Container)}\" in the documents. Make that a group, and put it in that group."

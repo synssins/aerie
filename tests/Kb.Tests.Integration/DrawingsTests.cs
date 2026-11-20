@@ -135,7 +135,32 @@ public sealed class DrawingsTests
         Assert.Equal(refused, ImportTools.Misplaced(input, BoxSchema, Regions.Find(Wiki, TestRegions.Drawing))?.Text);
     }
 
-    private static readonly System.Text.Json.Nodes.JsonObject GroupSchema = System.Text.Json.Nodes.JsonNode.Parse("""
+    private static readonly System.Text.Json.Nodes.JsonObject TitleSchema = System.Text.Json.Nodes.JsonNode.Parse("""
+        {"type":"object","properties":{"boxes":{"type":"array","items":{"type":"object","properties":{
+          "id":{"type":"string","format":"identifier"},"label":{"type":"string","format":"enclosed"},"title":{"type":"string","format":"beside"}}}}}}
+        """)!.AsObject();
+
+    [Theory]
+    [InlineData("INTERNET", "Entra ID / M365 / Intune", null)] // beside the box, outside it
+    [InlineData("HV01", "FS01 SQL01", null)] // under the box
+    [InlineData("vnet-prod", "10.50.8.0/22", null)] // in the same box: a title there is the person's to move
+    [InlineData("FW01 (edge)", "SQL MI", "SQL MI")] // far from the box
+    public void ABoxsTitle_IsWrittenNearIt(string label, string title, string? refused)
+    {
+        var input = System.Text.Json.Nodes.JsonNode.Parse($$"""{"boxes":[{"id":"b1","label":"{{label}}","title":"{{title}}"}]}""");
+        var found = ImportTools.Misplaced(input, TitleSchema, Regions.Find(Wiki, TestRegions.Drawing));
+        Assert.Equal(refused, found?.Text);
+        if (found is not null) Assert.True(found.Value.Beside);
+    }
+
+    [Fact]
+    public void TheFieldForATitle_IsNamedByItsFormat()
+    {
+        Assert.Equal("title", ImportTools.FormatKey(TitleSchema, "beside"));
+        Assert.Null(ImportTools.FormatKey(BoxSchema, "beside"));
+    }
+
+    private static readonly System.Text.Json.Nodes.JsonObject GroupSchema =System.Text.Json.Nodes.JsonNode.Parse("""
         {"type":"object","properties":{
           "groups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","format":"identifier"},"label":{"type":"string"}}}},
           "boxes":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","format":"identifier"},"label":{"type":"string"},
