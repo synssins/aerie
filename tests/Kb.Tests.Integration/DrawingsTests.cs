@@ -141,17 +141,24 @@ public sealed class DrawingsTests
         """)!.AsObject();
 
     [Theory]
-    [InlineData("INTERNET", "Entra ID / M365 / Intune", null)] // beside the box, outside it
     [InlineData("HV01", "FS01 SQL01", null)] // under the box
     [InlineData("vnet-prod", "10.50.8.0/22", null)] // in the same box: a title there is the person's to move
     [InlineData("FW01 (edge)", "SQL MI", "SQL MI")] // far from the box
-    public void ABoxsTitle_IsWrittenNearIt(string label, string title, string? refused)
+    [InlineData("INTERNET", "Entra ID / M365 / Intune", "Entra ID / M365 / Intune", true)] // seen in round 11: at the end of a line from it
+    public void ABoxsTitle_IsWrittenNearIt(string label, string title, string? refused, bool lineEnd = false)
     {
+        Assert.Equal(lineEnd, ImportTools.AtLineEnd(title, Regions.Find(Wiki, TestRegions.Drawing)));
         var input = System.Text.Json.Nodes.JsonNode.Parse($$"""{"boxes":[{"id":"b1","label":"{{label}}","title":"{{title}}"}]}""");
         var found = ImportTools.Misplaced(input, TitleSchema, Regions.Find(Wiki, TestRegions.Drawing));
         Assert.Equal(refused, found?.Text);
         if (found is not null) Assert.True(found.Value.Beside);
     }
+
+    [Theory]
+    [InlineData("""{"groups":[{"id":"hub","label":"vnet-hub"}],"boxes":[{"id":"er","label":"ER GW","group":"hub"}]}""", "")]
+    [InlineData("""{"groups":[],"boxes":[{"id":"er","label":"ER GW","group":"vnet_hub"},{"id":"dc","label":"DC01","group":"identity"},{"id":"x","label":"KV","group":"vnet_hub"}]}""", "vnet_hub,identity")] // seen in round 11
+    public void AGroupNamed_IsDeclared(string json, string undeclared) =>
+        Assert.Equal(undeclared, string.Join(",", ImportTools.Undeclared(System.Text.Json.Nodes.JsonNode.Parse(json), GroupSchema)));
 
     [Fact]
     public void TheFieldForATitle_IsNamedByItsFormat()
@@ -160,7 +167,7 @@ public sealed class DrawingsTests
         Assert.Null(ImportTools.FormatKey(BoxSchema, "beside"));
     }
 
-    private static readonly System.Text.Json.Nodes.JsonObject GroupSchema =System.Text.Json.Nodes.JsonNode.Parse("""
+    private static readonly System.Text.Json.Nodes.JsonObject GroupSchema = System.Text.Json.Nodes.JsonNode.Parse("""
         {"type":"object","properties":{
           "groups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","format":"identifier"},"label":{"type":"string"}}}},
           "boxes":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","format":"identifier"},"label":{"type":"string"},

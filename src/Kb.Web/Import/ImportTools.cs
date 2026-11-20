@@ -331,6 +331,49 @@ public static partial class ImportTools
     }
 
     /// <summary>
+    /// The ids that strings marked <c>"format": "within"</c> name but no object of the input declares (an object's id is its first string
+    /// marked <c>"format": "identifier"</c>), in the order first named, so one reply can name them all.
+    /// </summary>
+    public static List<string> Undeclared(JsonNode? input, JsonObject schema)
+    {
+        ArgumentNullException.ThrowIfNull(schema);
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        var named = new List<string>();
+        void Walk(JsonNode? node, JsonObject s)
+        {
+            switch (node)
+            {
+                case JsonObject o:
+                    var props = s["properties"] as JsonObject ?? [];
+                    string? id = null;
+                    foreach (var (key, ps) in props)
+                    {
+                        if (o[key] is not JsonValue v || v.GetValueKind() != JsonValueKind.String || ps is not JsonObject p) continue;
+                        var format = p["format"]?.GetValue<string>();
+                        if (format == "identifier") id ??= v.GetValue<string>();
+                        else if (format == "within" && !named.Contains(v.GetValue<string>())) named.Add(v.GetValue<string>());
+                    }
+                    if (id is not null) ids.Add(id);
+                    foreach (var (key, child) in o) if (child is JsonObject or JsonArray) Walk(child, props[key] as JsonObject ?? []);
+                    break;
+                case JsonArray a:
+                    foreach (var child in a) Walk(child, s["items"] as JsonObject ?? []);
+                    break;
+            }
+        }
+        Walk(input, schema);
+        return [.. named.Where(n => !ids.Contains(n))];
+    }
+
+    /// <summary>Whether a text stands, everywhere the regions write it outside a box, at the end of a line drawn across (joined to it).</summary>
+    public static bool AtLineEnd(string text, IReadOnlyList<Regions.Region> regions)
+    {
+        ArgumentNullException.ThrowIfNull(regions);
+        var at = Regions.Starts(text, regions).ToList();
+        return at.Count > 0 && at.All(p => p.Box is null && Joined(p.Region.Lines[p.Line], p.Column, text.Length));
+    }
+
+    /// <summary>
     /// The enclosed check, for a region tool: a string marked <c>"format": "enclosed"</c> (a box's label) must stand, in the region it is
     /// written in, inside a box or between brackets on its line, when that region draws boxes at all (a chain of bare names does not). So
     /// a line's label beside the line is not taken for a box. Returns the first such string that stands free, or null.
@@ -448,6 +491,8 @@ public static partial class ImportTools
     {
         var at = Regions.Starts(label, drawings).ToList();
         if (at.Count == 0) return true; // a label in no drawing is left to the source check
+        // Text at the end of a line drawn from the object is a box of its own, joined by that line, not the object's title.
+        if (AtLineEnd(text, drawings)) return false;
         var titles = Regions.Starts(text, drawings).ToList();
         return at.Any(p => titles.Any(q => q.Region.Number == p.Region.Number
             && q.Line >= (p.Box?.Top ?? p.Line) - BesideLines && q.Line <= (p.Box?.Bottom ?? p.Line) + BesideLines));
@@ -613,8 +658,10 @@ public sealed partial class ImportService
         var grounds = ImportTools.Normalize(source + " " + string.Join(" ", contents.Select(c => Kb.Core.Content.DocText.Plain(new JsonObject { ["type"] = "doc", ["content"] = c.DeepClone() }.ToJsonString()))));
         var outcomes = new List<ImportTools.Outcome>();
         static string Cut(string s) => s.Length > 60 ? s[..60] + "..." : s;
-        static string Apart((string Text, string Label, bool Beside) m) => m.Beside
-            ? $"\"{Cut(m.Text)}\" is not written beside \"{Cut(m.Label)}\""
+        static string Apart((string Text, string Label, bool Beside) m, IReadOnlyList<Regions.Region> r) => m.Beside
+            ? ImportTools.AtLineEnd(m.Text, r)
+                ? $"\"{Cut(m.Text)}\" is at the end of a line drawn from \"{Cut(m.Label)}\", so it is a box of its own, joined by that line, not a title"
+                : $"\"{Cut(m.Text)}\" is not written beside \"{Cut(m.Label)}\""
             : $"\"{Cut(m.Text)}\" is not written in the same box as \"{Cut(m.Label)}\"";
         async Task<AiService.ToolAnswer> AnswerAsync(AiService.ToolCall call)
         {
@@ -659,13 +706,16 @@ public sealed partial class ImportService
             if (loose.Count > 0)
                 return await Done(found.PluginId, "not-in-source",
                     $"Refused: the input holds text that is not in the documents or the draft: {string.Join(", ", loose.Select(l => $"\"{Cut(l)}\""))}. Use only text as the documents write it." +
-                    string.Concat(apart.Select(m => $" Also, {Apart(m)}.")));
+                    string.Concat(apart.Select(m => $" Also, {Apart(m, regions)}.")));
             var region = regional ? ImportTools.RegionOf(input, schema, regions) : null;
             if (regional && region is null)
                 return await Done(found.PluginId, "no-region", "Refused: the input is about none of the parts of the documents this tool is for. Use the text as they write it.");
             if (apart.Count > 0)
                 return await Done(found.PluginId, "not-in-box",
-                    $"Refused: {string.Join("; ", apart.Select(Apart))} in the documents. Give each item only the text written with it." + Beside(" Text written beside an item, outside it, is that item's {0}."));
+                    $"Refused: {string.Join("; ", apart.Select(m => Apart(m, regions)))} in the documents. Give each item only the text written with it." + Beside(" Text written beside an item, outside it, is that item's {0}."));
+            if (regional && ImportTools.Undeclared(input, schema) is { Count: > 0 } undeclared)
+                return await Done(found.PluginId, "undeclared",
+                    $"Refused: the input names {string.Join(", ", undeclared.Select(u => $"\"{Cut(u)}\""))} as what an item is drawn inside, but declares no object with that id. Declare each one, or leave it out.");
             if (regional && ImportTools.Joins(input, schema, regions) is { } joined)
                 return await Done(found.PluginId, "joins-items",
                     $"Refused: \"{Cut(joined)}\" joins items the documents write each in its own brackets. Give each item a box of its own.");
