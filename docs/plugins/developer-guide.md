@@ -1340,7 +1340,7 @@ With it, not drawings: one arrow in a sentence (`printer -> relay01`), a task li
 |---|---|
 | `UnknownId` | Refused by the tool: `<at>` names an id that the input does not declare. Declare it, or leave it out. |
 | `DuplicateId` | Refused by the tool: `<at>` declares an id that is declared before. Give each its own id. |
-| `TooLittle` | Refused by the tool: the input holds too little to make anything of. |
+| `TooLittle` | With a path: Refused by the tool: `<path>` holds too little to make anything of. Give it what belongs in it, or make that item another kind of item. Without one: Refused by the tool: the input holds too little to make anything of. |
 | `TooMuch` | Refused by the tool: the input holds more than the tool can make. |
 | `SelfReference` | Refused by the tool: `<at>` refers to the item it belongs to. Leave it out, or name another. |
 | `Combined` | Refused by the tool: `<at>` holds several items in one text. Give each item on its own. |

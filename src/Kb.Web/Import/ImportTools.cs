@@ -590,7 +590,8 @@ public static partial class ImportTools
         {
             ImportToolRefusal.UnknownId => $"Refused by the tool: {place} names an id that the input does not declare. Declare it, or leave it out.",
             ImportToolRefusal.DuplicateId => $"Refused by the tool: {place} declares an id that is declared before. Give each its own id.",
-            ImportToolRefusal.TooLittle => "Refused by the tool: the input holds too little to make anything of.",
+            ImportToolRefusal.TooLittle => node is null ? "Refused by the tool: the input holds too little to make anything of."
+                : $"Refused by the tool: {place} holds too little to make anything of. Give it what belongs in it, or make that item another kind of item.",
             ImportToolRefusal.TooMuch => "Refused by the tool: the input holds more than the tool can make.",
             ImportToolRefusal.Combined => $"Refused by the tool: {place} holds several items in one text. Give each item on its own.",
             ImportToolRefusal.SelfReference => $"Refused by the tool: {place} refers to the item it belongs to. Leave it out, or name another.",

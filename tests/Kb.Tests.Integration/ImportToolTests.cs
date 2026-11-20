@@ -448,6 +448,15 @@ public sealed class ImportToolTests : IAsyncLifetime
             ImportTools.Refused(ImportToolRefusal.SelfReference, "$.lines[0].to", JsonNode.Parse("""{"lines": [{"from": "sw1", "to": "sw1"}]}""")));
 
     [Fact]
+    public void TooLittle_NamesThePlaceTheToolGave()
+    {
+        var input = JsonNode.Parse("""{"groups": [{"id": "ergw", "label": "ER GW"}]}""");
+        Assert.Equal("Refused by the tool: $.groups[0].id (\"ergw\") holds too little to make anything of. Give it what belongs in it, or make that item another kind of item.",
+            ImportTools.Refused(ImportToolRefusal.TooLittle, "$.groups[0].id", input));
+        Assert.Equal("Refused by the tool: the input holds too little to make anything of.", ImportTools.Refused(ImportToolRefusal.TooLittle, null, input));
+    }
+
+    [Fact]
     public async Task ARegionTool_UsesTheDocumentsWords_NotTheDrafts()
     {
         // Seen in round 9: the draft wrote "on-premises", and a group took that word; the drawing does not write it.
