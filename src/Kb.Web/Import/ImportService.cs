@@ -324,8 +324,10 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
     };
 
     /// <summary>
-    /// A draft whose answer-wide fields (tags, apps, owner, ...) the model wrote inside its first page instead of beside the pages: the
-    /// same reply with those fields moved up, if it then matches <paramref name="schema"/>; otherwise null. Nothing is added or dropped.
+    /// A draft with mechanical slips, repaired, if it then matches <paramref name="schema"/>; otherwise null. The slips: the answer-wide
+    /// fields (tags, apps, owner, ...) written inside the first page instead of beside the pages; blocks written into the list of pages
+    /// instead of the page before them; and, after that, an answer-wide suggestion left out, which gets its empty value (no tags, no
+    /// owner, no review, the inbox). Nothing of the content is added or dropped.
     /// </summary>
     internal static JsonNode? Lifted(string content, JsonObject schema)
     {
@@ -343,6 +345,17 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             root[key] = value;
             moved = true;
         }
+        // A block in the list of pages (it has a type and no blocks of its own) belongs at the end of the page before it.
+        for (var i = 1; i < pages.Count; i++)
+        {
+            if (pages[i] is not JsonObject b || !b.ContainsKey("type") || b.ContainsKey("blocks") || pages[i - 1]?["blocks"] is not JsonArray into) continue;
+            pages.RemoveAt(i--);
+            into.Add(b);
+            moved = true;
+        }
+        foreach (var (key, empty) in new (string, Func<JsonNode>)[] { ("tags", () => new JsonArray()), ("apps", () => new JsonArray()), ("owner", () => JsonValue.Create("")),
+            ("reviewMonths", () => JsonValue.Create(0)), ("destination", () => JsonValue.Create("inbox")) })
+            if (top.ContainsKey(key) && !root.ContainsKey(key)) { root[key] = empty(); moved = true; }
         return moved && AiGuard.SchemaError(root, schema) is null ? root : null;
     }
 

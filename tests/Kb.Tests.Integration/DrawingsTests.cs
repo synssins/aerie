@@ -26,7 +26,7 @@ public sealed class DrawingsTests
 
     [Theory]
     [InlineData("+-------+--------+", true)]
-    [InlineData("|  CORE-SW1   |", true)]
+    [InlineData("|  CORE-SW1   |", false)] // a line of bars joins a drawing, but does not start one
     [InlineData("   [ laptops VLAN30 ]", true)]
     [InlineData("~~~~~~~~~~~~~~ AZURE", true)]
     [InlineData("┌──┐", true)]
@@ -35,6 +35,10 @@ public sealed class DrawingsTests
     [InlineData("see [the guide](https://example.test) and [x] done", false)]
     public void ALine_StartsADrawing_ByItsRulesBarsCornersOrBrackets(string line, bool drawn) =>
         Assert.Equal(drawn, ToolRegions.TextDrawing.Starts.Any(p => System.Text.RegularExpressions.Regex.IsMatch(line, p)));
+
+    [Fact]
+    public void ATableOfBarsWithoutRules_IsNoDrawing() =>
+        Assert.Empty(Regions.Find("Step | System | How |\n1 | BKP01 | normal shutdown |\n2 | PRT01 | normal shutdown |\n3 | AADC01 | normal shutdown |", ToolRegions.TextDrawing));
 
     [Fact]
     public void TheAppsFileHeaders_AreNeverARegion() =>

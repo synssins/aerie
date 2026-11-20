@@ -235,14 +235,15 @@ public sealed record ToolRegions(IReadOnlyList<string> Starts, IReadOnlyList<str
 {
     /// <summary>
     /// A preset for drawings made of text characters (a network map of boxes and lines): a rule of three dashes, equals, tildes or
-    /// underscores, a corner, two bars, or a thing in brackets with spaces inside starts one; a bar, plus, slash or box-drawing character
-    /// joins one; a rule alone (a Markdown section break) is weak; two things in brackets joined by a connector, or two arrows, make one
-    /// line a drawing. A plugin may pass it, or declare its own.
+    /// underscores, a corner, or a thing in brackets with spaces inside starts one; a bar, plus, slash or box-drawing character joins one
+    /// (so rows of a table set with bars and no rules, as an HTML table reads as text, are no drawing); a rule alone (a Markdown section
+    /// break) is weak; two things in brackets joined by a connector, or two arrows, make one line a drawing. A plugin may pass it, or
+    /// declare its own.
     /// </summary>
     public static ToolRegions TextDrawing { get; } = new(
         Starts:
         [
-            @"[-=~_─━═]{3,}", @"\+[-=~_]|[-=~_]\+|[┌-╋]", @"[|│║].*[|│║]", @"\[\s+[^\]\[]+?\s+\]",
+            @"[-=~_─━═]{3,}", @"\+[-=~_]|[-=~_]\+|[┌-╋]", @"\[\s+[^\]\[]+?\s+\]",
         ],
         Joins: [@"[|+/\\]|[─-╿]"],
         Weak: [@"^\s*[-=~_*─━═]{3,}\s*$"],

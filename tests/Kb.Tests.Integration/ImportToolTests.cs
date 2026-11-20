@@ -435,6 +435,16 @@ public sealed class ImportToolTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ADraft_WithItsBlocksInTheListOfPages_IsPutBack()
+    {
+        // Seen on the owner's model: the blocks after the first went into the list of pages, and the answer-wide fields were left out.
+        _model.Drafts.Enqueue("""{"pages":[{"title":"Leavers","blocks":[{"type":"heading","text":"Leavers","level":1}]},{"type":"steps","items":["Disable the account."]}]}""");
+        var (blocks, _) = await ImportAsync(text: "Leavers: disable the account.\n");
+        Assert.Contains("Disable the account.", blocks.ToJsonString(), StringComparison.Ordinal);
+        Assert.Single(_model.Requests, r => r["tools"] is null);
+    }
+
+    [Fact]
     public async Task ADraft_ThatMissesTheStructure_IsAskedForOnceMore_WithWhere()
     {
         _model.Drafts.Enqueue("""{"pages":[{"title":"Notes","blocks":[{"type":"table","rows":[["a"],{"type":"paragraph","text":"b"}]}]}],"tags":[],"apps":[],"owner":"","reviewMonths":0,"destination":"inbox"}""");

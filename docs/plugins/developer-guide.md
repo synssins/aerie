@@ -1294,13 +1294,13 @@ public sealed class BoxesAndLines : IImportTool
 The app checks a declaration before it offers the tool: at most 16 patterns in each list, each at most 300 characters and a pattern the app can run without backtracking (no back-references or look-arounds); `MinLines` 1 to 20, `MinStarts` 0 to 20, `MaxGap` 0 to 5. Each pattern runs with a time limit. A tool whose declaration breaks a rule is not offered, and the Admin sees why.
 
 **The preset `ToolRegions.TextDrawing`** is for drawings made of text characters:
-- starts: a rule of three dashes, equals, tildes or underscores (or box-drawing characters); a plus where a rule meets it; two bars or more; or a thing in brackets with spaces inside, such as `[ HV01 ]`;
+- starts: a rule of three dashes, equals, tildes or underscores (or box-drawing characters); a plus where a rule meets it; or a thing in brackets with spaces inside, such as `[ HV01 ]`;
 - joins: a line holding a bar, a plus, a slash or a box-drawing character;
 - weak: a rule alone, such as a Markdown section break (`---`);
 - alone: two things in brackets with spaces inside joined by a connector of two or more dashes, equals, tildes or dots, with or without arrow heads or a label inside (`[ A ] --- [ B ] --> [ C ]`); or two arrows or more on one line (`printer --587--> FW01 --> Exchange Online`);
 - at least 3 lines, 2 of them starts, at most 2 other lines in a row.
 
-With it, not drawings: one arrow in a sentence (`printer -> relay01`), a task list (`- [ ] check`), links (`[the guide](https://...)`), one thing in brackets in a sentence, Mermaid or other diagram code. Known misses: one arrow between two bare names (`A ---> B`). Known false finds: two or more lines with two bars each that are not a table, such as shell commands with two pipes on each line.
+With it, not drawings: one arrow in a sentence (`printer -> relay01`), a task list (`- [ ] check`), links (`[the guide](https://...)`), one thing in brackets in a sentence, Mermaid or other diagram code. Known misses: one arrow between two bare names (`A ---> B`). A line of bars alone (`| HV01 |`) joins a drawing but does not start one, so a table set with bars and no rule row, as an HTML table reads as text, is no drawing.
 
 **The drafting keeps the regions.** Where the documents hold a region of a loaded tool, the drafting gets those regions as data under "keep", and its task says to copy each into one code block, exactly as written, where it stands. Documents without one are drafted exactly as before, word for word.
 
