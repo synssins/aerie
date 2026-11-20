@@ -5230,6 +5230,7 @@ Enum: `Folder`, `Page`.
 | importFileKinds | `IReadOnlyList<string>` |
 | signInMethods | `IReadOnlyList<PluginSignInMethodDto>` ([PluginSignInMethodDto](#pluginsigninmethoddto)) |
 | signInProviders | `bool` |
+| importTools | `IReadOnlyList<PluginToolDto>?` ([PluginToolDto](#plugintooldto)) |
 
 ```json
 {
@@ -5302,7 +5303,16 @@ Enum: `Folder`, `Page`.
       "linked": 0
     }
   ],
-  "signInProviders": false
+  "signInProviders": false,
+  "importTools": [
+    {
+      "name": "text",
+      "description": "text",
+      "inputSchema": "text",
+      "notOffered": "text",
+      "drawing": false
+    }
+  ]
 }
 ```
 
@@ -5377,7 +5387,10 @@ Enum: `Folder`, `Page`.
       "signInMethods": [
         null
       ],
-      "signInProviders": false
+      "signInProviders": false,
+      "importTools": [
+        null
+      ]
     }
   ],
   "safeMode": false
@@ -5577,6 +5590,26 @@ Enum: `Enabled`, `Disabled`, `DisabledByCore`.
 ```json
 {
   "enabled": false
+}
+```
+
+### PluginToolDto
+
+| Field | Type |
+|---|---|
+| name | `string` |
+| description | `string` |
+| inputSchema | `string` |
+| notOffered | `string?` |
+| drawing | `bool` |
+
+```json
+{
+  "name": "text",
+  "description": "text",
+  "inputSchema": "text",
+  "notOffered": "text",
+  "drawing": false
 }
 ```
 

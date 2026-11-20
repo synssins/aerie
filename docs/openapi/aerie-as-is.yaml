@@ -8642,6 +8642,11 @@ components:
             "$ref": "#/components/schemas/PluginSignInMethodDto"
         signInProviders:
           type: "boolean"
+        importTools:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/PluginToolDto"
+          nullable: true
     PluginJobDto:
       type: "object"
       properties:
@@ -8803,6 +8808,20 @@ components:
       type: "object"
       properties:
         enabled:
+          type: "boolean"
+    PluginToolDto:
+      type: "object"
+      properties:
+        name:
+          type: "string"
+        description:
+          type: "string"
+        inputSchema:
+          type: "string"
+        notOffered:
+          type: "string"
+          nullable: true
+        drawing:
           type: "boolean"
     PostAnnouncementRequest:
       type: "object"

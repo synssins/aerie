@@ -208,7 +208,8 @@ public sealed class AiTests : IAsyncLifetime
         Assert.True((await RunAsync(bo, AiFeatures.Search, new() { ["q"] = "vpn" })).Ok);
         Assert.True((await RunAsync(bo, AiFeatures.Search, new() { ["q"] = "vpn" })).Ok);
         Assert.Equal(429, (await RunAsync(bo, AiFeatures.Search, new() { ["q"] = "vpn" })).Problem!.Status);
-        Assert.Equal(["too-large", "refused", "invalid-output", "ok", "ok", "limited"], (await AuditAsync()).Select(a => a.Outcome));
+        // The answer that does not match is asked for once more, with where it misses, and then refused.
+        Assert.Equal(["too-large", "refused", "retry", "invalid-output", "ok", "ok", "limited"], (await AuditAsync()).Select(a => a.Outcome));
         Assert.Contains(("ai.refused", "refused"), await AuditAsync());
     }
 
