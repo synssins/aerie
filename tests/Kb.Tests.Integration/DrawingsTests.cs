@@ -159,6 +159,23 @@ public sealed class DrawingsTests
     }
 
     [Fact]
+    public void AGroup_WrittenAlsoWhereNoBoxHoldsIt_IsNotChecked()
+    {
+        // Seen in round 9: "AZURE" heads a line of tildes, and also starts "[Azure Firewall]" in a box; its members are not refused.
+        const string map = """
+            +--------------------+
+            | [Azure Firewall]   |
+            +--------------------+
+            ~~~~~~~~~~~~~~~~~~~~~~ AZURE
+            +----------+
+            | vnet-a   |
+            +----------+
+            """;
+        var input = System.Text.Json.Nodes.JsonNode.Parse("""{"groups":[{"id":"az","label":"AZURE"}],"boxes":[{"id":"a","label":"vnet-a","group":"az"}]}""");
+        Assert.Null(ImportTools.NotInside(input, GroupSchema, Regions.Find(map, TestRegions.Drawing)));
+    }
+
+    [Fact]
     public void AStack_HasItsBound()
     {
         // Inside a box, the box is the bound: all its lines, and no line across its rule.

@@ -248,7 +248,8 @@ public static partial class ImportTools
     /// The inside check, for a region tool: an object that names, in a string marked <c>"format": "within"</c>, the id of the object it is
     /// drawn inside (a box in its group) must be written inside the box of that object's label, as the source lays it out. An object's
     /// id is its first string marked <c>"format": "identifier"</c>, its label its first text string, both in the schema's order. A container
-    /// whose label stands in no box (a heading beside a rule), or a name no object declares, is not checked here. Returns the first
+    /// whose label stands, in any of the places it is written, in no box (a heading beside a rule), or a name no object declares, is not
+    /// checked here. Returns the first
     /// member and container labels that do not stand so, or null.
     /// </summary>
     public static (string Member, string Container)? NotInside(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> regions)
@@ -285,8 +286,10 @@ public static partial class ImportTools
             foreach (var container in within)
             {
                 if (member is null || Normalize(member).Length < MinGrounded || !labels.TryGetValue(container, out var outer)) continue;
-                var frames = Regions.Starts(outer, regions).Where(p => p.Box is not null).Select(p => (p.Region.Number, Box: p.Box!.Value)).ToList();
-                if (frames.Count == 0) continue;
+                // A container written anywhere in no box (a heading beside a rule, or a word that also starts another box's text) is not checked.
+                var at = Regions.Starts(outer, regions).ToList();
+                if (at.Count == 0 || at.Any(p => p.Box is null)) continue;
+                var frames = at.Select(p => (p.Region.Number, Box: p.Box!.Value)).ToList();
                 if (!Regions.Starts(member, regions).Any(m => frames.Any(f => f.Number == m.Region.Number && (m.Box == f.Box || f.Box.Holds(m.Line, m.Column)))))
                     return (member, outer);
             }
