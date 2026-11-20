@@ -1280,7 +1280,7 @@ public sealed class BoxesAndLines : IImportTool
 **Guards on what the model sends.** After the schema, the app checks each call:
 
 - **No repeats.** In one import item, a tool is not called again with the same input (its keys in any order), nor again after the same block. Only calls that added something count. A refused call may be made again, corrected. The reply is "Refused as a repeat: ...".
-- **Only text of the source.** Every string in the input must appear in the item's documents or in its drafted page. The comparison ignores case, and every run of white space counts as one space. Three kinds of string are not checked:
+- **Only text of the source.** Every string in the input must appear in the item's documents or in its drafted page; for a region tool, in the documents themselves, since the draft's wording is the model's. The comparison ignores case, and every run of white space counts as one space. Three kinds of string are not checked:
   - a string shorter than 3 characters: it carries no text of its own;
   - a string the schema limits to an `enum`: the choices are the plugin's, fixed and checked when the tool is offered;
   - a string marked `"format": "identifier"` or `"format": "within"`. This is for the ids the model makes up to tie items together, such as a box's id, the ends of a line and the group a box sits in. An identifier is not compared with the source, but it must be 1 to 32 letters, digits, dots, hyphens or underscores, so it cannot carry a sentence.
@@ -1331,6 +1331,7 @@ With it, not drawings: one arrow in a sentence (`printer -> relay01`), a task li
 | `TooLittle` | Refused by the tool: the input holds too little to make anything of. |
 | `TooMuch` | Refused by the tool: the input holds more than the tool can make. |
 | `SelfReference` | Refused by the tool: `<at>` refers to the item it belongs to. Leave it out, or name another. |
+| `Combined` | Refused by the tool: `<at>` holds several items in one text. Give each item on its own. |
 
 `at` is optional: a JSON path into the call's input, such as `$.boxes[3].group` (a dollar sign, then names after dots and numbers in brackets, at most 12 steps). The app names it only when it is of that form and names a part of the input; when it names a string of the identifier form, the reply quotes it, being the model's own text. Otherwise the reply says "the input". Nothing else of the plugin reaches the model. A null answer, or nodes that fail the checks, get "Refused: the tool added nothing."
 

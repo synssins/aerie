@@ -147,7 +147,9 @@ public sealed class DrawingsTests
     [InlineData("SQL MI", "prod", null)] // drawn inside the frame of its group
     [InlineData("10.50.8.0/22", "prod", null)] // text of the frame itself
     [InlineData("HV02", "prod", "HV02")] // a box elsewhere
-    [InlineData("FS01 SQL01", "bkp", null)] // a container in no box is not checked here
+    [InlineData("HV01", "bkp", "HV01")] // seen in round 9: a container in no box heads only what is written below it
+    [InlineData("FS01 SQL01", "bkp", "FS01 SQL01")] // the line above it
+    [InlineData("BKP01", "bkp", null)] // its own name's line
     [InlineData("FS01 SQL01", "nobody", null)] // a name nothing declares is left to the plugin
     public void AnItemInAGroup_IsDrawnInsideIt(string member, string group, string? refused)
     {

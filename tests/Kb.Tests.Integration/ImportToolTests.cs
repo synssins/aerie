@@ -432,6 +432,16 @@ public sealed class ImportToolTests : IAsyncLifetime
             ImportTools.Refused(ImportToolRefusal.SelfReference, "$.lines[0].to", JsonNode.Parse("""{"lines": [{"from": "sw1", "to": "sw1"}]}""")));
 
     [Fact]
+    public async Task ARegionTool_UsesTheDocumentsWords_NotTheDrafts()
+    {
+        // Seen in round 9: the draft wrote "on-premises", and a group took that word; the drawing does not write it.
+        _model.Drafts.Enqueue("""{"pages":[{"title":"Map","blocks":[{"type":"heading","text":"The on-premises network","level":1},{"type":"code","text":"x"}]}],"tags":[],"apps":[],"owner":"","reviewMonths":0,"destination":"inbox"}""");
+        _model.Turns.Enqueue(Call("draw_map", """{"boxes": ["CORE-SW1", "on-premises network"], "after_block": 2}"""));
+        await ImportAsync();
+        Assert.Equal(["Refused: the input holds text that is not in the documents or the draft: \"on-premises network\". Use only text as the documents write it."], Replies);
+    }
+
+    [Fact]
     public async Task AToolsRefusal_IsWordedByTheApp()
     {
         _model.Turns.Enqueue(Call("check_ids", """{"boxes": ["web01"], "after_block": 1}""", "c1"));

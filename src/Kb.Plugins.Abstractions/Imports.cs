@@ -290,6 +290,8 @@ public enum ImportToolRefusal
     TooMuch,
     /// <summary>An item of the input refers to itself (a line from a box to the same box).</summary>
     SelfReference,
+    /// <summary>One text of the input holds several items that are each one of their own (things in brackets listed in one box's detail).</summary>
+    Combined,
 }
 
 public static class ImportToolExtensions

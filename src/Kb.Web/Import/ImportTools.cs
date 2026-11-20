@@ -288,7 +288,15 @@ public static partial class ImportTools
                 if (member is null || Normalize(member).Length < MinGrounded || !labels.TryGetValue(container, out var outer)) continue;
                 // A container written anywhere in no box (a heading beside a rule, or a word that also starts another box's text) is not checked.
                 var at = Regions.Starts(outer, regions).ToList();
-                if (at.Count == 0 || at.Any(p => p.Box is null)) continue;
+                if (at.Count == 0) continue;
+                if (at.Any(p => p.Box is null))
+                {
+                    // A container whose name stands in no box (a heading at a rule) heads what is written below it: a member written only
+                    // above every place of that name is not in it.
+                    var places = Regions.Starts(member, regions).ToList();
+                    if (places.Count > 0 && !places.Any(m => at.Any(c => c.Region.Number == m.Region.Number && m.Line >= c.Line))) return (member, outer);
+                    continue;
+                }
                 var frames = at.Select(p => (p.Region.Number, Box: p.Box!.Value)).ToList();
                 if (!Regions.Starts(member, regions).Any(m => frames.Any(f => f.Number == m.Region.Number && (m.Box == f.Box || f.Box.Holds(m.Line, m.Column)))))
                     return (member, outer);
@@ -339,6 +347,7 @@ public static partial class ImportTools
             ImportToolRefusal.DuplicateId => $"Refused by the tool: {place} declares an id that is declared before. Give each its own id.",
             ImportToolRefusal.TooLittle => "Refused by the tool: the input holds too little to make anything of.",
             ImportToolRefusal.TooMuch => "Refused by the tool: the input holds more than the tool can make.",
+            ImportToolRefusal.Combined => $"Refused by the tool: {place} holds several items in one text. Give each item on its own.",
             ImportToolRefusal.SelfReference => $"Refused by the tool: {place} refers to the item it belongs to. Leave it out, or name another.",
             _ => "Refused: the tool added nothing.",
         };
@@ -449,6 +458,9 @@ public sealed partial class ImportService
         // A drawing tool: one call that added something for each drawing.
         var drawn = new HashSet<(string, int)>();
         // The source check: the documents and the draft as the model was given them, normalized.
+        // A region tool draws what the documents show, so its text must be in the documents themselves, not only in the draft (whose
+        // wording is the model's).
+        var documents = ImportTools.Normalize(source);
         var grounds = ImportTools.Normalize(source + " " + string.Join(" ", contents.Select(c => Kb.Core.Content.DocText.Plain(new JsonObject { ["type"] = "doc", ["content"] = c.DeepClone() }.ToJsonString()))));
         var outcomes = new List<ImportTools.Outcome>();
         static string Cut(string s) => s.Length > 60 ? s[..60] + "..." : s;
@@ -485,7 +497,7 @@ public sealed partial class ImportService
             if (made.Contains((call.Name, same)) || (!regional && places.Contains((call.Name, after))))
                 return await Done(found.PluginId, "repeat", "Refused as a repeat: this tool was already called with this input, or after this block.");
             var fallbacks = new List<string>();
-            var loose = ImportTools.UngroundedAll(input, schema, grounds, regions, fallbacks);
+            var loose = ImportTools.UngroundedAll(input, schema, regional ? documents : grounds, regions, fallbacks);
             foreach (var f in fallbacks) log.LogInformation("Import tools for {Item}: a stacked label was found outside any box (the 4-line fallback): {Text}", item.Id, f);
             // Every text the source and layout checks refuse goes in one reply, so the model can correct them all in one turn.
             var apart = regional ? ImportTools.MisplacedAll(input, schema, regions) : [];
