@@ -106,7 +106,7 @@ public static partial class ImportTools
                     break;
                 case "format":
                     // A string the model makes up to tie items together (a box's id, the ends of a line): not text of the documents.
-                    if (v.ValueKind != JsonValueKind.String || v.GetString() != "identifier") return "format may only be identifier.";
+                    if (v.ValueKind != JsonValueKind.String || v.GetString() is not ("identifier" or "within")) return "format may only be identifier or within.";
                     if (!e.TryGetProperty("type", out var ft) || ft.GetString() != "string") return "format identifier is only for a string.";
                     break;
                 case "additionalProperties":
@@ -157,7 +157,7 @@ public static partial class ImportTools
                 break;
             case JsonValue v when v.GetValueKind() == JsonValueKind.String:
                 yield return (v.GetValue<string>(), schema["enum"] is not null ? StringKind.Choice
-                    : schema["format"]?.GetValue<string>() == "identifier" ? StringKind.Identifier : StringKind.Text);
+                    : schema["format"]?.GetValue<string>() is "identifier" or "within" ? StringKind.Identifier : StringKind.Text);
                 break;
         }
     }
@@ -244,8 +244,59 @@ public static partial class ImportTools
         }
     }
 
+    /// <summary>
+    /// The inside check, for a region tool: an object that names, in a string marked <c>"format": "within"</c>, the id of the object it is
+    /// drawn inside (a box in its group) must be written inside the box of that object's label, as the source lays it out. An object's
+    /// id is its first string marked <c>"format": "identifier"</c>, its label its first text string, both in the schema's order. A container
+    /// whose label stands in no box (a heading beside a rule), or a name no object declares, is not checked here. Returns the first
+    /// member and container labels that do not stand so, or null.
+    /// </summary>
+    public static (string Member, string Container)? NotInside(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> regions)
+    {
+        ArgumentNullException.ThrowIfNull(regions);
+        var objects = new List<(string? Id, string? Label, List<string> Within)>();
+        void Walk(JsonNode? node, JsonObject s)
+        {
+            switch (node)
+            {
+                case JsonObject o:
+                    var props = s["properties"] as JsonObject ?? [];
+                    string? id = null, label = null;
+                    var within = new List<string>();
+                    foreach (var (key, ps) in props)
+                    {
+                        if (o[key] is not JsonValue v || v.GetValueKind() != JsonValueKind.String || ps is not JsonObject p) continue;
+                        var format = p["format"]?.GetValue<string>();
+                        if (format == "identifier") id ??= v.GetValue<string>();
+                        else if (format == "within") within.Add(v.GetValue<string>());
+                        else if (p["enum"] is null) label ??= v.GetValue<string>().Split('\n')[0];
+                    }
+                    if (id is not null || within.Count > 0) objects.Add((id, label, within));
+                    foreach (var (key, child) in o) if (child is JsonObject or JsonArray) Walk(child, props[key] as JsonObject ?? []);
+                    break;
+                case JsonArray a:
+                    foreach (var child in a) Walk(child, s["items"] as JsonObject ?? []);
+                    break;
+            }
+        }
+        Walk(input, schema);
+        var labels = objects.Where(o => o.Id is not null && o.Label is not null).GroupBy(o => o.Id!).ToDictionary(g => g.Key, g => g.First().Label!);
+        foreach (var (_, member, within) in objects)
+            foreach (var container in within)
+            {
+                if (member is null || Normalize(member).Length < MinGrounded || !labels.TryGetValue(container, out var outer)) continue;
+                var frames = Regions.Starts(outer, regions).Where(p => p.Box is not null).Select(p => (p.Region.Number, Box: p.Box!.Value)).ToList();
+                if (frames.Count == 0) continue;
+                if (!Regions.Starts(member, regions).Any(m => frames.Any(f => f.Number == m.Region.Number && (m.Box == f.Box || f.Box.Holds(m.Line, m.Column)))))
+                    return (member, outer);
+            }
+        return null;
+    }
+
     private static bool WithLabel(string label, string text, IReadOnlyList<Regions.Region> drawings)
     {
+        // Text that is part of the label itself (a detail repeating it) stands with it.
+        if (Normalize(label).Contains(Normalize(text), StringComparison.Ordinal)) return true;
         var at = Regions.Places(label, drawings).ToList();
         if (at.Count == 0) return true;
         var boxes = at.Where(p => p.Box is not null).Select(p => (p.Region.Number, p.Box)).ToHashSet();
@@ -440,6 +491,9 @@ public sealed partial class ImportService
             if (apart.Count > 0)
                 return await Done(found.PluginId, "not-in-box",
                     $"Refused: {string.Join("; ", apart.Select(m => $"\"{Cut(m.Text)}\" is not written in the same box as \"{Cut(m.Label)}\""))} in the documents. Give each item only the text written with it.");
+            if (regional && ImportTools.NotInside(input, schema, regions) is { } outside)
+                return await Done(found.PluginId, "not-inside",
+                    $"Refused: \"{Cut(outside.Member)}\" is not drawn inside \"{Cut(outside.Container)}\" in the documents. Put an item in a group only when it is drawn inside it.");
             if (region is not null && drawn.Contains((call.Name, region.Number)))
                 return await Done(found.PluginId, "region-done", $"Refused: part {region.Number + 1} of the documents this tool is for already has a result from it.");
             using var doc = JsonDocument.Parse(input.ToJsonString());

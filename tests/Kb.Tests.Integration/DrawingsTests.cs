@@ -64,6 +64,7 @@ public sealed class DrawingsTests
     [InlineData("vnet-prod 10.50.8.0/22 [SQL MI]", true)] // three lines of one box
     [InlineData("vnet-prod / 10.50.8.0/22 / SQL MI", true)] // the line breaks given as separators, the brackets left out
     [InlineData("vnet-prod, SQL MI", false)] // a line left out between
+    [InlineData("vnet-prod, 10.50.8.0/22, [SQL MI]", true)] // a comma at the end of a word is a separator
     [InlineData("ExpressRoute (primary, BGP)", true)] // a line's label over two lines
     [InlineData("vnet-hub 10.50.0.0/22", true)] // on one line
     [InlineData("vnet-prod 10.50.16.0/22", false)] // the address of the next box
@@ -121,6 +122,7 @@ public sealed class DrawingsTests
     [InlineData("FS01 SQL01", "BKP01", null)] // in no box: stacked under it
     [InlineData("FS01 SQL01", "Entra ID / M365 / Intune", "Entra ID / M365 / Intune")] // in no box, and not under it
     [InlineData("Lab notes", "anything at all", null)] // a label in no drawing is left to the source check
+    [InlineData("FS01 SQL01", "FS01 SQL01", null)] // a detail that repeats its label
     public void ABoxsDetail_IsWrittenInThatBox(string label, string detail, string? refused)
     {
         var input = new System.Text.Json.Nodes.JsonObject
@@ -131,6 +133,29 @@ public sealed class DrawingsTests
             }),
         };
         Assert.Equal(refused, ImportTools.Misplaced(input, BoxSchema, Regions.Find(Wiki, ToolRegions.TextDrawing))?.Text);
+    }
+
+    private static readonly System.Text.Json.Nodes.JsonObject GroupSchema = System.Text.Json.Nodes.JsonNode.Parse("""
+        {"type":"object","properties":{
+          "groups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","format":"identifier"},"label":{"type":"string"}}}},
+          "boxes":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","format":"identifier"},"label":{"type":"string"},
+            "group":{"type":"string","format":"within"}}}}}}
+        """)!.AsObject();
+
+    [Theory]
+    [InlineData("FS01 SQL01", "hv01", "FS01 SQL01")] // seen in round 8: bracketed items below a box, put in a group made of that box
+    [InlineData("SQL MI", "prod", null)] // drawn inside the frame of its group
+    [InlineData("10.50.8.0/22", "prod", null)] // text of the frame itself
+    [InlineData("HV02", "prod", "HV02")] // a box elsewhere
+    [InlineData("FS01 SQL01", "bkp", null)] // a container in no box is not checked here
+    [InlineData("FS01 SQL01", "nobody", null)] // a name nothing declares is left to the plugin
+    public void AnItemInAGroup_IsDrawnInsideIt(string member, string group, string? refused)
+    {
+        var input = System.Text.Json.Nodes.JsonNode.Parse($$"""
+            {"groups":[{"id":"prod","label":"vnet-prod"}],
+             "boxes":[{"id":"hv01","label":"HV01"},{"id":"bkp","label":"BKP01"},{"id":"m","label":"{{member}}","group":"{{group}}"}]}
+            """);
+        Assert.Equal(refused, ImportTools.NotInside(input, GroupSchema, Regions.Find(Wiki, ToolRegions.TextDrawing))?.Member);
     }
 
     [Fact]

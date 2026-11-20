@@ -133,9 +133,10 @@ public static partial class Regions
         var words = Words(text);
         if (words.Length == 0) return null;
         Frame? first = null;
+        var column = 0;
         foreach (var d in regions)
             for (var i = 0; i < d.Lines.Count; i++)
-                if (Stack(d.Lines, i, words, 0, null, null, 0, ref fallback, ref first)) return d;
+                if (Stack(d.Lines, i, words, 0, null, null, 0, ref fallback, ref first, ref column)) return d;
         return null;
     }
 
@@ -146,7 +147,11 @@ public static partial class Regions
     /// Where <paramref name="text"/> is written, as <see cref="Locate(string, IReadOnlyList{Region}, out bool)"/> finds it: each region and
     /// line it starts on, with the enclosure its first part sits in, or null for none.
     /// </summary>
-    public static IEnumerable<(Region Region, Frame? Box)> Places(string text, IReadOnlyList<Region> regions)
+    public static IEnumerable<(Region Region, Frame? Box)> Places(string text, IReadOnlyList<Region> regions) =>
+        Starts(text, regions).Select(p => (p.Region, p.Box));
+
+    /// <summary>As <see cref="Places"/>, with the line and column where the text's first part starts.</summary>
+    public static IEnumerable<(Region Region, Frame? Box, int Line, int Column)> Starts(string text, IReadOnlyList<Region> regions)
     {
         ArgumentNullException.ThrowIfNull(regions);
         var words = Words(text);
@@ -155,20 +160,26 @@ public static partial class Regions
             for (var i = 0; i < d.Lines.Count; i++)
             {
                 // shortcut: one place for each line it starts on; a text written twice on one line counts once there.
-                var (fallback, first) = (false, (Frame?)null);
-                if (Stack(d.Lines, i, words, 0, null, null, 0, ref fallback, ref first)) yield return (d, first);
+                var (fallback, first, column) = (false, (Frame?)null, 0);
+                if (Stack(d.Lines, i, words, 0, null, null, 0, ref fallback, ref first, ref column)) yield return (d, first, i, column);
             }
     }
 
     // The words of a text, case and spaces aside; a word that is only separators or brackets ("/", ",", "[") is not a word.
+    // A separator at the end of a word ("(phys)," in "DC01 (phys), DC02 (vm)") is a separator, not part of the word.
     private static string[] Words(string? text) =>
-        [.. ImportTools.Normalize(text ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(w => w.Any(c => c is not ('/' or ',' or ';' or '[' or ']')))];
+        [.. ImportTools.Normalize(text ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(w => w.TrimEnd(',', ';'))
+            .Where(w => w.Any(c => c is not ('/' or ',' or ';' or '[' or ']')))];
 
     /// <summary>An enclosure of a region: the numbers of its top and bottom rule lines, and the columns of its sides.</summary>
-    public readonly record struct Frame(int Top, int Bottom, int Left, int Right);
+    public readonly record struct Frame(int Top, int Bottom, int Left, int Right)
+    {
+        /// <summary>Whether a place on a line lies inside the frame, between its rules and its sides.</summary>
+        public bool Holds(int line, int column) => line > Top && line < Bottom && column > Left && column < Right;
+    }
 
     private static bool Stack(IReadOnlyList<string> lines, int line, string[] words, int from, (int Start, int End)? above, Frame? box,
-        int parts, ref bool fallback, ref Frame? first)
+        int parts, ref bool fallback, ref Frame? first, ref int column)
     {
         if (from == words.Length) return true;
         if (line >= lines.Count || (box is null && parts == MaxParts) || (box is { } b && line >= b.Bottom)) return false;
@@ -184,11 +195,11 @@ public static partial class Regions
                 var here = Box(lines, line, m.Index, m.Index + m.Length);
                 // Every part in the enclosure of the first part, or, where the first is in none, no part in one.
                 if (parts > 0 && here != box) continue;
-                if (to == words.Length) { fallback = parts > 0 && box is null; if (parts == 0) first = here; return true; }
+                if (to == words.Length) { fallback = parts > 0 && box is null; if (parts == 0) (first, column) = (here, m.Index); return true; }
                 // The next part: on the next line, or one further when the next holds no letter or digit.
                 for (var next = line + 1; next <= line + 2 && next < lines.Count; next++)
                 {
-                    if (Stack(lines, next, words, to, (m.Index, m.Index + m.Length), here, parts + 1, ref fallback, ref first)) { if (parts == 0) first = here; return true; }
+                    if (Stack(lines, next, words, to, (m.Index, m.Index + m.Length), here, parts + 1, ref fallback, ref first, ref column)) { if (parts == 0) (first, column) = (here, m.Index); return true; }
                     if (lines[next].Any(char.IsLetterOrDigit)) break;
                 }
             }
