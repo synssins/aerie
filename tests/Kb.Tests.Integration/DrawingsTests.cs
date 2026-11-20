@@ -164,6 +164,7 @@ public sealed class DrawingsTests
     [InlineData("""{"groups":[{"id":"prod","label":"vnet-prod"}],"boxes":[{"id":"m","label":"SQL MI","group":"prod"}]}""", null)] // in its frame's group
     [InlineData("""{"groups":[],"boxes":[{"id":"v","label":"vnet-prod"},{"id":"m","label":"SQL MI"}]}""", "SQL MI")] // seen in round 10: beside its frame
     [InlineData("""{"groups":[],"boxes":[{"id":"h","label":"HV01"},{"id":"f","label":"FS01 SQL01"}]}""", null)] // below a box, not in it
+    [InlineData("""{"groups":[],"boxes":[{"id":"a","label":"10.50.8.0/22"},{"id":"m","label":"SQL MI"}]}""", null)] // seen in round 10: a sibling below another line of the same box
     [InlineData("""{"groups":[{"id":"g","label":"vnet-prod"}],"boxes":[{"id":"v","label":"vnet-prod"},{"id":"m","label":"SQL MI","group":"g"}]}""", null)] // seen in round 10: the frame declared as a box and as a group
     public void AnItemDrawnInAFrame_IsInThatFramesGroup(string json, string? refused) =>
         Assert.Equal(refused, ImportTools.NotInside(System.Text.Json.Nodes.JsonNode.Parse(json), GroupSchema, Regions.Find(Wiki, TestRegions.Drawing))?.Member);

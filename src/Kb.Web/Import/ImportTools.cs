@@ -21,7 +21,7 @@ public static partial class ImportTools
     /// repeats); the bytes of one call's input, the length of a tool's description and of its schema, the text
     /// inside its schema (property names, descriptions, choices) and how deep the schema nests.
     /// </summary>
-    public const int MaxToolCalls = 8, MaxRefused = 6, MaxInputBytes = 16 * 1024, MaxDescription = 300, MaxSchemaChars = 4000, MaxSchemaText = 1500, MaxDepth = 6,
+    public const int MaxToolCalls = 8, MaxRefused = 8, MaxInputBytes = 16 * 1024, MaxDescription = 300, MaxSchemaChars = 4000, MaxSchemaText = 1500, MaxDepth = 6,
         MaxPropertyDescription = 200, MaxChoice = 60;
 
     /// <summary>The input the app adds to every tool: the number of the draft's block the content goes after. The plugin never sees it.</summary>
@@ -252,7 +252,7 @@ public static partial class ImportTools
     /// checked here. Returns the first
     /// member and container labels that do not stand so, or null.
     /// </summary>
-    public static (string Member, string Container)? NotInside(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> regions)
+    public static (string Member, string Container, bool Frame)? NotInside(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> regions)
     {
         ArgumentNullException.ThrowIfNull(regions);
         var objects = new List<(string? Id, string? Label, List<string> Within, bool CanBeWithin)>();
@@ -295,12 +295,12 @@ public static partial class ImportTools
                     // A container whose name stands in no box (a heading at a rule) heads what is written below it: a member written only
                     // above every place of that name is not in it.
                     var places = Regions.Starts(member, regions).ToList();
-                    if (places.Count > 0 && !places.Any(m => at.Any(c => c.Region.Number == m.Region.Number && m.Line >= c.Line))) return (member, outer);
+                    if (places.Count > 0 && !places.Any(m => at.Any(c => c.Region.Number == m.Region.Number && m.Line >= c.Line))) return (member, outer, false);
                     continue;
                 }
                 var frames = at.Select(p => (p.Region.Number, Box: p.Box!.Value)).ToList();
                 if (!Regions.Starts(member, regions).Any(m => frames.Any(f => f.Number == m.Region.Number && (m.Box == f.Box || f.Box.Holds(m.Line, m.Column)))))
-                    return (member, outer);
+                    return (member, outer, false);
             }
         // An item drawn inside the box that holds another object's label, below that label, belongs in that object's group (a server in its
         // network's frame, not only in the frame around that one).
@@ -315,9 +315,10 @@ public static partial class ImportTools
                 // Naming the object, or another one of the same label (a frame declared both as a box and as a group), is right.
                 if (otherId is null || other is null || Normalize(other) == Normalize(member) || within.Contains(otherId)
                     || within.Any(w => labels.TryGetValue(w, out var named) && Normalize(named) == Normalize(other))) continue;
-                var holds = Regions.Starts(other, regions).Where(p => p.Box is not null).ToList();
+                // Only the frame's heading (its first line of text) names what the frame is; a text below it in the same box is a sibling.
+                var holds = Regions.Starts(other, regions).Where(p => p.Box is not null && p.Line == Heading(p.Region.Lines, p.Box!.Value)).ToList();
                 if (holds.Count > 0 && mine.All(m => holds.Any(h => h.Region.Number == m.Region.Number && h.Box == m.Box && h.Line < m.Line)))
-                    return (member, other);
+                    return (member, other, true);
             }
         }
         return null;
@@ -410,6 +411,17 @@ public static partial class ImportTools
                 foreach (var child in a) foreach (var x in Marked(child, schema["items"] as JsonObject ?? [], format)) yield return x;
                 break;
         }
+    }
+
+    // The first line inside a frame that holds a letter or digit between its sides, or -1.
+    private static int Heading(IReadOnlyList<string> lines, Regions.Frame f)
+    {
+        for (var l = f.Top + 1; l < f.Bottom; l++)
+        {
+            var s = lines[l];
+            for (var c = f.Left + 1; c < f.Right && c < s.Length; c++) if (char.IsLetterOrDigit(s[c])) return l;
+        }
+        return -1;
     }
 
     private static bool WithLabel(string label, string text, IReadOnlyList<Regions.Region> drawings)
@@ -626,8 +638,9 @@ public sealed partial class ImportService
                 return await Done(found.PluginId, "not-enclosed",
                     $"Refused: \"{Cut(free)}\" is written in no box in the documents, so it is not a box; text beside a line is that line's label.");
             if (regional && ImportTools.NotInside(input, schema, regions) is { } outside)
-                return await Done(found.PluginId, "not-inside",
-                    $"Refused: \"{Cut(outside.Member)}\" is not drawn inside \"{Cut(outside.Container)}\" in the documents. Put an item in a group only when it is drawn inside it.");
+                return await Done(found.PluginId, outside.Frame ? "in-frame" : "not-inside", outside.Frame
+                    ? $"Refused: \"{Cut(outside.Member)}\" is drawn inside the box headed \"{Cut(outside.Container)}\" in the documents. Make that a group, and put it in that group."
+                    : $"Refused: \"{Cut(outside.Member)}\" is not drawn inside \"{Cut(outside.Container)}\" in the documents. Put an item in a group only when it is drawn inside it.");
             if (region is not null && drawn.Contains((call.Name, region.Number)))
                 return await Done(found.PluginId, "region-done", $"Refused: part {region.Number + 1} of the documents this tool is for already has a result from it.");
             using var doc = JsonDocument.Parse(input.ToJsonString());
