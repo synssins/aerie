@@ -359,8 +359,10 @@ public sealed class ImportToolTests : IAsyncLifetime
     {
         await ImportAsync();
         var drafting = _model.Requests.First(r => r["tools"] is null);
-        Assert.Contains("A drawing made of text characters (boxes, lines, arrows) goes in one code block, exactly as written.",
-            drafting["messages"]![0]!["content"]!.GetValue<string>(), StringComparison.Ordinal);
+        var task = drafting["messages"]![0]!["content"]!.GetValue<string>();
+        Assert.Contains("A picture drawn with text characters (boxes and lines made of dashes, bars and pluses, meant to be read by eye) goes in one code block, exactly as written.",
+            task, StringComparison.Ordinal);
+        Assert.Contains("markup, XML, HTML and diagram code (such as draw.io or Mermaid) are not pictures", task, StringComparison.Ordinal);
     }
 
     [Fact]

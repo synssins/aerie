@@ -165,9 +165,12 @@ public static partial class ImportTools
     /// normalized) nor written in one of the <paramref name="drawings"/> (<see cref="Drawings.Locate"/>: on one line, or stacked inside one
     /// box), or null when all are. A string the schema limits to choices (enum) is the schema's, not the model's, and is not checked; nor
     /// is a string shorter than <see cref="MinGrounded"/>. A string marked <c>"format": "identifier"</c> is not checked against the source,
-    /// but must be 1 to 32 letters, digits, dots, hyphens or underscores; one that is not is returned.
+    /// but must be 1 to 32 letters, digits, dots, hyphens or underscores; one that is not is returned. A string found stacked outside any
+    /// box (the fallback of <see cref="Drawings.Locate(string, IReadOnlyList{Drawings.Drawing}, out bool)"/>) is added to
+    /// <paramref name="fallbacks"/>.
     /// </summary>
-    public static string? Ungrounded(JsonNode? input, JsonObject schema, string source, IReadOnlyList<Drawings.Drawing>? drawings = null)
+    public static string? Ungrounded(JsonNode? input, JsonObject schema, string source, IReadOnlyList<Drawings.Drawing>? drawings = null,
+        ICollection<string>? fallbacks = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         foreach (var (text, kind) in Strings(input, schema))
@@ -176,7 +179,7 @@ public static partial class ImportTools
             if (kind == StringKind.Identifier) { if (!Identifier().IsMatch(text)) return text; continue; }
             var n = Normalize(text);
             if (n.Length < MinGrounded || source.Contains(n, StringComparison.Ordinal)) continue;
-            if (drawings is { Count: > 0 } && Drawings.Locate(text, drawings) is not null) continue;
+            if (drawings is { Count: > 0 } && Drawings.Locate(text, drawings, out var fallback) is not null) { if (fallback) fallbacks?.Add(text); continue; }
             return text;
         }
         return null;
@@ -313,7 +316,10 @@ public sealed partial class ImportService
             // A drawing tool is held to one call for each drawing instead of one for each block: two drawings drafted into one block get two.
             if (made.Contains((call.Name, same)) || (!found.Tool.Drawing && places.Contains((call.Name, after))))
                 return await Done(found.PluginId, "repeat", "Refused as a repeat: this tool was already called with this input, or after this block.");
-            if (ImportTools.Ungrounded(input, schema, grounds, drawings) is { } loose)
+            var fallbacks = new List<string>();
+            var loose = ImportTools.Ungrounded(input, schema, grounds, drawings, fallbacks);
+            foreach (var f in fallbacks) log.LogInformation("Import tools for {Item}: a stacked label was found outside any box (the 4-line fallback): {Text}", item.Id, f);
+            if (loose is not null)
                 return await Done(found.PluginId, "not-in-source",
                     $"Refused: the input holds text that is not in the documents or the draft: \"{(loose.Length > 60 ? loose[..60] + "..." : loose)}\". Use only text as the documents write it.");
             var drawing = found.Tool.Drawing ? ImportTools.DrawingOf(input, schema, drawings) : null;

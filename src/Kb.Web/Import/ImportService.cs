@@ -330,7 +330,8 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         "Bring the documents in the data into this knowledge base as standardized page(s). Keep every fact, value, command and step exactly; " +
         "do not add, invent or drop information. Use headings for sections, \"steps\" blocks for numbered procedures, \"bullets\" for lists, " +
         "\"code\" for commands, scripts and configuration, \"table\" for tabular data (first row is the header), \"note\" for warnings. " +
-        "A drawing made of text characters (boxes, lines, arrows) goes in one code block, exactly as written. " +
+        "A picture drawn with text characters (boxes and lines made of dashes, bars and pluses, meant to be read by eye) goes in one code block, exactly as written. " +
+        "This is only for such pictures: markup, XML, HTML and diagram code (such as draw.io or Mermaid) are not pictures and are drafted as before. " +
         "Place each picture listed under \"images\" as an \"image\" block (its file name in \"image\") at the step it belongs to; write in its \"text\" a short description of what the picture shows. " +
         "Use one page unless the documents clearly cover separate topics. " +
         "Suggest up to 8 short lower-case topic tags. In \"apps\" name the applications the content is about, using the exact names from \"inventory\" when one matches, " +

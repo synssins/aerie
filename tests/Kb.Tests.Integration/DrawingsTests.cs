@@ -66,9 +66,20 @@ public sealed class DrawingsTests
     [Fact]
     public void AStack_HasItsBound()
     {
-        var tall = Drawings.Find("+----+\n| a1 |\n| b2 |\n| c3 |\n| d4 |\n| e5 |\n+----+");
-        Assert.NotNull(Drawings.Locate("a1 b2 c3 d4", tall)); // four parts
-        Assert.Null(Drawings.Locate("a1 b2 c3 d4 e5", tall)); // five are too many
+        // Inside a box, the box is the bound: all its lines, and no line across its rule.
+        var tall = Drawings.Find("+----+\n| a1 |\n| b2 |\n| c3 |\n| d4 |\n| e5 |\n+----+\n| f6 |\n+----+");
+        Assert.NotNull(Drawings.Locate("a1 b2 c3 d4 e5", tall, out var fallback)); // five parts in one box
+        Assert.False(fallback);
+        Assert.Null(Drawings.Locate("d4 e5 f6", tall)); // across the rule between two boxes
+        // Outside any box (a line's label), at most four lines, and the fallback says so.
+        var loose = Drawings.Find("+--+\n|  |\n+--+\n |  a1\n |  b2\n |  c3\n |  d4\n |  e5\n+--+\n|  |\n+--+");
+        Assert.NotNull(Drawings.Locate("a1 b2 c3 d4", loose, out fallback)); // four parts
+        Assert.True(fallback);
+        Assert.Null(Drawings.Locate("a1 b2 c3 d4 e5", loose)); // five are too many
+        Assert.NotNull(Drawings.Locate("ExpressRoute (primary, BGP)", Drawings.Find(Hub), out fallback));
+        Assert.True(fallback);
+        Assert.NotNull(Drawings.Locate("vnet-prod 10.50.8.0/22", Drawings.Find(Hub), out fallback));
+        Assert.False(fallback);
         var apart = Drawings.Find("+--------------+\n| alpha        |\n|        beta  |\n+--------------+");
         Assert.Null(Drawings.Locate("alpha beta", apart)); // not under one another
         Assert.Null(Drawings.Locate("vm", Drawings.Find("+------+\n| vmware |\n+------+"))); // not inside a longer word
