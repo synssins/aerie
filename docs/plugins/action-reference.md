@@ -5310,7 +5310,7 @@ Enum: `Folder`, `Page`.
       "description": "text",
       "inputSchema": "text",
       "notOffered": "text",
-      "drawing": false
+      "regions": false
     }
   ]
 }
@@ -5601,7 +5601,7 @@ Enum: `Enabled`, `Disabled`, `DisabledByCore`.
 | description | `string` |
 | inputSchema | `string` |
 | notOffered | `string?` |
-| drawing | `bool` |
+| regions | `bool` |
 
 ```json
 {
@@ -5609,7 +5609,7 @@ Enum: `Enabled`, `Disabled`, `DisabledByCore`.
   "description": "text",
   "inputSchema": "text",
   "notOffered": "text",
-  "drawing": false
+  "regions": false
 }
 ```
 
