@@ -255,7 +255,7 @@ public static partial class ImportTools
     public static (string Member, string Container)? NotInside(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> regions)
     {
         ArgumentNullException.ThrowIfNull(regions);
-        var objects = new List<(string? Id, string? Label, List<string> Within)>();
+        var objects = new List<(string? Id, string? Label, List<string> Within, bool CanBeWithin)>();
         void Walk(JsonNode? node, JsonObject s)
         {
             switch (node)
@@ -264,6 +264,7 @@ public static partial class ImportTools
                     var props = s["properties"] as JsonObject ?? [];
                     string? id = null, label = null;
                     var within = new List<string>();
+                    var canBeWithin = props.Any(q => q.Value is JsonObject qs && qs["format"]?.GetValue<string>() == "within");
                     foreach (var (key, ps) in props)
                     {
                         if (o[key] is not JsonValue v || v.GetValueKind() != JsonValueKind.String || ps is not JsonObject p) continue;
@@ -272,7 +273,7 @@ public static partial class ImportTools
                         else if (format == "within") within.Add(v.GetValue<string>());
                         else if (p["enum"] is null) label ??= v.GetValue<string>().Split('\n')[0];
                     }
-                    if (id is not null || within.Count > 0) objects.Add((id, label, within));
+                    if (id is not null || within.Count > 0) objects.Add((id, label, within, canBeWithin));
                     foreach (var (key, child) in o) if (child is JsonObject or JsonArray) Walk(child, props[key] as JsonObject ?? []);
                     break;
                 case JsonArray a:
@@ -282,7 +283,7 @@ public static partial class ImportTools
         }
         Walk(input, schema);
         var labels = objects.Where(o => o.Id is not null && o.Label is not null).GroupBy(o => o.Id!).ToDictionary(g => g.Key, g => g.First().Label!);
-        foreach (var (_, member, within) in objects)
+        foreach (var (_, member, within, _) in objects)
             foreach (var container in within)
             {
                 if (member is null || Normalize(member).Length < MinGrounded || !labels.TryGetValue(container, out var outer)) continue;
@@ -301,6 +302,21 @@ public static partial class ImportTools
                 if (!Regions.Starts(member, regions).Any(m => frames.Any(f => f.Number == m.Region.Number && (m.Box == f.Box || f.Box.Holds(m.Line, m.Column)))))
                     return (member, outer);
             }
+        // An item drawn inside the box that holds another object's label, below that label, belongs in that object's group (a server in its
+        // network's frame, not only in the frame around that one).
+        foreach (var (_, member, within, canBeWithin) in objects)
+        {
+            if (!canBeWithin || member is null || Normalize(member).Length < MinGrounded) continue;
+            var mine = Regions.Starts(member, regions).Where(p => p.Box is not null).ToList();
+            if (mine.Count == 0) continue;
+            foreach (var (otherId, other, _, _) in objects)
+            {
+                if (otherId is null || other is null || Normalize(other) == Normalize(member) || within.Contains(otherId)) continue;
+                var holds = Regions.Starts(other, regions).Where(p => p.Box is not null).ToList();
+                if (holds.Count > 0 && mine.All(m => holds.Any(h => h.Region.Number == m.Region.Number && h.Box == m.Box && h.Line < m.Line)))
+                    return (member, other);
+            }
+        }
         return null;
     }
 
@@ -317,7 +333,7 @@ public static partial class ImportTools
             if (Normalize(text).Length < MinGrounded) continue;
             var at = Regions.Starts(text, regions).ToList();
             if (at.Count == 0) continue;
-            if (at.Any(p => p.Box is not null || Bracketed(p.Region.Lines[p.Line], p.Column))) continue;
+            if (at.Any(p => p.Box is not null || Bracketed(p.Region.Lines[p.Line], p.Column) || Joined(p.Region.Lines[p.Line], p.Column, text.Length))) continue;
             if (at.Any(p => p.Region.Lines.Any(l => Corner().IsMatch(l)))) return text;
         }
         return null;
@@ -325,6 +341,22 @@ public static partial class ImportTools
 
     [GeneratedRegex(@"\+[-=~_]|[-=~_]\+|[┌-╋]")]
     private static partial Regex Corner();
+
+    // Whether the text that starts at a column is an end of a line drawn across: a run of two or more dashes, equals or tildes (with or
+    // without an arrow head) right before it, or right after it ("|---- Entra ID / M365 / Intune"). A line's label stands beside a line
+    // with spaces, not joined to it.
+    private static bool Joined(string line, int column, int length)
+    {
+        var before = line[..column].TrimEnd();
+        var after = column + length <= line.Length ? line[(column + length)..].TrimStart() : "";
+        return ConnectorEnd().IsMatch(before) || ConnectorStart().IsMatch(after);
+    }
+
+    [GeneratedRegex(@"[-=~]{2,}>?$")]
+    private static partial Regex ConnectorEnd();
+
+    [GeneratedRegex(@"^<?[-=~]{2,}")]
+    private static partial Regex ConnectorStart();
 
     // Whether the text that starts at a column stands between a "[" before it and a "]" after it, on its line.
     private static bool Bracketed(string line, int column)

@@ -160,6 +160,13 @@ public sealed class DrawingsTests
         Assert.Equal(refused, ImportTools.NotInside(input, GroupSchema, Regions.Find(Wiki, TestRegions.Drawing))?.Member);
     }
 
+    [Theory]
+    [InlineData("""{"groups":[{"id":"prod","label":"vnet-prod"}],"boxes":[{"id":"m","label":"SQL MI","group":"prod"}]}""", null)] // in its frame's group
+    [InlineData("""{"groups":[],"boxes":[{"id":"v","label":"vnet-prod"},{"id":"m","label":"SQL MI"}]}""", "SQL MI")] // seen in round 10: beside its frame
+    [InlineData("""{"groups":[],"boxes":[{"id":"h","label":"HV01"},{"id":"f","label":"FS01 SQL01"}]}""", null)] // below a box, not in it
+    public void AnItemDrawnInAFrame_IsInThatFramesGroup(string json, string? refused) =>
+        Assert.Equal(refused, ImportTools.NotInside(System.Text.Json.Nodes.JsonNode.Parse(json), GroupSchema, Regions.Find(Wiki, TestRegions.Drawing))?.Member);
+
     [Fact]
     public void AGroup_WrittenAlsoWhereNoBoxHoldsIt_IsNotChecked()
     {
@@ -184,12 +191,17 @@ public sealed class DrawingsTests
     [Theory]
     [InlineData("HV01", null)] // in its box
     [InlineData("FS01 SQL01", null)] // between brackets
-    [InlineData("Entra ID / M365 / Intune", "Entra ID / M365 / Intune")] // beside a line, in no box
+    [InlineData("Entra ID / M365 / Intune", null)] // seen in round 10: the end of a line drawn across ("|---- Entra ID"), a box of its own
     public void ABoxsLabel_StandsInABox(string label, string? refused)
     {
         var input = System.Text.Json.Nodes.JsonNode.Parse($$"""{"boxes":[{"label":"{{label}}"}]}""");
         Assert.Equal(refused, ImportTools.NotEnclosed(input, EnclosedSchema, Regions.Find(Wiki, TestRegions.Drawing)));
     }
+
+    [Fact]
+    public void ALinesLabel_BesideALine_IsNoBox() =>
+        Assert.Equal("ExpressRoute", ImportTools.NotEnclosed(System.Text.Json.Nodes.JsonNode.Parse("""{"boxes":[{"label":"ExpressRoute"}]}"""), EnclosedSchema,
+            Regions.Find(Hub, TestRegions.Drawing)));
 
     [Fact]
     public void ABoxsLabel_InAChainOfBareNames_IsNotChecked() =>
