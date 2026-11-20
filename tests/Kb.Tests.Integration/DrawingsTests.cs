@@ -160,6 +160,14 @@ public sealed class DrawingsTests
     public void AGroupNamed_IsDeclared(string json, string undeclared) =>
         Assert.Equal(undeclared, string.Join(",", ImportTools.Undeclared(System.Text.Json.Nodes.JsonNode.Parse(json), GroupSchema)));
 
+    [Theory]
+    [InlineData("HV01", "FS01 SQL01", true)] // under the box, outside it
+    [InlineData("vnet-prod", "10.50.8.0/22", false)] // inside the same box: its detail, not a title
+    [InlineData("FW01 (edge)", "SQL MI", false)] // in another box
+    [InlineData("INTERNET", "Entra ID / M365 / Intune", false)] // at the end of a line
+    public void AText_CouldBeATitle_OnlyBesideItsBox(string label, string text, bool could) =>
+        Assert.Equal(could, ImportTools.CouldBeTitle(label, text, Regions.Find(Wiki, TestRegions.Drawing)));
+
     [Fact]
     public void TheFieldForATitle_IsNamedByItsFormat()
     {
@@ -196,6 +204,7 @@ public sealed class DrawingsTests
     [InlineData("""{"groups":[{"id":"prod","label":"vnet-prod"}],"boxes":[{"id":"m","label":"SQL MI","group":"prod"}]}""", null)] // in its frame's group
     [InlineData("""{"groups":[],"boxes":[{"id":"v","label":"vnet-prod"},{"id":"m","label":"SQL MI"}]}""", "SQL MI")] // seen in round 10: beside its frame
     [InlineData("""{"groups":[],"boxes":[{"id":"h","label":"HV01"},{"id":"f","label":"FS01 SQL01"}]}""", null)] // below a box, not in it
+    [InlineData("""{"groups":[],"boxes":[{"id":"p","label":"|"},{"id":"m","label":"SQL MI"}]}""", null)] // seen in round 11: a bar is no heading
     [InlineData("""{"groups":[],"boxes":[{"id":"a","label":"10.50.8.0/22"},{"id":"m","label":"SQL MI"}]}""", null)] // seen in round 10: a sibling below another line of the same box
     [InlineData("""{"groups":[{"id":"g","label":"vnet-prod"}],"boxes":[{"id":"v","label":"vnet-prod"},{"id":"m","label":"SQL MI","group":"g"}]}""", null)] // seen in round 10: the frame declared as a box and as a group
     public void AnItemDrawnInAFrame_IsInThatFramesGroup(string json, string? refused) =>

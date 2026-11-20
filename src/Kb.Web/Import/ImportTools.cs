@@ -319,7 +319,7 @@ public static partial class ImportTools
             foreach (var (otherId, other, _, _) in objects)
             {
                 // Naming the object, or another one of the same label (a frame declared both as a box and as a group), is right.
-                if (otherId is null || other is null || Normalize(other) == Normalize(member) || within.Contains(otherId)
+                if (otherId is null || other is null || Normalize(other).Length < MinGrounded || Normalize(other) == Normalize(member) || within.Contains(otherId)
                     || within.Any(w => labels.TryGetValue(w, out var named) && Normalize(named) == Normalize(other))) continue;
                 // Only the frame's heading (its first line of text) names what the frame is; a text below it in the same box is a sibling.
                 var holds = Regions.Starts(other, regions).Where(p => p.Box is not null && p.Line == Heading(p.Region.Lines, p.Box!.Value)).ToList();
@@ -485,6 +485,10 @@ public static partial class ImportTools
 
     /// <summary>How many lines above or below its object's box (or its label, where no box holds it) a title may be written.</summary>
     public const int BesideLines = 3;
+
+    /// <summary>Whether a text would stand as the title of the object with this label: written near it, not at the end of a line.</summary>
+    public static bool CouldBeTitle(string label, string text, IReadOnlyList<Regions.Region> drawings) =>
+        Regions.Starts(label, drawings).Any() && Regions.Starts(text, drawings).Any(q => q.Box is null) && Near(label, text, drawings);
 
     // A title stands near its label: in the same region, on a line from BesideLines above the label's box to BesideLines below it.
     private static bool Near(string label, string text, IReadOnlyList<Regions.Region> drawings)
@@ -712,7 +716,8 @@ public sealed partial class ImportService
                 return await Done(found.PluginId, "no-region", "Refused: the input is about none of the parts of the documents this tool is for. Use the text as they write it.");
             if (apart.Count > 0)
                 return await Done(found.PluginId, "not-in-box",
-                    $"Refused: {string.Join("; ", apart.Select(m => Apart(m, regions)))} in the documents. Give each item only the text written with it." + Beside(" Text written beside an item, outside it, is that item's {0}."));
+                    $"Refused: {string.Join("; ", apart.Select(m => Apart(m, regions)))} in the documents. Give each item only the text written with it." +
+                    (apart.Any(m => !m.Beside && ImportTools.CouldBeTitle(m.Label, m.Text, regions)) ? Beside(" Text written beside an item, outside it, is that item's {0}.") : ""));
             if (regional && ImportTools.Undeclared(input, schema) is { Count: > 0 } undeclared)
                 return await Done(found.PluginId, "undeclared",
                     $"Refused: the input names {string.Join(", ", undeclared.Select(u => $"\"{Cut(u)}\""))} as what an item is drawn inside, but declares no object with that id. Declare each one, or leave it out.");
