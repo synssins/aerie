@@ -204,6 +204,25 @@ public sealed class DrawingsTests
         if (found is not null) Assert.True(found.Value.Optional); // GroupSchema requires no label
     }
 
+    private static readonly System.Text.Json.Nodes.JsonObject BoxesAndGroupsSchema = System.Text.Json.Nodes.JsonNode.Parse("""
+        {"type":"object","properties":{
+          "groups":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","format":"identifier"},"label":{"type":"string"}}}},
+          "boxes":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","format":"identifier"},"label":{"type":"string","format":"enclosed"},
+            "group":{"type":"string","format":"within"}}}}}}
+        """)!.AsObject();
+
+    [Theory]
+    [InlineData("""{"groups":[{"id":"g","label":"vnet-prod"}],"boxes":[{"id":"m","label":"SQL MI","group":"g"}]}""", null)]
+    [InlineData("""{"groups":[{"id":"g","label":"SQL MI"}],"boxes":[]}""", "SQL MI")] // seen in round 11: a bracketed item made a frame
+    [InlineData("""{"groups":[{"id":"g","label":"[KV]"}],"boxes":[]}""", "[KV]")]
+    public void AnItemInBrackets_IsABox(string json, string? refused)
+    {
+        var found = ImportTools.BracketedElsewhere(System.Text.Json.Nodes.JsonNode.Parse(json), BoxesAndGroupsSchema, Regions.Find(Wiki, TestRegions.Drawing));
+        Assert.Equal(refused, found?.Label);
+        if (found is not null) Assert.Equal("boxes", found.Value.Boxes);
+        Assert.Null(ImportTools.BracketedElsewhere(System.Text.Json.Nodes.JsonNode.Parse(json), GroupSchema, Regions.Find(Wiki, TestRegions.Drawing))); // no box label marked
+    }
+
     [Fact]
     public void TheFieldForATitle_IsNamedByItsFormat()
     {

@@ -398,6 +398,54 @@ public static partial class ImportTools
         return null;
     }
 
+    /// <summary>
+    /// For a region tool whose schema has a box's label (a string marked <c>"format": "enclosed"</c>): the first label of an object of
+    /// another kind (such as a group) that the regions write as an item in brackets, which is a box; with the name of the array whose
+    /// items carry the enclosed label (such as "boxes"). Null when there is none.
+    /// </summary>
+    public static (string Label, string Boxes)? BracketedElsewhere(JsonNode? input, JsonObject schema, IReadOnlyList<Regions.Region> regions)
+    {
+        ArgumentNullException.ThrowIfNull(regions);
+        if (EnclosedArray(schema) is not { } boxes) return null;
+        var items = regions.SelectMany(r => r.Lines).SelectMany(l => BracketItem().Matches(l).Select(m => Normalize(m.Groups[1].Value)))
+            .Where(i => i.Length > 0).ToHashSet();
+        if (items.Count == 0) return null;
+        (string, string)? found = null;
+        void Walk(JsonNode? node, JsonObject s)
+        {
+            if (found is not null) return;
+            switch (node)
+            {
+                case JsonObject o:
+                    var props = s["properties"] as JsonObject ?? [];
+                    var hasId = props.Any(p => o[p.Key] is JsonValue && p.Value is JsonObject ps && ps["format"]?.GetValue<string>() == "identifier");
+                    if (hasId && LabelKey(props) is { } key && props[key]?["format"]?.GetValue<string>() != "enclosed" && o[key] is JsonValue v
+                        && v.GetValueKind() == JsonValueKind.String && items.Contains(Normalize(v.GetValue<string>().Replace('[', ' ').Replace(']', ' '))))
+                    { found = (v.GetValue<string>(), boxes); return; }
+                    foreach (var (k, child) in o) if (child is JsonObject or JsonArray) Walk(child, props[k] as JsonObject ?? []);
+                    break;
+                case JsonArray a:
+                    foreach (var child in a) Walk(child, s["items"] as JsonObject ?? []);
+                    break;
+            }
+        }
+        Walk(input, schema);
+        return found;
+    }
+
+    // The name of the first array property whose items have a label marked "enclosed" (the boxes), or null.
+    private static string? EnclosedArray(JsonObject schema)
+    {
+        foreach (var (key, value) in schema["properties"] as JsonObject ?? [])
+        {
+            if (value is not JsonObject p) continue;
+            if (p["items"] is JsonObject items && (items["properties"] as JsonObject)?.Any(q => q.Value?["format"]?.GetValue<string>() == "enclosed") == true) return key;
+            if (EnclosedArray(p) is { } inner) return inner;
+            if (p["items"] is JsonObject it && EnclosedArray(it) is { } deeper) return deeper;
+        }
+        return null;
+    }
+
     /// <summary>Whether a text stands, everywhere the regions write it outside a box, at the end of a line drawn across (joined to it).</summary>
     public static bool AtLineEnd(string text, IReadOnlyList<Regions.Region> regions)
     {
@@ -770,6 +818,9 @@ public sealed partial class ImportService
                 return await Done(found.PluginId, "not-drawn",
                     $"Refused: \"{Cut(prose.Label)}\" is not written in the drawing, so it is not an item of it. Draw only what the drawing shows." +
                     (prose.Optional ? " Leave out the label of an item that has no words in the drawing, such as an empty frame." : ""));
+            if (regional && ImportTools.BracketedElsewhere(input, schema, regions) is { } bracketed)
+                return await Done(found.PluginId, "bracketed",
+                    $"Refused: \"{Cut(bracketed.Label)}\" is written in brackets in the documents, so it is an item of \"{bracketed.Boxes}\", not of another kind.");
             if (regional && ImportTools.Undeclared(input, schema) is { Count: > 0 } undeclared)
                 return await Done(found.PluginId, "undeclared",
                     $"Refused: the input names {string.Join(", ", undeclared.Select(u => $"\"{Cut(u)}\""))} as what an item is drawn inside, but declares no object with that id. Declare each one, or leave it out.");
