@@ -125,6 +125,26 @@ public static partial class ImportTools
         return null;
     }
 
+    /// <summary>
+    /// JSON the model wrote, parsed and read through once, or null when it is not JSON. A key written twice in one object throws only
+    /// when the object is first read (ArgumentException), so reading it all here turns that into "not JSON" instead of a failed import.
+    /// </summary>
+    public static JsonNode? ParseModelJson(string text)
+    {
+        try
+        {
+            var node = JsonNode.Parse(text);
+            Touch(node);
+            return node;
+        }
+        catch (Exception e) when (e is JsonException or ArgumentException) { return null; }
+        static void Touch(JsonNode? n)
+        {
+            if (n is JsonObject o) foreach (var (_, v) in o) Touch(v);
+            else if (n is JsonArray a) foreach (var v in a) Touch(v);
+        }
+    }
+
     /// <summary>The shortest string the source check applies to, after spaces are collapsed. Shorter ones carry no text of their own.</summary>
     public const int MinGrounded = 3;
 
@@ -780,8 +800,7 @@ public sealed partial class ImportService
             if (tools.FirstOrDefault(t => t.Tool.Name == call.Name) is not { Tool: not null } found) return await Done("", "unknown-tool", "Refused: there is no tool of that name.");
             if (bytes > ImportTools.MaxInputBytes) return await Done(found.PluginId, "too-large", $"Refused: the input is larger than {ImportTools.MaxInputBytes / 1024} KB.");
             JsonObject? input;
-            try { input = JsonNode.Parse(call.Arguments) as JsonObject; }
-            catch (JsonException) { input = null; }
+            input = ImportTools.ParseModelJson(call.Arguments) as JsonObject;
             if (input is null) return await Done(found.PluginId, "not-json", "Refused: the input is not a JSON object.");
             if (input[ImportTools.Place] is not JsonValue pv || !pv.TryGetValue<int>(out var after) || after < 1 || after > at.Count)
                 return await Done(found.PluginId, "no-block", $"Refused: {ImportTools.Place} must be the number of a block of the draft, 1 to {at.Count}.");

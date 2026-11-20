@@ -334,8 +334,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         JsonObject? root;
         var (from, to) = (content.IndexOf('{', StringComparison.Ordinal), content.LastIndexOf('}'));
         if (from < 0 || to < from) return null;
-        try { root = JsonNode.Parse(content[from..(to + 1)]) as JsonObject; }
-        catch (JsonException) { return null; }
+        root = ImportTools.ParseModelJson(content[from..(to + 1)]) as JsonObject;
         if (root?["pages"] is not JsonArray { Count: > 0 } pages || pages[0] is not JsonObject first || schema["properties"] is not JsonObject top) return null;
         var moved = false;
         foreach (var key in top.Select(p => p.Key).Where(k => k != "pages" && !root.ContainsKey(k) && first.ContainsKey(k)).ToList())

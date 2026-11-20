@@ -179,8 +179,7 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
             inTokens += answer?["usage"]?["prompt_tokens"]?.GetValue<int>() ?? 0;
             outTokens += answer?["usage"]?["completion_tokens"]?.GetValue<int>() ?? 0;
             model = answer?["model"]?.GetValue<string>() ?? s.Model;
-            try { output = JsonNode.Parse(StripFence(content)); }
-            catch (JsonException) { output = null; }
+            output = Kb.Web.Import.ImportTools.ParseModelJson(StripFence(content));
             cutOff = answer?["choices"]?[0]?["finish_reason"]?.GetValue<string>() == "length";
             if (attempt > 0 || output is null || cutOff || AiGuard.SchemaError(output, schema) is not { } miss || salvage?.Invoke(content) is not null) break;
             await AuditAsync(actor, feature, "retry", inTokens, outTokens, took, miss);

@@ -447,6 +447,12 @@ public sealed class ImportToolTests : IAsyncLifetime
         Assert.Equal("Refused by the tool: $.lines[0].to (\"sw1\") refers to the item it belongs to. Leave it out, or name another.",
             ImportTools.Refused(ImportToolRefusal.SelfReference, "$.lines[0].to", JsonNode.Parse("""{"lines": [{"from": "sw1", "to": "sw1"}]}""")));
 
+    [Theory]
+    [InlineData("""{"boxes": [], "after_block": 4, "after_block": 4}""")] // seen in round 11: a key written twice failed the import
+    [InlineData("""{"boxes": [{"id": "a", "id": "b"}]}""")]
+    [InlineData("""not json""")]
+    public void ModelJson_ThatIsNotSound_IsNotJson(string text) => Assert.Null(ImportTools.ParseModelJson(text));
+
     [Fact]
     public void TooLittle_NamesThePlaceTheToolGave()
     {
