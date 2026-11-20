@@ -479,11 +479,11 @@ public sealed partial class ImportService
     /// passed to the plugin with only its input, and audited; what the plugin answers is checked as a contribution and placed after the
     /// block the model named. The model gets only the app's own reply. A model or server that cannot call tools leaves the draft as it is.
     /// </summary>
-    /// <returns>The nodes the tools added, each with the plugin and tool that added it; empty when none.</returns>
-    private async Task<List<(JsonNode Node, string PluginId, string Tool)>> ToolsAsync(ImportItem item, Actor actor, string source, List<JsonObject> pages,
+    /// <returns>The nodes the tools added, each with the plugin and tool that added it and the block it was put after; empty when none.</returns>
+    private async Task<List<(JsonNode Node, string PluginId, string Tool, JsonNode? After)>> ToolsAsync(ImportItem item, Actor actor, string source, List<JsonObject> pages,
         List<JsonArray> contents, List<string> warnings, CancellationToken ct)
     {
-        var added = new List<(JsonNode Node, string PluginId, string Tool)>();
+        var added = new List<(JsonNode Node, string PluginId, string Tool, JsonNode? After)>();
         var tools = new List<(string PluginId, ImportToolReg Tool)>();
         foreach (var (pluginId, tool) in contributors.Tools)
         {
@@ -595,8 +595,9 @@ public sealed partial class ImportService
         foreach (var g in placed.Select((x, order) => (x, order)).GroupBy(x => (x.x.Page, x.x.Index)).OrderByDescending(g => g.Key.Page).ThenByDescending(g => g.Key.Index))
         {
             var content = contents[g.Key.Page];
+            var after = content[g.Key.Index];
             var at2 = g.Key.Index + 1;
-            foreach (var n in g.OrderBy(x => x.order).SelectMany(x => x.x.Nodes)) { content.Insert(at2++, n); added.Add((n, by[n].PluginId, by[n].Tool)); }
+            foreach (var n in g.OrderBy(x => x.order).SelectMany(x => x.x.Nodes)) { content.Insert(at2++, n); added.Add((n, by[n].PluginId, by[n].Tool, after)); }
         }
         foreach (var o in outcomes.Where(o => o.Result == "done"))
             warnings.Add($"{contributors.PluginName(o.PluginId)} added {o.Nodes} block{(o.Nodes == 1 ? "" : "s")} through its tool {o.Tool}.");

@@ -596,8 +596,10 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         }
         // 0.11.0 (draft): the tools first, so the draft contributors see what the tools added (ImportDraft.ToolBlocks) and need not make it again.
         var tooled = actor is not null ? await ToolsAsync(item, actor, source, pages, contents, warnings, ct) : [];
-        IReadOnlyList<DraftToolBlock> ToolBlocks() => [.. tooled.SelectMany(t => contents.Select((c, page) => (page, index: c.IndexOf(t.Node)))
-            .Where(x => x.index >= 0).Select(x => new DraftToolBlock(x.page, x.index, t.PluginId, t.Tool)))];
+        // Counted from the nodes themselves for each contributor, so blocks an earlier contributor added do not throw the numbers off.
+        IReadOnlyList<DraftToolBlock> ToolBlocks() => [.. tooled.SelectMany(t => contents.Select((c, page) => (page, index: c.IndexOf(t.Node), c))
+            .Where(x => x.index >= 0)
+            .Select(x => new DraftToolBlock(x.page, x.index, t.PluginId, t.Tool) { After = t.After is null ? -1 : x.c.IndexOf(t.After) }))];
         var pictures = contributors.AnyDraft && actor is not null ? await DiagramsAsync(actor, sent ?? [], pages, warnings, ct) : [];
         foreach (var c in await contributors.RunDraftAsync(item, () => [.. pages.Select(p => new DraftPage(p["title"]!.GetValue<string>(), p["doc"]!.ToJsonString()))],
             [.. read.Select(f => f.Path)], c => ImportContributors.Place(contents, c.Additions), ct, pictures, ToolBlocks))

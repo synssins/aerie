@@ -92,9 +92,17 @@ public sealed record ImportDraft(Guid ImportItemId, IReadOnlyList<DraftPage> Pag
 
 /// <summary>
 /// 0.11.0 (draft). One block an import tool added: <paramref name="Page"/> (0 is the first) and <paramref name="Block"/> (its index among
-/// the page's top-level blocks, as <see cref="ImportDraft.Pages"/> gives them), the plugin and the name of the tool.
+/// the page's top-level blocks, as <see cref="ImportDraft.Pages"/> gives them to this contributor: the app counts it anew for each, after
+/// what the ones before it added), the plugin and the name of the tool.
 /// </summary>
-public sealed record DraftToolBlock(int Page, int Block, string PluginId, string Tool);
+public sealed record DraftToolBlock(int Page, int Block, string PluginId, string Tool)
+{
+    /// <summary>
+    /// The index, on the same page and counted the same way, of the block the tool's nodes were put after (the block that shows the
+    /// content the call was about, such as the drawing); -1 when that block is no longer on the page.
+    /// </summary>
+    public int After { get; init; } = -1;
+}
 
 /// <summary>
 /// 0.10.0. A picture of the draft. <paramref name="Src"/> is its image node's <c>attrs.src</c> in the draft (a node placed

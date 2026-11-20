@@ -82,6 +82,8 @@ public sealed class ImportToolTests : IAsyncLifetime
         public readonly ConcurrentQueue<string> Inputs = new();
         /// <summary>The tool blocks each draft contributor was shown.</summary>
         public readonly ConcurrentQueue<IReadOnlyList<DraftToolBlock>> ToolBlocks = new();
+        /// <summary>When set, each recorder adds a paragraph before the page's first block, as an earlier contributor might.</summary>
+        public volatile bool AddFirst;
     }
 
     /// <summary>A draft contributor that notes which blocks the tools added, and adds nothing.</summary>
@@ -90,7 +92,9 @@ public sealed class ImportToolTests : IAsyncLifetime
         public Task<DraftContribution?> ContributeAsync(ImportDraft draft, CancellationToken ct)
         {
             seen.ToolBlocks.Enqueue(draft.ToolBlocks);
-            return Task.FromResult<DraftContribution?>(null);
+            if (!seen.AddFirst) return Task.FromResult<DraftContribution?>(null);
+            var note = JsonSerializer.SerializeToElement(new { type = "paragraph", content = new[] { new { type = "text", text = "First." } } });
+            return Task.FromResult<DraftContribution?>(new DraftContribution([new DraftAddition(0, DraftPlace.Start, [note])]));
         }
     }
 
@@ -156,6 +160,7 @@ public sealed class ImportToolTests : IAsyncLifetime
             regs.Add("kb.test.tools", new ImportToolReg("draw_lines", "Draw the lines of a drawing in the documents.", schema.RootElement.Clone(), typeof(Boxes)));
         using (var schema = JsonDocument.Parse(Boxes.Schema))
             regs.Add("kb.test.tools", new ImportToolReg("draw_map", "Draw a map drawn in text characters.", schema.RootElement.Clone(), typeof(Boxes)) { For = TestRegions.Drawing });
+        regs.Add("kb.test.tools", new DraftContributorReg(typeof(Recorder)));
         regs.Add("kb.test.tools", new DraftContributorReg(typeof(Recorder)));
         using (var schema = JsonDocument.Parse(Boxes.Schema))
             regs.Add("kb.test.tools", new ImportToolReg("check_ids", "Check the ids of a list.", schema.RootElement.Clone(), typeof(Refuser)));
@@ -423,7 +428,18 @@ public sealed class ImportToolTests : IAsyncLifetime
         _model.Turns.Enqueue(Call("draw_map", """{"boxes": ["CORE-SW1"], "after_block": 2}"""));
         await ImportAsync();
         // The draft is: paragraph, the map's code block, paragraph; the tool's block goes right after the code block.
-        Assert.Equal([new DraftToolBlock(0, 2, "kb.test.tools", "draw_map")], Assert.Single(_seen.ToolBlocks));
+        // Each of the two contributors sees the same: after the map's code block, block 2 of the model's numbering.
+        Assert.All(_seen.ToolBlocks, b => Assert.Equal([new DraftToolBlock(0, 2, "kb.test.tools", "draw_map") { After = 1 }], b));
+    }
+
+    [Fact]
+    public async Task TheToolBlocks_AreCountedAnew_AfterAnEarlierContributorsAdditions()
+    {
+        _seen.AddFirst = true;
+        _model.Turns.Enqueue(Call("draw_map", """{"boxes": ["CORE-SW1"], "after_block": 2}"""));
+        await ImportAsync();
+        Assert.Equal([[new DraftToolBlock(0, 2, "kb.test.tools", "draw_map") { After = 1 }], [new DraftToolBlock(0, 3, "kb.test.tools", "draw_map") { After = 2 }]],
+            _seen.ToolBlocks.ToArray());
     }
 
     [Fact]
