@@ -226,18 +226,20 @@ public static partial class ImportTools
                 var props = schema["properties"] as JsonObject ?? [];
                 var all = props.Select(p => o[p.Key] is JsonValue v && v.GetValueKind() == JsonValueKind.String
                         && Strings(v, p.Value as JsonObject ?? []).First().Kind == StringKind.Text
-                        ? (Text: v.GetValue<string>(), Beside: (p.Value as JsonObject)?["format"]?.GetValue<string>() == "beside") : default)
+                        ? (Key: p.Key, Text: v.GetValue<string>(), Beside: (p.Value as JsonObject)?["format"]?.GetValue<string>() == "beside") : default)
                     .Where(t => t.Text is not null).ToList();
-                var texts = all.Where(t => !t.Beside).Select(t => t.Text).ToList();
-                if (texts.Count > 0)
+                var texts = all.Where(t => !t.Beside).ToList();
+                // The label is the schema's first text property; an object that leaves it out has no label, and its other text is only
+                // checked against the source.
+                if (texts.Count > 0 && texts[0].Key == LabelKey(props))
                 {
-                    var lines = texts[0].Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    var lines = texts[0].Text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                     var label = lines.Length > 0 ? lines[0] : "";
-                    foreach (var text in lines.Skip(1).Concat(texts.Skip(1)))
+                    foreach (var text in lines.Skip(1).Concat(texts.Skip(1).Select(t => t.Text)))
                         if (found.Count < most && Normalize(text).Length >= MinGrounded && Normalize(label).Length >= MinGrounded && !WithLabel(label, text, drawings))
                             found.Add((text, label, false));
                     // A title (format beside) is written outside the label's box, near it: not with the label, but not anywhere either.
-                    foreach (var (text, _) in all.Where(t => t.Beside))
+                    foreach (var (_, text, _) in all.Where(t => t.Beside))
                         if (found.Count < most && Normalize(text).Length >= MinGrounded && Normalize(label).Length >= MinGrounded && !Near(label, text, drawings))
                             found.Add((text, label, true));
                 }
@@ -271,13 +273,15 @@ public static partial class ImportTools
                     string? id = null, label = null;
                     var within = new List<string>();
                     var canBeWithin = props.Any(q => q.Value is JsonObject qs && qs["format"]?.GetValue<string>() == "within");
+                    var labelKey = LabelKey(props);
                     foreach (var (key, ps) in props)
                     {
                         if (o[key] is not JsonValue v || v.GetValueKind() != JsonValueKind.String || ps is not JsonObject p) continue;
                         var format = p["format"]?.GetValue<string>();
                         if (format == "identifier") id ??= v.GetValue<string>();
                         else if (format == "within") within.Add(v.GetValue<string>());
-                        else if (p["enum"] is null) label ??= v.GetValue<string>().Split('\n')[0];
+                        // Only the label property is the label: an object that leaves it out (a frame with no words) has none.
+                        else if (key == labelKey) label = v.GetValue<string>().Split('\n')[0];
                     }
                     if (id is not null || within.Count > 0) objects.Add((id, label, within, canBeWithin));
                     foreach (var (key, child) in o) if (child is JsonObject or JsonArray) Walk(child, props[key] as JsonObject ?? []);
@@ -440,6 +444,20 @@ public static partial class ImportTools
     {
         var open = line.LastIndexOf('[', Math.Max(0, column - 1));
         return open >= 0 && line.IndexOf(']', column) is var close and >= 0 && line.IndexOf(']', open) >= column && line.IndexOf('[', open + 1) is var next && (next < 0 || next > close);
+    }
+
+    /// <summary>
+    /// The key of an object's label: its first property, in the schema's order, that holds text (a string with no choices, not marked
+    /// identifier, within or beside), or null. An input that leaves that property out has no label.
+    /// </summary>
+    public static string? LabelKey(JsonObject properties)
+    {
+        ArgumentNullException.ThrowIfNull(properties);
+        foreach (var (key, value) in properties)
+            if (value is JsonObject p && p["type"]?.GetValue<string>() == "string" && p["enum"] is null
+                && p["format"]?.GetValue<string>() is not ("identifier" or "within" or "beside"))
+                return key;
+        return null;
     }
 
     /// <summary>The name of the first property of the schema (depth first) whose string is marked with the given format, or null.</summary>

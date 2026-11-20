@@ -168,6 +168,31 @@ public sealed class DrawingsTests
     public void AText_CouldBeATitle_OnlyBesideItsBox(string label, string text, bool could) =>
         Assert.Equal(could, ImportTools.CouldBeTitle(label, text, Regions.Find(Wiki, TestRegions.Drawing)));
 
+    private static readonly System.Text.Json.Nodes.JsonObject DetailTitleSchema = System.Text.Json.Nodes.JsonNode.Parse("""
+        {"type":"object","properties":{"boxes":{"type":"array","items":{"type":"object","properties":{
+          "id":{"type":"string","format":"identifier"},"label":{"type":"string","format":"enclosed"},"detail":{"type":"string"},
+          "title":{"type":"string","format":"beside"}}}}}}
+        """)!.AsObject();
+
+    [Theory]
+    [InlineData("""{"boxes":[{"id":"b","label":"FW01 (edge)","title":"SQL MI"}]}""", "SQL MI")] // with its label: the title is far from it
+    [InlineData("""{"boxes":[{"id":"b","detail":"FW01 (edge)","title":"SQL MI"}]}""", null)] // round 11, request 43: no label, so only the source check
+    public void AnObjectWithNoLabel_HasNoLayoutChecks(string json, string? refused)
+    {
+        Assert.Equal("label", ImportTools.LabelKey(DetailTitleSchema["properties"]!["boxes"]!["items"]!["properties"]!.AsObject()));
+        Assert.Equal(refused, ImportTools.Misplaced(System.Text.Json.Nodes.JsonNode.Parse(json), DetailTitleSchema, Regions.Find(Wiki, TestRegions.Drawing))?.Text);
+    }
+
+    [Theory]
+    [InlineData("""{"groups":[{"id":"g"}],"boxes":[{"id":"m","label":"SQL MI","group":"g"}]}""")] // in a frame with no words: not checked against the layout
+    [InlineData("""{"groups":[{"id":"g"}],"boxes":[{"id":"m","label":"HV01","group":"g"}]}""")]
+    public void AGroupWithNoLabel_IsNotCheckedAgainstTheLayout(string json)
+    {
+        var input = System.Text.Json.Nodes.JsonNode.Parse(json);
+        Assert.Null(ImportTools.NotInside(input, GroupSchema, Regions.Find(Wiki, TestRegions.Drawing)));
+        Assert.Empty(ImportTools.Undeclared(input, GroupSchema));
+    }
+
     [Fact]
     public void TheFieldForATitle_IsNamedByItsFormat()
     {
