@@ -14,6 +14,7 @@ using Kb.Web.Import;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Kb.Tests.Integration;
 
@@ -144,8 +145,24 @@ public sealed class ImportToolTests : IAsyncLifetime
         }
     }
 
+    /// <summary>The app's log lines at Warning and above.</summary>
+    private sealed class Logs : ILoggerProvider
+    {
+        public ConcurrentQueue<string> Lines { get; } = new();
+        public ILogger CreateLogger(string categoryName) => new Logger(Lines);
+        public void Dispose() { }
+        private sealed class Logger(ConcurrentQueue<string> lines) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+                lines.Enqueue(formatter(state, exception));
+        }
+    }
+
     private readonly Model _model = new();
     private readonly Seen _seen = new();
+    private readonly Logs _logs = new();
     private readonly KbAppFactory _f;
     private HttpClient _cara = null!;
     private Guid _item;
@@ -166,12 +183,13 @@ public sealed class ImportToolTests : IAsyncLifetime
             regs.Add("kb.test.tools", new ImportToolReg("check_ids", "Check the ids of a list.", schema.RootElement.Clone(), typeof(Refuser)));
         using (var schema = JsonDocument.Parse(Boxes.CardsSchema))
             regs.Add("kb.test.tools", new ImportToolReg("draw_cards", "Draw the boxes of a map, each with its detail.", schema.RootElement.Clone(), typeof(Boxes)) { For = TestRegions.Drawing });
-        var (model, seen) = (_model, _seen);
+        var (model, seen, logs) = (_model, _seen, _logs);
         _f = new KbAppFactory(KbAppFactory.NewDbPath(), services: s =>
         {
             s.AddHttpClient(AiService.ClientName).ConfigurePrimaryHttpMessageHandler(() => model);
             s.AddSingleton<IRegistrations>(regs);
             s.AddSingleton(seen);
+            s.AddSingleton<ILoggerProvider>(logs);
         });
     }
 
@@ -291,6 +309,7 @@ public sealed class ImportToolTests : IAsyncLifetime
         Assert.Equal(["paragraph", "codeBlock", "paragraph"], blocks.Select(TypeOf));
         Assert.Equal([reply], Replies);
         Assert.Contains(warnings, w => w.StartsWith("The AI's tool calls were refused 1 time", StringComparison.Ordinal));
+        Assert.Contains(_logs.Lines, l => l.Contains("a call of draw_boxes was refused", StringComparison.Ordinal) && l.EndsWith(reply, StringComparison.Ordinal)); // the reason, in the server log
     }
 
     [Fact]

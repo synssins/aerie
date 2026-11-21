@@ -795,6 +795,8 @@ public sealed partial class ImportService
                     ["plugin"] = pluginId, ["tool"] = call.Name.Length > 40 ? call.Name[..40] : call.Name, ["bytes"] = bytes.ToString(CultureInfo.InvariantCulture),
                     ["outcome"] = result, ["nodes"] = nodes.ToString(CultureInfo.InvariantCulture),
                 }), ct);
+                // The reason the model is given goes to the server log, not the audit log: it is the app's software behaviour, not who did what.
+                if (result != "done") log.LogWarning("Import tools for {Item}: a call of {Tool} was refused ({Outcome}): {Reason}", item.Id, call.Name.Length > 40 ? call.Name[..40] : call.Name, result, reply);
                 return new AiService.ToolAnswer(reply, reached);
             }
             if (tools.FirstOrDefault(t => t.Tool.Name == call.Name) is not { Tool: not null } found) return await Done("", "unknown-tool", "Refused: there is no tool of that name.");
