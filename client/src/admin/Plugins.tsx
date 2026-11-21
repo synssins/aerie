@@ -159,6 +159,19 @@ export function Plugins({ area, onHome }: { area: string; onHome: () => void }) 
             <h3>Provides</h3>{list(selected.extensionPoints)}
             <h3>Reads for import</h3>{list(selected.importFileKinds)}
             <h3>Sign-in methods</h3>{list((selected.signInMethods ?? []).map((m) => m.name))}
+            {(selected.importTools ?? []).length > 0 && (
+              <>
+                <h3>Tools for the AI in imports</h3>
+                {(selected.importTools ?? []).map((t) => (
+                  <details key={t.name}>
+                    <summary><span className="mono">{t.name}</span>{t.regions ? " (for parts of a document)" : ""}{t.notOffered ? " (not offered)" : ""}</summary>
+                    <div>{t.description}</div>
+                    {t.notOffered && <div className="muted">Not offered: {t.notOffered}</div>}
+                    <pre className="mono">{t.inputSchema}</pre>
+                  </details>
+                ))}
+              </>
+            )}
             <h3>Requires</h3>{list(selected.requires)}
             <h3>Required by</h3>{list(selected.requiredBy)}
             <h3>Outbound hosts</h3>{list(selected.outboundHosts)}

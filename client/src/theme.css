@@ -79,6 +79,9 @@
   --warn-ink: #f2d38a;
   --danger: #f97066;
   --scrollbar-thumb: #4a5565;
+  /* Night keeps its own primary button: the dark header color would sink into the dark page. */
+  --btn-primary: #7fb0f5;
+  --btn-primary-ink: #0d1b2c;
   color-scheme: dark;
 }
 
@@ -317,7 +320,7 @@ h2.s { font-size: 17px; margin: 22px 0 8px; }
 /* Page title editing and tools */
 .title-input { flex: 1; min-width: 0; font: 600 24px/1.25 inherit; letter-spacing: -.01em; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 7px; padding: 2px 8px; }
 .tb.primary { background: var(--btn-primary); color: var(--btn-primary-ink); border-color: var(--btn-primary); }
-.tb.primary:not(:disabled):hover { background: var(--nav); filter: brightness(1.15); }
+.tb.primary:not(:disabled):hover { background: var(--btn-primary); filter: brightness(1.15); }
 .major { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink2); margin-right: 6px; white-space: nowrap; }
 .listing { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; max-width: 520px; }
 

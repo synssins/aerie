@@ -143,6 +143,28 @@ public static partial class AiGuard
         return body;
     }
 
+    /// <summary>
+    /// 0.11.0. A chat completions request that offers tools (for the import's plugin tools only): no answer schema, the tools
+    /// as function tools, the model's choice whether to call them. Reasoning as in <see cref="Request"/>.
+    /// </summary>
+    public static JsonObject ToolRequest(AiSettings s, JsonArray messages, JsonArray tools)
+    {
+        ArgumentNullException.ThrowIfNull(s);
+        ArgumentNullException.ThrowIfNull(messages);
+        ArgumentNullException.ThrowIfNull(tools);
+        var body = new JsonObject
+        {
+            ["model"] = s.Model, ["messages"] = messages.DeepClone(), ["temperature"] = s.Temperature, ["max_tokens"] = s.MaxTokens, ["stream"] = false,
+            ["tools"] = tools.DeepClone(), ["tool_choice"] = "auto",
+        };
+        if (!s.Reasoning)
+        {
+            body["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = false };
+            body["reasoning_effort"] = "none";
+        }
+        return body;
+    }
+
     // A tripwire on top of the structure above, not the main defense: text that tries to speak to the model is refused outright.
     [GeneratedRegex(@"\b(ignore|disregard|forget|override)\b[^.\n]{0,40}\b(previous|prior|above|earlier|all|your|the)\b[^.\n]{0,20}\b(instructions?|prompts?|rules?|messages?|directions?)\b", RegexOptions.IgnoreCase)]
     private static partial Regex OverrideWords();

@@ -81,6 +81,27 @@ public sealed record ImportDraft(Guid ImportItemId, IReadOnlyList<DraftPage> Pag
     /// they were sent, with the diagram the AI read from each when it is one. Empty before 0.10.0, and for an item with no picture.
     /// </summary>
     public IReadOnlyList<DraftPicture> Pictures { get; init; } = [];
+
+    /// <summary>
+    /// 0.11.0. The blocks of <see cref="Pages"/> that import tools added (the tool conversation runs before the draft
+    /// contributors): where each stands and which plugin's tool added it, so a contributor can tell what a tool already made. Empty when
+    /// no tool added anything.
+    /// </summary>
+    public IReadOnlyList<DraftToolBlock> ToolBlocks { get; init; } = [];
+}
+
+/// <summary>
+/// 0.11.0. One block an import tool added: <paramref name="Page"/> (0 is the first) and <paramref name="Block"/> (its index among
+/// the page's top-level blocks, as <see cref="ImportDraft.Pages"/> gives them to this contributor: the app counts it anew for each, after
+/// what the ones before it added), the plugin and the name of the tool.
+/// </summary>
+public sealed record DraftToolBlock(int Page, int Block, string PluginId, string Tool)
+{
+    /// <summary>
+    /// The index, on the same page and counted the same way, of the block the tool's nodes were put after (the block that shows the
+    /// content the call was about, such as the drawing); -1 when that block is no longer on the page.
+    /// </summary>
+    public int After { get; init; } = -1;
 }
 
 /// <summary>
@@ -195,3 +216,122 @@ public interface IDraftContributor
 }
 
 public sealed record DraftContributorReg(Type Contributor);
+
+/// <summary>
+/// 0.11.0. A tool a plugin offers the AI while an import is drafted: its <paramref name="Name"/>, a short
+/// <paramref name="Description"/> of when to use it, and the JSON schema of its input (<paramref name="InputSchema"/>). These three are
+/// the only text of a plugin that reaches the AI. The app checks them before it offers the tool (see the plugin guide for the rules) and
+/// does not offer a tool that breaks one; the Admin sees each tool on the plugin's page. <paramref name="Tool"/> answers the calls.
+/// </summary>
+public sealed record ImportToolReg(string Name, string Description, JsonElement InputSchema, Type Tool)
+{
+    /// <summary>
+    /// 0.11.0. What in a document the tool is for, as line patterns the app checks, caps and runs on the source itself (see
+    /// <see cref="ToolRegions"/>). A tool with regions is offered only for documents that hold one, takes one result for each region, and
+    /// its input is held to the layout of the region (labels stacked in one enclosure, text given together written together). Null: the
+    /// tool is for any document.
+    /// </summary>
+    public ToolRegions? For { get; init; }
+
+}
+
+/// <summary>
+/// 0.11.0. The regions of a document a tool is for: runs of lines found by the app from the source alone, never by the model or
+/// the plugin. A region starts at a line that matches one of <paramref name="Starts"/> and goes on over lines that match
+/// <paramref name="Starts"/> or <paramref name="Joins"/>, with at most <paramref name="MaxGap"/> other lines in a row. It counts when it has
+/// at least <paramref name="MinLines"/> such lines and <paramref name="MinStarts"/> of them match <paramref name="Starts"/> but none of
+/// <paramref name="Weak"/>, or when one of its lines matches <paramref name="Alone"/>. Markdown table rows are never part of a region.
+/// Each pattern is a .NET regular expression, run without backtracking and with a time limit; at most 16 in each list and 300 characters
+/// each; <paramref name="MinLines"/> 1 to 20, <paramref name="MinStarts"/> 0 to 20, <paramref name="MaxGap"/> 0 to 5. A tool whose regions
+/// break a rule is not offered.
+/// </summary>
+public sealed record ToolRegions(IReadOnlyList<string> Starts, IReadOnlyList<string> Joins, IReadOnlyList<string> Weak, IReadOnlyList<string> Alone,
+    int MinLines = 3, int MinStarts = 2, int MaxGap = 2)
+{
+}
+
+/// <summary>
+/// 0.11.0. Answers the AI's calls of one tool during an import. It gets only the input of the call, checked against the tool's
+/// schema; never the document, the prompt or the rest of the conversation. It is made for each call, in its own scope, as its plugin
+/// (an actor of kind Plugin, source "import"). A call that throws, runs past 10 seconds, or answers more than the limits of
+/// <see cref="DraftContribution"/> adds nothing and counts as a failure of the plugin; the import goes on.
+/// </summary>
+public interface IImportTool
+{
+    /// <summary>Null (nothing to add), or the nodes to add to the draft for this call. The app places them where the AI said.</summary>
+    Task<ImportToolResult?> CallAsync(JsonElement input, CancellationToken ct);
+}
+
+/// <summary>
+/// 0.11.0. Editor nodes to add to the draft, each the stored JSON of one block node. At most 50 nodes and 512 KB of JSON. Or a
+/// refusal (<see cref="Refuse"/>): no nodes, a <see cref="Refusal"/> from the app's fixed list and, for some, <see cref="At"/>, the path in
+/// the input it is about. The app words the reply to the model itself; no text of the plugin reaches the model.
+/// </summary>
+public sealed record ImportToolResult(IReadOnlyList<JsonElement> Nodes)
+{
+    /// <summary>Why the tool added nothing, from the app's list; <see cref="ImportToolRefusal.None"/> for a result.</summary>
+    public ImportToolRefusal Refusal { get; init; }
+
+    /// <summary>
+    /// The place in the input the refusal is about, as a JSON path into the call's input ("$.boxes[3].group"): a dollar sign, then names
+    /// of letters, digits and underscores after dots and numbers in brackets, at most 12 steps. A path that is not of that form, or that
+    /// names nothing in the input, is left out of the reply.
+    /// </summary>
+    public string? At { get; init; }
+
+    /// <summary>A refusal: nothing is added, and the model is told why in the app's words.</summary>
+    public static ImportToolResult Refuse(ImportToolRefusal why, string? at = null) => new([]) { Refusal = why, At = at };
+}
+
+/// <summary>0.11.0. Why a tool added nothing. The app owns and words each one.</summary>
+public enum ImportToolRefusal
+{
+    /// <summary>Not a refusal.</summary>
+    None,
+    /// <summary>The input names an id it does not declare (a line to a box that is not there, a box in a group that is not there).</summary>
+    UnknownId,
+    /// <summary>The input declares the same id twice.</summary>
+    DuplicateId,
+    /// <summary>The input holds too little to make anything of.</summary>
+    TooLittle,
+    /// <summary>The input holds more than the tool can make.</summary>
+    TooMuch,
+    /// <summary>An item of the input refers to itself (a line from a box to the same box).</summary>
+    SelfReference,
+    /// <summary>One text of the input holds several items that are each one of their own (things in brackets listed in one box's detail).</summary>
+    Combined,
+}
+
+public static class ImportToolExtensions
+{
+    /// <summary>
+    /// 0.11.0. Registers a tool the AI may call while an import is drafted. <paramref name="inputSchema"/> is the JSON schema of
+    /// its input, as text. Throws when it is not JSON; the app checks the rest before it offers the tool.
+    /// </summary>
+    public static IPluginApp ImportTool<TTool>(this IPluginApp app, string name, string description, string inputSchema) where TTool : class, IImportTool
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(description);
+        ArgumentNullException.ThrowIfNull(inputSchema);
+        using var schema = JsonDocument.Parse(inputSchema);
+        return app.Add(new ImportToolReg(name, description, schema.RootElement.Clone(), typeof(TTool)));
+    }
+
+    /// <summary>
+    /// 0.11.0. Registers a tool, as <see cref="ImportTool{TTool}"/>, for the regions of a document that <paramref name="regions"/>
+    /// describes. The app offers it only when the documents hold such a region, as the app finds it, and takes one result of it for each.
+    /// </summary>
+    public static IPluginApp ImportRegionTool<TTool>(this IPluginApp app, string name, string description, string inputSchema, ToolRegions regions)
+        where TTool : class, IImportTool
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(description);
+        ArgumentNullException.ThrowIfNull(inputSchema);
+        ArgumentNullException.ThrowIfNull(regions);
+        using var schema = JsonDocument.Parse(inputSchema);
+        return app.Add(new ImportToolReg(name, description, schema.RootElement.Clone(), typeof(TTool)) { For = regions });
+    }
+
+}

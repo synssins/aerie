@@ -83,3 +83,72 @@ public sealed class DiagramOutline : IDraftContributor
     }
 }
 // #endregion
+
+// #region guide:tool
+/// <summary>
+/// A tool the AI may call while it drafts an import (0.11.0): a drawing of boxes, groups and lines in a document (a network map
+/// drawn in text) becomes an outline after the block that shows it. It is registered with the regions it is for (<c>ImportRegionTool</c>,
+/// <see cref="Regions"/>): offered only for documents that hold such a drawing, one result for each. The app checks the input against <see cref="Schema"/> before the
+/// call, so the plugin gets only valid input; it never sees the document. Labels must be text of the document; ids, which the AI makes
+/// up to tie boxes to groups and lines, are marked <c>"format": "identifier"</c>. A chart plugin would draw the same data instead.
+/// </summary>
+public sealed class BoxesAndLines : IImportTool
+{
+    public const string Name = "boxes_and_lines";
+    public const string Description = "Draw a diagram of boxes, groups of boxes and lines between them, from a drawing in the documents such as a network map drawn in text.";
+    public const string Schema = """
+        {"type": "object", "required": ["boxes", "lines"], "additionalProperties": false, "properties": {
+          "title": {"type": "string", "maxLength": 100},
+          "groups": {"type": "array", "maxItems": 40, "items": {"type": "object", "required": ["id", "label"], "additionalProperties": false, "properties": {
+            "id": {"type": "string", "format": "identifier"}, "label": {"type": "string", "maxLength": 100},
+            "group": {"type": "string", "format": "identifier", "description": "The id of the group it sits in, if any."}}}},
+          "boxes": {"type": "array", "minItems": 1, "maxItems": 150, "items": {"type": "object", "required": ["id", "label"], "additionalProperties": false, "properties": {
+            "id": {"type": "string", "format": "identifier"}, "label": {"type": "string", "maxLength": 100},
+            "group": {"type": "string", "format": "identifier", "description": "The id of the group it sits in, if any."}}}},
+          "lines": {"type": "array", "maxItems": 200, "items": {"type": "object", "required": ["from", "to"], "additionalProperties": false, "properties": {
+            "from": {"type": "string", "format": "identifier"}, "to": {"type": "string", "format": "identifier"}, "label": {"type": "string", "maxLength": 100}}}}}}
+        """;
+
+    /// <summary>
+    /// What a drawing is, for this tool: a rule, a corner or a thing in brackets starts one; a bar, a plus, a slash or a box-drawing
+    /// character joins one; a rule alone is weak; two things in brackets joined by a connector, or two arrows, make one line a drawing.
+    /// </summary>
+    public static readonly ToolRegions Regions = new(
+        Starts: [@"[-=~_─━═]{3,}", @"\+[-=~_]|[-=~_]\+|[┌-╋]", @"\[\s+[^\]\[]+?\s+\]"],
+        Joins: [@"[|+/\\]|[─-╿]"],
+        Weak: [@"^\s*[-=~_*─━═]{3,}\s*$"],
+        Alone:
+        [
+            @"\[\s+[^\]\[]+?\s+\]\s*<?(?:[-=~.]{2,}|-+[^\s\[\]]+-+)>?\s*\[\s+[^\]\[]+?\s+\]",
+            @"(?:-{2,}|={2,})(?:[^\s<>\-=][^<>]*?-+)?>.*(?:-{2,}|={2,})(?:[^\s<>\-=][^<>]*?-+)?>",
+        ]);
+
+    public Task<ImportToolResult?> CallAsync(JsonElement input, CancellationToken ct)
+    {
+        static string Text(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
+        var groups = input.TryGetProperty("groups", out var g) ? g.EnumerateArray().ToList() : [];
+        var boxes = input.GetProperty("boxes").EnumerateArray().ToList();
+        var names = groups.Concat(boxes).GroupBy(x => Text(x, "id")).ToDictionary(x => x.Key, x => Text(x.First(), "label"));
+        object Item(string text, IEnumerable<object> children)
+        {
+            var list = children.ToList();
+            var para = new { type = "paragraph", content = new[] { new { type = "text", text } } };
+            return list.Count == 0 ? new { type = "listItem", content = new object[] { para } } : new { type = "listItem", content = new object[] { para, new { type = "bulletList", content = list } } };
+        }
+        // What sits in a group (or at the top), groups first. A group that names itself, or a loop, is shown once at the top.
+        var seen = new HashSet<string>();
+        IEnumerable<object> In(string group) =>
+            groups.Where(x => Text(x, "group") == group && seen.Add(Text(x, "id"))).Select(x => Item(Text(x, "label"), In(Text(x, "id"))))
+                .Concat(boxes.Where(x => Text(x, "group") == group).Select(x => Item(Text(x, "label"), [])));
+        var top = In("").ToList();
+        var lines = input.GetProperty("lines").EnumerateArray().Select(l => Item(
+            $"{names.GetValueOrDefault(Text(l, "from"), Text(l, "from"))} to {names.GetValueOrDefault(Text(l, "to"), Text(l, "to"))}{(Text(l, "label") is { Length: > 0 } x ? ": " + x : "")}", [])).ToList();
+        var nodes = new List<JsonElement>();
+        if (Text(input, "title") is { Length: > 0 } title)
+            nodes.Add(JsonSerializer.SerializeToElement(new { type = "paragraph", content = new[] { new { type = "text", text = title, marks = new[] { new { type = "bold" } } } } }));
+        nodes.Add(JsonSerializer.SerializeToElement(new { type = "bulletList", content = top }));
+        if (lines.Count > 0) nodes.Add(JsonSerializer.SerializeToElement(new { type = "bulletList", content = lines }));
+        return Task.FromResult<ImportToolResult?>(new ImportToolResult(nodes));
+    }
+}
+// #endregion

@@ -98,6 +98,7 @@ public static class AuditActions
     public const string ImportAccept = "import.accept";
     /// <summary>A plugin's import contributor added nodes to a draft. Data: plugin, file, sha256, nodes.</summary>
     public const string ImportContribute = "import.contribute";
+    public const string ImportTool = "import.tool";
     public const string ImportClaim = "import.claim";
     public const string ImportQuarantine = "import.quarantine";
     public const string ImportPurge = "import.purge";

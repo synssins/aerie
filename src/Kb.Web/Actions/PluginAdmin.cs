@@ -16,7 +16,9 @@ namespace Kb.Web.Actions;
 public sealed record PluginInfoDto(string Id, string Name, string Version, string Publisher, string? Description, PluginOrigin Origin, PluginState State, string? Reason,
     bool Locked, bool Loaded, string Source, IReadOnlyList<string> Requires, IReadOnlyList<string> RequiredBy, IReadOnlyList<string> ExtensionPoints, IReadOnlyList<string> OutboundHosts,
     IReadOnlyList<PluginPermission> Permissions, bool Enforcing, IReadOnlyList<PluginSetting> Settings, IReadOnlyList<string> Replaces, bool Removed,
-    IReadOnlyList<string> ImportFileKinds, IReadOnlyList<PluginSignInMethodDto> SignInMethods, bool SignInProviders = false);
+    IReadOnlyList<string> ImportFileKinds, IReadOnlyList<PluginSignInMethodDto> SignInMethods, bool SignInProviders = false, IReadOnlyList<PluginToolDto>? ImportTools = null);
+/// <summary>0.11.0. A tool the plugin offers the AI during imports, as the AI sees it, and why it is not offered when it is not.</summary>
+public sealed record PluginToolDto(string Name, string Description, string InputSchema, string? NotOffered, bool Regions = false);
 /// <summary>
 /// A sign-in method a plugin adds: its id ("{plugin}/{id}"), its button text, and the redirect address to register with the provider.
 /// ByAdmin: a provider an Admin added (0.9.0); Linked counts the accounts linked to its issuer, which removing it leaves without a way in.
@@ -98,7 +100,10 @@ internal sealed class ListPluginsHandler(PluginInstaller installer, PluginRegist
             // The file kinds it reads for import: what this server loaded, so none for a plugin that is not loaded.
             [.. registrations.All<ImportFileKindReg>().Where(r => r.PluginId == k.Manifest.Id).SelectMany(r => r.Value.Extensions).Distinct().Order(StringComparer.Ordinal)],
             // Its sign-in methods: likewise what this server loaded. The redirect address is this site as the Admin reached it.
-            [.. methods.Where(m => m.PluginId == k.Manifest.Id).Select(m => m.Dto)], settings.OffersProviders(k.Manifest.Id))),
+            [.. methods.Where(m => m.PluginId == k.Manifest.Id).Select(m => m.Dto)], settings.OffersProviders(k.Manifest.Id),
+            // Its tools for the AI (0.11.0): what this server loaded.
+            [.. registrations.All<ImportToolReg>().Where(r => r.PluginId == k.Manifest.Id)
+                .Select(r => new PluginToolDto(r.Value.Name, r.Value.Description, r.Value.InputSchema.GetRawText(), Kb.Web.Import.ImportTools.Problem(r.Value), r.Value.For is not null))])),
             // Removed plugins whose tables were kept: listed so their data can still be deleted.
             .. (await installer.RemovedAsync(ctx.Cancel)).Select(s => new PluginInfoDto(s.PluginId, s.PluginId, s.ActiveVersion ?? "", "", null, PluginOrigin.Uploaded, PluginState.Disabled, null,
                 Locked: false, Loaded: false, "upload", [], [], [], [], [], Enforcing: false, [], [], Removed: true, [], []))], registry.SafeMode);

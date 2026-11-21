@@ -48,8 +48,9 @@ export const THEME_TOKENS: ThemeToken[] = [
   t("Accent", "--cur-bg", "Selected item", "#e1ebf8", "#22344d"),
   follows("Accent", "--focus", "Focus ring", "--accent"),
   follows("Accent", "--selection", "Selected text", "--cur-bg"),
-  follows("Accent", "--btn-primary", "Primary button", "--nav"),
-  t("Accent", "--btn-primary-ink", "Primary button text", "#ffffff"),
+  // Follows the header by Day only: the Night header is too dark to stand out on the Night page.
+  { ...follows("Accent", "--btn-primary", "Primary button", "--nav"), night: "#7fb0f5" },
+  t("Accent", "--btn-primary-ink", "Primary button text", "#ffffff", "#0d1b2c"),
 
   t("Notices", "--warn-bg", "Notice", "#fdf7e7", "#2d2412"),
   t("Notices", "--warn-line", "Notice outline", "#f0d58c", "#6b5420"),
@@ -110,7 +111,7 @@ export function valueOf(theme: ThemeOverrides, mode: Mode, name: string): string
   const own = theme[mode][name];
   if (own) return normalizeHex(own) ?? own;
   const tk = BY_NAME.get(name)!;
-  if (!tk.from) return tk[mode];
+  if (!tk.from || tk[mode]) return tk[mode];
   const base = valueOf(theme, mode, tk.from);
   return tk.mix ? mixWhite(base, tk.mix) : base;
 }
@@ -174,21 +175,21 @@ export const PRESETS: ThemePreset[] = [
     name: "Slate",
     theme: {
       day: { "--badge-bg": "#c62f37", "--nav": "#2b3440", "--logo-bg": "#5eead4", "--logo-ink": "#13232b", "--accent": "#0f766e", "--cur-bg": "#d9f2ef", "--avatar-bg": "#99f6e4", "--avatar-ink": "#13232b" },
-      night: { "--badge-bg": "#c62f37", "--nav": "#161b22", "--btn-primary": "#1f6f68", "--logo-bg": "#5eead4", "--logo-ink": "#13232b", "--accent": "#5eead4", "--accent-ink": "#13232b", "--cur-bg": "#163a38", "--avatar-bg": "#5eead4", "--avatar-ink": "#13232b" },
+      night: { "--badge-bg": "#c62f37", "--nav": "#161b22", "--btn-primary": "#1f6f68", "--btn-primary-ink": "#ffffff", "--logo-bg": "#5eead4", "--logo-ink": "#13232b", "--accent": "#5eead4", "--accent-ink": "#13232b", "--cur-bg": "#163a38", "--avatar-bg": "#5eead4", "--avatar-ink": "#13232b" },
     },
   },
   {
     name: "Forest",
     theme: {
       day: { "--badge-bg": "#c62f37", "--nav": "#1f3d2b", "--logo-bg": "#e9c46a", "--logo-ink": "#1f3d2b", "--accent": "#2d6a4f", "--cur-bg": "#dcefe4", "--avatar-bg": "#95d5b2", "--avatar-ink": "#1f3d2b", "--folder": "#8a6d1c" },
-      night: { "--badge-bg": "#c62f37", "--nav": "#122218", "--btn-primary": "#2d6a4f", "--logo-bg": "#e9c46a", "--logo-ink": "#1f3d2b", "--accent": "#8fd3ad", "--accent-ink": "#122218", "--cur-bg": "#1d3a2b", "--avatar-bg": "#95d5b2", "--avatar-ink": "#122218" },
+      night: { "--badge-bg": "#c62f37", "--nav": "#122218", "--btn-primary": "#2d6a4f", "--btn-primary-ink": "#ffffff", "--logo-bg": "#e9c46a", "--logo-ink": "#1f3d2b", "--accent": "#8fd3ad", "--accent-ink": "#122218", "--cur-bg": "#1d3a2b", "--avatar-bg": "#95d5b2", "--avatar-ink": "#122218" },
     },
   },
   {
     name: "Plum",
     theme: {
       day: { "--badge-bg": "#c62f37", "--nav": "#3b1f4a", "--logo-bg": "#f4a6c6", "--logo-ink": "#3b1f4a", "--accent": "#7b3fa0", "--cur-bg": "#efe3f6", "--avatar-bg": "#d8b4fe", "--avatar-ink": "#3b1f4a" },
-      night: { "--badge-bg": "#c62f37", "--nav": "#1e1226", "--btn-primary": "#6a3a88", "--logo-bg": "#f4a6c6", "--logo-ink": "#3b1f4a", "--accent": "#d2a8f0", "--accent-ink": "#1e1226", "--cur-bg": "#35234a", "--avatar-bg": "#d2a8f0", "--avatar-ink": "#1e1226" },
+      night: { "--badge-bg": "#c62f37", "--nav": "#1e1226", "--btn-primary": "#6a3a88", "--btn-primary-ink": "#ffffff", "--logo-bg": "#f4a6c6", "--logo-ink": "#3b1f4a", "--accent": "#d2a8f0", "--accent-ink": "#1e1226", "--cur-bg": "#35234a", "--avatar-bg": "#d2a8f0", "--avatar-ink": "#1e1226" },
     },
   },
 ];

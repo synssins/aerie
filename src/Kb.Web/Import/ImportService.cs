@@ -323,13 +323,66 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         ["additionalProperties"] = false,
     };
 
+    /// <summary>
+    /// A draft with mechanical slips, repaired, if it then matches <paramref name="schema"/>; otherwise null. The slips: the answer-wide
+    /// fields (tags, apps, owner, ...) written inside the first page instead of beside the pages; blocks written into the list of pages
+    /// instead of the page before them; and, after that, an answer-wide suggestion left out, which gets its empty value (no tags, no
+    /// owner, no review, the inbox). Nothing of the content is added or dropped.
+    /// </summary>
+    internal static JsonNode? Lifted(string content, JsonObject schema)
+    {
+        JsonObject? root;
+        var (from, to) = (content.IndexOf('{', StringComparison.Ordinal), content.LastIndexOf('}'));
+        if (from < 0 || to < from) return null;
+        root = ImportTools.ParseModelJson(content[from..(to + 1)]) as JsonObject;
+        if (root?["pages"] is not JsonArray { Count: > 0 } pages || pages[0] is not JsonObject first || schema["properties"] is not JsonObject top) return null;
+        var moved = false;
+        foreach (var key in top.Select(p => p.Key).Where(k => k != "pages" && !root.ContainsKey(k) && first.ContainsKey(k)).ToList())
+        {
+            var value = first[key];
+            first.Remove(key);
+            root[key] = value;
+            moved = true;
+        }
+        // A block in the list of pages (it has a type and no blocks of its own) belongs at the end of the page before it.
+        for (var i = 1; i < pages.Count; i++)
+        {
+            if (pages[i] is not JsonObject b || !b.ContainsKey("type") || b.ContainsKey("blocks") || pages[i - 1]?["blocks"] is not JsonArray into) continue;
+            pages.RemoveAt(i--);
+            into.Add(b);
+            moved = true;
+        }
+        foreach (var (key, empty) in new (string, Func<JsonNode>)[] { ("tags", () => new JsonArray()), ("apps", () => new JsonArray()), ("owner", () => JsonValue.Create("")),
+            ("reviewMonths", () => JsonValue.Create(0)), ("destination", () => JsonValue.Create("inbox")) })
+            if (top.ContainsKey(key) && !root.ContainsKey(key)) { root[key] = empty(); moved = true; }
+        return moved && AiGuard.SchemaError(root, schema) is null ? root : null;
+    }
+
     private static JsonObject Strings(int items, int length) =>
         new() { ["type"] = "array", ["maxItems"] = items, ["items"] = new JsonObject { ["type"] = "string", ["maxLength"] = length } };
+
+    // Where the task says to keep the regions a plugin's tool is for (Regions.Find) as written: the sentence, and the regions as data under
+    // KeepField, go in only for documents that hold one, so documents without one (markup, diagram code) get the task exactly as before.
+    private const string KeepMark = "{keep}";
+
+    internal const string KeepField = "keep";
+
+    internal const string KeepSentence =
+        "The passages under \"keep\" are laid out by the position of their characters; copy each of them into one code block, exactly as written, where it stands in the documents. ";
+
+    /// <summary>The drafting task, with the keep sentence where the documents hold a region a tool is for.</summary>
+    internal static string DraftingTask(bool keep) => ProposalTask.Replace(KeepMark, keep ? KeepSentence : "", StringComparison.Ordinal);
+
+    /// <summary>The regions of the source that the loaded plugins' tools are for, as each declares them, in the order they stand; empty for none.</summary>
+    private List<string> KeptRegions(string source) =>
+        [.. contributors.Tools.Where(t => t.Tool.For is { } f && ImportTools.Problem(t.Tool) is null)
+            .SelectMany(t => Regions.Find(source, t.Tool.For!)).Select(r => string.Join("\n", r.Lines)).Distinct()];
 
     private const string ProposalTask =
         "Bring the documents in the data into this knowledge base as standardized page(s). Keep every fact, value, command and step exactly; " +
         "do not add, invent or drop information. Use headings for sections, \"steps\" blocks for numbered procedures, \"bullets\" for lists, " +
         "\"code\" for commands, scripts and configuration, \"table\" for tabular data (first row is the header), \"note\" for warnings. " +
+        KeepMark +
         "Place each picture listed under \"images\" as an \"image\" block (its file name in \"image\") at the step it belongs to; write in its \"text\" a short description of what the picture shows. " +
         "Use one page unless the documents clearly cover separate topics. " +
         "Suggest up to 8 short lower-case topic tags. In \"apps\" name the applications the content is about, using the exact names from \"inventory\" when one matches, " +
@@ -380,6 +433,8 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             ["inventory"] = string.Join("\n", apps.Select(a => a.Name)),
             ["destinations"] = string.Join("\n", destinations.Select(d => $"{d.Item1} = {d.Item2}")),
         };
+        var kept = KeptRegions(source);
+        if (kept.Count > 0) data[KeepField] = string.Join("\n\n", kept);
         JsonNode output;
         string drafter;
         long? ms = null;
@@ -396,7 +451,8 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         }
         else
         {
-            var r = await ai.RunAsync(actor, AiFeatures.Import, ProposalTask, data, ProposalSchema(), ct, picData);
+            var r = await ai.RunAsync(actor, AiFeatures.Import, DraftingTask(kept.Count > 0), data, ProposalSchema(), ct, picData,
+                salvage: content => Lifted(content, ProposalSchema()));
             if (r.Problem is { } p0)
             {
                 (item.Status, item.Error) = p0.Status == 422 ? (ImportStatus.Blocked, "It holds text addressed to the AI, so it was not sent.") : (ImportStatus.Failed, p0.Message ?? "The AI could not draft it.");
@@ -426,7 +482,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
         var added = outWords.Where(w => !inWords.Contains(w) && w.Length > 3).Distinct().ToList();
         if (source.Length > 0 && outWords.Count > 0 && added.Count > Math.Max(8, outWords.Distinct().Count() / 10))
             warnings.Add($"The draft uses words that are not in the source ({string.Join(", ", added.Take(12))}). Confirm the document is correct before saving.");
-        var given = await ContributeAsync(item, batch, files, findings.Count > 0, pages, warnings, ct, byPlugins ? [] : [.. pictures.Zip(picData)], actor);
+        var given = await ContributeAsync(item, batch, files, findings.Count > 0, pages, warnings, ct, byPlugins ? [] : [.. pictures.Zip(picData)], actor, byPlugins ? "" : source);
         if (byPlugins && pages[0]["doc"]!["content"]!.AsArray().Count == 0)
         {
             (item.Status, item.Error) = (ImportStatus.Failed, given
@@ -522,7 +578,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
     /// </summary>
     /// <returns>False when the plugins were not given the files: they hold a secret, or go to a sensitive space.</returns>
     private async Task<bool> ContributeAsync(ImportItem item, ImportBatch batch, IReadOnlyList<ImportFile> files, bool secret, List<JsonObject> pages, List<string> warnings, CancellationToken ct,
-        IReadOnlyList<(ImportFile File, AiGuard.Picture Data)>? sent = null, Actor? actor = null)
+        IReadOnlyList<(ImportFile File, AiGuard.Picture Data)>? sent = null, Actor? actor = null, string source = "")
     {
         if (!contributors.Any) return true;
         if (secret || (batch.TargetSpaceId is { } ts && await db.Spaces.AnyAsync(s => s.Id == ts && s.IsSensitive, ct)))
@@ -537,9 +593,15 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             foreach (var n in c.Nodes) contents[0].Add(n);
             warnings.Add($"{c.PluginName} added {c.Nodes.Count} block{(c.Nodes.Count == 1 ? "" : "s")} from {c.FileName} at the end of the first page.");
         }
+        // 0.11.0: the tools first, so the draft contributors see what the tools added (ImportDraft.ToolBlocks) and need not make it again.
+        var tooled = actor is not null ? await ToolsAsync(item, actor, source, pages, contents, warnings, ct) : [];
+        // Counted from the nodes themselves for each contributor, so blocks an earlier contributor added do not throw the numbers off.
+        IReadOnlyList<DraftToolBlock> ToolBlocks() => [.. tooled.SelectMany(t => contents.Select((c, page) => (page, index: c.IndexOf(t.Node), c))
+            .Where(x => x.index >= 0)
+            .Select(x => new DraftToolBlock(x.page, x.index, t.PluginId, t.Tool) { After = t.After is null ? -1 : x.c.IndexOf(t.After) }))];
         var pictures = contributors.AnyDraft && actor is not null ? await DiagramsAsync(actor, sent ?? [], pages, warnings, ct) : [];
         foreach (var c in await contributors.RunDraftAsync(item, () => [.. pages.Select(p => new DraftPage(p["title"]!.GetValue<string>(), p["doc"]!.ToJsonString()))],
-            [.. read.Select(f => f.Path)], c => ImportContributors.Place(contents, c.Additions), ct, pictures))
+            [.. read.Select(f => f.Path)], c => ImportContributors.Place(contents, c.Additions), ct, pictures, ToolBlocks))
         {
             var where = string.Join(", ", c.Additions.Select(a => a.Page).Distinct().Order().Select(i => $"\"{pages[i]["title"]!.GetValue<string>()}\""));
             warnings.Add($"{c.PluginName} added {c.Count} block{(c.Count == 1 ? "" : "s")} to {where}.");

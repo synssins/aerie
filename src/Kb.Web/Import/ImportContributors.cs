@@ -35,7 +35,30 @@ public sealed class ImportContributors(IServiceScopeFactory scopes, IRegistratio
     /// <summary>A test sets a shorter limit.</summary>
     internal TimeSpan? Limit { get; set; }
 
-    public bool Any => registrations.All<ImportContributorReg>().Count > 0 || registrations.All<DraftContributorReg>().Count > 0;
+    public bool Any => registrations.All<ImportContributorReg>().Count > 0 || registrations.All<DraftContributorReg>().Count > 0 || registrations.All<ImportToolReg>().Count > 0;
+
+    /// <summary>0.11.0. The tools the loaded plugins declared, in the order they registered them, unchecked.</summary>
+    public IReadOnlyList<(string PluginId, ImportToolReg Tool)> Tools => [.. registrations.All<ImportToolReg>().Select(r => (r.PluginId, r.Value))];
+
+    /// <summary>
+    /// 0.11.0. One call of a plugin's tool, as its other import calls are made: its own scope, as the plugin, within the time limit.
+    /// The nodes it answers, checked as a contribution's; null when it answered none or failed. With no nodes, the refusal it chose from
+    /// the app's list (<see cref="ImportToolRefusal"/>) and the path it names, which the app words and checks itself.
+    /// </summary>
+    public async Task<(IReadOnlyList<JsonNode>? Nodes, ImportToolRefusal Refusal, string? At)> CallToolAsync(string pluginId, ImportToolReg tool, ImportItem item,
+        JsonElement input, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(tool);
+        ImportToolResult? got = null;
+        var nodes = await CallAsync(pluginId, item, "import tool", tool.Name,
+            (sp, t) => ((IImportTool)ActivatorUtilities.CreateInstance(sp, tool.Tool)).CallAsync(input, t),
+            r => { got = r; return Check(new ImportContribution(r.Nodes)); }, ct);
+        var why = got?.Refusal ?? ImportToolRefusal.None;
+        if (nodes is { Count: > 0 } || !Enum.IsDefined(why)) why = ImportToolRefusal.None;
+        return (nodes, why, why == ImportToolRefusal.None ? null : got?.At);
+    }
+
+    public string PluginName(string pluginId) => NameOf(pluginId);
 
     /// <summary>Some plugin reads drafts: only then are the pictures of an import read for diagrams.</summary>
     public bool AnyDraft => registrations.All<DraftContributorReg>().Count > 0;
@@ -67,15 +90,16 @@ public sealed class ImportContributors(IServiceScopeFactory scopes, IRegistratio
 
     /// <summary>
     /// Runs the draft contributors, after the file contributors, in the order the plugins registered them. Each sees the pages as the
-    /// ones before it left them (<paramref name="pages"/> is asked again for each); what it answers is checked and then placed.
+    /// ones before it left them (<paramref name="pages"/> is asked again for each, and so is <paramref name="toolBlocks"/>, the blocks the
+    /// import tools added, as they then stand); what it answers is checked and then placed.
     /// </summary>
     public async Task<IReadOnlyList<DraftContributed>> RunDraftAsync(ImportItem item, Func<IReadOnlyList<DraftPage>> pages, IReadOnlyList<string> files,
-        Action<DraftContributed> place, CancellationToken ct, IReadOnlyList<DraftPicture>? pictures = null)
+        Action<DraftContributed> place, CancellationToken ct, IReadOnlyList<DraftPicture>? pictures = null, Func<IReadOnlyList<DraftToolBlock>>? toolBlocks = null)
     {
         var found = new List<DraftContributed>();
         foreach (var c in registrations.All<DraftContributorReg>())
         {
-            var draft = new ImportDraft(item.Id, pages(), files) { Pictures = pictures ?? [] };
+            var draft = new ImportDraft(item.Id, pages(), files) { Pictures = pictures ?? [], ToolBlocks = toolBlocks?.Invoke() ?? [] };
             var additions = await CallAsync(c.PluginId, item, "draft contributor", "the draft",
                 (sp, t) => ((IDraftContributor)ActivatorUtilities.CreateInstance(sp, c.Value.Contributor)).ContributeAsync(draft, t), a => Check(a, draft.Pages.Count), ct);
             if (additions is null) continue;

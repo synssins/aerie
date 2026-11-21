@@ -71,6 +71,7 @@ public void Configure(IPluginApp app, IPluginContext context) => app
     .DraftContributor<NoticeFromDraft>()                       // ... from the text the AI drafted
     .DraftContributor<DiagramOutline>()                        // ... from the diagrams the AI read in its pictures
     .ImportFileKinds(".notice")                                // a kind the app does not read: drafted by this plugin
+    .ImportRegionTool<BoxesAndLines>(BoxesAndLines.Name, BoxesAndLines.Description, BoxesAndLines.Schema, BoxesAndLines.Regions) // a tool the AI may call for a drawing (0.11.0)
     .SignInMethod<SampleSignIn>("example", "Sign in with Example ID") // a button on the sign-in screen
     .SignInProviders<SampleProviderCheck>() // providers an Admin adds on this plugin's page, each with its own button
     .Routes(SampleRoutes.Map);                                 // under /api/v1/plugins/kb.sample/
@@ -1072,7 +1073,7 @@ public sealed class NoticeFromDraft : IDraftContributor
 }
 ```
 
-- **When.** Once for each item the AI drafted, after every [import contributor](#adding-to-the-draft-import-contributors) has added its nodes, before the importer sees the draft. Draft contributors run one after another, in the order the plugins were loaded; each sees what the ones before it added. Not for an item the AI could not draft.
+- **When.** Once for each item the AI drafted, after every [import contributor](#adding-to-the-draft-import-contributors) has added its nodes, before the importer sees the draft. Draft contributors run one after another, in the order the plugins were loaded; each sees what the ones before it added. Not for an item the AI could not draft. 0.11.0: the [tools for the AI](#tools-for-the-ai-during-an-import) run before them, and `ImportDraft.ToolBlocks` lists the blocks they added (page, block, plugin and tool), so a contributor can leave out what a tool already made, such as a second chart of a drawing the tool has drawn. `After` is the block the tool's nodes were put after: the block that shows what the call was about, such as the drawing. Both are counted for each contributor as the pages then stand, after what the contributors before it added; `After` is -1 when that block is no longer on the page.
 - **What it gets.** `ImportDraft(ImportItemId, Pages, Files)`. `Pages` are the draft's pages in order, each a `DraftPage(Title, ContentJson)`: the page's content as a page stores it ([page content](#page-content)), the AI's blocks with the import contributors' nodes already in them. The draft's pictures point to the import's own copies (`/api/v1/imports/files/<id>`) until the draft is accepted. `Files` are the paths of the item's files that were read. It is a copy: changing it changes nothing. It is not the text the app read from the files.
 - **What it answers.** Null, or `DraftContribution(Additions)`: each a `DraftAddition(Page, Place, Nodes)`. `Page` is the page's index in `Pages` (0 is the first). `Place` is one of:
 
@@ -1165,6 +1166,188 @@ For both kinds of contributor:
 - **Over a limit.** The whole answer is dropped, not cut: nothing of it is added, and it counts as a failure of the plugin.
 - **Time.** The limit is 10 seconds for each call. At the limit the core stops waiting, cancels the call's token, and goes on with the import; whatever the call answers later is dropped, and it counts as a failure. The call itself goes on running until it returns, so code that does not look at the token (a long parse) uses the processor until it ends. Check `ct` in long loops.
 
+
+### Tools for the AI during an import
+
+A plugin can offer the AI tools while an import is drafted. The plugin is the toolset; the app is the only path between the model and it. The app drafts the page as before, then, in a conversation of its own and before the draft contributors, offers the model the tools of the loaded plugins over the drafted page. When the model calls a tool, the app checks the call, passes its input to the plugin, and places the nodes the plugin answers in the draft.
+
+Register a tool with a name, a description and the JSON schema of its input:
+
+```csharp
+app.ImportTool<MyTool>(MyTool.Name, MyTool.Description, MyTool.Schema);
+```
+
+A tool that is for certain parts of a document, such as a drawing made of text characters, says which parts as data: a `ToolRegions`, line patterns the app checks, caps and runs on the source itself (see "What counts as a region" below). Register it with `ImportRegionTool`:
+
+```csharp
+app.ImportRegionTool<BoxesAndLines>(BoxesAndLines.Name, BoxesAndLines.Description, BoxesAndLines.Schema, BoxesAndLines.Regions);
+```
+
+It sets `ImportToolReg.For`. The app ships no drawing rule of its own: what a drawing is, is the plugin's declaration. The sample's `BoxesAndLines.Regions` (below) is one for drawings of boxes and lines made of text characters; a plugin may copy it, or declare its own patterns. A region tool differs from other tools in these ways, all decided by the app from the source, never by the model or the plugin:
+
+- **It is offered only for documents that hold one of its regions.** A tool without regions is offered for every document, as before.
+- **It gets one result for each region.** A second call that would add something for the same region is refused, so a document with two drawings can get two results, even when both were drafted into one block. Which region a call is about is the one in which most of its text is written. A call whose text is in none of its regions is refused.
+- **It is no longer offered once each of its regions has a result.** When no tool is left to offer, the conversation ends.
+- **Its text is held to the layout of the region.** A label may be stacked over several lines of one box, and the text one object gives together must be written together. The exact rules are in the guards below.
+- **The drafting keeps its regions as written.** See "The drafting keeps the regions" below.
+
+The tool class implements `IImportTool`. It gets the input of one call as a `JsonElement`, already checked against its schema, and answers `ImportToolResult(Nodes)`, or null to add nothing:
+
+<!-- sample:tool -->
+```csharp
+/// <summary>
+/// A tool the AI may call while it drafts an import (0.11.0): a drawing of boxes, groups and lines in a document (a network map
+/// drawn in text) becomes an outline after the block that shows it. It is registered with the regions it is for (<c>ImportRegionTool</c>,
+/// <see cref="Regions"/>): offered only for documents that hold such a drawing, one result for each. The app checks the input against <see cref="Schema"/> before the
+/// call, so the plugin gets only valid input; it never sees the document. Labels must be text of the document; ids, which the AI makes
+/// up to tie boxes to groups and lines, are marked <c>"format": "identifier"</c>. A chart plugin would draw the same data instead.
+/// </summary>
+public sealed class BoxesAndLines : IImportTool
+{
+    public const string Name = "boxes_and_lines";
+    public const string Description = "Draw a diagram of boxes, groups of boxes and lines between them, from a drawing in the documents such as a network map drawn in text.";
+    public const string Schema = """
+        {"type": "object", "required": ["boxes", "lines"], "additionalProperties": false, "properties": {
+          "title": {"type": "string", "maxLength": 100},
+          "groups": {"type": "array", "maxItems": 40, "items": {"type": "object", "required": ["id", "label"], "additionalProperties": false, "properties": {
+            "id": {"type": "string", "format": "identifier"}, "label": {"type": "string", "maxLength": 100},
+            "group": {"type": "string", "format": "identifier", "description": "The id of the group it sits in, if any."}}}},
+          "boxes": {"type": "array", "minItems": 1, "maxItems": 150, "items": {"type": "object", "required": ["id", "label"], "additionalProperties": false, "properties": {
+            "id": {"type": "string", "format": "identifier"}, "label": {"type": "string", "maxLength": 100},
+            "group": {"type": "string", "format": "identifier", "description": "The id of the group it sits in, if any."}}}},
+          "lines": {"type": "array", "maxItems": 200, "items": {"type": "object", "required": ["from", "to"], "additionalProperties": false, "properties": {
+            "from": {"type": "string", "format": "identifier"}, "to": {"type": "string", "format": "identifier"}, "label": {"type": "string", "maxLength": 100}}}}}}
+        """;
+
+    /// <summary>
+    /// What a drawing is, for this tool: a rule, a corner or a thing in brackets starts one; a bar, a plus, a slash or a box-drawing
+    /// character joins one; a rule alone is weak; two things in brackets joined by a connector, or two arrows, make one line a drawing.
+    /// </summary>
+    public static readonly ToolRegions Regions = new(
+        Starts: [@"[-=~_─━═]{3,}", @"\+[-=~_]|[-=~_]\+|[┌-╋]", @"\[\s+[^\]\[]+?\s+\]"],
+        Joins: [@"[|+/\\]|[─-╿]"],
+        Weak: [@"^\s*[-=~_*─━═]{3,}\s*$"],
+        Alone:
+        [
+            @"\[\s+[^\]\[]+?\s+\]\s*<?(?:[-=~.]{2,}|-+[^\s\[\]]+-+)>?\s*\[\s+[^\]\[]+?\s+\]",
+            @"(?:-{2,}|={2,})(?:[^\s<>\-=][^<>]*?-+)?>.*(?:-{2,}|={2,})(?:[^\s<>\-=][^<>]*?-+)?>",
+        ]);
+
+    public Task<ImportToolResult?> CallAsync(JsonElement input, CancellationToken ct)
+    {
+        static string Text(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
+        var groups = input.TryGetProperty("groups", out var g) ? g.EnumerateArray().ToList() : [];
+        var boxes = input.GetProperty("boxes").EnumerateArray().ToList();
+        var names = groups.Concat(boxes).GroupBy(x => Text(x, "id")).ToDictionary(x => x.Key, x => Text(x.First(), "label"));
+        object Item(string text, IEnumerable<object> children)
+        {
+            var list = children.ToList();
+            var para = new { type = "paragraph", content = new[] { new { type = "text", text } } };
+            return list.Count == 0 ? new { type = "listItem", content = new object[] { para } } : new { type = "listItem", content = new object[] { para, new { type = "bulletList", content = list } } };
+        }
+        // What sits in a group (or at the top), groups first. A group that names itself, or a loop, is shown once at the top.
+        var seen = new HashSet<string>();
+        IEnumerable<object> In(string group) =>
+            groups.Where(x => Text(x, "group") == group && seen.Add(Text(x, "id"))).Select(x => Item(Text(x, "label"), In(Text(x, "id"))))
+                .Concat(boxes.Where(x => Text(x, "group") == group).Select(x => Item(Text(x, "label"), [])));
+        var top = In("").ToList();
+        var lines = input.GetProperty("lines").EnumerateArray().Select(l => Item(
+            $"{names.GetValueOrDefault(Text(l, "from"), Text(l, "from"))} to {names.GetValueOrDefault(Text(l, "to"), Text(l, "to"))}{(Text(l, "label") is { Length: > 0 } x ? ": " + x : "")}", [])).ToList();
+        var nodes = new List<JsonElement>();
+        if (Text(input, "title") is { Length: > 0 } title)
+            nodes.Add(JsonSerializer.SerializeToElement(new { type = "paragraph", content = new[] { new { type = "text", text = title, marks = new[] { new { type = "bold" } } } } }));
+        nodes.Add(JsonSerializer.SerializeToElement(new { type = "bulletList", content = top }));
+        if (lines.Count > 0) nodes.Add(JsonSerializer.SerializeToElement(new { type = "bulletList", content = lines }));
+        return Task.FromResult<ImportToolResult?>(new ImportToolResult(nodes));
+    }
+}
+```
+
+**What the model sees of a plugin.** Only the tool's name, description and input schema, in the request's list of tools. They are fixed for the version the plugin registers them in, and the Admin sees each tool on the plugin's page in Administration > Plugins, with the reason when the app does not offer it. The app offers a tool only when:
+
+- its name is 3 to 40 lower-case letters, digits or underscores, starting with a letter, and no other loaded plugin's tool has it;
+- its description is plain text (letters, digits, spaces and ordinary punctuation: no line breaks, markup, braces or quotes) of at most 300 characters;
+- its schema is an object of at most 4,000 characters, nests at most 6 deep, and uses only `type` (object, array, string, integer, number, boolean), `properties`, `required`, `items`, `enum`, `minLength`, `maxLength`, `minItems`, `maxItems`, `additionalProperties` (false only), `description` and `format` (only `"identifier"`, `"within"`, `"enclosed"` or `"beside"`, on a string; see below). Property names are 1 to 40 letters, digits or underscores; a property's description is plain text of at most 200 characters; a choice of an `enum` is plain text of at most 60 characters, or a number. All this text together is at most 1,500 characters;
+- none of that text is addressed to the AI (the check every source of the AI goes through);
+- the schema does not use the name `after_block`, which the app keeps for itself.
+
+**What the plugin sees.** Only the input of its own call, checked. Never the document, the draft, the prompt, the model's address or key, or the rest of the conversation. A call runs as the plugin (an actor of kind Plugin, source "import"), in its own scope, within 10 seconds, like a contributor's.
+
+**Where the result goes.** The app adds an input `after_block` to every tool: the number of the draft block, as the model was shown the draft, that holds the content the call is about. The app removes it before the plugin gets the input, and puts the plugin's nodes right after that block. The source stays: a map drawn in text stays its code block, and the drawing goes after it. The importer reviews it with the rest.
+
+**Guards on what the model sends.** After the schema, the app checks each call:
+
+- **No repeats.** In one import item, a tool is not called again with the same input (its keys in any order), nor again after the same block. Only calls that added something count. A refused call may be made again, corrected. The reply is "Refused as a repeat: ...".
+- **Only text of the source.** Every string in the input must appear in the item's documents or in its drafted page; for a region tool, in the documents themselves, since the draft's wording is the model's. The comparison ignores case, and every run of white space counts as one space. Three kinds of string are not checked:
+  - a string shorter than 3 characters: it carries no text of its own;
+  - a string the schema limits to an `enum`: the choices are the plugin's, fixed and checked when the tool is offered;
+  - a string marked `"format": "identifier"` or `"format": "within"`. This is for the ids the model makes up to tie items together, such as a box's id, the ends of a line and the group a box sits in. An identifier is not compared with the source, but it must be 1 to 32 letters, digits, dots, hyphens or underscores, so it cannot carry a sentence.
+
+  - **Stacked text, for a region tool.** A text also counts as text of the source when it is written in one of the tool's regions over lines that follow each other, such as a name above an address in one box, or a line's label written over two lines. Each part must be on one line. Each part must start within 2 columns of the part above it, and one blank or letterless line may come between parts. Between two words the source may have spaces, brackets (`[storage] [KV]` matches "storage KV") or a slash, comma or semicolon; the model may give the line breaks as spaces, line breaks, " / " or ", " (so "DC01 (phys) / DC02 (vm)" matches the two lines). The words themselves must be as written, in order. Words further apart, side by side, or out of order are not joined.
+    - **Inside a box,** the box is the bound: all parts sit between the box's top rule and its bottom rule, over as many lines as the box has. A text never crosses a box's rule. The box is found from the first part: the nearest rule above it that runs over the part, with a side of the box (a bar, a plus or a corner) on the part's line where that rule starts and ends, and the nearest rule below it that runs over the part.
+    - **Outside any box,** such as a line's label beside the line, a text may be stacked over 2 to 4 lines, and none of its parts may sit in a box.
+
+  A text that the model reworded, joined from two places, or made up is refused: "Refused: the input holds text that is not in the documents or the draft: "..."". Mark only real ids as identifiers. A string marked as one is still limited to 32 characters of that kind.
+
+- **For a region tool, text given together is written together.** In each object of the input, the first text string in the schema's order is read as the label (such as a box's `label`), and the other text strings of that object as written with it (such as its `detail`), with the label's second and further lines. Choices and identifiers do not count.
+  - Where the label is written in a box, each of the others must be written in that same box. A detail taken from beside the box, from another box, or from the prose is refused: "Refused: "..." is not written in the same box as "..." in the documents. Give each item only the text written with it."
+  - Where the label is written in a region but in no box, such as a thing in brackets or a bare name, each of the others must be written stacked right under it, as one label would be (within 2 columns, at most 4 lines).
+  - A label that is in none of the tool's regions is left to the source check.
+
+  So put the label first in the schema of each object, and give the text a box holds in fields of that object.
+
+  **An object with no label.** The label is the object's first text property in the schema's order: a string with no `enum`, not marked `identifier`, `within` or `beside`. A schema may leave it out of `required`, as for a frame with no words. When the input leaves it out, the object has no label:
+  - the object's other text strings, its title among them, are still checked against the source, but not against the layout (written together, beside);
+  - the next text property is never taken for the label in its place;
+  - a `within` that names an object with no label is not checked against the layout, since there is no text to find the object's box by; it must still name an id the input declares;
+  - an object with no label heads no frame, so nothing is required to name it as its container.
+  The plugin decides whether such an object is acceptable (for example, a group that holds nothing).
+
+- **For a region tool, an item is drawn in the region.** The label of an object that has an id (a string marked `"format": "identifier"`), such as a box or a group, must be written in one of the tool's regions, not only in the prose around them, such as the page's heading. A call that breaks it is refused: "Refused: "..." is not written in the drawing, so it is not an item of it. Draw only what the drawing shows." When the object's schema does not require its label, the reply adds: "Leave out the label of an item that has no words in the drawing, such as an empty frame." Objects without an id (a line) and the drawing's own title are not held to this.
+
+- **For a region tool, a title is written beside its object.** A string marked `"format": "beside"` (such as a box's `title`: an address written beside a device, or a note under it) is text, checked against the source as any text is, but it is not held to "written together". Instead it must be written in the same region near its object's label: on a line from 3 lines above the box that holds the label to 3 lines below it, or within 3 lines of the label where no box holds it. A title written far from its object is refused: "Refused: "..." is not written beside "..." in the documents. Give each item only the text written with it." Nor may a title stand at the end of a line drawn across (joined to a run of dashes, as "|---- Entra ID / M365 / Intune"): that text is a box of its own, joined by the line, and the reply says so. Where the schema has such a field, the replies about text not in the same box, and about text written in no box, also say that text beside an item belongs in that field, by its name.
+
+- **For a region tool, a box's label stands in a box.** A string marked `"format": "enclosed"` (such as a box's `label`) is text, checked against the source as any text is, and must also stand inside a box or between brackets on its line, where its region draws boxes at all (a chain of bare names does not). So a line's label beside the line is not taken for a box. A call that breaks it is refused: "Refused: "..." is written in no box in the documents, so it is not a box; text beside a line is that line's label." The other way round, the label of an object of another kind that has an id (such as a group) may not be an item the documents write in brackets: "Refused: "..." is written in brackets in the documents, so it is an item of "boxes", not of another kind." The reply names the array whose items carry the enclosed label. Nor may such a string join items the documents write each in its own brackets (two or more of them, or one with words of its own): "Refused: "..." joins items the documents write each in its own brackets. Give each item a box of its own."
+- **For a region tool, an item in a group is drawn inside it.** A string marked `"format": "within"` is an id, as `"identifier"` is, that names the object this one is drawn inside, such as a box's `group`. It must name an id that some object of the input declares (its first string marked `"format": "identifier"`). A call that names ids nobody declares is refused before it reaches the plugin, with all of them in one reply: "Refused: the input names "..." as what an item is drawn inside, but declares no object with that id. Declare each one, or leave it out." The app checks it against the source: the object's label must be written inside the box of the named object's label (between its rules and its sides), or in that same box. An object's id is its first string marked `"format": "identifier"`, its label its first text string. A container whose label stands in no box (a heading at the end of a rule, as "AZURE" beside a line of tildes), or a name no object of the input declares, is not checked here. A call that breaks it is refused: "Refused: "..." is not drawn inside "..." in the documents. Put an item in a group only when it is drawn inside it." The other way round too: where the schema lets an object name a container, an object whose label is drawn inside a box below that box's heading (its first line of text), where the heading is another object's label, must name that object, as a server in its network's frame. A call that breaks it is refused: "Refused: "..." is drawn inside the box headed "..." in the documents. Make that a group, and put it in that group."
+
+**What counts as a region.** `ToolRegions(Starts, Joins, Weak, Alone, MinLines, MinStarts, MaxGap)` describes, as .NET regular expressions over single lines, the regions a tool is for. The app finds them in the documents line by line:
+
+- A region starts at a line that matches a `Starts` (or `Alone`) pattern.
+- It goes on over lines that match a `Starts`, `Alone` or `Joins` pattern. At most `MaxGap` other lines may come in a row, such as blank lines or labels.
+- It counts when it has at least `MinLines` of those lines and at least `MinStarts` of them match `Starts` but no `Weak` pattern, or when one of its lines matches an `Alone` pattern (a region of one line).
+- A Markdown table (rows between bars, with a rule row) is never part of a region, nor is the app's own file header line.
+
+The app checks a declaration before it offers the tool: at most 16 patterns in each list, each at most 300 characters and a pattern the app can run without backtracking (no back-references or look-arounds); `MinLines` 1 to 20, `MinStarts` 0 to 20, `MaxGap` 0 to 5. Each pattern runs with a time limit. A tool whose declaration breaks a rule is not offered, and the Admin sees why.
+
+**The sample's declaration, `BoxesAndLines.Regions`,** is for drawings made of text characters:
+- starts: a rule of three dashes, equals, tildes or underscores (or box-drawing characters); a plus where a rule meets it; or a thing in brackets with spaces inside, such as `[ HV01 ]`;
+- joins: a line holding a bar, a plus, a slash or a box-drawing character;
+- weak: a rule alone, such as a Markdown section break (`---`);
+- alone: two things in brackets with spaces inside joined by a connector of two or more dashes, equals, tildes or dots, with or without arrow heads or a label inside (`[ A ] --- [ B ] --> [ C ]`); or two arrows or more on one line (`printer --587--> FW01 --> Exchange Online`);
+- at least 3 lines, 2 of them starts, at most 2 other lines in a row.
+
+With it, not drawings: one arrow in a sentence (`printer -> relay01`), a task list (`- [ ] check`), links (`[the guide](https://...)`), one thing in brackets in a sentence, Mermaid or other diagram code. Known misses: one arrow between two bare names (`A ---> B`). A line of bars alone (`| HV01 |`) joins a drawing but does not start one, so a table set with bars and no rule row, as an HTML table reads as text, is no drawing.
+
+**The drafting keeps the regions.** Where the documents hold a region of a loaded tool, the drafting gets those regions as data under "keep", and its task says to copy each into one code block, exactly as written, where it stands. Documents without one are drafted exactly as before, word for word.
+
+**What the model gets back.** Never the plugin's text. Each call gets one reply the app writes: "Done: added after block 2.", or "Refused:" and the app's reason (no tool of that name, not a JSON object, over 16 KB, no such block, which part of the schema the input breaks, a repeat, text that is not in the source, text not written together, a region that already has its result, an input about none of the tool's regions, or that the tool added nothing). A reply may quote, cut short, the model's own string that was not found; never anything of the plugin's.
+
+**Refusing with a reason.** A tool that cannot make anything of an input answers `ImportToolResult.Refuse(why, at)` instead of null. `why` is one of the app's reasons, `ImportToolRefusal`:
+
+| Reason | The app's reply to the model |
+|---|---|
+| `UnknownId` | Refused by the tool: `<at>` names an id that the input does not declare. Declare it, or leave it out. |
+| `DuplicateId` | Refused by the tool: `<at>` declares an id that is declared before. Give each its own id. |
+| `TooLittle` | With a path: Refused by the tool: `<path>` holds too little to make anything of. Give it what belongs in it, or make that item another kind of item. Without one: Refused by the tool: the input holds too little to make anything of. |
+| `TooMuch` | Refused by the tool: the input holds more than the tool can make. |
+| `SelfReference` | Refused by the tool: `<at>` refers to the item it belongs to. Leave it out, or name another. |
+| `Combined` | Refused by the tool: `<at>` holds several items in one text. Give each item on its own. |
+
+`at` is optional: a JSON path into the call's input, such as `$.boxes[3].group` (a dollar sign, then names after dots and numbers in brackets, at most 12 steps). The app names it only when it is of that form and names a part of the input; when it names a string of the identifier form, the reply quotes it, being the model's own text. Otherwise the reply says "the input". Nothing else of the plugin reaches the model. A null answer, or nodes that fail the checks, get "Refused: the tool added nothing."
+
+**Limits, for each import item.** At most 8 tool calls that reach a plugin, and at most 8 calls the app refuses before that (the schema, the source, the layout, repeats), each counted apart, so a large drawing is not starved by retries; then the conversation ends, and the draft says so. It also ends when the model calls no tool, or when no tool is left to offer. One call's input is at most 16 KB. The plugin's answer is checked as a contribution's (block nodes, at most 50 nodes and 512 KB). Each call is in the audit log as `import.tool`: the plugin, the tool, the importer, the size of the input, the outcome and the number of nodes. Each model call is in it as an AI call, as the drafting is.
+
+**When there are no tools.** With no plugin that offers a tool, or none the app accepts, no tool conversation is held, and the import is as it was. When the model server cannot call tools (it answers an error), the draft is as it would be without them, and its warnings say so. The tools are not offered for an item that holds a secret or that goes to a sensitive space, as contributors are not called for it.
 
 ### What a plugin sees of an import
 
@@ -1393,7 +1576,8 @@ The plugin stays disabled until an Admin selects Enable. Uploading a new version
 - `abstractionsVersion`: the version of `Kb.Plugins.Abstractions` the plugin was built against. The app refuses a plugin built for a newer one.
 - `minKbVersion`: the lowest app version the plugin runs on.
 
-The contract and the app are at 0.10.0, and can still change before 1.0.0.
+The contract and the app are at 0.11.0, and can still change before 1.0.0.
+0.11.0 added [tools for the AI during an import](#tools-for-the-ai-during-an-import) (`app.ImportTool<T>(name, description, schema)`, `app.ImportRegionTool<T>(name, description, schema, regions)` with `ToolRegions`, `IImportTool`, `ImportToolResult` with `ImportToolResult.Refuse(ImportToolRefusal, at)`, `ImportToolReg` with `For`, and `ImportDraft.ToolBlocks`); a plugin that uses them says `"abstractionsVersion": "0.11.0"`. Nothing of 0.10.0 changed, and a plugin built for 0.10.0 or earlier loads as it did.
 0.10.0 added [diagrams in the pictures of an import](#diagrams-in-the-pictures-of-an-import) (`ImportDraft.Pictures`, `DraftPicture`, `PictureDiagram`, `DiagramBox`, `DiagramContainer`, `DiagramLine`, `DiagramText`, `DiagramArea`, `DiagramShape`, `DiagramArrow`, `DiagramLimits`, `DraftPlace.AfterPicture`, `DraftAddition.Picture`); a plugin that uses them says `"abstractionsVersion": "0.10.0"`. Nothing of 0.9.0 changed, and a plugin built for 0.9.0 or earlier loads as it did.
 0.9.0 added [sign-in providers an Admin adds](#sign-in-providers-an-admin-adds) (`app.SignInProviders()`, `app.SignInProviders<TCheck>()`, `ISignInProviderCheck`, `SignInProvidersReg`) and `OidcProvider.UserInfo`; a plugin that uses them says `"abstractionsVersion": "0.9.0"`. Nothing of 0.8.0 changed, and a plugin built for 0.8.0 or earlier loads as it did.
 0.8.0 added [sign-in methods](#sign-in-methods) (`ISignInMethod`, `OidcProvider`, `SignInClaims`, `SignInMethodReg`, `app.SignInMethod<T>(id, name)`) and the actor source `signin`; a plugin that uses them says `"abstractionsVersion": "0.8.0"`. One thing changed that an earlier plugin can see: a setting key starting with `signIn.` is the app's, so a manifest that declares one is refused at install. Nothing else of 0.7.0 changed, and a plugin built for 0.7.0 or earlier loads as it did.

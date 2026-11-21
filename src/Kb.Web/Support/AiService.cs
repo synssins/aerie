@@ -160,8 +160,60 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
 
         if (pictures?.Sum(p => (long)p.Data.Length) > 32L * 1024 * 1024) return await RefuseAsync("too-large", Problem.Invalid("pictures", "32 MB of pictures at most."));
         var body = AiGuard.Request(s, AiGuard.SystemMessage(s.Ruleset, task, schema), AiGuard.UserMessage(data), schema, pictures);
+        JsonNode? answer = null, output = null;
+        string content = "", reasoning = "", model = s.Model;
+        int inTokens = 0, outTokens = 0;
+        long ms = 0;
+        var cutOff = false;
+        // A reply in JSON that misses the structure (not cut off, and nothing a caller's salvage keeps) is answered once with where it
+        // misses, in the app's words, and asked again: some servers do not hold the model to the schema.
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var (sent, failed, took) = await SendAsync(s, body, feature, RefuseAsync, ct);
+            if (failed is not null) return failed;
+            answer = sent;
+            ms += took;
+            var message = answer?["choices"]?[0]?["message"];
+            content = message?["content"]?.GetValue<string>() ?? "";
+            reasoning = message?["reasoning_content"]?.GetValue<string>() ?? message?["reasoning"]?.GetValue<string>() ?? "";
+            inTokens += answer?["usage"]?["prompt_tokens"]?.GetValue<int>() ?? 0;
+            outTokens += answer?["usage"]?["completion_tokens"]?.GetValue<int>() ?? 0;
+            model = answer?["model"]?.GetValue<string>() ?? s.Model;
+            output = Kb.Web.Import.ImportTools.ParseModelJson(StripFence(content));
+            cutOff = answer?["choices"]?[0]?["finish_reason"]?.GetValue<string>() == "length";
+            if (attempt > 0 || output is null || cutOff || AiGuard.SchemaError(output, schema) is not { } miss || salvage?.Invoke(content) is not null) break;
+            await AuditAsync(actor, feature, "retry", inTokens, outTokens, took, miss);
+            body["messages"]!.AsArray().Add(new JsonObject { ["role"] = "assistant", ["content"] = content });
+            body["messages"]!.AsArray().Add(new JsonObject
+            {
+                ["role"] = "user",
+                ["content"] = $"That reply does not match the required structure ({miss}). Answer again with the whole reply in the required structure.",
+            });
+        }
+        if ((output is null || AiGuard.SchemaError(output, schema) is not null) && salvage?.Invoke(content) is { } kept)
+        {
+            await AuditAsync(actor, feature, "partial", inTokens, outTokens, ms, cutOff ? "cut at the token limit; complete items kept" : "not the schema; complete items kept");
+            return new AiResult(kept, model, inTokens, outTokens, ms, string.IsNullOrWhiteSpace(reasoning), cutOff);
+        }
+        if (output is null || AiGuard.SchemaError(output, schema) is { } bad)
+        {
+            await AuditAsync(actor, feature, "invalid-output", inTokens, outTokens, ms, output is null ? "not JSON" : AiGuard.SchemaError(output, schema));
+            var cut = answer?["choices"]?[0]?["finish_reason"]?.GetValue<string>() == "length";
+            return new Problem(502, cut ? $"{CutOff} of {s.MaxTokens} tokens (Max tokens in Administration > AI)."
+                : output is null ? "The model's reply was not JSON." : "The model's reply didn't match the required structure.");
+        }
+        await AuditAsync(actor, feature, "ok", inTokens, outTokens, ms, null);
+        return new AiResult(output, model, inTokens, outTokens, ms, string.IsNullOrWhiteSpace(reasoning));
+    }
+
+    /// <summary>
+    /// Sends one request to the model server: the Admin's address and key, the plugins that add headers, the timeout. The answer, or the
+    /// problem (already audited through <paramref name="refuse"/>), and how long it took.
+    /// </summary>
+    private async Task<(JsonNode? Answer, Problem? Problem, long Ms)> SendAsync(AiSettings s, JsonObject body, string feature,
+        Func<string, Problem, string?, Task<Problem>> refuse, CancellationToken ct)
+    {
         var clock = Stopwatch.StartNew();
-        JsonNode? answer;
         try
         {
             var root = s.BaseUrl.TrimEnd('/');
@@ -177,12 +229,12 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
             }
             catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
             {
-                return await RefuseAsync("error", new Problem(502, $"A plugin that adds to the AI's requests failed ({e.GetType().Name})."), e.Message);
+                return (null, await refuse("error", new Problem(502, $"A plugin that adds to the AI's requests failed ({e.GetType().Name})."), e.Message), 0);
             }
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(s.TimeoutSeconds, 5, 600)));
             using var response = await http.CreateClient(ClientName).SendAsync(request, timeout.Token);
-            if (Redirect(response) is { } moved) return await RefuseAsync("error", new Problem(502, moved), moved);
+            if (Redirect(response) is { } moved) return (null, await refuse("error", new Problem(502, moved), moved), 0);
             var text = await response.Content.ReadAsStringAsync(timeout.Token);
             if (!response.IsSuccessStatusCode)
             {
@@ -191,41 +243,97 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
                 log.LogWarning("The model server answered {Status} for {Feature} after {Ms} ms: {Said}", (int)response.StatusCode, feature, clock.ElapsedMilliseconds, said.Length > 300 ? said[..300] : said);
                 // Some servers answer an error when the reply reached the token limit before the structure was complete.
                 if (text.Contains("finish_reason=length", StringComparison.Ordinal) || text.Contains("\"finish_reason\": \"length\"", StringComparison.Ordinal))
-                    return await RefuseAsync("error", new Problem(502, $"{CutOff} of {s.MaxTokens} tokens (Max tokens in Administration > AI)."), text.Length > 200 ? text[..200] : text);
-                return await RefuseAsync("error", new Problem(502, $"The model server answered {(int)response.StatusCode} ({response.ReasonPhrase}): {ServerReason(text) ?? "it may be overloaded, or the content too large for it."}"),
-                    text.Length > 200 ? text[..200] : text);
+                    return (null, await refuse("error", new Problem(502, $"{CutOff} of {s.MaxTokens} tokens (Max tokens in Administration > AI)."), text.Length > 200 ? text[..200] : text), 0);
+                return (null, await refuse("error", new Problem(502, $"The model server answered {(int)response.StatusCode} ({response.ReasonPhrase}): {ServerReason(text) ?? "it may be overloaded, or the content too large for it."}"),
+                    text.Length > 200 ? text[..200] : text), 0);
             }
-            answer = JsonNode.Parse(text);
+            return (JsonNode.Parse(text), null, clock.ElapsedMilliseconds);
         }
         catch (Exception e) when (e is HttpRequestException or OperationCanceledException or JsonException or InvalidOperationException && !ct.IsCancellationRequested)
         {
-            return await RefuseAsync("error", new Problem(502, e is OperationCanceledException ? $"The model did not answer within {Math.Clamp(s.TimeoutSeconds, 5, 600)} seconds (the timeout in Administration > AI)." : "The model server could not be reached."), e.Message);
+            return (null, await refuse("error", new Problem(502, e is OperationCanceledException ? $"The model did not answer within {Math.Clamp(s.TimeoutSeconds, 5, 600)} seconds (the timeout in Administration > AI)." : "The model server could not be reached."), e.Message), 0);
         }
-        var ms = clock.ElapsedMilliseconds;
-        var message = answer?["choices"]?[0]?["message"];
-        var content = message?["content"]?.GetValue<string>() ?? "";
-        var reasoning = message?["reasoning_content"]?.GetValue<string>() ?? message?["reasoning"]?.GetValue<string>() ?? "";
-        var (inTokens, outTokens) = (answer?["usage"]?["prompt_tokens"]?.GetValue<int>() ?? 0, answer?["usage"]?["completion_tokens"]?.GetValue<int>() ?? 0);
-        var model = answer?["model"]?.GetValue<string>() ?? s.Model;
+    }
 
-        JsonNode? output;
-        try { output = JsonNode.Parse(StripFence(content)); }
-        catch (JsonException) { output = null; }
-        var cutOff = answer?["choices"]?[0]?["finish_reason"]?.GetValue<string>() == "length";
-        if ((output is null || AiGuard.SchemaError(output, schema) is not null) && salvage?.Invoke(content) is { } kept)
+    /// <summary>One call of a tool by the model: its name, and its arguments as the model wrote them (untrusted).</summary>
+    public sealed record ToolCall(string Name, string Arguments);
+
+    /// <summary>What a tool conversation did: the model calls, their tokens and time, the tool calls answered, and whether a limit ended it.</summary>
+    public sealed record ToolRun(int ModelCalls, int PromptTokens, int CompletionTokens, long Milliseconds, int ToolCalls, bool LimitReached);
+
+    /// <summary>The app's reply to one tool call, and whether the call reached the tool (counted against the calls a plugin answers) or was refused before.</summary>
+    public sealed record ToolAnswer(string Reply, bool Reached);
+
+    /// <summary>
+    /// 0.11.0. A conversation in which the model may call the given tools (function tools of the chat API). The checks of
+    /// <see cref="RunAsync"/> come first. Each tool call goes to <paramref name="answer"/>, whose reply is what the model gets back: server
+    /// text, never a plugin's. <paramref name="tools"/> is asked before each model call, so a tool that is done is no longer offered. It
+    /// ends when the model calls no tool, when no tool is left to offer, after <paramref name="maxToolCalls"/> calls that reached a tool, or
+    /// after <paramref name="maxRefused"/> calls refused before that. A server or model that cannot call tools gives a problem at the first
+    /// call; the caller goes on without tools.
+    /// </summary>
+    public async Task<Outcome<ToolRun>> RunToolsAsync(Actor actor, string feature, string task, IReadOnlyDictionary<string, string> data, Func<JsonArray> tools,
+        Func<ToolCall, Task<ToolAnswer>> answer, int maxToolCalls, int maxRefused, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(tools);
+        ArgumentNullException.ThrowIfNull(actor);
+        ArgumentNullException.ThrowIfNull(answer);
+        var s = await SettingsAsync(ct);
+        async Task<Problem> RefuseAsync(string outcome, Problem p, string? detail = null)
         {
-            await AuditAsync(actor, feature, "partial", inTokens, outTokens, ms, cutOff ? "cut at the token limit; complete items kept" : "not the schema; complete items kept");
-            return new AiResult(kept, model, inTokens, outTokens, ms, string.IsNullOrWhiteSpace(reasoning), cutOff);
+            await AuditAsync(actor, feature, outcome, 0, 0, 0, detail);
+            return p;
         }
-        if (output is null || AiGuard.SchemaError(output, schema) is { } bad)
+
+        if (!s.Enabled || string.IsNullOrWhiteSpace(s.BaseUrl) || string.IsNullOrWhiteSpace(s.Model)) return await RefuseAsync("off", Problem.Conflict("AI is off."));
+        if (!await MayUseAsync(actor, feature, s, ct)) return await RefuseAsync("denied", new Problem(403, "This AI feature is not open to you."));
+        if (data.Values.Sum(v => (long)v.Length) > s.MaxInputChars) return await RefuseAsync("too-large", Problem.Invalid("data", $"{s.MaxInputChars} characters at most."));
+        if (AiGuard.Tripwire(data) is { } found)
+            return await RefuseAsync("refused", Problem.Refused("The content holds text addressed to the AI, so it was not sent."), found.Length > 80 ? found[..80] : found);
+
+        var messages = new JsonArray(
+            new JsonObject { ["role"] = "system", ["content"] = $"{s.Ruleset.Trim()}\n\nTask:\n{task.Trim()}" },
+            new JsonObject { ["role"] = "user", ["content"] = AiGuard.UserMessage(data) });
+        var (calls, inTokens, outTokens, ms, answered, reached, refused) = (0, 0, 0, 0L, 0, 0, 0);
+        while (true)
         {
-            await AuditAsync(actor, feature, "invalid-output", inTokens, outTokens, ms, output is null ? "not JSON" : AiGuard.SchemaError(output, schema));
-            var cut = answer?["choices"]?[0]?["finish_reason"]?.GetValue<string>() == "length";
-            return new Problem(502, cut ? $"{CutOff} of {s.MaxTokens} tokens (Max tokens in Administration > AI)."
-                : output is null ? "The model's reply was not JSON." : "The model's reply didn't match the required structure.");
+            var offered = tools();
+            if (offered.Count == 0) return new ToolRun(calls, inTokens, outTokens, ms, answered, false);
+            if (!limiter.Allow($"u:{actor.UserId}", s.UserPerMinute) || (actor.TokenId is { } token && !limiter.Allow($"t:{token}", s.TokenPerMinute)))
+                return calls == 0 ? await RefuseAsync("limited", new Problem(429, "Too many AI calls. Wait a minute.")) : new ToolRun(calls, inTokens, outTokens, ms, answered, true);
+            var (reply, failed, took) = await SendAsync(s, AiGuard.ToolRequest(s, messages, offered), feature, RefuseAsync, ct);
+            if (failed is not null) return calls == 0 ? failed : new ToolRun(calls, inTokens, outTokens, ms, answered, false);
+            calls++;
+            ms += took;
+            var (i, o) = (reply?["usage"]?["prompt_tokens"]?.GetValue<int>() ?? 0, reply?["usage"]?["completion_tokens"]?.GetValue<int>() ?? 0);
+            (inTokens, outTokens) = (inTokens + i, outTokens + o);
+            var toolCalls = (reply?["choices"]?[0]?["message"]?["tool_calls"] as JsonArray)?.OfType<JsonObject>().ToList() ?? [];
+            await AuditAsync(actor, feature, "ok", i, o, took, $"tool calls: {toolCalls.Count}");
+            if (toolCalls.Count == 0) return new ToolRun(calls, inTokens, outTokens, ms, answered, false);
+            // The model's turn goes back rebuilt from each call's id, name and arguments; each call gets the server's reply.
+            var made = new JsonArray();
+            var replies = new List<JsonObject>();
+            foreach (var c in toolCalls)
+            {
+                var id = c["id"]?.GetValue<string>() ?? $"call_{answered}";
+                var name = c["function"]?["name"]?.GetValue<string>() ?? "";
+                var args = c["function"]?["arguments"] is JsonValue v && v.GetValueKind() == JsonValueKind.String ? v.GetValue<string>() : c["function"]?["arguments"]?.ToJsonString() ?? "";
+                made.Add(new JsonObject { ["id"] = id, ["type"] = "function", ["function"] = new JsonObject { ["name"] = name, ["arguments"] = args } });
+                var said = "Refused: the limit of tool calls for this import is reached.";
+                if (reached < maxToolCalls && refused < maxRefused)
+                {
+                    var got = await answer(new ToolCall(name, args));
+                    said = got.Reply;
+                    if (got.Reached) reached++;
+                    else refused++;
+                }
+                answered++;
+                replies.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = id, ["content"] = said });
+            }
+            if (reached >= maxToolCalls || refused >= maxRefused) return new ToolRun(calls, inTokens, outTokens, ms, answered, true);
+            messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = "", ["tool_calls"] = made });
+            foreach (var r in replies) messages.Add(r);
         }
-        await AuditAsync(actor, feature, "ok", inTokens, outTokens, ms, null);
-        return new AiResult(output, model, inTokens, outTokens, ms, string.IsNullOrWhiteSpace(reasoning));
     }
 
     /// <summary>
