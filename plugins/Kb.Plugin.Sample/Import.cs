@@ -86,7 +86,7 @@ public sealed class DiagramOutline : IDraftContributor
 
 // #region guide:tool
 /// <summary>
-/// A tool the AI may call while it drafts an import (0.11.0 draft): a drawing of boxes, groups and lines in a document (a network map
+/// A tool the AI may call while it drafts an import (0.11.0): a drawing of boxes, groups and lines in a document (a network map
 /// drawn in text) becomes an outline after the block that shows it. It is registered with the regions it is for (<c>ImportRegionTool</c>,
 /// <see cref="Regions"/>): offered only for documents that hold such a drawing, one result for each. The app checks the input against <see cref="Schema"/> before the
 /// call, so the plugin gets only valid input; it never sees the document. Labels must be text of the document; ids, which the AI makes

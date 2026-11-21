@@ -83,7 +83,7 @@ public sealed record ImportDraft(Guid ImportItemId, IReadOnlyList<DraftPage> Pag
     public IReadOnlyList<DraftPicture> Pictures { get; init; } = [];
 
     /// <summary>
-    /// 0.11.0 (draft). The blocks of <see cref="Pages"/> that import tools added (the tool conversation runs before the draft
+    /// 0.11.0. The blocks of <see cref="Pages"/> that import tools added (the tool conversation runs before the draft
     /// contributors): where each stands and which plugin's tool added it, so a contributor can tell what a tool already made. Empty when
     /// no tool added anything.
     /// </summary>
@@ -91,7 +91,7 @@ public sealed record ImportDraft(Guid ImportItemId, IReadOnlyList<DraftPage> Pag
 }
 
 /// <summary>
-/// 0.11.0 (draft). One block an import tool added: <paramref name="Page"/> (0 is the first) and <paramref name="Block"/> (its index among
+/// 0.11.0. One block an import tool added: <paramref name="Page"/> (0 is the first) and <paramref name="Block"/> (its index among
 /// the page's top-level blocks, as <see cref="ImportDraft.Pages"/> gives them to this contributor: the app counts it anew for each, after
 /// what the ones before it added), the plugin and the name of the tool.
 /// </summary>
@@ -218,7 +218,7 @@ public interface IDraftContributor
 public sealed record DraftContributorReg(Type Contributor);
 
 /// <summary>
-/// 0.11.0 (draft). A tool a plugin offers the AI while an import is drafted: its <paramref name="Name"/>, a short
+/// 0.11.0. A tool a plugin offers the AI while an import is drafted: its <paramref name="Name"/>, a short
 /// <paramref name="Description"/> of when to use it, and the JSON schema of its input (<paramref name="InputSchema"/>). These three are
 /// the only text of a plugin that reaches the AI. The app checks them before it offers the tool (see the plugin guide for the rules) and
 /// does not offer a tool that breaks one; the Admin sees each tool on the plugin's page. <paramref name="Tool"/> answers the calls.
@@ -226,7 +226,7 @@ public sealed record DraftContributorReg(Type Contributor);
 public sealed record ImportToolReg(string Name, string Description, JsonElement InputSchema, Type Tool)
 {
     /// <summary>
-    /// 0.11.0 (draft). What in a document the tool is for, as line patterns the app checks, caps and runs on the source itself (see
+    /// 0.11.0. What in a document the tool is for, as line patterns the app checks, caps and runs on the source itself (see
     /// <see cref="ToolRegions"/>). A tool with regions is offered only for documents that hold one, takes one result for each region, and
     /// its input is held to the layout of the region (labels stacked in one enclosure, text given together written together). Null: the
     /// tool is for any document.
@@ -236,7 +236,7 @@ public sealed record ImportToolReg(string Name, string Description, JsonElement 
 }
 
 /// <summary>
-/// 0.11.0 (draft). The regions of a document a tool is for: runs of lines found by the app from the source alone, never by the model or
+/// 0.11.0. The regions of a document a tool is for: runs of lines found by the app from the source alone, never by the model or
 /// the plugin. A region starts at a line that matches one of <paramref name="Starts"/> and goes on over lines that match
 /// <paramref name="Starts"/> or <paramref name="Joins"/>, with at most <paramref name="MaxGap"/> other lines in a row. It counts when it has
 /// at least <paramref name="MinLines"/> such lines and <paramref name="MinStarts"/> of them match <paramref name="Starts"/> but none of
@@ -251,7 +251,7 @@ public sealed record ToolRegions(IReadOnlyList<string> Starts, IReadOnlyList<str
 }
 
 /// <summary>
-/// 0.11.0 (draft). Answers the AI's calls of one tool during an import. It gets only the input of the call, checked against the tool's
+/// 0.11.0. Answers the AI's calls of one tool during an import. It gets only the input of the call, checked against the tool's
 /// schema; never the document, the prompt or the rest of the conversation. It is made for each call, in its own scope, as its plugin
 /// (an actor of kind Plugin, source "import"). A call that throws, runs past 10 seconds, or answers more than the limits of
 /// <see cref="DraftContribution"/> adds nothing and counts as a failure of the plugin; the import goes on.
@@ -263,7 +263,7 @@ public interface IImportTool
 }
 
 /// <summary>
-/// 0.11.0 (draft). Editor nodes to add to the draft, each the stored JSON of one block node. At most 50 nodes and 512 KB of JSON. Or a
+/// 0.11.0. Editor nodes to add to the draft, each the stored JSON of one block node. At most 50 nodes and 512 KB of JSON. Or a
 /// refusal (<see cref="Refuse"/>): no nodes, a <see cref="Refusal"/> from the app's fixed list and, for some, <see cref="At"/>, the path in
 /// the input it is about. The app words the reply to the model itself; no text of the plugin reaches the model.
 /// </summary>
@@ -283,7 +283,7 @@ public sealed record ImportToolResult(IReadOnlyList<JsonElement> Nodes)
     public static ImportToolResult Refuse(ImportToolRefusal why, string? at = null) => new([]) { Refusal = why, At = at };
 }
 
-/// <summary>0.11.0 (draft). Why a tool added nothing. The app owns and words each one.</summary>
+/// <summary>0.11.0. Why a tool added nothing. The app owns and words each one.</summary>
 public enum ImportToolRefusal
 {
     /// <summary>Not a refusal.</summary>
@@ -305,7 +305,7 @@ public enum ImportToolRefusal
 public static class ImportToolExtensions
 {
     /// <summary>
-    /// 0.11.0 (draft). Registers a tool the AI may call while an import is drafted. <paramref name="inputSchema"/> is the JSON schema of
+    /// 0.11.0. Registers a tool the AI may call while an import is drafted. <paramref name="inputSchema"/> is the JSON schema of
     /// its input, as text. Throws when it is not JSON; the app checks the rest before it offers the tool.
     /// </summary>
     public static IPluginApp ImportTool<TTool>(this IPluginApp app, string name, string description, string inputSchema) where TTool : class, IImportTool
@@ -319,7 +319,7 @@ public static class ImportToolExtensions
     }
 
     /// <summary>
-    /// 0.11.0 (draft). Registers a tool, as <see cref="ImportTool{TTool}"/>, for the regions of a document that <paramref name="regions"/>
+    /// 0.11.0. Registers a tool, as <see cref="ImportTool{TTool}"/>, for the regions of a document that <paramref name="regions"/>
     /// describes. The app offers it only when the documents hold such a region, as the app finds it, and takes one result of it for each.
     /// </summary>
     public static IPluginApp ImportRegionTool<TTool>(this IPluginApp app, string name, string description, string inputSchema, ToolRegions regions)

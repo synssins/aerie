@@ -593,7 +593,7 @@ public sealed partial class ImportService(KbDbContext db, IFileStore store, AiSe
             foreach (var n in c.Nodes) contents[0].Add(n);
             warnings.Add($"{c.PluginName} added {c.Nodes.Count} block{(c.Nodes.Count == 1 ? "" : "s")} from {c.FileName} at the end of the first page.");
         }
-        // 0.11.0 (draft): the tools first, so the draft contributors see what the tools added (ImportDraft.ToolBlocks) and need not make it again.
+        // 0.11.0: the tools first, so the draft contributors see what the tools added (ImportDraft.ToolBlocks) and need not make it again.
         var tooled = actor is not null ? await ToolsAsync(item, actor, source, pages, contents, warnings, ct) : [];
         // Counted from the nodes themselves for each contributor, so blocks an earlier contributor added do not throw the numbers off.
         IReadOnlyList<DraftToolBlock> ToolBlocks() => [.. tooled.SelectMany(t => contents.Select((c, page) => (page, index: c.IndexOf(t.Node), c))

@@ -265,7 +265,7 @@ public sealed class AiService(KbDbContext db, IAccess access, IHttpClientFactory
     public sealed record ToolAnswer(string Reply, bool Reached);
 
     /// <summary>
-    /// 0.11.0 (draft). A conversation in which the model may call the given tools (function tools of the chat API). The checks of
+    /// 0.11.0. A conversation in which the model may call the given tools (function tools of the chat API). The checks of
     /// <see cref="RunAsync"/> come first. Each tool call goes to <paramref name="answer"/>, whose reply is what the model gets back: server
     /// text, never a plugin's. <paramref name="tools"/> is asked before each model call, so a tool that is done is no longer offered. It
     /// ends when the model calls no tool, when no tool is left to offer, after <paramref name="maxToolCalls"/> calls that reached a tool, or

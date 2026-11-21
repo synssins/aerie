@@ -18,7 +18,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Kb.Tests.Integration;
 
 /// <summary>
-/// 0.11.0 (draft): plugins' tools for the AI during an import. The app drafts as before, then offers the tools over the draft; each call is
+/// 0.11.0: plugins' tools for the AI during an import. The app drafts as before, then offers the tools over the draft; each call is
 /// checked, passed to the plugin with only its input, audited, and placed after the block the model named. The model gets only the app's replies.
 /// </summary>
 public sealed class ImportToolTests : IAsyncLifetime

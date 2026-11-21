@@ -71,7 +71,7 @@ public void Configure(IPluginApp app, IPluginContext context) => app
     .DraftContributor<NoticeFromDraft>()                       // ... from the text the AI drafted
     .DraftContributor<DiagramOutline>()                        // ... from the diagrams the AI read in its pictures
     .ImportFileKinds(".notice")                                // a kind the app does not read: drafted by this plugin
-    .ImportRegionTool<BoxesAndLines>(BoxesAndLines.Name, BoxesAndLines.Description, BoxesAndLines.Schema, BoxesAndLines.Regions) // a tool the AI may call for a drawing (0.11.0 draft)
+    .ImportRegionTool<BoxesAndLines>(BoxesAndLines.Name, BoxesAndLines.Description, BoxesAndLines.Schema, BoxesAndLines.Regions) // a tool the AI may call for a drawing (0.11.0)
     .SignInMethod<SampleSignIn>("example", "Sign in with Example ID") // a button on the sign-in screen
     .SignInProviders<SampleProviderCheck>() // providers an Admin adds on this plugin's page, each with its own button
     .Routes(SampleRoutes.Map);                                 // under /api/v1/plugins/kb.sample/
@@ -1073,7 +1073,7 @@ public sealed class NoticeFromDraft : IDraftContributor
 }
 ```
 
-- **When.** Once for each item the AI drafted, after every [import contributor](#adding-to-the-draft-import-contributors) has added its nodes, before the importer sees the draft. Draft contributors run one after another, in the order the plugins were loaded; each sees what the ones before it added. Not for an item the AI could not draft. 0.11.0 (draft): the [tools for the AI](#tools-for-the-ai-during-an-import-0110-draft) run before them, and `ImportDraft.ToolBlocks` lists the blocks they added (page, block, plugin and tool), so a contributor can leave out what a tool already made, such as a second chart of a drawing the tool has drawn. `After` is the block the tool's nodes were put after: the block that shows what the call was about, such as the drawing. Both are counted for each contributor as the pages then stand, after what the contributors before it added; `After` is -1 when that block is no longer on the page.
+- **When.** Once for each item the AI drafted, after every [import contributor](#adding-to-the-draft-import-contributors) has added its nodes, before the importer sees the draft. Draft contributors run one after another, in the order the plugins were loaded; each sees what the ones before it added. Not for an item the AI could not draft. 0.11.0: the [tools for the AI](#tools-for-the-ai-during-an-import) run before them, and `ImportDraft.ToolBlocks` lists the blocks they added (page, block, plugin and tool), so a contributor can leave out what a tool already made, such as a second chart of a drawing the tool has drawn. `After` is the block the tool's nodes were put after: the block that shows what the call was about, such as the drawing. Both are counted for each contributor as the pages then stand, after what the contributors before it added; `After` is -1 when that block is no longer on the page.
 - **What it gets.** `ImportDraft(ImportItemId, Pages, Files)`. `Pages` are the draft's pages in order, each a `DraftPage(Title, ContentJson)`: the page's content as a page stores it ([page content](#page-content)), the AI's blocks with the import contributors' nodes already in them. The draft's pictures point to the import's own copies (`/api/v1/imports/files/<id>`) until the draft is accepted. `Files` are the paths of the item's files that were read. It is a copy: changing it changes nothing. It is not the text the app read from the files.
 - **What it answers.** Null, or `DraftContribution(Additions)`: each a `DraftAddition(Page, Place, Nodes)`. `Page` is the page's index in `Pages` (0 is the first). `Place` is one of:
 
@@ -1167,9 +1167,7 @@ For both kinds of contributor:
 - **Time.** The limit is 10 seconds for each call. At the limit the core stops waiting, cancels the call's token, and goes on with the import; whatever the call answers later is dropped, and it counts as a failure. The call itself goes on running until it returns, so code that does not look at the token (a long parse) uses the processor until it ends. Check `ct` in long loops.
 
 
-### Tools for the AI during an import (0.11.0, draft)
-
-**This is a draft of the next contract, on the exploration branch `explore/plugin-tools` only.** It can change or be dropped.
+### Tools for the AI during an import
 
 A plugin can offer the AI tools while an import is drafted. The plugin is the toolset; the app is the only path between the model and it. The app drafts the page as before, then, in a conversation of its own and before the draft contributors, offers the model the tools of the loaded plugins over the drafted page. When the model calls a tool, the app checks the call, passes its input to the plugin, and places the nodes the plugin answers in the draft.
 
@@ -1198,7 +1196,7 @@ The tool class implements `IImportTool`. It gets the input of one call as a `Jso
 <!-- sample:tool -->
 ```csharp
 /// <summary>
-/// A tool the AI may call while it drafts an import (0.11.0 draft): a drawing of boxes, groups and lines in a document (a network map
+/// A tool the AI may call while it drafts an import (0.11.0): a drawing of boxes, groups and lines in a document (a network map
 /// drawn in text) becomes an outline after the block that shows it. It is registered with the regions it is for (<c>ImportRegionTool</c>,
 /// <see cref="Regions"/>): offered only for documents that hold such a drawing, one result for each. The app checks the input against <see cref="Schema"/> before the
 /// call, so the plugin gets only valid input; it never sees the document. Labels must be text of the document; ids, which the AI makes
@@ -1578,8 +1576,8 @@ The plugin stays disabled until an Admin selects Enable. Uploading a new version
 - `abstractionsVersion`: the version of `Kb.Plugins.Abstractions` the plugin was built against. The app refuses a plugin built for a newer one.
 - `minKbVersion`: the lowest app version the plugin runs on.
 
-The contract and the app are at 0.11.0, and can still change before 1.0.0. On the branch `explore/plugin-tools`, 0.11.0 is a draft.
-0.11.0 (draft) adds [tools for the AI during an import](#tools-for-the-ai-during-an-import-0110-draft) (`app.ImportTool<T>(name, description, schema)`, `app.ImportRegionTool<T>(name, description, schema, regions)` with `ToolRegions`, `IImportTool`, `ImportToolResult` with `ImportToolResult.Refuse(ImportToolRefusal, at)`, `ImportToolReg` with `For`, and `ImportDraft.ToolBlocks`); a plugin that uses them says `"abstractionsVersion": "0.11.0"`. Nothing of 0.10.0 changed, and a plugin built for 0.10.0 or earlier loads as it did.
+The contract and the app are at 0.11.0, and can still change before 1.0.0.
+0.11.0 added [tools for the AI during an import](#tools-for-the-ai-during-an-import) (`app.ImportTool<T>(name, description, schema)`, `app.ImportRegionTool<T>(name, description, schema, regions)` with `ToolRegions`, `IImportTool`, `ImportToolResult` with `ImportToolResult.Refuse(ImportToolRefusal, at)`, `ImportToolReg` with `For`, and `ImportDraft.ToolBlocks`); a plugin that uses them says `"abstractionsVersion": "0.11.0"`. Nothing of 0.10.0 changed, and a plugin built for 0.10.0 or earlier loads as it did.
 0.10.0 added [diagrams in the pictures of an import](#diagrams-in-the-pictures-of-an-import) (`ImportDraft.Pictures`, `DraftPicture`, `PictureDiagram`, `DiagramBox`, `DiagramContainer`, `DiagramLine`, `DiagramText`, `DiagramArea`, `DiagramShape`, `DiagramArrow`, `DiagramLimits`, `DraftPlace.AfterPicture`, `DraftAddition.Picture`); a plugin that uses them says `"abstractionsVersion": "0.10.0"`. Nothing of 0.9.0 changed, and a plugin built for 0.9.0 or earlier loads as it did.
 0.9.0 added [sign-in providers an Admin adds](#sign-in-providers-an-admin-adds) (`app.SignInProviders()`, `app.SignInProviders<TCheck>()`, `ISignInProviderCheck`, `SignInProvidersReg`) and `OidcProvider.UserInfo`; a plugin that uses them says `"abstractionsVersion": "0.9.0"`. Nothing of 0.8.0 changed, and a plugin built for 0.8.0 or earlier loads as it did.
 0.8.0 added [sign-in methods](#sign-in-methods) (`ISignInMethod`, `OidcProvider`, `SignInClaims`, `SignInMethodReg`, `app.SignInMethod<T>(id, name)`) and the actor source `signin`; a plugin that uses them says `"abstractionsVersion": "0.8.0"`. One thing changed that an earlier plugin can see: a setting key starting with `signIn.` is the app's, so a manifest that declares one is refused at install. Nothing else of 0.7.0 changed, and a plugin built for 0.7.0 or earlier loads as it did.

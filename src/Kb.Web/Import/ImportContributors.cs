@@ -37,11 +37,11 @@ public sealed class ImportContributors(IServiceScopeFactory scopes, IRegistratio
 
     public bool Any => registrations.All<ImportContributorReg>().Count > 0 || registrations.All<DraftContributorReg>().Count > 0 || registrations.All<ImportToolReg>().Count > 0;
 
-    /// <summary>0.11.0 (draft). The tools the loaded plugins declared, in the order they registered them, unchecked.</summary>
+    /// <summary>0.11.0. The tools the loaded plugins declared, in the order they registered them, unchecked.</summary>
     public IReadOnlyList<(string PluginId, ImportToolReg Tool)> Tools => [.. registrations.All<ImportToolReg>().Select(r => (r.PluginId, r.Value))];
 
     /// <summary>
-    /// 0.11.0 (draft). One call of a plugin's tool, as its other import calls are made: its own scope, as the plugin, within the time limit.
+    /// 0.11.0. One call of a plugin's tool, as its other import calls are made: its own scope, as the plugin, within the time limit.
     /// The nodes it answers, checked as a contribution's; null when it answered none or failed. With no nodes, the refusal it chose from
     /// the app's list (<see cref="ImportToolRefusal"/>) and the path it names, which the app words and checks itself.
     /// </summary>

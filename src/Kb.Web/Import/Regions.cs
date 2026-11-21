@@ -5,7 +5,7 @@ using Kb.Plugins;
 namespace Kb.Web.Import;
 
 /// <summary>
-/// 0.11.0 (draft). The regions of an import's documents that a tool is for (<see cref="ToolRegions"/>), found by the app from the source
+/// 0.11.0. The regions of an import's documents that a tool is for (<see cref="ToolRegions"/>), found by the app from the source
 /// alone, with the patterns the tool declares: never by the model, and the plugin never sees the source. They decide whether such a tool
 /// is offered, which region a call is about, and the layout checks on its input: a text written over several lines of one enclosure
 /// ("vnet-prod" above "10.50.8.0/22") counts as text of the source, and text given together must stand together.

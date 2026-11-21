@@ -3,7 +3,7 @@ using Kb.Web.Import;
 
 namespace Kb.Tests.Integration;
 
-/// <summary>0.11.0 (draft): the drawings made of text characters that the app finds in an import's source, and labels written in them.</summary>
+/// <summary>0.11.0: the drawings made of text characters that the app finds in an import's source, and labels written in them.</summary>
 public sealed class DrawingsTests
 {
     private const string Hub = """

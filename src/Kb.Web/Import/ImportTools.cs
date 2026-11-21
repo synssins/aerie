@@ -10,7 +10,7 @@ using Kb.Core.Import;
 namespace Kb.Web.Import;
 
 /// <summary>
-/// 0.11.0 (draft). The rules for the tools plugins offer the AI during an import (<see cref="ImportToolReg"/>). A tool's name, description
+/// 0.11.0. The rules for the tools plugins offer the AI during an import (<see cref="ImportToolReg"/>). A tool's name, description
 /// and input schema are the only text of a plugin that reaches the model, so they are held to plain text and capped before a tool is
 /// offered; a tool that breaks a rule is not offered, and the Admin sees why on the plugin's page.
 /// </summary>
@@ -739,7 +739,7 @@ public static partial class ImportTools
 public sealed partial class ImportService
 {
     /// <summary>
-    /// 0.11.0 (draft). Offers the model the tools of the loaded plugins over the drafted pages, after the draft contributors. Each call is
+    /// 0.11.0. Offers the model the tools of the loaded plugins over the drafted pages, after the draft contributors. Each call is
     /// checked (a known tool, a JSON object within <see cref="ImportTools.MaxInputBytes"/>, a block number of the draft, the tool's schema),
     /// passed to the plugin with only its input, and audited; what the plugin answers is checked as a contribution and placed after the
     /// block the model named. The model gets only the app's own reply. A model or server that cannot call tools leaves the draft as it is.

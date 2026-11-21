@@ -144,7 +144,7 @@ public static partial class AiGuard
     }
 
     /// <summary>
-    /// 0.11.0 (draft). A chat completions request that offers tools (for the import's plugin tools only): no answer schema, the tools
+    /// 0.11.0. A chat completions request that offers tools (for the import's plugin tools only): no answer schema, the tools
     /// as function tools, the model's choice whether to call them. Reasoning as in <see cref="Request"/>.
     /// </summary>
     public static JsonObject ToolRequest(AiSettings s, JsonArray messages, JsonArray tools)
