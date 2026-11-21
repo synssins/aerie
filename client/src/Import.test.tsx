@@ -22,7 +22,8 @@ function server(routes: Record<string, (body: unknown) => unknown>) {
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : init?.body;
     calls.push({ key, body, headers: init?.headers as Record<string, string> | undefined });
     const match = Object.keys(routes).find((k) => key === k || (k.endsWith("*") && key.startsWith(k.slice(0, -1))));
-    return match ? new Response(JSON.stringify(routes[match](body) ?? null), { status: 200 }) : new Response(null, { status: 404 });
+    const out = match ? routes[match](body) : null;
+    return out instanceof Response ? out : match ? new Response(JSON.stringify(out ?? null), { status: 200 }) : new Response(null, { status: 404 });
   }));
   return calls;
 }
@@ -50,7 +51,7 @@ describe("import inbox", () => {
     expect(calls.filter((c) => c.key === "POST /imports/b1/files").map((c) => c.headers?.["X-File-Name"])).toEqual(["reset.md"]);
   });
 
-  it("shows each draft as one line with its facts, as a link, and says why a box cannot be ticked", async () => {
+  it("shows each draft as one line with its facts, as a link, and says why Merge cannot take a blocked one", async () => {
     const list = {
       batches: [], canImport: true, canFormat: true, spaces,
       items: [
@@ -66,12 +67,75 @@ describe("import inbox", () => {
     expect(screen.getByText("reset.md +1")).toBeTruthy();
     expect(screen.getByText("Ready to review · drafted in 14 s")).toBeTruthy();
     expect(screen.getByText("→ IAM")).toBeTruthy();
-    const blocked = screen.getByLabelText("Select incident-report") as HTMLInputElement;
-    expect(blocked.disabled).toBe(true);
-    expect(blocked.title).toBe("Can't be merged: Blocked: It holds text addressed to the AI, so it was not sent.");
+    await userEvent.click(screen.getByLabelText("Select incident-report"));
+    await userEvent.click(screen.getByLabelText("Select Reset MFA"));
+    const merge = screen.getByRole("button", { name: "Merge" }) as HTMLButtonElement;
+    expect(merge.disabled).toBe(true);
+    expect(merge.title).toBe("Only drafts that are waiting, ready, failed or rejected can be merged.");
     expect(screen.getByText("Blocked: It holds text addressed to the AI, so it was not sent.")).toBeTruthy();
     await userEvent.click(link);
     expect(onOpenItem).toHaveBeenCalledWith("i1");
+  });
+
+  it("selects with Shift-click, Ctrl-click and Shift+arrows, and discards every selected draft at once, naming any that could not be", async () => {
+    let items = [
+      row({ id: "i1", title: "One", status: "Ready" }), row({ id: "i2", title: "Two", status: "Blocked" }),
+      row({ id: "i3", title: "Three", status: "Working" }), row({ id: "i4", title: "Four", status: "Failed" }),
+    ];
+    const gone = (id: string) => { items = items.filter((i) => (i as { id?: string }).id !== id); return null; };
+    const calls = server({
+      "GET /imports": () => ({ batches: [], canImport: true, canFormat: true, spaces, items }),
+      "DELETE /imports/items/i1": () => gone("i1"), "DELETE /imports/items/i2": () => gone("i2"),
+      "DELETE /imports/items/i3": () => new Response(JSON.stringify({ detail: "It is being drafted; try again in a moment." }), { status: 409 }),
+    });
+    const user = userEvent.setup();
+    render(<DialogProvider><ImportView itemId={null} onOpenItem={() => {}} onOpenPage={() => {}} onHome={() => {}} /></DialogProvider>);
+    const box = async (t: string) => (await screen.findByLabelText(`Select ${t}`)) as HTMLInputElement;
+    const ticked = () => ["One", "Two", "Three", "Four"].filter((t) => (screen.queryByLabelText(`Select ${t}`) as HTMLInputElement | null)?.checked);
+    expect(screen.queryByRole("button", { name: /^Discard \d/ })).toBeNull();
+
+    // A click on a box ticks it; Shift-click on another ticks the range between.
+    await user.click(await box("One"));
+    await user.keyboard("{Shift>}");
+    await user.click(await box("Three"));
+    await user.keyboard("{/Shift}");
+    expect(ticked()).toEqual(["One", "Two", "Three"]);
+    expect((await box("Two")).closest("li")!.classList.contains("picked")).toBe(true);
+    // Ctrl-click takes one out; a plain click on a row selects that row alone.
+    await user.keyboard("{Control>}");
+    await user.click(await box("Two"));
+    await user.keyboard("{/Control}");
+    expect(ticked()).toEqual(["One", "Three"]);
+    await user.click(screen.getByText("Failed"));
+    expect(ticked()).toEqual(["Four"]);
+
+    // The keyboard: Shift+Up from a box extends the selection row by row.
+    await user.click(screen.getByText("Blocked"));
+    expect(ticked()).toEqual(["Two"]);
+    (await box("Two")).focus();
+    await user.keyboard("{Shift>}{ArrowUp}{/Shift}");
+    expect(document.activeElement).toBe(await box("One"));
+    expect(ticked()).toEqual(["One", "Two"]);
+    await user.keyboard("{ArrowDown}{ArrowDown}"); // without Shift, focus moves and the selection stays
+    expect(document.activeElement).toBe(await box("Three"));
+    await user.keyboard("{Shift>}{ArrowDown}{/Shift}");
+    expect(ticked()).toEqual(["One", "Two", "Three", "Four"]);
+    await user.keyboard("{Control>}");
+    await user.click(await box("Four"));
+    await user.keyboard("{/Control}");
+
+    // Discard 3: asks once, Cancel first; then discards each, and names the one the server refused.
+    await user.click(screen.getByRole("button", { name: "Discard 3" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Discard 3 drafts?")).toBeTruthy();
+    expect(document.activeElement?.textContent).toBe("Cancel");
+    await user.click(within(dialog).getByRole("button", { name: "Discard" }));
+    expect(await screen.findByText("“Three” was not discarded: It is being drafted; try again in a moment.")).toBeTruthy();
+    expect(calls.filter((c) => c.key.startsWith("DELETE")).map((c) => c.key).sort()).toEqual(["DELETE /imports/items/i1", "DELETE /imports/items/i2", "DELETE /imports/items/i3"]);
+    expect(screen.queryByText("One")).toBeNull();
+    expect(screen.queryByText("Two")).toBeNull();
+    expect(ticked()).toEqual(["Three"]);
+    expect(screen.getByRole("button", { name: "Discard 1" })).toBeTruthy();
   });
 
   it("says how long a draft has been drafting", () => {
