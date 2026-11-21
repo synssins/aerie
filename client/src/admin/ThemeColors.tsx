@@ -159,7 +159,7 @@ export function ThemeColors({ brand, onChanged }: { brand: Brand; onChanged: () 
           <tbody>
             {THEME_TOKENS.filter((t) => t.group === group).map((t) => (
               <tr key={t.name}>
-                <td>{t.label}{t.from && <span className="muted small"> · follows {LABEL.get(t.from)}</span>}</td>
+                <td>{t.label}{t.from && <span className="muted small"> · follows {LABEL.get(t.from)}{t.night ? " by Day" : ""}</span>}</td>
                 {MODES.map(([m]) => <td key={m}><ColorCell name={t.name} mode={m} theme={draft} onSet={(v) => set(m, t.name, v)} /></td>)}
               </tr>
             ))}

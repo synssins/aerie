@@ -30,7 +30,7 @@ describe("theme tokens", () => {
       if (t.from) {
         const expected = t.mix ? `color-mix(in srgb, var(${t.from}), #fff ${t.mix}%)` : `var(${t.from})`;
         expect(day[t.name], t.name).toBe(expected);
-        expect(night[t.name], t.name).toBe(expected);
+        expect(night[t.name], t.name).toBe(t.night || expected);
       } else {
         expect(day[t.name], t.name).toBe(t.day);
         expect(night[t.name], t.name).toBe(t.night);
@@ -51,7 +51,7 @@ describe("theme tokens", () => {
     expect(valueOf(EMPTY_THEME, "day", "--btn-primary")).toBe("#14304f");
     expect(valueOf({ day: { "--nav": "#000000" }, night: {} }, "day", "--btn-primary")).toBe("#000000"); // follows the header
     expect(valueOf({ day: { "--nav": "#000000", "--btn-primary": "#123456" }, night: {} }, "day", "--btn-primary")).toBe("#123456");
-    expect(valueOf({ day: { "--nav": "#000000" }, night: {} }, "night", "--btn-primary")).toBe("#0d1b2c"); // Night keeps its own
+    expect(valueOf({ day: { "--nav": "#000000" }, night: {} }, "night", "--btn-primary")).toBe("#7fb0f5"); // Night keeps its own
     expect(contrast("#000000", "#ffffff")).toBeCloseTo(21, 0);
   });
 
@@ -70,6 +70,12 @@ describe("theme tokens", () => {
     expect(css()).toContain("--paper: #101010;");
     applyTheme(null);
     expect(css()).toBe("");
+  });
+
+  it("the default Night primary button stands out: 3:1 on the page, the tree and the header, its text 4.5:1", () => {
+    const v = resolved(EMPTY_THEME, "night");
+    for (const bg of ["--paper", "--rail", "--stage", "--nav"]) expect(contrast(v["--btn-primary"], v[bg]), bg).toBeGreaterThanOrEqual(3);
+    expect(contrast(v["--btn-primary-ink"], v["--btn-primary"])).toBeGreaterThanOrEqual(4.5);
   });
 
   it("each preset holds every text pair at 4.5:1, Day and Night", () => {
