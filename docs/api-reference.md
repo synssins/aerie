@@ -82,6 +82,7 @@ A refusal answers a problem body (RFC 9457), with the status of the answer:
 | POST | `/api/v1/admin/search/reindex` | `search.reindex` |  | `ReindexResult` ([ReindexResult](plugins/action-reference.md#reindexresult)) | Yes | Needed | No |
 | GET | `/api/v1/admin/search/synonyms` | `search.synonyms.read` |  | `SynonymsDto` ([SynonymsDto](plugins/action-reference.md#synonymsdto)) | No | Needed | No |
 | PUT | `/api/v1/admin/search/synonyms` | `search.synonyms.save` | `SynonymsDto` ([SynonymsDto](plugins/action-reference.md#synonymsdto)) | `SynonymsDto` ([SynonymsDto](plugins/action-reference.md#synonymsdto)) | Yes | Needed | No |
+| GET | `/api/v1/admin/server-log` | `serverlog.list` |  | `IReadOnlyList<ServerLogEntryDto>` ([ServerLogEntryDto](plugins/action-reference.md#serverlogentrydto)) | No | Needed | No |
 | GET | `/api/v1/admin/settings/codes` | `settings.codes.read` |  | `CodeSettings` ([CodeSettings](plugins/action-reference.md#codesettings)) | No | Needed | No |
 | PUT | `/api/v1/admin/settings/codes` | `settings.codes.set` | `CodeSettings` ([CodeSettings](plugins/action-reference.md#codesettings)) | `Unit` | Yes | Needed | No |
 | GET | `/api/v1/admin/spaces` | `space.list.all` |  | `IReadOnlyList<SpaceDto>` ([SpaceDto](plugins/action-reference.md#spacedto)) | No | Needed | No |

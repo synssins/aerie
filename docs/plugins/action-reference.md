@@ -1705,6 +1705,17 @@ Write. `SaveSynonyms`, answers `SynonymsDto` ([SynonymsDto](#synonymsdto)).
 |---|---|---|
 | Text | `string` | required |
 
+## serverlog.list
+
+Read. `ListServerLog`, answers `IReadOnlyList<ServerLogEntryDto>` ([ServerLogEntryDto](#serverlogentrydto)). Core only.
+
+| Field | Type | |
+|---|---|---|
+| Take | `int?` |  |
+| Offset | `int?` |  |
+| Level | `string?` |  |
+| Text | `string?` |  |
+
 ## settings.codes.read
 
 Read. `ReadCodeSettings`, answers `CodeSettings` ([CodeSettings](#codesettings)). Core only.
@@ -6101,6 +6112,28 @@ Enum: `User`, `Group`.
       "text": "text"
     }
   ]
+}
+```
+
+### ServerLogEntryDto
+
+| Field | Type |
+|---|---|
+| id | `long` |
+| at | `DateTimeOffset` |
+| level | `string` |
+| category | `string` |
+| message | `string` |
+| exception | `string?` |
+
+```json
+{
+  "id": 0,
+  "at": "2026-11-14T10:00:00\u002B00:00",
+  "level": "text",
+  "category": "text",
+  "message": "text",
+  "exception": "text"
 }
 ```
 

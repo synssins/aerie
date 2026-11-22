@@ -68,6 +68,13 @@
     "scope": "server"
   },
   {
+    "action": "serverlog.list",
+    "method": "GET",
+    "path": "/api/v1/admin/server-log?take=1",
+    "expect": {"anonymous": 401, "outsider": 403, "reader": 403, "contributor": 403, "supervisor": 403, "owner": 403, "admin": 200},
+    "scope": "server"
+  },
+  {
     "action": "settings.uploads.read",
     "method": "GET",
     "path": "/api/v1/admin/uploads",

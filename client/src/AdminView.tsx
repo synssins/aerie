@@ -4,6 +4,7 @@ import { REVIEW_CHOICES } from "./PageDetails";
 import { Link, to } from "./Link";
 import { InventoryAccess } from "./admin/InventoryAccess";
 import { AuditLog } from "./admin/AuditLog";
+import { ServerLog } from "./admin/ServerLog";
 import { Roles } from "./admin/Roles";
 import { useDialogs } from "./Dialogs";
 import { CodeSettingsPanel } from "./admin/CodeSettings";
@@ -26,8 +27,8 @@ import { UserTools } from "./admin/UserTools";
 import { TokensPanel } from "./Tokens";
 import { api, ApiError, fmtSize, type AdminUser, type Brand, type PluginInfo, type Space, type TreeNode } from "./api";
 
-export type AdminSection = "spaces" | "users" | "groups" | "roles" | "inventory" | "signin" | "branding" | "search" | "ai" | "feedback" | "uploads" | "storage" | "tokens" | "applications" | "logs" | "bin" | "plugins" | "audit";
-export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "groups", "roles", "inventory", "signin", "branding", "search", "ai", "feedback", "uploads", "storage", "tokens", "applications", "logs", "bin", "plugins", "audit"];
+export type AdminSection = "spaces" | "users" | "groups" | "roles" | "inventory" | "signin" | "branding" | "search" | "ai" | "feedback" | "uploads" | "storage" | "tokens" | "applications" | "logs" | "bin" | "plugins" | "audit" | "serverlog";
+export const ADMIN_SECTIONS: AdminSection[] = ["spaces", "users", "groups", "roles", "inventory", "signin", "branding", "search", "ai", "feedback", "uploads", "storage", "tokens", "applications", "logs", "bin", "plugins", "audit", "serverlog"];
 type UploadSettings = { attachmentMb: number; serverLimitBytes: number | null };
 
 type Picked = { kind: "user"; item: AdminUser } | null;
@@ -53,7 +54,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
 }) {
   const [allSpaces, setAllSpaces] = useState<Space[]>([]);
   const [open, setOpen] = useState<Record<string, boolean>>({ spaces: true, appearance: section === "branding",
-    security: ["users", "groups", "roles", "inventory", "signin", "tokens", "applications", "audit", "logs"].includes(section), storage: ["bin", "storage"].includes(section) });
+    security: ["users", "groups", "roles", "inventory", "signin", "tokens", "applications", "audit", "serverlog", "logs"].includes(section), storage: ["bin", "storage"].includes(section) });
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [userPermissions, setUserPermissions] = useState<PermissionColumn[]>([]);
   const [auditKey, setAuditKey] = useState(0);
@@ -95,7 +96,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
     setVerify(r.valid ? "Chain intact." : `Chain broken at entry ${r.firstBrokenSequence}.`);
   }
 
-  const title = space?.name ?? ({ spaces: "Spaces", users: "Users", groups: "Groups", roles: "Roles", inventory: "Inventory access", signin: "Sign-in", branding: "Branding", search: "Search", ai: "AI", feedback: "Comments and ratings", uploads: "Uploads", storage: "Document storage", tokens: "API tokens", applications: "Applications", logs: "Log shipping", bin: "Recycle bin", plugins: "Plugins", audit: "Audit log" } as const)[section];
+  const title = space?.name ?? ({ spaces: "Spaces", users: "Users", groups: "Groups", roles: "Roles", inventory: "Inventory access", signin: "Sign-in", branding: "Branding", search: "Search", ai: "AI", feedback: "Comments and ratings", uploads: "Uploads", storage: "Document storage", tokens: "API tokens", applications: "Applications", logs: "Log shipping", bin: "Recycle bin", plugins: "Plugins", audit: "Audit log", serverlog: "Server log" } as const)[section];
 
   async function setAnnouncer(u: AdminUser, enabled: boolean) {
     await api.put(`/admin/users/${u.id}/announcer`, { enabled });
@@ -147,6 +148,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
                   <Link href={to.admin("tokens")} className={`node ${section === "tokens" ? "cur" : ""}`} onNav={() => onNavigate("tokens")}><span className="grow">API tokens</span></Link>
                   <Link href={to.admin("applications")} className={`node ${section === "applications" ? "cur" : ""}`} onNav={() => onNavigate("applications")}><span className="grow">Applications</span></Link>
                   <Link href={to.admin("audit")} className={`node ${section === "audit" ? "cur" : ""}`} onNav={() => onNavigate("audit")}><span className="grow">Audit log</span></Link>
+                  <Link href={to.admin("serverlog")} className={`node ${section === "serverlog" ? "cur" : ""}`} onNav={() => onNavigate("serverlog")}><span className="grow">Server log</span></Link>
                   <Link href={to.admin("logs")} className={`node ${section === "logs" ? "cur" : ""}`} onNav={() => onNavigate("logs")}><span className="grow">Log shipping</span></Link>
                 </div>
               )}
@@ -256,6 +258,7 @@ export function AdminView({ isAdmin, section, spaceId, mySpaces, onNavigate, onE
               )}
 
               {section === "audit" && isAdmin && <AuditLog reloadKey={auditKey} />}
+              {section === "serverlog" && isAdmin && <ServerLog />}
             </div>
           </main>
 

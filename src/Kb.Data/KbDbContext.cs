@@ -27,6 +27,20 @@ public sealed class AuditEntry
     public required string Hash { get; set; }
 }
 
+/// <summary>
+/// One line of the server's own log, kept so an Admin can read it in Administration &gt; Server log. Warnings and errors of every
+/// category, and the information lines of the app's own (Kb.*). Level is the number of Microsoft.Extensions.Logging.LogLevel.
+/// </summary>
+public sealed class ServerLogEntry
+{
+    public long Id { get; set; }
+    public DateTimeOffset At { get; set; }
+    public int Level { get; set; }
+    public required string Category { get; set; }
+    public required string Message { get; set; }
+    public string? Exception { get; set; }
+}
+
 /// <summary>Uploaded branding image (company logo, light or dark).</summary>
 public sealed class BrandAsset
 {
@@ -80,6 +94,7 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
     public DbSet<AccessRequest> AccessRequests => Set<AccessRequest>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+    public DbSet<ServerLogEntry> ServerLogEntries => Set<ServerLogEntry>();
     public DbSet<RuntimeSetting> RuntimeSettings => Set<RuntimeSetting>();
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
     public DbSet<Page> Pages => Set<Page>();
@@ -199,6 +214,10 @@ public sealed class KbDbContext(DbContextOptions<KbDbContext> options)
         builder.Entity<Notification>().HasIndex(n => new { n.UserId, n.ReadAt });
         builder.Entity<AuditEntry>().HasKey(a => a.Sequence);
         builder.Entity<AuditEntry>().Property(a => a.Sequence).ValueGeneratedNever();
+        builder.Entity<ServerLogEntry>().ToTable("ServerLog");
+        builder.Entity<ServerLogEntry>().Property(e => e.Category).HasMaxLength(300);
+        builder.Entity<ServerLogEntry>().Property(e => e.Message).HasMaxLength(4000);
+        builder.Entity<ServerLogEntry>().HasIndex(e => e.At);
         builder.Entity<RuntimeSetting>().HasKey(s => s.Key);
         builder.Entity<Page>().Ignore(p => p.Version);
         builder.Entity<Page>().Property(p => p.Title).HasMaxLength(200);
