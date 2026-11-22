@@ -204,6 +204,11 @@ services.AddHttpClient(HttpsLogShipperKind.ClientName, c => c.Timeout = TimeSpan
 services.AddSingleton<LogShipperService>();
 services.AddHostedService(sp => sp.GetRequiredService<LogShipperService>());
 services.AddSingleton<IAuditSink, LogShipSignal>();
+// The server's own log, kept in the database for Administration > Server log, beside the console.
+var serverLog = new ServerLog();
+builder.Logging.AddProvider(serverLog);
+services.AddSingleton(serverLog);
+services.AddHostedService<ServerLogWriter>();
 services.AddSingleton<StorageMover>();
 services.AddHostedService(sp => sp.GetRequiredService<StorageMover>());
 services.AddScoped<Kb.Core.Search.ISearchProvider, SqlSearchProvider>();

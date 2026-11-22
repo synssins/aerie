@@ -1905,6 +1905,60 @@ paths:
       security:
         - cookieAuth: []
       "x-kb-api-token": "closed"
+  "/api/v1/admin/server-log":
+    get:
+      tags:
+        - "admin"
+      operationId: "serverlog.list"
+      "x-kb-action": "serverlog.list"
+      "x-kb-changes-data": false
+      parameters:
+        - name: "take"
+          in: "query"
+          required: false
+          schema:
+            type: "integer"
+            format: "int32"
+            nullable: true
+        - name: "offset"
+          in: "query"
+          required: false
+          schema:
+            type: "integer"
+            format: "int32"
+            nullable: true
+        - name: "level"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+        - name: "text"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            "application/json":
+              schema:
+                type: "array"
+                items:
+                  "$ref": "#/components/schemas/ServerLogEntryDto"
+        "401":
+          description: "Not signed in, or a bad token"
+        "403":
+          description: "Not allowed"
+        default:
+          description: "A refusal: a problem body (RFC 9457) with the status of the answer. 400 a field is wrong, 404 not found or not visible to the caller, 409 a conflict, 422 refused by a rule, 423 locked by a disabled enforcing plugin, 429 too many calls"
+          content:
+            "application/problem+json":
+              schema:
+                "$ref": "#/components/schemas/Problem"
+      security:
+        - cookieAuth: []
+      "x-kb-api-token": "closed"
   "/api/v1/admin/settings/codes":
     get:
       tags:
@@ -9177,6 +9231,24 @@ components:
           type: "array"
           items:
             "$ref": "#/components/schemas/SearchHitDto"
+    ServerLogEntryDto:
+      type: "object"
+      properties:
+        id:
+          type: "integer"
+          format: "int64"
+        at:
+          type: "string"
+          format: "date-time"
+        level:
+          type: "string"
+        category:
+          type: "string"
+        message:
+          type: "string"
+        exception:
+          type: "string"
+          nullable: true
     SetPasswordRequest:
       type: "object"
       properties:

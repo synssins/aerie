@@ -175,3 +175,16 @@ Select a plugin to see its health checks and its jobs (last run, next run, last 
 | `plugin.settings.change` | Carries the keys that changed. A sign-in method's client id and secret are among them as `signIn.<method>.clientId` and `signIn.<method>.clientSecret`, never their values. |
 | `plugin.permissions.change` | The minimum role of a space permission was changed. Carries the keys and roles. |
 | `user.permissions.set` | A global permission was given to a person or taken back. |
+
+The audit log is in Administration > Security > Audit log. It says who did what.
+
+## The server log
+
+Administration > Security > Server log shows the server's own log, for Admins only: errors and warnings of the app and of the libraries it uses, and what the app itself reports (an import drafted, a refused import tool call, a failed plugin job). You read it there without access to the host. The same lines still go to the host's console log as before.
+
+- Each line has its time, level, category (where in the app it came from) and message. A line with an exception has an "Exception" button that opens its full text.
+- The newest lines are first. Filter by level (all, warnings and errors, errors, critical only) and by text, which matches the message, the category and the exception in any case. "Load more" shows the next 100.
+- Lines are kept in the database, so they survive a restart. Lines older than 30 days are removed, and at most the newest 50,000 are kept.
+- A line never carries a secret: the app writes none into its log, and what looks like a password, key or token is replaced with `[hidden]` before a line is kept.
+
+The server log is not the audit log: it does not say who did what, and it is not sent by Log shipping.

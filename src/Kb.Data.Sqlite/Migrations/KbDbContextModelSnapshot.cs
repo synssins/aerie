@@ -2055,6 +2055,38 @@ namespace Kb.Data.Sqlite.Migrations
                     b.ToTable("BrandAssets");
                 });
 
+            modelBuilder.Entity("Kb.Data.ServerLogEntry", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("At")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Exception")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Level")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("At");
+
+                    b.ToTable("ServerLog", (string)null);
+                });
+
             modelBuilder.Entity("Kb.Data.SpaceImage", b =>
                 {
                     b.Property<Guid>("Id")

@@ -211,6 +211,9 @@ h2.s { font-size: 17px; margin: 22px 0 8px; }
 .audit-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 12px; }
 .audit-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500; }
 .audit-filters input[type="text"] { width: 160px; }
+.server-log .log-message { white-space: pre-wrap; overflow-wrap: anywhere; }
+.server-log pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; margin: 6px 0 0; }
+.server-log summary { cursor: pointer; font-size: 13px; color: var(--ink2); }
 .page-details { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; align-items: center; margin: 4px 0 14px; padding: 10px 12px;
   border: 1px solid var(--line); border-radius: 8px; background: var(--rail); font-size: 13.5px; }
 .page-details dt, .page-details .lbl { font-weight: 500; color: var(--ink2); }

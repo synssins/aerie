@@ -18,6 +18,9 @@ public static class AdminRoutes
         admin.MapGet("/audit", (int? take, int? offset, string? action, Guid? actor, DateOnly? from, DateOnly? to, Guid? token, IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new ListAudit { Take = take, Offset = offset, Action = action, ActorId = actor, From = from, To = to, TokenId = token }, ct).ToHttp()).WithAction<ListAudit>();
 
+        admin.MapGet("/server-log", (int? take, int? offset, string? level, string? text, IActionBus bus, CancellationToken ct) =>
+            bus.SendAsync(new ListServerLog { Take = take, Offset = offset, Level = level, Text = text }, ct).ToHttp()).WithAction<ListServerLog>();
+
         admin.MapGet("/users", (IActionBus bus, CancellationToken ct) =>
             bus.SendAsync(new ListUsers(), ct).ToHttp()).WithAction<ListUsers>();
 
