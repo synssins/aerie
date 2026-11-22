@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
-import { ChevronDown, ChevronRight, FileUp, FolderUp, House, X } from "lucide-react";
+import { ChevronDown, ChevronRight, FileUp, FolderUp, House, Trash2, X } from "lucide-react";
 import { Link, to } from "./Link";
 import { api, ApiError, type ImportFile, type ImportItem, type ImportItemRow, type ImportList, type ImportSpace, type ImportStatus, type TreeNode } from "./api";
 import { useDialogs } from "./Dialogs";
@@ -66,6 +66,8 @@ function ImportInbox({ onOpen, onHome }: { onOpen: (id: string) => void; onHome:
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  // The item a Shift-click or Shift+arrow range starts from: the last one clicked.
+  const [anchor, setAnchor] = useState<string | null>(null);
   const [over, setOver] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const filesRef = useRef<HTMLInputElement>(null);
@@ -116,7 +118,7 @@ function ImportInbox({ onOpen, onHome }: { onOpen: (id: string) => void; onHome:
 
   async function merge() {
     setError(null);
-    try { await api.post("/imports/merge", { itemIds: [...picked] }); setPicked(new Set()); await load(); }
+    try { await api.post("/imports/merge", { itemIds: chosen.map((i) => i.id) }); setPicked(new Set()); await load(); }
     catch (e) { setError(problem(e, "Not merged.")); }
   }
 
@@ -125,9 +127,53 @@ function ImportInbox({ onOpen, onHome }: { onOpen: (id: string) => void; onHome:
     try { await api.del(`/imports/items/${i.id}`); await load(); } catch (e) { setError(problem(e, "Not discarded.")); }
   }
 
+  /** Every selected draft at once. One the server refuses (still being drafted, say) is named, and stays selected. */
+  async function discardChosen() {
+    const n = chosen.length;
+    if (!await dialogs.confirm({
+      title: n === 1 ? `Discard “${chosen[0].title}”?` : `Discard ${n} drafts?`,
+      body: `${n === 1 ? "The draft and its original files are" : "These drafts and their original files are"} deleted permanently. This can't be undone.`,
+      ok: "Discard", danger: true, focusCancel: true,
+    })) return;
+    setError(null);
+    const done = await Promise.allSettled(chosen.map((i) => api.del(`/imports/items/${i.id}`)));
+    const failed = chosen.flatMap((i, k) => { const d = done[k]; return d.status === "rejected" ? [{ i, why: problem(d.reason, "Not discarded.") }] : []; });
+    setPicked(new Set(failed.map((f) => f.i.id)));
+    await load();
+    if (failed.length) setError(failed.map((f) => `“${f.i.title}” was not discarded: ${f.why}`).join("\n"));
+  }
+
   const spaces = list?.spaces ?? [];
   const items = list?.items.filter((i) => i.status !== "Accepted") ?? [];
+  const chosen = items.filter((i) => picked.has(i.id));
   const mergeable = (s: ImportStatus) => s === "Ready" || s === "Failed" || s === "Queued" || s === "Rejected";
+  const span = (a: number, b: number) => items.slice(Math.min(a, b), Math.max(a, b) + 1).map((i) => i.id);
+
+  /** A click on a row or its box: Shift adds the range from the last one clicked; Ctrl (Cmd) or the box adds or removes one; else this one alone. */
+  function pick(n: number, e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }, box: boolean) {
+    const id = items[n].id;
+    const from = items.findIndex((i) => i.id === anchor);
+    if (e.shiftKey && from >= 0) { setPicked(new Set([...picked, ...span(from, n)])); return; }
+    const s = new Set(box || e.ctrlKey || e.metaKey ? picked : []);
+    if (s.has(id)) s.delete(id); else s.add(id);
+    setPicked(s);
+    setAnchor(id);
+  }
+
+  /** Up and Down move between the boxes; with Shift they extend the selection as they go. */
+  function keys(e: KeyboardEvent<HTMLUListElement>) {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const boxes = [...e.currentTarget.querySelectorAll<HTMLInputElement>("input.chk")];
+    const n = boxes.indexOf(e.target as HTMLInputElement);
+    const to = n + (e.key === "ArrowDown" ? 1 : -1);
+    if (n < 0 || to < 0 || to >= boxes.length) return;
+    e.preventDefault();
+    boxes[to].focus();
+    if (!e.shiftKey) return;
+    const from = items.findIndex((i) => i.id === anchor && picked.has(i.id));
+    if (from < 0) setAnchor(items[n].id);
+    setPicked(new Set([...picked, ...span(from < 0 ? n : from, to)]));
+  }
   return (
     <>
       <main className="doc wide">
@@ -182,16 +228,20 @@ function ImportInbox({ onOpen, onHome }: { onOpen: (id: string) => void; onHome:
           <div className="bar-row">
             <h2 className="s">Drafts</h2>
             <span className="grow" />
-            <button type="button" className="tb" disabled={picked.size < 2} onClick={() => void merge()}>Merge</button>
+            {chosen.length > 0 && <button type="button" className="tb" onClick={() => void discardChosen()}><Trash2 className="ic" aria-hidden />Discard {chosen.length}</button>}
+            <button type="button" className="tb" disabled={chosen.length < 2 || chosen.some((i) => !mergeable(i.status))}
+              title={chosen.some((i) => !mergeable(i.status)) ? "Only drafts that are waiting, ready, failed or rejected can be merged." : undefined} onClick={() => void merge()}>Merge</button>
           </div>
-          <ul className="rows import-rows" aria-label="Drafts">
-            {items.map((i) => {
-              const can = mergeable(i.status);
+          <ul className="rows import-rows" aria-label="Drafts" onKeyDown={keys}>
+            {items.map((i, n) => {
               const why = statusText(i, now);
+              const on = picked.has(i.id);
               return (
-                <li key={i.id} className={`row-line ${i.status === "Failed" || i.status === "Blocked" ? "bad" : ""}`}>
-                  <input type="checkbox" className="chk" aria-label={`Select ${i.title}`} disabled={!can} title={can ? "Select to merge" : `Can't be merged: ${why}`}
-                    checked={picked.has(i.id)} onChange={(e) => { const n = new Set(picked); if (e.target.checked) n.add(i.id); else n.delete(i.id); setPicked(n); }} />
+                <li key={i.id} className={`row-line ${i.status === "Failed" || i.status === "Blocked" ? "bad" : ""} ${on ? "picked" : ""}`}
+                  onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
+                  onClick={(e) => { const t = e.target as HTMLElement; if (!t.closest("a, button")) pick(n, e, t.matches("input.chk")); }}>
+                  <input type="checkbox" className="chk" aria-label={`Select ${i.title}`} title="Select. Shift-click selects a range; Ctrl-click adds or removes one."
+                    checked={on} onChange={() => {}} />
                   <Link href={to.imports(i.id)} className="row-title" title={i.title} onNav={() => onOpen(i.id)}>{i.title}</Link>
                   <span className="row-meta muted" title={[i.source, why, i.suggestedSpace && `Suggested: ${i.suggestedSpace}`].filter(Boolean).join(" · ")}>
                     {i.source && <span>{i.source}</span>}
